@@ -5,7 +5,6 @@
  * documents; the information's are what Orbit is, in the README's words.
  */
 import { reduced } from "./sky.js";
-import { createScenes } from "./scenes.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
@@ -46,55 +45,93 @@ export const SECTIONS = {
   },
 };
 
-/* one ring: its bodies, its light, its caption, its scenes */
+/* One ring. Its bodies orbit at their own cadences — some the other way, some
+   faster — and yet the right one arrives at the bottom of the ring exactly as
+   its line appears, locks there while the line is read, and is let go just
+   before the next comes round. Each body's path is planned backwards from the
+   moment it is due: however far it has to go, it gets there on time. */
+const PERIOD = 5200, HOLD = 3400, LEAD = 1600, PICK = 1200;
+const TURNS = [1, 2, 1, 3, 2, 1, 2];
+const DIR = [1, -1, 1, 1, -1, 1, -1];
+const BOTTOM = 90;
+const glide = (u) => 1 - Math.pow(1 - u, 2.4);   /* let go briskly, arrive gently, and lock */
+
 export function createRing(pad, section) {
-  const svg = $(".ring", pad), host = $(".stages", svg), light = $(".light", svg);
+  const svg = $(".ring", pad), host = $(".stages", svg);
   const stage = $(".stage", pad), n = $(".n", stage), total = $(".total", stage), label = $(".label", stage), line = $(".line", stage), go = $(".go", stage);
-  const scenes = createScenes($(".scenes", pad), svg, { text: section.text });
-  addEventListener("resize", () => scenes.resize());
   const items = section.items, N = items.length;
   total.textContent = String(N).padStart(2, "0");
   const bodies = items.map((it, i) => {
-    const a = (-90 + i * (360 / N)) * Math.PI / 180;
     const g = document.createElementNS(SVG, "g");
     g.setAttribute("class", "stage-body"); g.setAttribute("tabindex", "0"); g.setAttribute("role", "button");
     g.setAttribute("aria-label", `${it.label}: ${it.line}`);
     g.style.setProperty("--i", i);
-    const cx = (100 + 72 * Math.cos(a)).toFixed(2), cy = (100 + 72 * Math.sin(a)).toFixed(2);
-    g.style.transformOrigin = `${cx}px ${cy}px`;
     for (const [cls, r] of [["halo", "11"], ["hit", "14"], ["dot", "5.2"]]) {
-      const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", r); g.appendChild(c);
+      const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", "172"); c.setAttribute("cy", "100"); c.setAttribute("r", r); g.appendChild(c);
     }
     host.appendChild(g);
-    g.addEventListener("click", () => { show(i); rest(); });
-    g.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") { show(i); rest(); } });
-    g.addEventListener("focus", () => { show(i); rest(); });
-    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(i); rest(); } });
+    g.addEventListener("click", () => pick(i));
+    g.addEventListener("focus", () => pick(i));
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(i); } });
     return g;
   });
-  let at = -1, timer = 0, held = 0;
-  function show(i) {
-    if (i === at) return;
-    const prev = at; at = i;
-    bodies.forEach((b, j) => { b.classList.toggle("on", j === i); b.classList.toggle("done", j < i); });
-    const from = (prev < 0 ? i : prev) * (100 / N), to = i * (100 / N);
-    light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; light.style.strokeDashoffset = `${-from}`;
-    void light.getBoundingClientRect();
-    const len = ((to - from) + 100) % 100 || (prev < 0 ? 0 : 100);
-    light.style.transition = reduced ? "none" : "stroke-dasharray 1.1s cubic-bezier(.2,.7,.2,1)";
-    light.style.strokeDasharray = `${len} 100`;
-    scenes.show(i);
+  /* each body: where it is, where it is going, and when it is due */
+  const S = items.map((_, i) => ({ a: (i * 360) / N + 37 * (i % 3), from: 0, to: 0, t0: 0, t1: 0, locked: false }));
+  let raf = 0, current = -1, running = false;
+  function angleAt(b, now) {
+    if (now <= b.t0) return b.from;
+    if (now >= b.t1) return b.to;
+    return b.from + (b.to - b.from) * glide((now - b.t0) / (b.t1 - b.t0));
+  }
+  /* plan body i's path so it reaches the bottom at `due`, turning its own way at its own pace */
+  function plan(i, now, due) {
+    const b = S[i], from = angleAt(b, now), window = Math.max(1, due - now);
+    /* at least one full turn whenever there is time for it: a body never loiters at the bottom waiting to be due */
+    const turns = Math.max(window > 2600 ? 1 : 0, Math.round(TURNS[i % TURNS.length] * window / (N * PERIOD)));
+    const dir = DIR[i % DIR.length];
+    const ahead = dir > 0 ? (((BOTTOM - from) % 360) + 360) % 360 : -((((from - BOTTOM) % 360) + 360) % 360);
+    b.from = from; b.to = from + ahead + dir * 360 * turns; b.t0 = now; b.t1 = due; b.locked = false;
+  }
+  function lock(i) {
+    current = i;
+    bodies.forEach((g, j) => g.classList.toggle("on", j === i));
     stage.classList.remove("in"); void stage.offsetWidth;
     n.textContent = String(i + 1).padStart(2, "0"); label.textContent = items[i].label; line.textContent = items[i].line;
     if (items[i].href) { go.href = items[i].href; go.hidden = false; } else go.hidden = true;
     stage.classList.add("in");
   }
-  const next = () => show((at + 1) % N);
-  function tick() { clearTimeout(timer); timer = setTimeout(() => { if (Date.now() > held) next(); tick(); }, 4600); }
-  const rest = () => { held = Date.now() + 9000; };
+  function release(i) {
+    bodies[i].classList.remove("on");
+    if (current === i) stage.classList.remove("in");
+  }
+  function frame(now) {
+    if (!running) return;
+    S.forEach((b, i) => {
+      const held = now >= b.t1 && now < b.t1 + HOLD;
+      if (held && !b.locked) { b.locked = true; lock(i); }
+      if (!held && b.locked) { release(i); plan(i, now, b.t1 + N * PERIOD); }
+      b.a = angleAt(b, now);
+      bodies[i].setAttribute("transform", `rotate(${b.a.toFixed(2)} 100 100)`);
+    });
+    raf = requestAnimationFrame(frame);
+  }
+  /* a body asked for: it comes to the bottom next, and the turn goes on from there */
+  function pick(i) {
+    const now = performance.now();
+    S.forEach((b, j) => { if (b.locked) release(j); plan(j, now, now + PICK + (((j - i) % N) + N) % N * PERIOD); });
+  }
   return {
-    start() { scenes.start(); setTimeout(() => { show(0); tick(); }, reduced ? 100 : 1500); },
-    stop() { clearTimeout(timer); scenes.stop(); at = -1; bodies.forEach((b) => b.classList.remove("on", "done")); light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; stage.classList.remove("in"); },
+    start() {
+      running = true;
+      const now = performance.now();
+      S.forEach((b, i) => { b.from = b.to = b.a; b.t0 = b.t1 = now; plan(i, now, now + (reduced ? 200 : LEAD) + i * PERIOD); });
+      cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+    },
+    stop() {
+      running = false; cancelAnimationFrame(raf); raf = 0; current = -1;
+      S.forEach((b) => { b.locked = false; });
+      bodies.forEach((g) => g.classList.remove("on")); stage.classList.remove("in");
+    },
   };
 }
 

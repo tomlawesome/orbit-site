@@ -675,18 +675,16 @@ body.launching .doorcmd,body.showwarp .doorcmd{opacity:0;transition:opacity .4s 
 .pad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
 .pad .back.tosky{left:auto;right:24px}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
-.pad .scenes{position:absolute;inset:0;z-index:1;pointer-events:none}
 .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
 .pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
 body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
-.pad .glyph .light{stroke:var(--accent);stroke-dasharray:0.01 100;stroke-dashoffset:0}
-.pad .stage-body{cursor:pointer;outline:0;transform:scale(0);transition:transform .6s cubic-bezier(.2,.7,.2,1) calc(.9s + .12s * var(--i))}
-body.arrived .pad .stage-body{transform:scale(1)}
+.pad .stage-body{cursor:pointer;outline:0;opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
+body.arrived .pad .stage-body{opacity:1}
 .pad .stage-body .hit{fill:transparent}
-.pad .stage-body .dot{fill:var(--ink-faint);transition:fill .5s}
+.pad .stage-body .dot{fill:var(--ink-mid);transition:fill .5s,r .4s}
 .pad .stage-body .halo{fill:var(--accent);opacity:0;transition:opacity .5s}
-.pad .stage-body.done .dot{fill:var(--ink-mid)}
 .pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{fill:var(--accent)}
+.pad .stage-body.on .dot{r:6.4}
 .pad .stage-body.on .halo{opacity:.16}
 .pad .stage-body:focus-visible .halo{opacity:.28}
 .pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
@@ -705,11 +703,11 @@ body.arrived .pad .stage-body{transform:scale(1)}
 .pad .stage .go:hover{color:var(--ink)}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching .pad{visibility:hidden;pointer-events:none}
-body.bare .pad .stage,body.bare .pad .back,body.bare .pad .word,body.bare .pad .scenes,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
+body.bare .pad .stage,body.bare .pad .back,body.bare .pad .word,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
 body.bare .pad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
-body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes{animation:chromein 1.3s ease .45s both}
+body.instrument .pad .word,body.instrument .pad .back{animation:chromein 1.3s ease .45s both}
 /* and leaves the way the sky does */
-body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .stage,body.withdrawing .pad .scenes,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
+body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .stage,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 /* the install's own line, back with the instrument */
@@ -727,7 +725,7 @@ body.instrument .launchcmd{opacity:1}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
 }
-@media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
 .doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
 .doorfoot.by a{color:#a6b0c8;text-decoration:none}
