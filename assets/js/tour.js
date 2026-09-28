@@ -91,6 +91,7 @@ function createContext(clock) {
   const dot = document.createElement("div"); dot.className = "tourfilm-dot"; layer.appendChild(dot);
   let at = [innerWidth / 2, innerHeight / 2];
   let live = null, lit = [], ghosts = [], worn;
+  let dotAnchor = null, travelling = false, syncRaf = 0;
   const anims = new Set();
   const placeDot = (p) => { dot.getAnimations?.().forEach((a) => a.cancel()); dot.style.transform = `translate(${p[0]}px,${p[1]}px)`; };
   placeDot(at);
@@ -148,6 +149,7 @@ function createContext(clock) {
     const target = box ? [box.cx, box.cy] : to;
     const from = [at[0], at[1]]; at = [target[0], target[1]];
     const ms = dur ?? T.travelBase;
+    dotAnchor = Array.isArray(to) ? null : to;
     dot.style.opacity = "1";
     const d = Math.hypot(target[0] - from[0], target[1] - from[1]);
     if (reduced || d < 0.5) { placeDot(at); return clock.w(ms); }
@@ -156,13 +158,14 @@ function createContext(clock) {
     const frames = [];
     for (let i = 0; i <= 32; i++) { const t = i / 32, u = 1 - t; frames.push({ transform: `translate(${u * u * from[0] + 2 * u * t * c[0] + t * t * target[0]}px,${u * u * from[1] + 2 * u * t * c[1] + t * t * target[1]}px)` }); }
     dot.getAnimations?.().forEach((a) => a.cancel());
+    travelling = true;
     void anim(dot, frames, { duration: ms, easing: T.ease, fill: "forwards" });
-    return clock.w(ms);
+    return clock.w(ms).finally(() => { travelling = false; });
   }
   async function growInto(c) {
     if (!c.els.length) return clock.w(T.grow);
     ensureRings(c); syncRings(c); ringState(c, "on"); if (!lit.includes(c)) lit.push(c); applyHoles();
-    if (!reduced) c.rings.forEach((r, i) => { const b = boxOf([c.els[i]], c.pad); void anim(r, [{ left: `${at[0] - 3}px`, top: `${at[1] - 3}px`, width: "6px", height: "6px", borderRadius: "50%" }, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, borderRadius: r.style.borderRadius }], { duration: T.grow, easing: T.ease }); });
+    if (!reduced) c.rings.forEach((r, i) => { const b = boxOf([c.els[i]], c.pad); void anim(r, [{ left: `${at[0] - 3}px`, top: `${at[1] - 3}px`, width: "6px", height: "6px", borderRadius: "50%" }, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, borderRadius: r.style.borderRadius }], { duration: T.grow, easing: T.ease, composite: "replace" }); });
     dot.style.opacity = "0";
     return clock.w(T.grow);
   }
@@ -176,7 +179,7 @@ function createContext(clock) {
     const box = boxOf([e]); const cs = getComputedStyle(e);
     const g = document.createElement("div"); g.className = "tourfilm-typed";
     g.style.cssText = `left:${box.x}px;top:${box.y}px;width:${box.w}px;height:${box.h}px;background:${cs.backgroundColor};padding-left:${cs.paddingLeft};padding-right:${cs.paddingRight};font:${cs.font};color:${cs.color};border-radius:${cs.borderRadius};border:1px solid transparent`;
-    const line = document.createElement("span"), caret = document.createElement("i"); g.append(line, caret); layer.appendChild(g); ghosts.push(g);
+    const line = document.createElement("span"), caret = document.createElement("i"); g.append(line, caret); layer.appendChild(g); g.tourField = e; ghosts.push(g);
     return { line, caret };
   }
   function dropTyped() { ghosts.forEach((g) => g.remove()); ghosts = []; }
@@ -189,12 +192,7 @@ function createContext(clock) {
     for (const e of c.els) if ("value" in e) { e.value = text; e.dispatchEvent(new Event("input", { bubbles: true })); }
   }
   function wear(pack) { if (worn === undefined) worn = currentTheme(); if (pack === null) { if (worn !== undefined) applyTheme(worn, false); worn = undefined; } else applyTheme(pack, false); }
-  function showCallout(text, pt, side, o) {
-    const box = document.createElement("div"); box.className = `tourfilm-callout${o.label ? " label" : ""}`;
-    box.textContent = text;
-    if (o.link) { const a = document.createElement("a"); a.href = o.link.href; a.textContent = o.link.text; if (o.link.onClick) a.addEventListener("click", o.link.onClick); box.append(document.createElement("br"), a); }
-    box.style.maxWidth = `${o.w ?? 260}px`;
-    const stem = document.createElement("i"); box.appendChild(stem); layer.appendChild(box);
+  function placeCallout(box, stem, pt, side, o) {
     const wd = box.offsetWidth, ht = box.offsetHeight; let x, y;
     if (side === "left") { x = pt[0] - 18 - wd; y = pt[1] - ht / 2; } else if (side === "right") { x = pt[0] + 18; y = pt[1] - ht / 2; } else if (side === "top") { x = pt[0] - wd / 2; y = pt[1] - 18 - ht; } else { x = pt[0] - wd / 2; y = pt[1] + 18; }
     if (o.dy) y += o.dy;
@@ -202,6 +200,15 @@ function createContext(clock) {
     box.style.left = `${x}px`; box.style.top = `${y}px`;
     if (side === "left" || side === "right") { stem.style.top = `${Math.max(12, Math.min(pt[1] - y, ht - 12)) - 7}px`; stem.style[side === "left" ? "right" : "left"] = "-8px"; }
     else { stem.style.left = `${Math.max(14, Math.min(pt[0] - x, wd - 14)) - 7}px`; stem.style[side === "top" ? "bottom" : "top"] = "-8px"; }
+  }
+  function showCallout(text, pt, side, o) {
+    const box = document.createElement("div"); box.className = `tourfilm-callout${o.label ? " label" : ""}`;
+    box.textContent = text;
+    if (o.link) { const a = document.createElement("a"); a.href = o.link.href; a.textContent = o.link.text; if (o.link.onClick) a.addEventListener("click", o.link.onClick); box.append(document.createElement("br"), a); }
+    box.style.maxWidth = `${o.w ?? 260}px`;
+    const stem = document.createElement("i"); box.appendChild(stem); layer.appendChild(box);
+    placeCallout(box, stem, pt, side, o);
+    box.tourStem = stem;
     const slide = { left: [6, 0], right: [-6, 0], top: [0, 6], bottom: [0, -6] }[side];
     box.style.transform = reduced ? "none" : `translate(${slide[0]}px,${slide[1]}px)`;
     requestAnimationFrame(() => { box.style.opacity = "1"; box.style.transform = "translate(0,0)"; });
@@ -213,6 +220,7 @@ function createContext(clock) {
     await clock.w(T.calloutIn);
     const pt = Array.isArray(anchor) ? anchor : anchor.els.length === 0 ? [innerWidth / 2, innerHeight / 2] : edgeOf(boxOf(anchor.els, anchor.pad), side);
     live = showCallout(text, pt, side, o);
+    live.tourAnchor = Array.isArray(anchor) ? null : anchor; live.tourSide = side; live.tourOpts = o;
     await clock.hold(o.hold ?? holdFor(text));
   }
   function dropCallout() { if (!live) return; const b = live; live = null; b.style.transition = "opacity .18s ease"; b.style.opacity = "0"; setTimeout(() => b.remove(), T.calloutOut + 240); }
@@ -222,6 +230,18 @@ function createContext(clock) {
     el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block });
     await clock.w(T.scroll);
   }
+  function follow() {
+    for (const c of lit) if (c.rings.length) syncRings(c);
+    if (live && live.tourAnchor && live.tourAnchor.els.length) {
+      placeCallout(live, live.tourStem, edgeOf(boxOf(live.tourAnchor.els, live.tourAnchor.pad), live.tourSide), live.tourSide, live.tourOpts);
+    }
+    for (const g of ghosts) { const b = boxOf([g.tourField]); g.style.left = `${b.x}px`; g.style.top = `${b.y}px`; }
+    if (dotAnchor && !travelling && dot.style.opacity === "1" && dotAnchor.els.length) {
+      const b = boxOf(dotAnchor.els, dotAnchor.pad); at = [b.cx, b.cy]; placeDot(at);
+    }
+    syncRaf = requestAnimationFrame(follow);
+  }
+  syncRaf = requestAnimationFrame(follow);
   function clear() {
     for (const c of lit) { c.rings.forEach((r) => r.remove()); c.rings = []; restore(c); }
     lit = []; holes = [];
@@ -233,7 +253,7 @@ function createContext(clock) {
     veilEl().classList.remove("on"); drawVeil();
     $$("#dial .tourfilm-body").forEach((b) => b.remove());
   }
-  function destroy() { clear(); cancelAnimationFrame(veilRaf); veilRaf = 0; layer.replaceChildren(); }
+  function destroy() { clear(); cancelAnimationFrame(veilRaf); veilRaf = 0; cancelAnimationFrame(syncRaf); layer.replaceChildren(); }
   return { clock, w: clock.w, hold: clock.hold, tween: clock.tween.bind(clock), ctl, light, unlight, quiet, goto, press, tap, typeInto, wear, travel, callout, dropCallout, veil, scrollTo, clear, destroy, setPlaying, boxOf };
 }
 
