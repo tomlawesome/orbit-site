@@ -114,16 +114,15 @@ export function createInfo(pad) {
   };
 }
 
-/* One ring. Its bodies orbit at their own cadences — some the other way, some
-   faster — and yet the right one arrives at the bottom of the ring exactly as
-   its line appears, locks there while the line is read, and is let go just
-   before the next comes round. Each body's path is planned backwards from the
-   moment it is due: however far it has to go, it gets there on time. */
-const PERIOD = 5200, HOLD = 3400, LEAD = 1600, PICK = 1200;
-const TURNS = [1, 2, 1, 3, 2, 1, 2];
-const DIR = [1, -1, 1, 1, -1, 1, -1];
+/* One ring. Its bodies all orbit the same way, slowly, each at a pace of its
+   own — and the right one arrives at the bottom of the ring exactly as its
+   line appears, rests there while the line is read, and drifts on before the
+   next comes round. Each body's path is planned back from the moment it is
+   due: it covers what its pace allows in the time it has, and no more. */
+const PERIOD = 5200, HOLD = 3400, LEAD = 1600, PICK = 2200;
+const PACE = [12, 10.5, 13, 11, 12.5, 11.5, 10];   /* degrees per second */
 const BOTTOM = 90;
-const glide = (u) => 1 - Math.pow(1 - u, 2.4);   /* let go briskly, arrive gently, and lock */
+const glide = (u) => 1 - Math.pow(1 - u, 1.8);   /* moves off, then eases in and settles */
 
 export function createRing(pad, section) {
   const svg = $(".ring", pad), host = $(".stages", svg);
@@ -145,21 +144,22 @@ export function createRing(pad, section) {
     return g;
   });
   /* each body: where it is, where it is going, and when it is due */
-  const S = items.map((_, i) => ({ a: (i * 360) / N + 37 * (i % 3), from: 0, to: 0, t0: 0, t1: 0, locked: false }));
+  const S = items.map((_, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, locked: false }));
+  const pace = (i) => PACE[i % PACE.length];
   let raf = 0, current = -1, running = false;
   function angleAt(b, now) {
     if (now <= b.t0) return b.from;
     if (now >= b.t1) return b.to;
     return b.from + (b.to - b.from) * glide((now - b.t0) / (b.t1 - b.t0));
   }
-  /* plan body i's path so it reaches the bottom at `due`, turning its own way at its own pace */
+  /* plan body i's path so it reaches the bottom at `due`: the way there, plus
+     whatever whole turns its own pace would cover in the time it has */
   function plan(i, now, due) {
     const b = S[i], from = angleAt(b, now), window = Math.max(1, due - now);
-    /* at least one full turn whenever there is time for it: a body never loiters at the bottom waiting to be due */
-    const turns = Math.max(window > 2600 ? 1 : 0, Math.round(TURNS[i % TURNS.length] * window / (N * PERIOD)));
-    const dir = DIR[i % DIR.length];
-    const ahead = dir > 0 ? (((BOTTOM - from) % 360) + 360) % 360 : -((((from - BOTTOM) % 360) + 360) % 360);
-    b.from = from; b.to = from + ahead + dir * 360 * turns; b.t0 = now; b.t1 = due; b.locked = false;
+    const ahead = (((BOTTOM - from) % 360) + 360) % 360;
+    const want = pace(i) * window / 1000;
+    const extra = Math.max(0, Math.round((want - ahead) / 360));
+    b.from = from; b.to = from + ahead + 360 * extra; b.t0 = now; b.t1 = due; b.locked = false;
   }
   function lock(i) {
     current = i;
@@ -193,7 +193,8 @@ export function createRing(pad, section) {
     start() {
       running = true;
       const now = performance.now();
-      S.forEach((b, i) => { b.from = b.to = b.a; b.t0 = b.t1 = now; plan(i, now, now + (reduced ? 200 : LEAD) + i * PERIOD); });
+      /* each starts where its own pace would have it, so the first cycle is already a steady drift */
+      S.forEach((b, i) => { const due = now + (reduced ? 200 : LEAD) + i * PERIOD; b.a = b.from = b.to = BOTTOM - pace(i) * (due - now) / 1000; b.t0 = b.t1 = now; plan(i, now, due); });
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     stop() {
