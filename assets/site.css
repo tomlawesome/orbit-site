@@ -336,7 +336,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .drawer .gate{opacity:1;transform:none;transition:filter .35s ease;margin-top:6px}
 
 /* the hero: the dial, the other systems, the explore field */
-.hero{position:relative;min-height:100vh;display:grid;place-items:center;overflow:hidden;padding:60px 0 0}
+.hero{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:64px 0 96px}
 .galaxy{position:absolute;inset:0;pointer-events:none}
 .minisys{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;
   transition:transform 1.25s cubic-bezier(.5,.4,.15,1),opacity .6s}
@@ -346,7 +346,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .minisys .msring{fill:none;stroke:var(--chart-line);stroke-width:.9;stroke-dasharray:2 4;transition:stroke .3s,stroke-opacity .3s}
 .minisys .lead{fill:none;stroke:var(--chart-line);stroke-width:.8}
 .minisys:hover .msring{stroke:var(--accent);stroke-opacity:.9}
-.dialwrap{position:relative;width:min(560px,92vw,62vh);aspect-ratio:1;transition:transform 1.25s cubic-bezier(.5,.4,.15,1),opacity .6s}
+.dialwrap{position:relative;width:min(560px,92vw,58vh);aspect-ratio:1;transition:transform 1.25s cubic-bezier(.5,.4,.15,1),opacity .6s}
 .hero.flying .dialwrap{transform:translate(calc(var(--flyx)*-1.7),calc(var(--flyy)*-1.7)) scale(.45);opacity:0}
 .hero.flying .minisys{opacity:.08}
 .hero.flying .minisys.target{opacity:1;transform:translate(0,0) scale(2.3)}
@@ -387,8 +387,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .chart-callout.side-left .line{right:-27px}
 .chart-callout b{display:block;font-weight:600;font-size:13.5px}
 .chart-callout small{font:11.5px var(--mono);color:var(--ink-mid)}
-.hero-foot{position:absolute;left:50%;bottom:max(76px,9vh);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:13px;
-  width:min(360px,90vw)}
+.hero-foot{position:relative;margin-top:26px;display:flex;flex-direction:column;align-items:center;gap:13px;width:min(360px,90vw)}
 .splash-search{position:relative;width:100%}
 .splash-search input{background:none;border:0;outline:0;border-bottom:1px solid var(--line);width:100%;text-align:center;
   font:12.5px var(--mono);color:var(--ink);padding:6px 4px;transition:border-color .25s}
@@ -403,10 +402,10 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .palette button.act{color:var(--accent-text)}
 .palette .none{font:12px var(--mono);color:var(--ink-faint);padding:8px 10px}
 .cue{font:10.5px var(--mono);letter-spacing:.22em;color:var(--ink-faint);text-transform:uppercase}
-.chips{display:none;flex-wrap:wrap;gap:8px;justify-content:center;padding:0 16px;position:absolute;left:0;right:0;top:calc(50% + min(46vw,31vh) + 8px)}
+.chips{display:none;flex-wrap:wrap;gap:8px;justify-content:center;padding:0 16px;margin-top:18px}
 .chips button{font:11px var(--mono);letter-spacing:.06em;color:var(--ink-mid);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:7px 12px;cursor:pointer}
 .chips button:hover{border-color:var(--accent);color:var(--ink)}
-@media (max-width:900px){.galaxy{display:none}.chips{display:flex}.hero-foot{bottom:78px}.back,.orb{position:absolute}}
+@media (max-width:900px){.galaxy{display:none}.chips{display:flex}.back,.orb{position:absolute}}
 @media (max-width:560px){.item.suggest{flex-direction:column;align-items:stretch}.item.suggest .actions{justify-content:flex-end}}
 
 /* the manifest: the corridor, the spine of time */
