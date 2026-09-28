@@ -142,9 +142,20 @@ function createContext(clock) {
   function restore(c) { for (const s of c.saved) { s.e.style.transform = s.transform; s.e.style.filter = s.filter; s.e.style.transition = s.transition; } c.saved = []; c.lifted = false; }
   function unlight(...cs) { for (const c of cs) { ringState(c, "off"); c.rings.forEach((r) => r.remove()); c.rings = []; restore(c); lit = lit.filter((o) => o !== c); } applyHoles(); }
   function quiet(c) { ringState(c, "quiet"); restore(c); }
+  const offScreen = (b) => b.y + b.h < 80 || b.y > innerHeight - 80;
+  async function bringIn(c, realtime = false) {
+    if (!c || !c.els.length) return;
+    const b = boxOf(c.els, c.pad);
+    if (!offScreen(b)) return;
+    c.els[0].scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    /* on resume the clock is still stopped, so the wait is real time */
+    if (realtime) await new Promise((r) => setTimeout(r, reduced ? 50 : T.scroll));
+    else await clock.w(T.scroll);
+  }
   async function travel(to, dur) {
     dropCallout();
     if (!Array.isArray(to) && !to.els.length) return clock.w(dur ?? T.travelBase);
+    if (!Array.isArray(to)) await bringIn(to);
     const box = Array.isArray(to) ? null : boxOf(to.els, to.pad);
     const target = box ? [box.cx, box.cy] : to;
     const from = [at[0], at[1]]; at = [target[0], target[1]];
@@ -217,6 +228,7 @@ function createContext(clock) {
   const edgeOf = (b, side) => (side === "left" ? [b.x, b.cy] : side === "right" ? [b.x + b.w, b.cy] : side === "top" ? [b.cx, b.y] : [b.cx, b.y + b.h]);
   async function callout(text, anchor, side, o = {}) {
     dropCallout();
+    if (!Array.isArray(anchor)) await bringIn(anchor);
     await clock.w(T.calloutIn);
     const pt = Array.isArray(anchor) ? anchor : anchor.els.length === 0 ? [innerWidth / 2, innerHeight / 2] : edgeOf(boxOf(anchor.els, anchor.pad), side);
     live = showCallout(text, pt, side, o);
@@ -254,7 +266,7 @@ function createContext(clock) {
     $$("#dial .tourfilm-body").forEach((b) => b.remove());
   }
   function destroy() { clear(); cancelAnimationFrame(veilRaf); veilRaf = 0; cancelAnimationFrame(syncRaf); layer.replaceChildren(); }
-  return { clock, w: clock.w, hold: clock.hold, tween: clock.tween.bind(clock), ctl, light, unlight, quiet, goto, press, tap, typeInto, wear, travel, callout, dropCallout, veil, scrollTo, clear, destroy, setPlaying, boxOf };
+  return { clock, w: clock.w, hold: clock.hold, tween: clock.tween.bind(clock), ctl, light, unlight, quiet, goto, press, tap, typeInto, wear, travel, callout, dropCallout, veil, scrollTo, clear, destroy, setPlaying, boxOf, bringIn, anchor: () => (live && live.tourAnchor) || dotAnchor };
 }
 
 /* ── the chapters, in the ratified order ───────────────────────────────── */
@@ -473,11 +485,29 @@ export function createPlayer() {
     transport.classList.remove("playing"); if (!silent) { transport.classList.add("ended"); name.textContent = "take the walk"; }
     playIcon(false);
   }
+  let byReader = false;
+  function pause(reader = false) {
+    if (!running || !clock.playing()) return;
+    clock.setPlaying(false); ctx.setPlaying(false); playIcon(false);
+    transport.classList.remove("playing");
+    byReader = reader;
+    if (reader) name.textContent = "paused — play to continue";
+  }
+  async function resume() {
+    if (!running || clock.playing()) return;
+    if (byReader) { name.textContent = CHAPTERS[current].name; byReader = false; await ctx.bringIn(ctx.anchor(), true); }
+    clock.setPlaying(true); ctx.setPlaying(true); playIcon(true);
+    transport.classList.add("playing");
+  }
   function toggle() {
     if (!running) { start(0); return; }
-    const on = !clock.playing(); clock.setPlaying(on); ctx.setPlaying(on); playIcon(on);
-    transport.classList.toggle("playing", on);
+    if (clock.playing()) pause(false); else resume();
   }
+  /* the reader's own scrolling pauses the walk: wheel, touch and the keys,
+     never the scroll event, which the film's own moves also fire */
+  addEventListener("wheel", () => pause(true), { passive: true });
+  addEventListener("touchmove", () => pause(true), { passive: true });
+  addEventListener("keydown", (e) => { if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(e.key) && !e.target.matches("input,select,textarea")) pause(true); });
   playBtn.addEventListener("click", toggle);
   stopBtn.addEventListener("click", () => stop(false));
   document.addEventListener("keydown", (e) => {
