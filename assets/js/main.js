@@ -6,6 +6,7 @@ import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAW
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall } from "./data.js";
+import { DAWN, DUSK, mountRasters } from "./flight.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -15,6 +16,8 @@ const skyCams = mountTiledSky($("#sky"), "home");
 mountGrain($(".grain"));
 mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
 mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
+mountRasters($("#door .world"), DAWN, "dawn");
+mountRasters($("#dusk .world"), DUSK, "dusk");
 recall();
 home.mountHome(skyCams);
 const player = createPlayer();

@@ -148,8 +148,9 @@ body.lit .sunpt{opacity:1}
 @keyframes breathe-sun{from{opacity:.8}to{opacity:1}}
 .rays{transform-origin:800px 920px;opacity:0;transform:scale(1,.55);transition:opacity 3.4s ease .4s,transform 4s cubic-bezier(.2,.7,.2,1) .4s}
 body.lit .rays{opacity:1;transform:scale(1,1)}
-.rays .sway1{transform-origin:800px 920px;animation:sway1 19s ease-in-out infinite alternate}
-.rays .sway2{transform-origin:800px 920px;animation:sway2 23s ease-in-out infinite alternate}
+/* the fans are pictures rotating, so each rides its own compositing layer */
+.rays .sway1{transform-origin:800px 920px;will-change:transform;animation:sway1 41s ease-in-out infinite alternate}
+.rays .sway2{transform-origin:800px 920px;will-change:transform;animation:sway2 63s ease-in-out infinite alternate}
 @keyframes sway1{from{transform:rotate(-1.8deg)}to{transform:rotate(2.1deg)}}
 @keyframes sway2{from{transform:rotate(1.5deg)}to{transform:rotate(-1.3deg)}}
 .scatter{animation:breathe-band 9s ease-in-out infinite alternate}
@@ -590,5 +591,6 @@ dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;colo
   .scatter,.zodiacal,.sunpt-breathe,.shimmer,.dial.arrive,.dial.bloom,.dial .ping,.dial .breathe,.inbox-orb.waiting svg,
   .nstar .glint,.mark-row .tr,.loginchrome .lockup .glyph .tr,#dusk .afterglow,#dusk .belt{animation:none}
   .dial .ping{display:none}
+  .rays .sway1,.rays .sway2{will-change:auto}
   #door,#door .loginchrome,.dialwrap,.minisys,.sky .cam{transition:none}
 }
