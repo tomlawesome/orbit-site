@@ -64,6 +64,10 @@ export const DUSK = {
   rim: { defs: F_DB6 + G_DRIM, body: '<circle cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="5" stroke-opacity=".3" filter="url(#d-b6)"/>' },
 };
 
+/* The heavily blurred groups carry no edge a second device pixel could
+   sharpen, so they are drawn at CSS resolution; only the thin ones (the sun's
+   core, the arc over the limb, the rim) are drawn at device resolution. */
+const SOFT = new Set(["zod", "sway1", "sway2", "scatter", "glow", "belt", "afterglow"]);
 const cache = new Map();
 function decodeSvg(svg) {
   const img = new Image();
@@ -85,22 +89,28 @@ async function rasterise(key, svg, w, h) {
 const frame = (defs, body, w, h) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 1600 1000"><defs>${defs}</defs>${body}</svg>`;
 
-/* Both surfaces fill the viewport, so the slice scale is the viewport's —
-   which also lets the dusk's pictures be drawn while it is still hidden. */
+/* Both surfaces fill the viewport, so the slice scale is the viewport's.
+   The groups are drawn one at a time with a breath between each, so the
+   first light's own fade (three seconds) covers their arrival and the page
+   stays answerable while they land; the result is kept per size. */
 export function mountRasters(world, groups, prefix) {
   let timer, run = 0;
   async function build() {
     const id = ++run;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const scale = Math.max(innerWidth / 1600, innerHeight / 1000) * dpr;
-    const w = Math.max(1, Math.round(1600 * scale)), h = Math.max(1, Math.round(1000 * scale));
+    const base = Math.max(innerWidth / 1600, innerHeight / 1000);
     world.dataset.rasterised = "pending";
-    const built = await Promise.all(Object.entries(groups).map(async ([name, { defs, body }]) =>
-      [name, await rasterise(`${prefix}-${name}|${w}|${h}`, frame(defs, body, w, h), w, h)]));
-    if (id !== run) return;
-    for (const [name, url] of built) world.querySelector(`image[data-raster="${name}"]`)?.setAttribute("href", url);
+    for (const [name, { defs, body }] of Object.entries(groups)) {
+      const scale = base * (SOFT.has(name) ? 1 : dpr);
+      const w = Math.max(1, Math.round(1600 * scale)), h = Math.max(1, Math.round(1000 * scale));
+      const url = await rasterise(`${prefix}-${name}|${w}|${h}`, frame(defs, body, w, h), w, h);
+      if (id !== run) return;
+      world.querySelector(`image[data-raster="${name}"]`)?.setAttribute("href", url);
+      await new Promise((r) => setTimeout(r, 0));
+      if (id !== run) return;
+    }
     world.dataset.rasterised = "ready";
   }
-  build();
-  addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(build, 120); });
+  const start = () => { build(); addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(build, 120); }); };
+  return { start };
 }

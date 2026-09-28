@@ -16,8 +16,12 @@ const skyCams = mountTiledSky($("#sky"), "home");
 mountGrain($(".grain"));
 mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
 mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
-mountRasters($("#door .world"), DAWN, "dawn");
-mountRasters($("#dusk .world"), DUSK, "dusk");
+/* each surface's glows are drawn the first time it is shown, after its first
+   frame is on screen, so the picture is up before the work behind it starts */
+const dawnRasters = mountRasters($("#door .world"), DAWN, "dawn");
+const duskRasters = mountRasters($("#dusk .world"), DUSK, "dusk");
+let dawnDrawn = false, duskDrawn = false;
+const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
 recall();
 home.mountHome(skyCams);
 const player = createPlayer();
@@ -28,6 +32,7 @@ const wantsDrawer = location.hash === "#install" ? "installdrawer" : location.ha
 
 function showDoor() {
   const door = $("#door");
+  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
   door.hidden = false; door.classList.remove("leaving");
   document.body.classList.add("at-door"); document.body.classList.remove("lit", "farewell");
   $("#home").classList.remove("shown"); $("#home").hidden = true;
@@ -54,6 +59,7 @@ function launch(fromDoor = true) {
 }
 
 function signOut() {
+  if (!duskDrawn) { duskDrawn = true; afterFirstFrame(duskRasters.start); }
   player.stop(false);
   home.closeDrawers();
   const dusk = $("#dusk");
