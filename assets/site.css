@@ -728,3 +728,15 @@ body.instrument .launchcmd{opacity:1}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
   .doorcmd{bottom:22px}}
 @media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
+/* the one line at the foot */
+.doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
+.doorfoot.by a{color:#a6b0c8;text-decoration:none}
+.doorfoot.by a:hover{color:#d8b45a}
+.pad .doorfoot.by{color:var(--ink-quiet)}
+.pad .doorfoot.by a{color:var(--ink-mid)}
+.pad .doorfoot.by a:hover{color:var(--accent-text)}
+body.bare .pad .doorfoot{opacity:0}
+body.instrument .pad .doorfoot{animation:chromein 1.3s ease .45s both}
+body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
+.doorcmd{bottom:max(52px,calc(36px + 4svh))}
+@media (max-width:560px){.doorcmd{bottom:48px}.launchcmd{bottom:96px}}
