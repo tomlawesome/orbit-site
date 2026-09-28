@@ -6,6 +6,7 @@
  */
 import { initTheme, mountFlightSky, mountTiledSky, mountGrain, DAWN_FAR, DAWN_NEAR, reduced } from "./sky.js";
 import { DAWN, mountRasters, createJourney } from "./flight.js";
+import { createScenes } from "./scenes.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -27,6 +28,8 @@ const STAGES = [
 ];
 const SVG = "http://www.w3.org/2000/svg";
 const host = $("#ring .stages"), light = $("#ring .light");
+const scenes = createScenes($("#launchpad .scenes"), $("#ring"));
+addEventListener("resize", () => scenes.resize());
 const bodies = STAGES.map((st, i) => {
   const a = (-90 + i * 60) * Math.PI / 180;
   const g = document.createElementNS(SVG, "g");
@@ -59,6 +62,7 @@ function go(i) {
   const len = ((to - from) + 100) % 100 || (prev < 0 ? 0 : 100);
   light.style.transition = reduced ? "none" : "stroke-dasharray 1.1s cubic-bezier(.2,.7,.2,1)";
   light.style.strokeDasharray = `${len} 100`;
+  scenes.show(i);
   stage.classList.remove("in"); void stage.offsetWidth;
   n.textContent = String(i + 1).padStart(2, "0"); label.textContent = STAGES[i].label; line.textContent = STAGES[i].line;
   stage.classList.add("in");
@@ -66,7 +70,7 @@ function go(i) {
 function next() { go((at + 1) % STAGES.length); }
 function tick() { clearTimeout(timer); timer = setTimeout(() => { if (Date.now() > held) next(); tick(); }, 4200); }
 function rest() { held = Date.now() + 9000; }
-function still() { clearTimeout(timer); at = -1; bodies.forEach((b) => b.classList.remove("on", "done")); light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; stage.classList.remove("in"); document.body.classList.remove("arrived"); }
+function still() { clearTimeout(timer); scenes.stop(); at = -1; bodies.forEach((b) => b.classList.remove("on", "done")); light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; stage.classList.remove("in"); document.body.classList.remove("arrived"); }
 
 /* the flight: the door leaves, the ring lands, the turn begins */
 const journey = createJourney({
@@ -75,7 +79,7 @@ const journey = createJourney({
   on: {
     release() { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); },
     land() { $("#launchpad").hidden = false; },
-    settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); setTimeout(() => { go(0); tick(); }, reduced ? 100 : 1500); },
+    settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); scenes.start(); setTimeout(() => { go(0); tick(); }, reduced ? 100 : 1500); },
   },
 });
 function showDawn() {
