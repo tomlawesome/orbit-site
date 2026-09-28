@@ -446,7 +446,7 @@ export function createPlayer() {
   const bar = transport.querySelector(".bar"), name = transport.querySelector(".name"), count = transport.querySelector(".count");
   const playBtn = $("#tp-play"), stopBtn = $("#tp-stop");
   const n = CHAPTERS.length;
-  let ctx = null, clock = null, current = -1, running = false, jump = null;
+  let ctx = null, clock = null, current = -1, running = false, jump = null, snap = null;
   const ticks = CHAPTERS.map((ch, i) => {
     const b = document.createElement("button"); b.type = "button"; b.className = "tick"; b.style.left = `${(i / (n - 1)) * 100}%`;
     b.setAttribute("aria-label", ch.name); b.title = ch.name;
@@ -463,6 +463,7 @@ export function createPlayer() {
   async function start(from = 0) {
     if (running) { await stop(true); }
     running = true; jump = null;
+    snap = home.snapshot();
     transport.classList.add("on", "playing"); transport.classList.remove("ended");
     clock = makeClock(); ctx = createContext(clock); playIcon(true);
     try {
@@ -476,12 +477,13 @@ export function createPlayer() {
       if (e !== CANCEL) { console.error(e); ended(); }
     }
   }
-  function ended() { running = false; transport.classList.remove("playing"); transport.classList.add("ended"); playIcon(false); if (ctx) { ctx.destroy(); ctx = null; } name.textContent = "take the walk again"; }
+  function putBack() { if (snap) { home.closeDrawers(); home.restoreState(snap); snap = null; } }
+  function ended() { running = false; transport.classList.remove("playing"); transport.classList.add("ended"); playIcon(false); if (ctx) { ctx.destroy(); ctx = null; } putBack(); name.textContent = "take the walk again"; }
   async function stop(silent) {
     if (!running) return;
     running = false;
     clock?.stop(); ctx?.destroy(); ctx = null;
-    home.closeDrawers();
+    home.closeDrawers(); putBack();
     transport.classList.remove("playing"); if (!silent) { transport.classList.add("ended"); name.textContent = "take the walk"; }
     playIcon(false);
   }

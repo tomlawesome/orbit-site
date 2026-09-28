@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -14,7 +14,10 @@ const C = law.DIAL_CENTRE;
 export const state = { camera: "willow", open: null, skyCams: null, flying: false };
 const listeners = new Set();
 export function onChange(fn) { listeners.add(fn); }
-function changed() { for (const fn of listeners) fn(); }
+function changed() { persist(); for (const fn of listeners) fn(); }
+export function snapshot() { return serialise(); }
+export function restoreState(snap) { hydrate(snap); closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist(); }
+export function resetSite() { forget(); location.hash = ""; location.reload(); }
 
 export function household() { return households[state.camera]; }
 export function itemById(id) {
@@ -475,6 +478,7 @@ export function mountHome(skyCams) {
   $("#nstar").addEventListener("click", () => openCreate(!$("#createdrawer").classList.contains("open")));
   $("#scrim").addEventListener("click", () => openCreate(false));
   $("#account-orb").addEventListener("click", toggleAccount);
+  $("#reset").addEventListener("click", resetSite);
   $("#inbox-orb").addEventListener("click", (e) => { e.preventDefault(); openDrawer("inboxdrawer", !$("#inboxdrawer").classList.contains("open")); });
   $$(".drawer .handle").forEach((h) => h.addEventListener("click", () => { const d = h.closest(".drawer"); openDrawer(d.id, !d.classList.contains("open")); }));
   $$(".drawer .close").forEach((c) => c.addEventListener("click", () => openDrawer(c.closest(".drawer").id, false)));
