@@ -394,7 +394,7 @@ export const CHAPTERS = [
     const dawn = c.ctl({ sel: '#account .swatches button[data-pack="dawn"]', round: true, pad: 3 });
     await c.goto(dawn); await c.press(dawn); c.unlight(sw); c.unlight(dawn);
     c.wear("dawn"); c.veil(false); home.closeDrawers();
-    await c.callout("The same orbit, under a different light.", c.ctl({ sel: ".dialwrap", round: true }), "top");
+    await c.callout("Settings holds your sky, your relay and this walk — take it again anytime.", c.ctl({ sel: ".dialwrap", round: true }), "top");
     c.dropCallout(); c.wear(null);
   } },
   { id: "yours", name: "Yours", async play(c) {

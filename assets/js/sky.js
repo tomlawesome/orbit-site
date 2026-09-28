@@ -112,7 +112,7 @@ export function mountGrain(host) {
 export function initTheme() {
   let t = null;
   try { t = localStorage.getItem("orbit-theme"); } catch { /* private mode */ }
-  document.documentElement.dataset.theme = PACKS.includes(t) ? t : "starchart";
+  document.documentElement.dataset.theme = PACKS.includes(t) ? t : "afterdark";
   syncSwatches();
 }
 export function applyTheme(id, remember = true) {

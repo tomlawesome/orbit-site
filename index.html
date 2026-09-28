@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en-GB" data-theme="starchart">
+<html lang="en-GB" data-theme="afterdark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Orbit — everything in your orbit, on track</title>
   <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. One container, one command to install." />
-  <meta name="theme-color" content="#060b1c" />
+  <meta name="theme-color" content="#05070d" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="icon" href="assets/img/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
@@ -85,8 +85,8 @@
         <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button></div>
       </div>
     </div>
-    <p class="doorword"><b>Everything in your orbit, on track.</b> A self-hosted home operations hub: the year is the orbit, your household is the sun, and every renewal, service and inspection is a body on its way round.</p>
-    <p class="doorfoot"><span>self-hosted</span><span class="sep">·</span><span>one container</span><span class="sep">·</span><a href="install.html">install guide</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit">source</a><span class="sep">·</span><span>AGPL-3.0</span></p>
+    <p class="doorword"><b>Everything in your orbit, on track.</b></p>
+    <p class="doorfoot"><span>self-hosted</span><span class="sep">·</span><a href="install.html">install</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit">source</a><span class="sep">·</span><span>AGPL-3.0</span></p>
   </div>
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->
@@ -105,9 +105,9 @@
       <div class="who"><b id="who-name"></b><span>Willow House · owner</span></div>
       <nav>
         <button type="button" data-open-drawer="installdrawer">Get into Orbit</button>
-        <a href="launcher.html">The launcher</a>
-        <a href="security.html">Security &amp; privacy</a>
-        <a href="https://github.com/tomlawesome/orbit">Source on GitHub</a>
+        <a href="https://github.com/tomlawesome/orbit">Source</a>
+        <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a>
+        <a href="https://github.com/tomlawesome/orbit-launcher">The launcher</a>
       </nav>
       <div class="swatches" role="group" aria-label="Theme">
         <span>THEME</span>
@@ -138,7 +138,7 @@
           <div class="cfield"><label for="f-recur">comes round</label><select id="f-recur" name="recur"><option value="12">every year</option><option value="6">every 6 months</option><option value="24">every 2 years</option><option value="0">one-off</option></select></div>
         </div>
         <div class="crow">
-          <span class="note">in the real thing, drop a document here and Orbit reads the dates out of it</span>
+          <span class="note"></span>
           <button class="btn-primary" type="submit">Add to orbit</button>
         </div>
       </form>
@@ -179,20 +179,20 @@
       <button class="close" type="button" aria-label="Close the inbox">×</button>
       <h4>Your relay</h4>
       <div class="relay-card">
-        <p>Forward a bill, a renewal or a certificate to your own address and Orbit reads a copy.</p>
+        <p>Forward a bill to your relay address and Orbit reads a copy.</p>
         <code class="addr" id="relay-addr"></code>
         <div class="kv"><span>status</span><b class="ok">connected · listening</b></div>
         <div class="kv"><span>ingest</span><b class="ok">enabled</b></div>
       </div>
       <div id="lanes"></div>
-      <p style="margin-top:14px">every user gets their own relay · nothing is created without your review · unreviewed arrivals burn up after 45 days · originals stay in your mailbox</p>
+      <p style="margin-top:14px">every user gets their own relay · nothing is created without your review</p>
+      <p>unreviewed arrivals burn up after 45 days · originals stay in your mailbox · Orbit only ever reads copies</p>
     </aside>
 
     <!-- get into orbit: the one line, and what it needs -->
     <aside class="drawer drawer-left" id="installdrawer" role="region" aria-label="Get into Orbit">
       <button class="close" type="button" aria-label="Close">×</button>
       <h4>Get into Orbit</h4>
-      <p>On a Linux host with Docker Compose, one command downloads a signed manifest, verifies the launcher and the installer against it, and only then hands over.</p>
       <div class="cmd">
         <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
         <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
@@ -209,8 +209,8 @@
       <div class="kv"><span>orbit-clamav</span><b>official · private network</b></div>
       <div class="kv"><span>sign-in</span><b class="ok">local · OIDC optional</b></div>
       <div class="kv"><span>licence</span><b class="opt">AGPL-3.0-or-later</b></div>
-      <p style="margin-top:16px"><a href="install.html">The full installation guide →</a></p>
-      <p><a href="launcher.html">About the launcher →</a> &nbsp; <a href="security.html">Security &amp; privacy →</a></p>
+      <p style="margin-top:16px"><a href="install.html">install →</a></p>
+      <p><a href="https://github.com/tomlawesome/orbit#readme">README →</a> &nbsp; <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">SECURITY.md →</a> &nbsp; <a href="https://github.com/tomlawesome/orbit-launcher">the launcher →</a></p>
     </aside>
 
     <section class="hero" id="hero">
