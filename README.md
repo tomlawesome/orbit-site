@@ -21,7 +21,6 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections: install, docs, information — each a ring with its bodies, and the planets on the sunrise |
-| `assets/js/scenes.js` | The six scenes drawn behind a ring, in the flight's chart pen |
 | `.nojekyll` | Pages serves the files as they are |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#key` and `#inbox`
