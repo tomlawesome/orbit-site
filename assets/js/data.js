@@ -87,6 +87,35 @@ export const households = {
    scattered them; constellationPosOf keeps any new system in the same law. */
 for (const h of Object.values(households)) if (!h.pos) h.pos = constellationPosOf(h.id);
 
+/* What a visit changes, written down for the next one — this browser only. */
+const STATE_KEY = "orbit-site-state";
+const STATE_VERSION = 1;
+export function serialise() {
+  return {
+    v: STATE_VERSION,
+    households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: it.dueDate.toISOString().slice(0, 10) }))])),
+    review: inbox.review.map((r) => r.id),
+  };
+}
+export function hydrate(saved) {
+  if (!saved || saved.v !== STATE_VERSION) return false;
+  for (const [id, items] of Object.entries(saved.households ?? {})) {
+    if (!households[id]) continue;
+    households[id].items = items.map((it) => ({ ...it, dueDate: new Date(`${it.dueDate}T00:00:00`) }));
+  }
+  if (Array.isArray(saved.review)) inbox.review = pristineReview.filter((r) => saved.review.includes(r.id));
+  return true;
+}
+export function persist() {
+  try { localStorage.setItem(STATE_KEY, JSON.stringify(serialise())); } catch { /* this visit only */ }
+}
+export function recall() {
+  try { const raw = localStorage.getItem(STATE_KEY); return raw ? hydrate(JSON.parse(raw)) : false; } catch { return false; }
+}
+export function forget() {
+  try { localStorage.removeItem(STATE_KEY); localStorage.removeItem("orbit-theme"); sessionStorage.removeItem("orbit-site-arrived"); } catch { /* nothing kept */ }
+}
+
 /** The account: a fictional member, and their relay. */
 export const account = {
   initials: "AR",
@@ -126,3 +155,4 @@ export const inbox = {
     { id: "r-unread", title: "A message from 06 Aug", note: "no readable document · It carried no document Orbit can read (PDFs work best). Nothing was kept." },
   ],
 };
+const pristineReview = inbox.review.slice();

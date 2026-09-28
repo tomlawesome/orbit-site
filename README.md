@@ -20,6 +20,11 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/sky.js` | The script `install.html` uses |
 | `.nojekyll` | Pages serves the files as they are |
 
+What a visit changes on the sky (adds, completions, snoozes, accepted or
+dismissed suggestions, the chosen sky) is kept in that browser's local
+storage and nowhere else; *reset the site* in the account card clears it.
+The walk is optional, and puts the sky back as it found it when it ends.
+
 Default pack: after dark. Links are relative; the `og:image` tags and the
 404's link are the only absolute URLs.
 

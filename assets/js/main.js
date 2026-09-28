@@ -5,6 +5,7 @@
 import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR, reduced } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
+import { recall } from "./data.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -14,6 +15,7 @@ const skyCams = mountTiledSky($("#sky"), "home");
 mountGrain($(".grain"));
 mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
 mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
+recall();
 home.mountHome(skyCams);
 const player = createPlayer();
 
@@ -45,8 +47,7 @@ function launch(fromDoor = true) {
   setTimeout(() => { door.hidden = true; $("#gate").classList.remove("flash"); }, fromDoor && !reduced ? 1600 : 50);
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }
   if (wantsDrawer) { setTimeout(() => home.openDrawer(wantsDrawer, true), 900); player.show(); return; }
-  if (fromDoor) setTimeout(() => player.start(0), reduced ? 600 : 1700);
-  else player.show();
+  player.show();
 }
 
 function signOut() {
