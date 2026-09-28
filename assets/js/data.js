@@ -156,3 +156,6 @@ export const inbox = {
   ],
 };
 const pristineReview = inbox.review.slice();
+/* the sample as shipped, taken before any visit's changes are recalled */
+const pristineState = serialise();
+export function pristine() { hydrate(pristineState); }

@@ -228,9 +228,11 @@ function createContext(clock) {
   const edgeOf = (b, side) => (side === "left" ? [b.x, b.cy] : side === "right" ? [b.x + b.w, b.cy] : side === "top" ? [b.cx, b.y] : [b.cx, b.y + b.h]);
   async function callout(text, anchor, side, o = {}) {
     dropCallout();
+    /* a line with nothing to point at is not said: it would float */
+    if (!Array.isArray(anchor) && !anchor.els.length) return;
     if (!Array.isArray(anchor)) await bringIn(anchor);
     await clock.w(T.calloutIn);
-    const pt = Array.isArray(anchor) ? anchor : anchor.els.length === 0 ? [innerWidth / 2, innerHeight / 2] : edgeOf(boxOf(anchor.els, anchor.pad), side);
+    const pt = Array.isArray(anchor) ? anchor : edgeOf(boxOf(anchor.els, anchor.pad), side);
     live = showCallout(text, pt, side, o);
     live.tourAnchor = Array.isArray(anchor) ? null : anchor; live.tourSide = side; live.tourOpts = o;
     await clock.hold(o.hold ?? holdFor(text));
@@ -287,15 +289,16 @@ export const CHAPTERS = [
     await c.callout("This is your star chart.", dial, "left");
     c.unlight(dial);
     const sun = c.ctl({ sel: "#dial .sun-link", round: true, pad: 10 });
-    const others = c.ctl({ sel: ".minisys .msring", all: true, round: true, optional: true });
+    const wide = innerWidth > 900;
+    const others = c.ctl({ sel: wide ? ".minisys .msring" : "#chips button", all: true, round: wide, optional: true });
     await c.goto(sun, { willPress: false }); c.light(others);
     await c.callout("Every sun is a household you belong to.", sun, "top");
     c.unlight(others);
     await c.callout("That's your sun, at centre — your household, always here.", sun, "bottom");
     c.unlight(sun);
-    const other = c.ctl({ sel: ".minisys .msring", round: true, optional: true });
+    const other = c.ctl({ sel: wide ? ".minisys .msring" : "#chips button", round: wide, optional: true });
     await c.goto(other, { willPress: false });
-    await c.callout("The rest of the sky holds systems you don't belong to — tap one to fly there.", other, innerWidth > 900 ? "right" : "bottom");
+    await c.callout("The rest of the sky holds systems you don't belong to — tap one to fly there.", other, wide ? "right" : "bottom");
     c.unlight(other); c.dropCallout();
   } },
   { id: "add", name: "Add", async play(c) {
@@ -434,7 +437,7 @@ export const CHAPTERS = [
     const sun = c.ctl({ sel: "#dial .sun-link", round: true, pad: 10 });
     await c.goto(sun, { willPress: false });
     await c.callout("That was a year, in one turn of the ring.", sun, "top");
-    await c.callout("Now it's yours.", sun, "bottom", { hold: 3200, link: { href: "#install", text: "Get into Orbit →", onClick: (e) => { e.preventDefault(); home.openDrawer("installdrawer", true); } } });
+    await c.callout("Now it's yours.", sun, "bottom", { hold: 3200 });
     await c.hold(2000);
     c.unlight(sun);
   } },
@@ -464,6 +467,7 @@ export function createPlayer() {
     if (running) { await stop(true); }
     running = true; jump = null;
     snap = home.snapshot();
+    home.mute(true); home.restorePristine();
     transport.classList.add("on", "playing"); transport.classList.remove("ended");
     clock = makeClock(); ctx = createContext(clock); playIcon(true);
     try {
@@ -477,14 +481,14 @@ export function createPlayer() {
       if (e !== CANCEL) { console.error(e); ended(); }
     }
   }
-  function putBack() { if (snap) { home.closeDrawers(); home.restoreState(snap); snap = null; } }
-  function ended() { running = false; transport.classList.remove("playing"); transport.classList.add("ended"); playIcon(false); if (ctx) { ctx.destroy(); ctx = null; } putBack(); name.textContent = "take the walk again"; }
+  function putBack() { if (snap) { home.closeDrawers(); home.mute(false); home.restoreState(snap); snap = null; } }
+  function ended() { running = false; transport.classList.remove("playing"); transport.classList.add("ended"); playIcon(false); if (ctx) { ctx.destroy(); ctx = null; } putBack(); name.textContent = "Tour finished. Your sky is back."; }
   async function stop(silent) {
     if (!running) return;
     running = false;
     clock?.stop(); ctx?.destroy(); ctx = null;
     home.closeDrawers(); putBack();
-    transport.classList.remove("playing"); if (!silent) { transport.classList.add("ended"); name.textContent = "take the walk"; }
+    transport.classList.remove("playing"); if (!silent) { transport.classList.add("ended"); name.textContent = "Tour stopped. Your sky is back."; }
     playIcon(false);
   }
   let byReader = false;
@@ -493,7 +497,7 @@ export function createPlayer() {
     clock.setPlaying(false); ctx.setPlaying(false); playIcon(false);
     transport.classList.remove("playing");
     byReader = reader;
-    if (reader) name.textContent = "paused — play to continue";
+    if (reader) name.textContent = "paused";
   }
   async function resume() {
     if (!running || clock.playing()) return;
