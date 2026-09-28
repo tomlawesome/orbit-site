@@ -646,63 +646,85 @@ body.dispersing .transport{opacity:0}
   body.dispersing #home{transition:none}
 }
 
-/* ══ THE LAUNCH: the install, in one turn of the ring ══════════════════ */
-body.launchpage{overflow:hidden}
-#launchpad{position:fixed;inset:0;z-index:2;background:var(--bg)}
-#launchpad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
-#launchpad .back.sky{left:auto;right:24px}
-#launchpad .scenes{position:absolute;inset:0;z-index:1;pointer-events:none}
-#launchpad .back:hover,#door .back:hover{color:var(--accent-text)}
-#door .back{position:absolute;top:22px;left:24px;z-index:4;color:#7e819a;text-decoration:none;opacity:0;transition:opacity 1.2s ease .6s}
-body.lit #door .back{opacity:1}
-#launchpad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
-#launchpad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
-body.instrument #launchpad .glyph .orbit{stroke-dashoffset:0}
-#launchpad .glyph .light{stroke:var(--accent);stroke-dasharray:0.01 100;stroke-dashoffset:0}
-#launchpad .stage-body{cursor:pointer;outline:0;transform:scale(0);transition:transform .6s cubic-bezier(.2,.7,.2,1) calc(.9s + .12s * var(--i))}
-body.arrived #launchpad .stage-body{transform:scale(1)}
-#launchpad .stage-body .hit{fill:transparent}
-#launchpad .stage-body .dot{fill:var(--ink-faint);transition:fill .5s}
-#launchpad .stage-body .halo{fill:var(--accent);opacity:0;transition:opacity .5s}
-#launchpad .stage-body.done .dot{fill:var(--ink-mid)}
-#launchpad .stage-body.on .dot,#launchpad .stage-body:hover .dot,#launchpad .stage-body:focus-visible .dot{fill:var(--accent)}
-#launchpad .stage-body.on .halo{opacity:.16}
-#launchpad .stage-body:focus-visible .halo{opacity:.28}
-#launchpad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
-#launchpad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
-#launchpad .gate{opacity:1;transform:none;transition:filter .35s ease}
-#launchpad .gate[data-done]{background:var(--ink)}
-#launchpad .stage{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(420px,84vw,48svh) * .36 + 26px);width:min(52ch,calc(100% - 48px));z-index:3;text-align:center;
+/* ══ THE DOORS ON THE RING: three more bodies, each a section ══════════ */
+.planet{cursor:pointer;outline:0}
+.planet .spin{transform-origin:100px 100px;animation:spinback linear infinite}
+.planet .s1{animation-duration:58s;animation-delay:-14s}
+.planet .s2{animation-duration:46s;animation-delay:-33s}
+.planet .s3{animation-duration:67s;animation-delay:-40s}
+.planet circle{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
+.planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
+.planet:hover circle,.planet:focus-visible circle{r:7;filter:drop-shadow(0 0 6px currentColor)}
+.planet-tip{z-index:39;font:13.5px var(--ui)}
+.planet-tip .line{display:none}
+.planet-tip.tap{pointer-events:auto;cursor:pointer}
+.planet-tip.tap small::after{content:" · open →";color:var(--accent-text)}
+/* the one line beneath the sunrise, and the way it opens */
+.doorcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(30px,calc(14px + 4svh));width:min(560px,calc(100% - 40px));z-index:3;
+  opacity:0;transition:opacity 1.6s ease 2.4s}
+body.lit .doorcmd{opacity:1}
+body.launching .doorcmd,body.showwarp .doorcmd{opacity:0;transition:opacity .4s ease;pointer-events:none}
+.doorcmd .cmd{background:rgba(10,13,24,.72);backdrop-filter:blur(10px);border-color:#2a3148}
+.doorcmd .cmd code{color:#e9edf8;cursor:copy}
+.doorcmd .cmd code[data-done]{color:#d8b45a}
+.copy.launch{color:#04060e;background:#d8b45a;border-color:#d8b45a;font-weight:600;letter-spacing:.12em}
+.copy.launch:hover{filter:brightness(1.08);color:#04060e}
+
+/* ══ THE LANDINGS: the ring the mark wears, with a section's bodies on it ══ */
+.pad{position:fixed;inset:0;z-index:2;background:var(--bg)}
+.pad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
+.pad .back.tosky{left:auto;right:24px}
+.pad .back:hover,#door .back:hover{color:var(--accent-text)}
+.pad .scenes{position:absolute;inset:0;z-index:1;pointer-events:none}
+.pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
+.pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
+body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
+.pad .glyph .light{stroke:var(--accent);stroke-dasharray:0.01 100;stroke-dashoffset:0}
+.pad .stage-body{cursor:pointer;outline:0;transform:scale(0);transition:transform .6s cubic-bezier(.2,.7,.2,1) calc(.9s + .12s * var(--i))}
+body.arrived .pad .stage-body{transform:scale(1)}
+.pad .stage-body .hit{fill:transparent}
+.pad .stage-body .dot{fill:var(--ink-faint);transition:fill .5s}
+.pad .stage-body .halo{fill:var(--accent);opacity:0;transition:opacity .5s}
+.pad .stage-body.done .dot{fill:var(--ink-mid)}
+.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{fill:var(--accent)}
+.pad .stage-body.on .halo{opacity:.16}
+.pad .stage-body:focus-visible .halo{opacity:.28}
+.pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
+.pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
+.pad .gate{opacity:1;transform:none;transition:filter .35s ease}
+.pad .gate[data-done]{background:var(--ink)}
+.pad .stage{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(420px,84vw,48svh) * .36 + 26px);width:min(52ch,calc(100% - 48px));z-index:3;text-align:center;
   opacity:0;transition:opacity .5s ease}
-#launchpad .stage.in{opacity:1}
-#launchpad .stage .corner{color:var(--ink-quiet);text-shadow:none}
-#launchpad .stage .corner .n{color:var(--accent-text);font-weight:500}
-#launchpad .stage .corner .sep{color:var(--ink-faint);margin:0 6px}
-#launchpad .stage .line{margin:10px 0 0;font:15px/1.5 var(--ui);color:var(--ink);text-wrap:balance}
-#launchpad .stage.in .line{animation:ivopen .5s cubic-bezier(.2,.7,.2,1) 1}
-#launchpad .doorfoot{bottom:20px;color:var(--ink-quiet)}
-#launchpad .doorfoot a{color:var(--ink-mid)}
-#launchpad .doorfoot a:hover{color:var(--accent-text)}
-/* the landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
-body.launching #launchpad{visibility:hidden;pointer-events:none}
-body.bare #launchpad .stage,body.bare #launchpad .doorfoot,body.bare #launchpad .back,body.bare #launchpad .word,body.bare #launchpad .scenes{opacity:0;pointer-events:none}
-body.bare #launchpad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
-body.instrument #launchpad .word,body.instrument #launchpad .doorfoot,body.instrument #launchpad .back,body.instrument #launchpad .scenes{animation:chromein 1.3s ease .45s both}
-/* the one line: on the dawn, gone for the flight, back with the instrument */
-.launchcmd{position:fixed;left:50%;transform:translateX(-50%);bottom:max(64px,calc(22px + 6svh));width:min(760px,calc(100% - 40px));z-index:40;
-  opacity:0;transition:opacity 1.4s ease 1.8s;pointer-events:none}
-body.lit .launchcmd,body.instrument .launchcmd{opacity:1;pointer-events:auto}
-body.launching .launchcmd,body.bare .launchcmd{opacity:0;transition:opacity .4s ease;pointer-events:none}
-body.instrument .launchcmd{transition:opacity 1.3s ease .9s}
+.pad .stage.in{opacity:1}
+.pad .stage .corner{color:var(--ink-quiet);text-shadow:none}
+.pad .stage .corner .n{color:var(--accent-text);font-weight:500}
+.pad .stage .corner .sep{color:var(--ink-faint);margin:0 6px}
+.pad .stage .line{margin:10px 0 0;font:15px/1.5 var(--ui);color:var(--ink);text-wrap:balance}
+.pad .stage.in .line{animation:ivopen .5s cubic-bezier(.2,.7,.2,1) 1}
+.pad .stage .go{display:inline-block;margin-top:10px;font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text);text-decoration:none}
+.pad .stage .go:hover{color:var(--ink)}
+/* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
+body.launching .pad{visibility:hidden;pointer-events:none}
+body.bare .pad .stage,body.bare .pad .back,body.bare .pad .word,body.bare .pad .scenes,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
+body.bare .pad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
+body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes{animation:chromein 1.3s ease .45s both}
+/* and leaves the way the sky does */
+body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .stage,body.withdrawing .pad .scenes,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
+body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
+body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
+/* the install's own line, back with the instrument */
+.launchcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(64px,calc(22px + 6svh));width:min(760px,calc(100% - 40px));z-index:3;
+  opacity:0;transition:opacity 1.3s ease .9s}
+body.instrument .launchcmd{opacity:1}
 .launchcmd .cmd{background:rgba(10,13,24,.72);backdrop-filter:blur(10px);border-color:#2a3148}
 .launchcmd .cmd code{color:#e9edf8}
 .launchcmd .needs{margin:12px 0 0;text-align:center;font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#7e819a;white-space:nowrap}
 .launchcmd .needs .sep{margin:0 8px;color:#4a5468}
-#door .doorfoot{bottom:20px}
-@media (max-height:700px){#launchpad .stage .line{font-size:13.5px}.launchcmd .needs{display:none}}
+@media (max-height:700px){.pad .stage .line{font-size:13.5px}.launchcmd .needs{display:none}}
 @media (max-width:560px){
-  #launchpad .loginchrome{padding-bottom:16svh}
-  #launchpad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
-  #launchpad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
-  .launchcmd{bottom:82px}.launchcmd .needs{display:none}#launchpad .doorfoot .sep,#door .doorfoot .sep{margin:0 6px}}
-@media (prefers-reduced-motion:reduce){body.bare #launchpad .lockup .glyph,body.instrument #launchpad .word,body.instrument #launchpad .doorfoot,body.instrument #launchpad .back{animation:none!important}}
+  .pad .loginchrome{padding-bottom:16svh}
+  .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
+  .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
+  .launchcmd{bottom:82px}.launchcmd .needs{display:none}
+  .doorcmd{bottom:22px}}
+@media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}

@@ -7,8 +7,8 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 
 | Path | What |
 | --- | --- |
-| `index.html` | The door, the sky, the dusk, and the film's chrome |
-| `install.html` | The launch: the same door, the same flight, landing on the ring that turns through the install |
+| `index.html` | The sunrise (the hub: three more planets on the ring, each a section, and the one line with *Launch*), the sky, the dusk, the three landings, and the flight's chrome |
+| `install.html` | Arrives at `./#install` |
 | `404.html` | Not found |
 | `assets/site.css` | The five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
@@ -20,8 +20,13 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`) |
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
-| `assets/js/launch.js` | The install page's ring and its stages |
+| `assets/js/pads.js` | The sections: install, docs, information — each a ring with its bodies, and the planets on the sunrise |
+| `assets/js/scenes.js` | The six scenes drawn behind a ring, in the flight's chart pen |
 | `.nojekyll` | Pages serves the files as they are |
+
+Routes: `#install`, `#docs`, `#info` arrive at a landing; `#key` and `#inbox`
+open a drawer on the sky. Demo is the gate (up), install is *Launch* (up),
+docs fly right, information flies left; *the dawn* descends back.
 
 What a visit changes on the sky (adds, completions, snoozes, accepted or
 dismissed suggestions, the chosen sky) is kept in that browser's local
