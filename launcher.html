@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Orbit launcher</title>
+  <meta name="description" content="The Orbit launcher is a full-screen terminal application that installs, updates, repairs and removes an Orbit deployment, showing every step as it runs." />
+  <meta name="theme-color" content="#05070d" />
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
+  <meta property="og:title" content="The Orbit launcher" />
+  <meta property="og:description" content="Install, update, repair and remove Orbit from one terminal screen." />
+  <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/launcher-install-success.webp" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/img/mark.svg" alt="" width="26" height="26" />orbit</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="./">Home</a>
+        <a href="install.html">Install</a>
+        <a href="launcher.html" aria-current="page">Launcher</a>
+        <a href="security.html">Security</a>
+        <a class="gh" href="https://github.com/tomlawesome/orbit-launcher">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="doc narrow">
+    <header>
+      <span class="label">The launcher</span>
+      <h1>A command centre for your server</h1>
+      <p>Orbit ships with its own terminal application for the whole lifecycle of a deployment. Full screen, a starfield, and a small set of clear choices.</p>
+    </header>
+
+    <figure>
+      <button type="button" style="all:unset;display:block;cursor:zoom-in;border-radius:12px;overflow:hidden;border:1px solid var(--line-2)"><img src="assets/img/launcher-splash.webp" data-full="assets/img/launcher-splash.webp" alt="The launcher's splash screen: the ORBIT wordmark over a starfield, and a menu of Install, Update, Repair, Remove and Exit" width="1600" height="900" style="display:block;width:100%;height:auto" /></button>
+      <figcaption>The splash. On a machine that already runs Orbit it shows the deployment's address, whether it's alive, and the installed version.</figcaption>
+    </figure>
+
+    <p>You don't install the launcher separately. Orbit builds, signs and ships it alongside itself, and <a href="install.html">the one-line install</a> verifies it before running it. Afterwards, run <code>orbit-launcher</code> from the deployment directory whenever you need it.</p>
+
+    <h2>The menu</h2>
+    <div class="menu two">
+      <div><strong>Install</strong><p>Deploys Orbit for the first time. Choose a profile, confirm, and watch the installer run in the console. It stops and asks if it needs configuration only you can provide.</p></div>
+      <div><strong>Update</strong><p>Pulls the latest Orbit into the existing deployment. Configuration is preserved; nothing is deleted.</p></div>
+      <div><strong>Repair</strong><p>Reads the deployment without changing it, lists what it found, and proposes repairs. Safe repairs run in place; rotating database credentials takes a passphrase-protected backup first and verifies it.</p></div>
+      <div><strong>Remove</strong><p>Stops Orbit's containers. Files and data volumes stay on disk, and the final screen gives you the exact command to remove them if that's what you want.</p></div>
+    </div>
+
+    <h2>The mission console</h2>
+    <figure>
+      <button type="button" style="all:unset;display:block;cursor:zoom-in;border-radius:12px;overflow:hidden;border:1px solid var(--line-2)"><img src="assets/img/launcher-install-console.webp" data-full="assets/img/launcher-install-console.webp" alt="The mission console during an install: host, image, assets, configuration, OIDC, compose, database and application steps, each marked done or starting" width="1600" height="900" style="display:block;width:100%;height:auto" /></button>
+      <figcaption>Each phase of the installer reports as it happens: what's starting, what's done, what was skipped.</figcaption>
+    </figure>
+    <p>Orbit's installer emits a plain, versioned stream of status events as it works, and the console renders them. Success and failure are judged from those events and the exit code, never from parsing prose, so what you see is what the installer actually did. A run that fails before committing rolls the deployment directory back to how it was.</p>
+
+    <h2>Arrival</h2>
+    <figure>
+      <button type="button" style="all:unset;display:block;cursor:zoom-in;border-radius:12px;overflow:hidden;border:1px solid var(--line-2)"><img src="assets/img/launcher-install-success.webp" data-full="assets/img/launcher-install-success.webp" alt="The success screen: the ORBIT wordmark, the deployment's URL in gold, the word alive in green, and a menu offering Get into Orbit, Terminal or Menu" width="1600" height="900" style="display:block;width:100%;height:auto" /></button>
+      <figcaption>When the deployment is healthy, the launcher gives you the address and offers to open it.</figcaption>
+    </figure>
+
+    <h2>Where it runs</h2>
+    <ul>
+      <li>Linux only: Debian, Ubuntu and similar. It runs on the server being managed, not as a desktop app.</li>
+      <li>On launch it makes one non-blocking check for a newer stable release and shows a small notice if there is one. It never fetches or changes anything by itself. Set <code>ORBIT_LAUNCHER_NO_UPDATE_CHECK=1</code> to turn the check off.</li>
+      <li>Written in Go, using Bubble Tea for the full-screen event loop and Lip Gloss for layout.</li>
+      <li>Source, design mockups and release notes: <a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a>. Licensed under the AGPL-3.0.</li>
+    </ul>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div>
+        <h3>Orbit</h3>
+        <ul>
+          <li><a href="install.html">Install</a></li>
+          <li><a href="launcher.html">The launcher</a></li>
+          <li><a href="security.html">Security &amp; privacy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Source</h3>
+        <ul>
+          <li><a href="https://github.com/tomlawesome/orbit">tomlawesome/orbit</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Licence</h3>
+        <ul>
+          <li>AGPL-3.0-or-later</li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">Read the licence</a></li>
+        </ul>
+      </div>
+      <div class="foot-note">
+        <p>Orbit is in active development. The screens on this site are from the current development line and show synthetic data only.</p>
+        <p>Development disclosure: Orbit was coded by Claude under human direction.</p>
+      </div>
+    </div>
+  </footer>
+
+  <dialog class="lightbox"><img alt="" /><p></p></dialog>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbit — everything in your orbit, on track</title>
+  <meta name="description" content="Orbit is a self-hosted home operations hub for maintenance, renewals, recurring services, contracts, cover, and the people who share them. One container, one command to install." />
+  <meta name="theme-color" content="#05070d" />
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
+  <link rel="icon" href="assets/img/icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Orbit — everything in your orbit, on track" />
+  <meta property="og:description" content="A self-hosted home operations hub for the things your household has to keep on top of." />
+  <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/img/mark.svg" alt="" width="26" height="26" />orbit</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="./" aria-current="page">Home</a>
+        <a href="install.html">Install</a>
+        <a href="launcher.html">Launcher</a>
+        <a href="security.html">Security</a>
+        <a class="gh" href="https://github.com/tomlawesome/orbit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero wrap">
+      <span class="label">Self-hosted · open source · one container</span>
+      <h1>Everything in your <em>orbit</em>, on track.</h1>
+      <p class="lede">Boilers need servicing. Insurance renews. Cars need inspections. Devices leave warranty. Orbit brings those scattered responsibilities into one calm, shared view, on a server you run.</p>
+      <div class="cta">
+        <a class="btn primary" href="install.html">Install Orbit</a>
+        <a class="btn" href="https://github.com/tomlawesome/orbit">View on GitHub</a>
+      </div>
+      <div class="cmd">
+        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+      </div>
+      <div class="screen">
+        <img src="assets/img/home.webp" alt="Orbit's home screen: a year dial with the household at its centre, this year's items as planets on their orbits, and other households drawn as small systems around the edge of the sky" width="1600" height="1000" fetchpriority="high" />
+      </div>
+      <p class="screen-note faint">Your home, drawn as a year. Each item is a planet; its position on the dial is when it's next due.</p>
+    </div>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <span class="label">Why Orbit</span>
+          <h2>Your home has an orbit</h2>
+          <p>Contracts roll over. Cover lapses. Services come round again. Orbit keeps the important things visible before they become urgent, for everyone who shares the place.</p>
+        </div>
+        <div class="cards">
+          <div class="card">
+            <span class="glyph">◆</span>
+            <h3>See what is next</h3>
+            <p>An urgency-aware view of what's coming, what's overdue and what was just done. The dial shows the year; the list shows what needs attention this month.</p>
+          </div>
+          <div class="card">
+            <span class="glyph">↻</span>
+            <h3>Keep the rhythm</h3>
+            <p>Complete, renew, reschedule, snooze, cancel or restore an item, and Orbit works out the next date for anything that recurs.</p>
+          </div>
+          <div class="card">
+            <span class="glyph">✦</span>
+            <h3>Share the load</h3>
+            <p>Households have members. Add people who already use your Orbit, hand items over, and keep more than one household in the same sky.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <span class="label">A tour</span>
+          <h2>Around the sky</h2>
+          <p>Screens from the current development line, showing synthetic household data. Select one to enlarge it.</p>
+        </div>
+        <div class="gallery">
+          <figure>
+            <button type="button"><img src="assets/img/item.webp" data-full="assets/img/item.webp" alt="An item's detail card: a car MOT, when it's due, its orbital period, cost, reminders, and the documents that ride with it" width="1600" height="1000" loading="lazy" /></button>
+            <figcaption><strong>Every item, in detail</strong>Due date, how often it comes round, cost, reminders, and the documents attached to it.</figcaption>
+          </figure>
+          <figure>
+            <button type="button"><img src="assets/img/inbox.webp" data-full="assets/img/inbox.webp" alt="The inbox: documents Orbit has read, filed against items, and messages it could not process, waiting for review" width="1600" height="1000" loading="lazy" /></button>
+            <figcaption><strong>An inbox that reads for you</strong>Forwarded documents are read, matched to items and queued for your say-so. Nothing enters your orbit without it.</figcaption>
+          </figure>
+          <figure>
+            <button type="button"><img src="assets/img/relay.webp" data-full="assets/img/relay.webp" alt="The relay: a private forwarding address, its connection status, and the messages that arrived but could not be read" width="1600" height="1000" loading="lazy" /></button>
+            <figcaption><strong>Your relay</strong>A private address of your own. Forward a renewal email or a receipt and it arrives in your review queue.</figcaption>
+          </figure>
+          <figure>
+            <button type="button"><img src="assets/img/create.webp" data-full="assets/img/create.webp" alt="Creating a new entry: choose a type, a section, and drop a document for Orbit to read the details from" width="1600" height="1000" loading="lazy" /></button>
+            <figcaption><strong>Add something in seconds</strong>Pick a type and a section, or drop a document and let Orbit read the dates, amounts and reference numbers.</figcaption>
+          </figure>
+          <figure>
+            <button type="button"><img src="assets/img/tour-light.webp" data-full="assets/img/tour-light.webp" alt="The same home screen under the daylight sky, with a guided tour pointing out the households you don't belong to" width="1600" height="1000" loading="lazy" /></button>
+            <figcaption><strong>Choose your sky</strong>Star chart, after dark, clouds, dawn or retrograde. The same orbit under a different light.</figcaption>
+          </figure>
+          <figure class="tall">
+            <button type="button"><img src="assets/img/mobile.webp" data-full="assets/img/mobile.webp" alt="Orbit on a phone: the year dial, other households, and a list of what needs attention" width="400" height="850" loading="lazy" /></button>
+            <figcaption><strong>In your pocket</strong>The whole sky at phone width. Install it to your home screen as a web app.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <span class="label">Designed around your household</span>
+          <h2>Built for the things a home actually has</h2>
+        </div>
+        <div class="features">
+          <div>
+            <h3>Sections that fit your life</h3>
+            <p>Home, Vehicles, Devices and Services come as defaults. Add, rename, reorder or hide sections to match the place you live in.</p>
+          </div>
+          <div>
+            <h3>A complete record of care</h3>
+            <p>Schedule history, activity, archived records, reminders and the supporting documents, encrypted at rest and scanned before they're stored.</p>
+          </div>
+          <div>
+            <h3>More than one household</h3>
+            <p>A cottage, a relative's flat, the boat. Each household is its own system in the sky, with its own members and its own orbit.</p>
+          </div>
+          <div>
+            <h3>Reminders that reach you</h3>
+            <p>Email reminders and browser notifications, with a first warning and a final one, timed to how close each item is.</p>
+          </div>
+          <div>
+            <h3>Private by design</h3>
+            <p>Local password accounts are always available. Add an identity provider with OpenID Connect if you have one. Nothing is exposed to an unauthenticated visitor.</p>
+          </div>
+          <div>
+            <h3>Yours to keep</h3>
+            <p>Backups and restores are part of the product, with a recovery bundle for the keys. Your household's data does not depend on a hosted service.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head">
+          <span class="label">Under the hood</span>
+          <h2>One app. Standard supporting services.</h2>
+          <p>Orbit deliberately keeps the operational footprint small. There is no custom database image and no separate frontend and backend to maintain.</p>
+        </div>
+        <div class="stack">
+          <div class="node core">
+            <span class="label">Core</span>
+            <strong>orbit</strong>
+            <p>The complete application: interface, authenticated APIs, migrations and the reminder scheduler, in one container.</p>
+          </div>
+          <div class="node core">
+            <span class="label">Core</span>
+            <strong>orbit-postgres</strong>
+            <p>The official PostgreSQL 18 image, pinned by digest, with a persistent volume.</p>
+          </div>
+          <div class="node core">
+            <span class="label">Core</span>
+            <strong>document volume</strong>
+            <p>Supporting documents are written as ciphertext only. The key never leaves the host.</p>
+          </div>
+          <div class="node core">
+            <span class="label">Core</span>
+            <strong>orbit-clamav</strong>
+            <p>The official scanner, fed a quarantined stream on a private network. No host port, no credentials, no documents.</p>
+          </div>
+          <div class="node optional">
+            <span class="label quiet">Optional</span>
+            <strong>OIDC provider</strong>
+            <p>Sign in with an identity provider you already run, alongside local accounts.</p>
+          </div>
+          <div class="node optional">
+            <span class="label quiet">Optional</span>
+            <strong>SMTP · Web Push</strong>
+            <p>Where reminders go.</p>
+          </div>
+          <div class="node optional">
+            <span class="label quiet">Optional</span>
+            <strong>Tika · Ollama</strong>
+            <p>Local document text extraction and a local model server, off by default and never required.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div>
+          <span class="label">Install</span>
+          <h2>One line, then a guided install</h2>
+          <p class="muted">On a Linux host with Docker Compose, one command downloads a signed manifest, verifies the launcher and installer against it, and only then hands over. The launcher walks you through the rest and shows every step as it runs.</p>
+          <div class="cta" style="justify-content:flex-start">
+            <a class="btn primary" href="install.html">Installation guide</a>
+            <a class="btn" href="launcher.html">About the launcher</a>
+          </div>
+        </div>
+        <div class="screen">
+          <img src="assets/img/launcher-install-console.webp" alt="The Orbit launcher's mission console, a terminal screen listing each install step as it completes: host, image, assets, configuration, compose, database, application" width="1600" height="900" loading="lazy" />
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div>
+        <h3>Orbit</h3>
+        <ul>
+          <li><a href="install.html">Install</a></li>
+          <li><a href="launcher.html">The launcher</a></li>
+          <li><a href="security.html">Security &amp; privacy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Source</h3>
+        <ul>
+          <li><a href="https://github.com/tomlawesome/orbit">tomlawesome/orbit</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Licence</h3>
+        <ul>
+          <li>AGPL-3.0-or-later</li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">Read the licence</a></li>
+        </ul>
+      </div>
+      <div class="foot-note">
+        <p>Orbit is in active development. The screens on this site are from the current development line and show synthetic data only.</p>
+        <p>Development disclosure: Orbit was coded by Claude under human direction.</p>
+      </div>
+    </div>
+  </footer>
+
+  <dialog class="lightbox"><img alt="" /><p></p></dialog>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>
