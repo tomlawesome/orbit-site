@@ -2,12 +2,13 @@
 <html lang="en-GB" data-theme="afterdark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Orbit — install</title>
-  <meta name="theme-color" content="#05070d" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Orbit — get into Orbit</title>
+  <meta name="description" content="One line installs Orbit: a signed launcher, a pinned image, and a one-time link to claim the first administrator." />
+  <meta name="theme-color" content="#04060e" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
-  <meta property="og:title" content="Orbit — install" />
+  <meta property="og:title" content="Get into Orbit" />
   <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
   <script>try{var t=localStorage.getItem("orbit-theme");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,74 +16,71 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="assets/site.css" />
 </head>
-<body>
-  <div class="sky" aria-hidden="true"></div>
-  <div class="vignette" aria-hidden="true"></div>
-  <header class="chrome">
-    <a class="mark-row" href="./" aria-label="Orbit">
-      <svg width="24" height="24" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <nav class="edge" aria-label="Site">
-      <a href="./">your sky</a>
-      <a class="gh" href="https://github.com/tomlawesome/orbit">source</a>
-    </nav>
-  </header>
-  <main class="doc slim">
-    <header>
-      <span class="corner">— install</span>
-      <h1>Get into Orbit</h1>
-    </header>
-    <div class="cmd">
-      <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-      <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+<body class="at-door">
+  <!-- ═══ THE LAUNCH: the install, in one turn of the ring ═══════════ -->
+  <div id="door" class="launch">
+    <div class="dsky" aria-hidden="true"></div>
+    <div class="world" aria-hidden="true"><svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="rimg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffd989"/><stop offset="100%" stop-color="#e2772b"/></linearGradient>
+        <radialGradient id="sun-core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffff"/><stop offset="35%" stop-color="#ffedc2" stop-opacity=".85"/><stop offset="100%" stop-color="#ffe9c4" stop-opacity="0"/></radialGradient>
+        <radialGradient id="sun-mid" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f8c95e" stop-opacity=".55"/><stop offset="60%" stop-color="#f0b429" stop-opacity=".18"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+        <radialGradient id="sun-wide" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#e2772b" stop-opacity=".3"/><stop offset="55%" stop-color="#c2571f" stop-opacity=".12"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+        <linearGradient id="skywash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="62%" stop-color="#3d2a4d" stop-opacity=".12"/><stop offset="86%" stop-color="#a2492a" stop-opacity=".2"/><stop offset="100%" stop-color="#e2772b" stop-opacity=".26"/></linearGradient>
+      </defs>
+      <g class="dawnlayer">
+        <rect x="0" y="0" width="1600" height="1000" fill="url(#skywash)"/>
+        <image class="zodiacal" data-raster="zod" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+        <g class="rays">
+          <image class="sway1" data-raster="sway1" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+          <image class="sway2" data-raster="sway2" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+        </g>
+        <g class="scatter">
+          <image data-raster="scatter" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+        </g>
+        <g class="sunpt">
+          <g class="sunpt-breathe">
+            <circle cx="800" cy="922" r="520" fill="url(#sun-wide)"/>
+            <circle cx="800" cy="922" r="240" fill="url(#sun-mid)"/>
+            <circle cx="800" cy="920" r="86" fill="url(#sun-core)"/>
+            <image data-raster="sunpt" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+          </g>
+          <image data-raster="sunarc" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+        </g>
+      </g>
+      <circle cx="800" cy="3920" r="3000" fill="#04060e"/>
+      <image class="rim" data-raster="rim" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+      <circle class="rim" cx="800" cy="3920" r="3000" fill="none" stroke="url(#rimg)" stroke-width="2.4" stroke-opacity=".85"/>
+      <circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#fff6e6" stroke-width="3.4" stroke-linecap="round"/>
+    </svg></div>
+    <a class="corner back" href="./">— your sky</a>
+    <div class="loginchrome">
+      <div class="lockup">
+        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" id="ring">
+          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
+          <circle class="light" cx="100" cy="100" r="72" fill="none" stroke="#d8b45a" stroke-width="2.6" stroke-linecap="round" pathLength="100"/>
+          <g class="stages"></g>
+        </svg></div>
+        <div class="word">
+          <h1>Get into Orbit</h1>
+          <button class="gate" id="copy-gate" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash">copy the line</button>
+        </div>
+      </div>
     </div>
-    <p class="from">From an empty directory on a Linux host with Docker Compose v2 and <code>curl</code>.</p>
-    <details class="fold">
-      <summary>Before anything runs</summary>
-      <div class="in">
-      <div class="kv"><span>a signed manifest</span><b>verified first</b></div>
-      <div class="kv"><span>every file</span><b>its checksum, against the manifest</b></div>
-      <div class="kv"><span>a second signature</span><b class="opt">with <code>cosign</code> installed</b></div>
-      <div class="kv"><span>only then</span><b>the launcher runs</b></div>
+    <div class="stage" aria-live="polite">
+      <span class="corner"><b class="n">01</b> / 06 <span class="sep">—</span> <span class="label"></span></span>
+      <p class="line"></p>
+    </div>
+    <div class="launchcmd">
+      <div class="cmd">
+        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
       </div>
-    </details>
-    <details class="fold">
-      <summary>What it needs</summary>
-      <div class="in">
-      <div class="kv"><span>host</span><b>Linux · amd64 or arm64</b></div>
-      <div class="kv"><span>runtime</span><b>Docker Compose v2 · <code>curl</code></b></div>
-      <div class="kv"><span>git</span><b class="opt">not required</b></div>
-      <div class="kv"><span>asked once</span><b>your public HTTPS origin</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>What runs</summary>
-      <div class="in">
-      <div class="kv"><span>orbit</span><b>one container, pinned to its digest</b></div>
-      <div class="kv"><span>orbit-postgres</span><b>the official image</b></div>
-      <div class="kv"><span>clamav</span><b>the official scanner, isolated</b></div>
-      <div class="kv"><span>secrets</span><b>generated · mounted as files, never in env</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>Claiming a fresh install</summary>
-      <div class="in">
-      <pre><code>docker compose --env-file .env-orbit logs orbit-app</code></pre>
-      <div class="kv"><span>the last line</span><b>a one-time claim link</b></div>
-      <div class="kv"><span>it creates</span><b>the first administrator</b></div>
-      <div class="kv"><span>sign-in</span><b>a password · an identity provider, if you add one</b></div>
-      <div class="kv"><span>lost it</span><b class="opt">restart <code>orbit-app</code> and read the log again</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>Later</summary>
-      <div class="in">
-      <div class="kv"><span>update · repair</span><b>the same line, run again</b></div>
-      <div class="kv"><span>before an upgrade</span><b><code>scripts/backup.sh</code> · keep <code>.env-orbit</code></b></div>
-      <div class="kv"><span>read</span><b><a href="https://github.com/tomlawesome/orbit#readme">README</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/docs/installer-guarantees.md">installer guarantees</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/docs/authentication.md">sign-in</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">security</a> · <a href="https://github.com/tomlawesome/orbit-launcher">the launcher</a></b></div>
-      </div>
-    </details>
-  </main>
+      <p class="needs">an empty directory <span class="sep">·</span> Linux, amd64 or arm64 <span class="sep">·</span> Docker Compose v2 <span class="sep">·</span> curl <span class="sep">·</span> git not required</p>
+    </div>
+    <p class="doorfoot"><a href="https://github.com/tomlawesome/orbit#readme">README</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit/blob/main/docs/installer-guarantees.md">installer guarantees</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit/blob/main/docs/authentication.md">sign-in</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">security</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit-launcher">the launcher</a><span class="sep">·</span><span>AGPL-3.0</span></p>
+  </div>
   <div class="grain" aria-hidden="true"><canvas></canvas></div>
-  <script src="assets/sky.js" defer></script>
+  <script type="module" src="assets/js/launch.js"></script>
 </body>
 </html>

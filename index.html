@@ -177,57 +177,12 @@
     <aside class="drawer drawer-left" id="installdrawer" role="region" aria-label="Get into Orbit">
       <button class="close" type="button" aria-label="Close">×</button>
       <h4>Get into Orbit</h4>
-    <div class="cmd">
-      <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-      <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
-    </div>
+      <div class="cmd">
+        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+      </div>
       <p class="from">From an empty directory on a Linux host with Docker Compose v2 and <code>curl</code>.</p>
-    <details class="fold">
-      <summary>Before anything runs</summary>
-      <div class="in">
-      <div class="kv"><span>a signed manifest</span><b>verified first</b></div>
-      <div class="kv"><span>every file</span><b>its checksum, against the manifest</b></div>
-      <div class="kv"><span>a second signature</span><b class="opt">with <code>cosign</code> installed</b></div>
-      <div class="kv"><span>only then</span><b>the launcher runs</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>What it needs</summary>
-      <div class="in">
-      <div class="kv"><span>host</span><b>Linux · amd64 or arm64</b></div>
-      <div class="kv"><span>runtime</span><b>Docker Compose v2 · <code>curl</code></b></div>
-      <div class="kv"><span>git</span><b class="opt">not required</b></div>
-      <div class="kv"><span>asked once</span><b>your public HTTPS origin</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>What runs</summary>
-      <div class="in">
-      <div class="kv"><span>orbit</span><b>one container, pinned to its digest</b></div>
-      <div class="kv"><span>orbit-postgres</span><b>the official image</b></div>
-      <div class="kv"><span>clamav</span><b>the official scanner, isolated</b></div>
-      <div class="kv"><span>secrets</span><b>generated · mounted as files, never in env</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>Claiming a fresh install</summary>
-      <div class="in">
-      <pre><code>docker compose --env-file .env-orbit logs orbit-app</code></pre>
-      <div class="kv"><span>the last line</span><b>a one-time claim link</b></div>
-      <div class="kv"><span>it creates</span><b>the first administrator</b></div>
-      <div class="kv"><span>sign-in</span><b>a password · an identity provider, if you add one</b></div>
-      <div class="kv"><span>lost it</span><b class="opt">restart <code>orbit-app</code> and read the log again</b></div>
-      </div>
-    </details>
-    <details class="fold">
-      <summary>Later</summary>
-      <div class="in">
-      <div class="kv"><span>update · repair</span><b>the same line, run again</b></div>
-      <div class="kv"><span>before an upgrade</span><b><code>scripts/backup.sh</code> · keep <code>.env-orbit</code></b></div>
-      <div class="kv"><span>read</span><b><a href="https://github.com/tomlawesome/orbit#readme">README</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/docs/installer-guarantees.md">installer guarantees</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/docs/authentication.md">sign-in</a> · <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">security</a> · <a href="https://github.com/tomlawesome/orbit-launcher">the launcher</a></b></div>
-      </div>
-    </details>
-      <p class="from"><a href="install.html">the page →</a></p>
+      <p class="from"><a href="install.html">what one line does →</a></p>
     </aside>
 
     <section class="hero" id="hero">

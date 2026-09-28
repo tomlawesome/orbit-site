@@ -8,7 +8,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | Path | What |
 | --- | --- |
 | `index.html` | The door, the sky, the dusk, and the film's chrome |
-| `install.html` | The one line, what it needs, what it verifies, where to read more |
+| `install.html` | The launch: the dawn, the ring, the install as one turn of it |
 | `404.html` | Not found |
 | `assets/site.css` | The five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
@@ -17,7 +17,8 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
-| `assets/sky.js` | The script `install.html` uses |
+| `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once |
+| `assets/js/launch.js` | The install page's ring and its stages |
 | `.nojekyll` | Pages serves the files as they are |
 
 What a visit changes on the sky (adds, completions, snoozes, accepted or
