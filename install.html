@@ -1,15 +1,13 @@
 <!doctype html>
-<html lang="en-GB" data-theme="starchart">
+<html lang="en-GB" data-theme="afterdark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Get into Orbit — install</title>
-  <meta name="description" content="Install Orbit on a Linux host with one verified command, claim your instance, and keep it running with the launcher." />
-  <meta name="theme-color" content="#060b1c" />
+  <title>Orbit — install</title>
+  <meta name="theme-color" content="#05070d" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
-  <meta property="og:title" content="Get into Orbit — install" />
-  <meta property="og:description" content="One verified command on a Linux host with Docker Compose." />
+  <meta property="og:title" content="Orbit — install" />
   <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
   <script>try{var t=localStorage.getItem("orbit-theme");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,137 +18,64 @@
 <body>
   <div class="sky" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
-
   <header class="chrome">
-    <a class="mark-row" href="./" aria-label="Orbit home">
-      <svg width="24" height="24" viewBox="0 0 200 200" aria-hidden="true">
-        <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/>
-        <g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g>
-      </svg>orbit</a>
+    <a class="mark-row" href="./" aria-label="Orbit">
+      <svg width="24" height="24" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
     <nav class="edge" aria-label="Site">
-      <a href="install.html" aria-current="page">Install</a>
-      <a href="launcher.html">Launcher</a>
-      <a href="security.html">Security</a>
-      <a class="gh" href="https://github.com/tomlawesome/orbit">GitHub</a>
-      <span class="swatches" role="group" aria-label="Your sky">
-        <button class="sw" type="button" data-pack="starchart" style="--sw:#060b1c" aria-label="Star chart" title="star chart"></button>
-        <button class="sw" type="button" data-pack="afterdark" style="--sw:#05070d" aria-label="After dark" title="after dark"></button>
-        <button class="sw" type="button" data-pack="clouds" style="--sw:#eef2f9" aria-label="Clouds" title="clouds"></button>
-        <button class="sw" type="button" data-pack="dawn" style="--sw:#d2d3d4" aria-label="Dawn" title="dawn"></button>
-        <button class="sw" type="button" data-pack="retrograde" style="--sw:#080a14;--sw-shadow:inset 0 0 0 1px #ff4fd8" aria-label="Retrograde" title="retrograde"></button>
-      </span>
+      <a href="./#install">your sky</a>
+      <a class="gh" href="https://github.com/tomlawesome/orbit">source</a>
     </nav>
   </header>
-
   <main class="doc narrow">
     <header>
       <span class="corner">— Install</span>
-      <h1 class="balance">Get into Orbit</h1>
-      <p class="lede">One command on a Linux host. It verifies everything it downloads before running any of it, then hands over to the launcher for a guided install.</p>
-      <ul class="toc">
-        <li><a href="#requirements">Requirements</a></li>
-        <li><a href="#one-line">The one line</a></li>
-        <li><a href="#verified">Verified first</a></li>
-        <li><a href="#install">The install</a></li>
-        <li><a href="#claim">Claim</a></li>
-        <li><a href="#keep">Keep it running</a></li>
-        <li><a href="#optional">Optional services</a></li>
-        <li><a href="#source">From source</a></li>
-      </ul>
+      <h1>Get into Orbit</h1>
     </header>
-
-    <h2 id="requirements">Requirements</h2>
-    <div class="kvs">
-      <div class="kv"><span>host</span><b>Linux — Debian, Ubuntu or similar · linux/amd64 images</b></div>
-      <div class="kv"><span>runtime</span><b>Docker with Compose v2, and curl</b></div>
-      <div class="kv"><span>memory</span><b>~4 GiB for ClamAV, on by default</b></div>
-      <div class="kv"><span>reach</span><b>an HTTPS reverse proxy in front of Orbit's port</b></div>
-      <div class="kv"><span>git</span><b class="opt">not required — nothing is cloned</b></div>
-    </div>
-    <p class="q">A deployment needs compose assets and a published image, not source. ClamAV can be disabled, but Orbit will show a persistent warning and mark later uploads as unscanned. Plain HTTP is supported only on loopback.</p>
-
-    <h2 id="one-line">The one line</h2>
-    <p>From an empty directory on the host:</p>
     <div class="cmd">
       <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
       <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
     </div>
-    <p>The directory you run it in becomes the deployment directory: where Orbit keeps its configuration (<code>.env-orbit</code>), its private secrets (<code>.orbit-secrets/</code>) and the compose files it takes from the image.</p>
-    <p class="q">To pin a specific stable release rather than the latest, set <code>ORBIT_VERSION=vX.Y.Z</code> in the environment first.</p>
-
-    <h2 id="verified">What gets verified first</h2>
-    <p><code>get-orbit.sh</code> is deliberately short and readable. Before it runs anything it:</p>
-    <ol>
-      <li>downloads the signed release manifest and checks its signature against a public key embedded in the script;</li>
-      <li>downloads the launcher and the installer named by that manifest;</li>
-      <li>checks every file's SHA-256 against the manifest;</li>
-      <li>if <code>cosign</code> is installed, checks a second, independent signature too.</li>
-    </ol>
-    <p>Only once all of that passes does it hand off to the launcher. It fetches stable releases only. The full catalogue of what each script guarantees is <a href="https://github.com/tomlawesome/orbit/blob/main/docs/installer-guarantees.md">docs/installer-guarantees.md</a>.</p>
-
-    <h2 id="install">The install itself</h2>
-    <figure>
-      <div class="screen">
-        <button type="button" data-caption="the launcher · mission console, mid-install"><img src="assets/img/launcher-install-console.webp" alt="The launcher's mission console showing an install in progress: each step listed and ticked as it completes" width="1600" height="900" /></button>
-      </div>
-      <figcaption>the mission console · every step of the installer, as it happens</figcaption>
-    </figure>
-    <p>The <a href="launcher.html">launcher</a> asks you to choose a deployment profile (Standard is the one available today), confirms, and runs Orbit's installer inside its console. The installer:</p>
-    <ul>
-      <li>pulls the published image and resolves it to an immutable digest. That digest is what runs; a tag is only ever read to resolve it;</li>
-      <li>takes the compose files and operator scripts out of that same image, so a compose file cannot drift from the image it configures;</li>
-      <li>creates <code>.env-orbit</code> and generates independent 256-bit session, database and document-encryption secrets under <code>.orbit-secrets/</code>;</li>
-      <li>validates the rendered Compose configuration and starts the services;</li>
-      <li>withholds completion until PostgreSQL is healthy, Orbit's health endpoint reports ready, ClamAV is healthy and each selected optional service passes its probe.</li>
-    </ul>
-    <p>If the installer needs something only you can provide, it stops safely and asks. If it fails before committing, it restores the previous file state. The target directory is not changed until the final review is accepted.</p>
-    <div class="note"><b>Signing in.</b> By default Orbit uses local password accounts only. If you also want sign-in through an identity provider, the installer collects the public HTTPS origin, the OpenID Connect issuer, client ID and, privately, the client secret. See <a href="https://github.com/tomlawesome/orbit/blob/main/docs/authentication.md">docs/authentication.md</a>.</div>
-
-    <h2 id="claim">Claim your instance</h2>
-    <p>A fresh Orbit has no administrator and is <em>unclaimed</em>. At the end of start-up it generates a one-time claim code, keeps it only in memory, and prints it as the last line of the container's own log:</p>
+    <h3>it needs</h3>
+    <div class="kvs">
+      <div class="kv"><span>host</span><b>Linux · linux/amd64</b></div>
+      <div class="kv"><span>runtime</span><b>Docker Compose v2 · curl</b></div>
+      <div class="kv"><span>memory</span><b>~4 GiB for ClamAV</b></div>
+      <div class="kv"><span>reach</span><b>an HTTPS reverse proxy in front</b></div>
+      <div class="kv"><span>git</span><b class="opt">not required</b></div>
+    </div>
+    <h3>verified before anything runs</h3>
+    <div class="kvs">
+      <div class="kv"><span>release manifest</span><b>signature checked against the embedded key</b></div>
+      <div class="kv"><span>launcher · install.sh</span><b>SHA-256 against the manifest</b></div>
+      <div class="kv"><span>cosign</span><b class="opt">second signature, when installed</b></div>
+      <div class="kv"><span>channel</span><b>stable only · <code>ORBIT_VERSION=vX.Y.Z</code> pins</b></div>
+    </div>
+    <h3>then</h3>
+    <div class="kvs">
+      <div class="kv"><span>image</span><b>resolved to an immutable digest</b></div>
+      <div class="kv"><span>compose assets</span><b>taken from that same image</b></div>
+      <div class="kv"><span>secrets</span><b>generated · <code>.orbit-secrets/</code> · mounted, never in env</b></div>
+      <div class="kv"><span>done when</span><b>postgres, orbit, clamav healthy</b></div>
+    </div>
+    <h3>claim</h3>
     <pre><code>docker compose --env-file .env-orbit logs orbit-app</code></pre>
-    <p>Open the link on the last line, or type the code on the sign-in screen, to create the first administrator. That person then names the first system: the household's name, time zone, currency and starting sections.</p>
-
-    <h2 id="keep">Keeping it running</h2>
-    <p>Run <code>orbit-launcher</code> again from the deployment directory at any time. Its menu covers the rest of the lifecycle:</p>
-    <div class="menu">
-      <div><b>Update</b><p>Pulls the latest Orbit into this deployment. Existing configuration is preserved; nothing is deleted.</p></div>
-      <div><b>Repair</b><p>Diagnoses the deployment and proposes repairs. Safe ones run without changing data; credential rotation takes a verified backup first.</p></div>
-      <div><b>Remove</b><p>Stops the containers. Your mail, documents and configuration stay on disk, and the screen shows exactly how to remove them if you choose to.</p></div>
+    <div class="kvs">
+      <div class="kv"><span>last line</span><b>the one-time claim link · creates the first administrator</b></div>
     </div>
-    <h3>Before an upgrade</h3>
-    <p>Create and verify a database backup with <code>scripts/backup.sh</code>, and keep an owner-only copy of the exact pre-upgrade <code>.env-orbit</code> beside it. <code>scripts/restore.sh</code> puts both back if a migration goes wrong. The README's <a href="https://github.com/tomlawesome/orbit#run-with-docker">Run with Docker</a> section has the exact commands.</p>
-
-    <h2 id="optional">Optional services</h2>
-    <p>The standard stack is Orbit, PostgreSQL and ClamAV. Two more are available and off by default, because they add host memory and are never needed for normal operation:</p>
-    <ul>
-      <li><b>Tika</b> for OCR and text extraction from documents.</li>
-      <li><b>Ollama</b> as a local model server. It uses no cloud models and does not download a model automatically.</li>
-    </ul>
-    <p>Both are selected in <code>.env-orbit</code> with <code>COMPOSE_PROFILES</code>, so turning one on later is a one-line edit rather than a different command. Neither has a published host port.</p>
-
-    <h2 id="source">Building from source</h2>
-    <p>Building is a developer workflow rather than an installation choice, so the installer doesn't offer it. Clone the repository and build explicitly:</p>
-    <pre><code>git clone https://github.com/tomlawesome/orbit.git &amp;&amp; cd orbit
-bash scripts/configure.sh
-bash scripts/build-container.sh</code></pre>
-    <p>The <a href="https://github.com/tomlawesome/orbit#readme">README</a> covers the rest: runtime configuration, starting with Compose, and the configuration contracts.</p>
+    <h3>after</h3>
+    <div class="kvs">
+      <div class="kv"><span>update · repair · remove</span><b><code>orbit-launcher</code>, from the deployment directory</b></div>
+      <div class="kv"><span>before an upgrade</span><b><code>scripts/backup.sh</code> · keep a copy of <code>.env-orbit</code></b></div>
+    </div>
+    <h3>read</h3>
+    <div class="kvs">
+      <div class="kv"><span>README</span><b><a href="https://github.com/tomlawesome/orbit#readme">tomlawesome/orbit</a></b></div>
+      <div class="kv"><span>guarantees</span><b><a href="https://github.com/tomlawesome/orbit/blob/main/docs/installer-guarantees.md">docs/installer-guarantees.md</a></b></div>
+      <div class="kv"><span>sign-in</span><b><a href="https://github.com/tomlawesome/orbit/blob/main/docs/authentication.md">docs/authentication.md</a></b></div>
+      <div class="kv"><span>security</span><b><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">SECURITY.md</a></b></div>
+      <div class="kv"><span>launcher</span><b><a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a></b></div>
+    </div>
   </main>
-
-  <footer class="foot">
-    <div class="row">
-      <a href="./">orbit</a>
-      <a href="launcher.html">the launcher</a>
-      <a href="security.html">security &amp; privacy</a>
-      <a href="https://github.com/tomlawesome/orbit">source</a>
-      <a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">AGPL-3.0</a>
-    </div>
-    <div class="row">
-      <span>Screens are from the current development line and show synthetic data only.</span>
-    </div>
-  </footer>
-
-  <dialog class="reader"><img alt="" /><p></p></dialog>
   <div class="grain" aria-hidden="true"><canvas></canvas></div>
   <script src="assets/sky.js" defer></script>
 </body>
