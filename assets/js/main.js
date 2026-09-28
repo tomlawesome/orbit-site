@@ -140,7 +140,6 @@ $("#launch").addEventListener("click", () => flyToPad("install"));
 const planets = wirePlanets($("#door"), $("#planet-tip"), flyToPad);
 for (const pad of Object.values(PADS)) {
   pad.el.querySelector(".back.dawn").addEventListener("click", backToDawn);
-  pad.el.querySelector(".back.tosky").addEventListener("click", launch);
 }
 /* the one line, copied wherever it is written */
 document.querySelectorAll("[data-copy]").forEach((el) => {

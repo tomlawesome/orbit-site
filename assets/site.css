@@ -673,7 +673,8 @@ body.launching .doorcmd,body.showwarp .doorcmd{opacity:0;transition:opacity .4s 
 /* ══ THE LANDINGS: the ring the mark wears, with a section's bodies on it ══ */
 .pad{position:fixed;inset:0;z-index:2;background:var(--bg)}
 .pad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
-.pad .back.tosky{left:auto;right:24px}
+.pad .mark-row.home{position:absolute;top:16px;right:24px;z-index:4;font-size:15px;color:var(--ink-mid);text-decoration:none}
+.pad .mark-row.home:hover{color:var(--ink)}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
 .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
 .pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
@@ -703,11 +704,11 @@ body.arrived .pad .stage-body{opacity:1}
 .pad .stage .go:hover{color:var(--ink)}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching .pad{visibility:hidden;pointer-events:none}
-body.bare .pad .stage,body.bare .pad .back,body.bare .pad .word,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
+body.bare .pad .stage,body.bare .pad .back,body.bare .pad .home,body.bare .pad .word,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
 body.bare .pad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
-body.instrument .pad .word,body.instrument .pad .back{animation:chromein 1.3s ease .45s both}
+body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .home{animation:chromein 1.3s ease .45s both}
 /* and leaves the way the sky does */
-body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .stage,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
+body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .home,body.withdrawing .pad .stage,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 /* the install's own line, back with the instrument */
