@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -14,9 +14,13 @@ const C = law.DIAL_CENTRE;
 export const state = { camera: "willow", open: null, skyCams: null, flying: false };
 const listeners = new Set();
 export function onChange(fn) { listeners.add(fn); }
-function changed() { persist(); for (const fn of listeners) fn(); }
+let muted = false;
+export function mute(on) { muted = on; }
+function changed() { if (!muted) persist(); for (const fn of listeners) fn(); }
 export function snapshot() { return serialise(); }
 export function restoreState(snap) { hydrate(snap); closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist(); }
+/* the walk plays on the sample as shipped, whatever a visit has changed since */
+export function restorePristine() { pristine(); closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); }
 export function resetSite() { forget(); location.hash = ""; location.reload(); }
 
 export function household() { return households[state.camera]; }
