@@ -66,9 +66,9 @@
           <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>
           <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g>
           <!-- the other doors: three more bodies on the same ring -->
-          <a class="planet" href="#docs" data-section="docs" data-name="Docs" data-line="the README, the guarantees, sign-in, security, the launcher" aria-label="Docs"><g class="spin s1"><circle cx="100" cy="28" r="5" fill="#8fb8ff"/></g></a>
-          <a class="planet" href="#install" data-section="install" data-name="Install" data-line="one line, six stages, one turn of the ring" aria-label="Install"><g class="spin s2"><circle cx="100" cy="28" r="5" fill="#7c3aed"/></g></a>
-          <a class="planet" href="#info" data-section="info" data-name="Information" data-line="what Orbit is, in its own words" aria-label="Information"><g class="spin s3"><circle cx="100" cy="28" r="5" fill="#f87171"/></g></a>
+          <a class="planet" href="#docs" style="--c:#8fb8ff" data-section="docs" data-name="Docs" data-line="the README, the guarantees, sign-in, security, the launcher" aria-label="Docs"><g class="spin s1"><circle class="hit" cx="100" cy="28" r="16"/><circle cx="100" cy="28" r="5" fill="#8fb8ff"/></g></a>
+          <a class="planet" href="#install" style="--c:#7c3aed" data-section="install" data-name="Install" data-line="one line, six stages, one turn of the ring" aria-label="Install"><g class="spin s2"><circle class="hit" cx="100" cy="28" r="16"/><circle cx="100" cy="28" r="5" fill="#7c3aed"/></g></a>
+          <a class="planet" href="#info" style="--c:#f87171" data-section="info" data-name="Information" data-line="what Orbit is, in its own words" aria-label="Information"><g class="spin s3"><circle class="hit" cx="100" cy="28" r="16"/><circle cx="100" cy="28" r="5" fill="#f87171"/></g></a>
         </svg></div>
         <h1 class="name">orbit</h1>
         <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button></div>
@@ -82,7 +82,7 @@
       </div>
     </div>
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
-    <div class="chart-callout planet-tip" id="planet-tip" aria-hidden="true"><span class="line"></span><b></b><small></small></div>
+    <div class="planet-tip" id="planet-tip" aria-hidden="true"><i class="stem"></i><b></b><small></small><span class="go">open</span></div>
   </div>
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->
@@ -336,53 +336,84 @@
       <p class="needs">an empty directory <span class="sep">·</span> Linux, amd64 or arm64 <span class="sep">·</span> Docker Compose v2 <span class="sep">·</span> curl <span class="sep">·</span> git not required</p>
     </div>
   </div>
-  <div class="pad" id="docspad" hidden>
+  <div class="pad docs" id="docspad" hidden>
     <div class="sky" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
     <button class="corner back dawn" type="button">— the dawn</button>
     <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <div class="loginchrome">
-      <div class="lockup">
-        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
-          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
-          <g class="stages"></g>
-        </svg></div>
-        <div class="word">
-          <h1>The docs</h1>
-          <a class="gate" href="https://github.com/tomlawesome/orbit#readme" target="_blank" rel="noopener">the README →</a>
-        </div>
+    <div class="topfade" aria-hidden="true"></div>
+    <div class="scroll">
+      <div class="index">
+        <span class="corner">— the docs</span>
+        <h1>What do you need to know?</h1>
+        <label class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <input type="search" placeholder="search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
+          <kbd>/</kbd>
+        </label>
+        <div class="keys" aria-label="Start here"></div>
+        <div class="results" aria-live="polite"></div>
       </div>
+      <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
     </div>
-    <div class="stage" aria-live="polite">
-      <span class="corner"><b class="n">01</b> / <span class="total">06</span> <span class="sep">—</span> <span class="label"></span></span>
-      <p class="line"></p>
-      <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
-    </div>
-    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
-  <div class="pad" id="infopad" hidden>
+  <div class="pad info" id="infopad" hidden>
     <div class="sky" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
     <button class="corner back dawn" type="button">— the dawn</button>
     <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <div class="loginchrome">
-      <div class="lockup">
-        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
-          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
-          <g class="stages"></g>
-        </svg></div>
-        <div class="word">
-          <h1>Orbit</h1>
-          <a class="gate" href="https://github.com/tomlawesome/orbit" target="_blank" rel="noopener">the source →</a>
-        </div>
-      </div>
+    <div class="topfade" aria-hidden="true"></div>
+    <div class="scroll">
+      <article class="about">
+        <header class="hero">
+          <div class="sun" aria-hidden="true"><i></i></div>
+          <span class="corner">— information</span>
+          <h1>Everything in your orbit, on track.</h1>
+          <p class="lede">A self-hosted home operations hub for maintenance, renewals, recurring services, contracts, cover, and the people who share them.</p>
+        </header>
+        <section class="chapter">
+          <h2>Your home has an orbit</h2>
+          <p class="big">Boilers need servicing. Insurance renews. Cars need inspections. Devices leave warranty. Contracts roll over.</p>
+          <p>Orbit brings those scattered responsibilities into one calm, shared view, so the important things stay visible before they become urgent.</p>
+        </section>
+        <section class="chapter three">
+          <div><i class="dot" style="--c:#f0b429"></i><h3>See what is next</h3><p>A focused, urgency-aware workspace brings upcoming work, overdue items, and recently completed tasks into view.</p></div>
+          <div><i class="dot" style="--c:#4ade80"></i><h3>Keep the rhythm</h3><p>Complete, renew, reschedule, snooze, cancel, restore, and the next recurring date is worked out for you.</p></div>
+          <div><i class="dot" style="--c:#8fb8ff"></i><h3>Share the load</h3><p>Household owners add existing Orbit users by display name, without invitations or exposed email addresses.</p></div>
+        </section>
+        <section class="chapter">
+          <h2>Designed around your household</h2>
+          <ul class="facts">
+            <li><b>A workspace that reads at a glance.</b> A responsive Due Next view, search, urgency filters, household switching, section views, and mobile navigation.</li>
+            <li><b>Sections that fit your life.</b> Add, rename, reorder, recolour, hide, or restore sections, with Home, Vehicles, Devices, and Services included by default.</li>
+            <li><b>Appearance with personality.</b> Light, dark, and system modes across five colourways, three text sizes, and traditional or theme-matched due-date heat maps.</li>
+            <li><b>A complete record of care.</b> Item details, schedule history, activity timelines, archived records, reminders, and encrypted supporting documents.</li>
+            <li><b>Installable without private offline storage.</b> A PWA shell and push handling, while workspace data stays server-authoritative.</li>
+            <li><b>Private by design.</b> Provider-neutral OIDC, opaque server-side sessions, PKCE, signed token validation, same-origin enforcement, and CSRF protection.</li>
+          </ul>
+        </section>
+        <section class="chapter stack">
+          <h2>One app. Standard supporting services.</h2>
+          <svg class="system" viewBox="0 0 400 220" aria-hidden="true">
+            <ellipse cx="200" cy="110" rx="150" ry="62" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <ellipse cx="200" cy="110" rx="96" ry="40" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <circle cx="200" cy="110" r="14" style="fill:var(--sun)"/>
+            <circle cx="200" cy="110" r="26" style="fill:var(--sun)" opacity=".12"/>
+            <text x="200" y="152" text-anchor="middle" class="lbl">orbit</text>
+            <g class="o1"><circle cx="296" cy="110" r="5" fill="#8fb8ff"/><text x="308" y="114" class="lbl">postgres</text></g>
+            <g class="o2"><circle cx="50" cy="110" r="5" fill="#4ade80"/><text x="62" y="114" class="lbl">clamav</text></g>
+            <g class="o3"><circle cx="200" cy="48" r="4" fill="#d8b45a"/><text x="210" y="44" class="lbl">your browser</text></g>
+          </svg>
+          <p>Orbit deliberately keeps the operational footprint small: one application container, the official PostgreSQL, and an isolated ClamAV scanner. Secrets are generated for you, mounted as files, and never placed in the environment.</p>
+        </section>
+        <section class="chapter last">
+          <h2>Free software</h2>
+          <p>Orbit is licensed under the GNU Affero General Public License v3.0 or later.</p>
+          <p class="links"><a href="https://github.com/tomlawesome/orbit">the source</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">security policy</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit-launcher">the launcher</a><span class="sep">·</span><a href="https://tomlawson.io">tomlawson.io</a></p>
+        </section>
+        <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
+      </article>
     </div>
-    <div class="stage" aria-live="polite">
-      <span class="corner"><b class="n">01</b> / <span class="total">06</span> <span class="sep">—</span> <span class="label"></span></span>
-      <p class="line"></p>
-      <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
-    </div>
-    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
 
   <!-- ═══ THE FLIGHT: the canvas between the dawn and the sky ═══════════ -->
