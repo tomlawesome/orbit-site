@@ -31,7 +31,9 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 ## Publishing
 
 Settings → Pages → Build and deployment: *Deploy from a branch*, `main`,
-`/ (root)`.
+`/ (root)`. Published at <https://tomlawesome.github.io/orbit-site/>.
+Pages builds on each push to `main`; enabling it on a branch that already
+has commits does not build until the next push.
 
 ## Custom domain
 
