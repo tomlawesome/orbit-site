@@ -257,6 +257,7 @@ function createContext(clock) {
   }
   syncRaf = requestAnimationFrame(follow);
   function clear() {
+    $("#dial")?.classList.remove("warn");
     for (const c of lit) { c.rings.forEach((r) => r.remove()); c.rings = []; restore(c); }
     lit = []; holes = [];
     for (const a of anims) { try { a.cancel(); } catch { /* gone */ } } anims.clear();
@@ -298,7 +299,7 @@ export const CHAPTERS = [
     c.unlight(sun);
     const other = c.ctl({ sel: wide ? ".minisys .msring" : "#chips button", round: wide, optional: true });
     await c.goto(other, { willPress: false });
-    await c.callout("The rest of the sky holds systems you don't belong to — tap one to fly there.", other, wide ? "right" : "bottom");
+    await c.callout("Your other households sit further out. Tap one to fly there.", other, wide ? "right" : "bottom");
     c.unlight(other); c.dropCallout();
   } },
   { id: "add", name: "Add", async play(c) {
@@ -308,7 +309,7 @@ export const CHAPTERS = [
     home.openCreate(true); await c.w(450);
     const card = c.ctl({ sel: "#createdrawer .inner", radius: 16 });
     await c.goto(card, { willPress: false });
-    await c.callout("Add anything here, by hand or by forwarding a document.", card, "bottom");
+    await c.callout("Add anything you want to keep track of: a service, a renewal, an inspection.", card, "bottom");
     c.dropCallout(); c.unlight(card);
     const name = c.ctl({ sel: "#f-name", radius: 10 }); await c.goto(name); await c.press(name); await c.typeInto(name, "Gas safety certificate"); c.unlight(name); await c.w(T.field);
     const insp = c.ctl({ sel: '#types button[data-type="inspection"]', radius: 16 }); await c.goto(insp); await c.press(insp); insp.els[0]?.click(); c.quiet(insp); await c.w(T.field);
@@ -324,22 +325,24 @@ export const CHAPTERS = [
     c.veil(false); await c.scrollTo($("#hero"), "start"); await c.w(300);
     const body = c.ctl({ sel: '#dial .body-link[aria-label^="Gas safety"]', round: true, pad: 6, optional: true });
     await c.goto(body, { willPress: false });
-    await c.callout("Bodies orbit by when they're due.", body, "top");
+    await c.callout("Each item becomes a body on the chart, placed by when it's due.", body, "top");
     c.unlight(body);
     const ring = c.ctl({ sel: ".dialwrap", round: true });
     await c.goto(ring, { willPress: false });
-    await c.callout("The nearer the ring, the sooner.", ring, "right");
+    $("#dial").classList.add("warn");
+    await c.callout("The closer a body drifts to the red ring, the sooner it's due. Inside it, it's overdue.", ring, "right");
+    $("#dial").classList.remove("warn");
     c.unlight(ring); c.dropCallout();
   } },
   { id: "manifest", name: "Below the dial", async play(c) {
     c.veil(false); await c.scrollTo($("#today"), "start"); await c.w(200);
     const todayRow = c.ctl({ sel: "#today", radius: 10, pad: 6 });
     c.veil(true); await c.goto(todayRow, { willPress: false });
-    await c.callout("The manifest lists what's ahead, nearest first.", todayRow, "bottom");
+    await c.callout("Below the dial, the manifest lists the same items in order, soonest first.", todayRow, "bottom");
     c.unlight(todayRow);
     const rows = c.ctl({ sel: "#corridor .item", all: true, radius: 14 });
     c.light(rows);
-    await c.callout("Same law as the dial, read top to bottom instead of round the ring.", todayRow, "bottom");
+    await c.callout("Open any row for its details, documents and actions.", todayRow, "bottom");
     c.unlight(rows); c.dropCallout();
   } },
   { id: "time", name: "Time runs", async play(c) {
@@ -349,10 +352,10 @@ export const CHAPTERS = [
     c.light(body);
     await c.tween(2600, (t) => { positionFilmBody(g, Math.round(381 + (16 - 381) * ease(t))); c.light(body); });
     await c.goto(body, { willPress: false });
-    await c.callout("Time runs. The nearer the sun, the sooner.", body, "bottom");
+    await c.callout("As the due date approaches, the body drifts in towards the sun.", body, "bottom");
     c.unlight(body);
     const dial = c.ctl({ sel: ".dialwrap", round: true });
-    await c.callout("At a month out it warms, and Orbit reminds you.", dial, "top");
+    await c.callout("A month out it turns amber, and Orbit sends you a reminder.", dial, "top");
     c.dropCallout(); g.remove();
   } },
   { id: "post", name: "Paper by post", async play(c) {
@@ -362,20 +365,20 @@ export const CHAPTERS = [
     home.openDrawer("inboxdrawer", true); await c.w(450);
     const relay = c.ctl({ sel: "#inboxdrawer .relay-card", radius: 14 });
     await c.goto(relay, { willPress: false });
-    await c.callout("Forward a bill to your relay address and Orbit reads a copy.", relay, "left");
-    await c.callout("Your mail is never redirected — it keeps arriving exactly where it always has.", relay, "left");
+    await c.callout("Every household has its own relay address.", relay, "left");
+    await c.callout("Forward a bill or a policy to it, and Orbit reads the attachment for you.", relay, "left");
     c.unlight(relay); c.dropCallout();
   } },
   { id: "inbox", name: "Inbox", async play(c) {
     home.openDrawer("inboxdrawer", true); await c.w(300); c.veil(true);
-    for (const lane of [["filed", "Filed", "bottom"], ["review", "For your review", "bottom"], ["reading", "Still reading", "top"]]) {
+    for (const lane of [["filed", "Filed: documents Orbit has already read and attached to their items.", "bottom"], ["review", "For your review: what Orbit found in a document, waiting for your decision.", "bottom"], ["reading", "Still reading: mail that has just arrived.", "top"]]) {
       const l = c.ctl({ sel: `#lanes .lane.${lane[0]}`, radius: 14, optional: true });
-      await c.goto(l, { willPress: false }); await c.callout(lane[1], l, "left", { label: true, hold: 1500 }); c.dropCallout(); c.unlight(l);
+      await c.goto(l, { willPress: false }); await c.callout(lane[1], l, "left"); c.dropCallout(); c.unlight(l);
     }
     const review = c.ctl({ sel: "#lanes .lane.review", radius: 14, optional: true }); c.light(review);
     const add = c.ctl({ sel: "#lanes .receipt.suggest .actions button.yes", radius: 10, optional: true });
     await c.goto(add); await c.press(add); add.els[0]?.click(); await c.w(400); await c.press(add); add.els[0]?.click();
-    await c.callout("Nothing joins your orbit without your say-so.", add.els[0] ? c.ctl({ sel: "#lanes .lane.review", radius: 14 }) : review, "left");
+    await c.callout("Nothing is added to your chart until you say so.", add.els[0] ? c.ctl({ sel: "#lanes .lane.review", radius: 14 }) : review, "left");
     c.unlight(add); c.unlight(review); c.dropCallout();
     home.openDrawer("inboxdrawer", false);
   } },
@@ -383,8 +386,8 @@ export const CHAPTERS = [
     c.veil(false); home.closeDrawers(); home.openRow("i-mot", false); await c.scrollTo($("#i-mot"), "start"); await c.w(300);
     const docs = c.ctl({ sel: "#i-mot-view .doc", all: true, radius: 9, optional: true }); c.veil(true);
     await c.goto(docs, { willPress: false });
-    await c.callout("Every body carries its documents in a belt around it.", docs, innerWidth > 700 ? "right" : "top");
-    await c.callout("The belt is what you have attached to it.", docs, innerWidth > 700 ? "right" : "top", { w: 220 });
+    await c.callout("Documents attached to an item form a belt around its body on the chart.", docs, innerWidth > 700 ? "right" : "top");
+    await c.callout("Open the item to read them.", docs, innerWidth > 700 ? "right" : "top", { w: 220 });
     c.unlight(docs); c.dropCallout();
   } },
   { id: "done", name: "Done", async play(c) {
@@ -392,13 +395,13 @@ export const CHAPTERS = [
     const card = c.ctl({ sel: "#i-mot-view", radius: 14, optional: true }); c.light(card);
     const done = c.ctl({ sel: '#i-mot-view .acts button[data-act="complete"]', radius: 10, optional: true });
     await c.goto(done);
-    await c.callout("MOT passed — mark it done and it swings back out to next year.", done, "top", { w: 240 });
+    await c.callout("MOT passed? Mark it done, and it moves out to next year's date.", done, "top", { w: 240 });
     await c.press(done); c.dropCallout(); c.unlight(done); c.unlight(card);
     done.els[0]?.click();
     c.veil(false); await c.scrollTo($("#hero"), "start"); await c.w(1800);
     const body = c.ctl({ sel: '#dial .body-link[data-id="i-mot"]', round: true, pad: 6, optional: true });
     await c.goto(body, { willPress: false });
-    await c.callout("A repeat is never finished; it comes round. A one-off simply ends.", body, "top");
+    await c.callout("Recurring items come round again. One-offs simply end.", body, "top");
     c.unlight(body); c.dropCallout();
   } },
   { id: "others", name: "Other households", async play(c) {
@@ -406,13 +409,13 @@ export const CHAPTERS = [
     const other = c.ctl({ sel: '.minisys[data-id="grans"] .msring, #chips button', round: innerWidth > 900, pad: 6, optional: true });
     other.els = other.els.slice(0, 1);
     c.veil(true); await c.goto(other);
-    await c.callout("The rest of the sky holds households you don't belong to.", other, innerWidth > 900 ? "left" : "bottom");
+    await c.callout("Your other households are out in the sky.", other, innerWidth > 900 ? "left" : "bottom");
     await c.press(other); c.dropCallout(); c.unlight(other); c.veil(false);
     await new Promise((resolve) => home.flyTo("grans", resolve));
     await c.w(400);
     const sun = c.ctl({ sel: "#dial .sun-link", round: true, pad: 10 });
     await c.goto(sun, { willPress: false });
-    await c.callout("Tap one to fly there — Gran's flat, the narrowboat.", sun, "bottom");
+    await c.callout("Tap one, and you fly there.", sun, "bottom");
     c.unlight(sun); c.dropCallout();
     await new Promise((resolve) => home.flyTo("willow", resolve));
     await c.w(300);
@@ -424,19 +427,19 @@ export const CHAPTERS = [
     if (!$("#account").classList.contains("open")) home.toggleAccount(); await c.w(300);
     const sw = c.ctl({ sel: "#account .swatches", radius: 12, pad: 4 });
     await c.goto(sw, { willPress: false });
-    await c.callout("star chart · after dark · clouds · dawn · retrograde", sw, "left", { label: true, hold: 2200 });
+    await c.callout("Five skies to choose from: star chart, after dark, clouds, dawn and retrograde.", sw, "left");
     c.dropCallout();
     const dawn = c.ctl({ sel: '#account .swatches button[data-pack="dawn"]', round: true, pad: 3 });
     await c.goto(dawn); await c.press(dawn); c.unlight(sw); c.unlight(dawn);
     c.wear("dawn"); c.veil(false); home.closeDrawers();
-    await c.callout("Settings holds your sky, your relay and this walk — take it again anytime.", c.ctl({ sel: ".dialwrap", round: true }), "top");
+    await c.callout("Your sky, your relay address and this walk all live in the account card.", c.ctl({ sel: ".dialwrap", round: true }), "top");
     c.dropCallout(); c.wear(null);
   } },
   { id: "yours", name: "Yours", async play(c) {
     c.veil(false); home.closeDrawers(); await c.scrollTo($("#hero"), "start");
     const sun = c.ctl({ sel: "#dial .sun-link", round: true, pad: 10 });
     await c.goto(sun, { willPress: false });
-    await c.callout("That was a year, in one turn of the ring.", sun, "top");
+    await c.callout("That's a year, in one turn of the ring.", sun, "top");
     await c.callout("Now it's yours.", sun, "bottom", { hold: 3200 });
     await c.hold(2000);
     c.unlight(sun);
