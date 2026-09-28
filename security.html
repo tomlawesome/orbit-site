@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbit security and privacy</title>
+  <meta name="description" content="How Orbit handles your household's data: self-hosted, digest-pinned images, generated secrets kept out of the environment, encrypted documents, scanned uploads, and private vulnerability reporting." />
+  <meta name="theme-color" content="#05070d" />
+  <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
+  <meta property="og:title" content="Orbit security and privacy" />
+  <meta property="og:description" content="Self-hosted, digest-pinned, secrets out of the environment, documents encrypted at rest." />
+  <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/img/mark.svg" alt="" width="26" height="26" />orbit</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="./">Home</a>
+        <a href="install.html">Install</a>
+        <a href="launcher.html">Launcher</a>
+        <a href="security.html" aria-current="page">Security</a>
+        <a class="gh" href="https://github.com/tomlawesome/orbit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="doc narrow">
+    <header>
+      <span class="label">Security &amp; privacy</span>
+      <h1>Your household's data, on your terms</h1>
+      <p>Orbit stores private household records and documents. Everything about how it's built, installed and run starts from that.</p>
+      <ul class="toc">
+        <li><a href="#self-hosted">Self-hosted</a></li>
+        <li><a href="#supply-chain">What runs</a></li>
+        <li><a href="#secrets">Secrets</a></li>
+        <li><a href="#documents">Documents</a></li>
+        <li><a href="#accounts">Accounts</a></li>
+        <li><a href="#recovery">Recovery</a></li>
+        <li><a href="#report">Reporting</a></li>
+      </ul>
+    </header>
+
+    <h2 id="self-hosted">Self-hosted, by design</h2>
+    <p>Orbit runs on a server you control. There is no hosted tenancy and no phone-home for your data. A household's workspace is never shown to an unauthenticated visitor, and a fresh instance stays unclaimed until you open the one-time link printed in its own container log.</p>
+    <p>Orbit listens on all interfaces by default so a reverse proxy can reach it. Set <code>ORBIT_BIND_ADDRESS=127.0.0.1</code> to keep it to the host, and never expose its port directly to the internet. Plain HTTP is for loopback only.</p>
+
+    <h2 id="supply-chain">What runs is what was published</h2>
+    <ul>
+      <li><strong>Verified before it runs.</strong> The install command downloads a signed release manifest, checks it, and checks the SHA-256 of every file against it, with a second independent <code>cosign</code> signature when the tool is available. Nothing unverified is executed.</li>
+      <li><strong>Digest-pinned.</strong> The installer resolves the published image to an immutable <code>registry/repository@sha256:…</code> digest and writes that to <code>.env-orbit</code>. A tag is only ever read to resolve it; a mutable reference is never deployed.</li>
+      <li><strong>Assets from the image.</strong> Compose files, the scanner configuration and the operator scripts are taken from the same image digest that runs, so a compose file cannot drift from the image it configures.</li>
+      <li><strong>Standard supporting images.</strong> PostgreSQL and ClamAV are the official images, pinned by digest. There is no custom database image.</li>
+    </ul>
+
+    <h2 id="secrets">Secrets stay out of the environment</h2>
+    <p>The installer generates independent 256-bit session, database and document-encryption secrets and stores them under <code>.orbit-secrets/</code>, readable only by the installing host user. Compose mounts only the required files into each container under <code>/run/secrets</code>; the values are not injected into container environment variables. Existing secrets are preserved on later runs.</p>
+    <p>Configuration checks are value-free: <code>configure.sh --check</code> reports whether required settings are complete without printing them. Installer failure messages name fields, never values.</p>
+
+    <h2 id="documents">Documents: scanned, then encrypted</h2>
+    <p>Every upload goes to ClamAV as a quarantined stream over a private Compose network. The scanner has no published port, no database credentials, no document volume and no Orbit secrets. Documents are then written to their volume as ciphertext only.</p>
+    <p>ClamAV is on by default. It can be disabled, but Orbit shows a persistent warning and marks files uploaded afterwards as unscanned.</p>
+    <p>The optional local processing services are kept apart too: Tika is attached only to a dedicated processing network with no route to the database, and Ollama is reachable only on the private Compose network, with no cloud models and no automatic downloads.</p>
+
+    <h2 id="accounts">Accounts and sign-in</h2>
+    <ul>
+      <li>Local password accounts are always available; an OpenID Connect provider is optional and provider-neutral.</li>
+      <li>Opaque server-side sessions, PKCE, signed token validation, same-origin enforcement and CSRF protection.</li>
+      <li>Sensitive actions ask for recent authentication again.</li>
+      <li>Household APIs are authenticated and scoped. Household owners add members by display name, without exposing email addresses.</li>
+    </ul>
+
+    <h2 id="recovery">Yours to keep, and to recover</h2>
+    <p>Backups and restores are scripts that ship with the deployment (<code>scripts/backup.sh</code>, <code>scripts/restore.sh</code>), with verification built in. A separate recovery bundle exports the key material, so a backup and its bundle together can bring a household back on a new host. Orbit never deletes or resets a database volume automatically.</p>
+    <div class="note"><strong>Before every upgrade:</strong> create and verify a backup, and keep an owner-only copy of the exact pre-upgrade configuration beside it.</div>
+
+    <h2 id="report">Reporting a vulnerability</h2>
+    <p>Reports are taken seriously and handled privately. Please use the process in <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">SECURITY.md</a>, which also sets out which versions receive fixes. Deploy published images by immutable digest; that is the supported way to run Orbit.</p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div>
+        <h3>Orbit</h3>
+        <ul>
+          <li><a href="install.html">Install</a></li>
+          <li><a href="launcher.html">The launcher</a></li>
+          <li><a href="security.html">Security &amp; privacy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Source</h3>
+        <ul>
+          <li><a href="https://github.com/tomlawesome/orbit">tomlawesome/orbit</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a></li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Licence</h3>
+        <ul>
+          <li>AGPL-3.0-or-later</li>
+          <li><a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">Read the licence</a></li>
+        </ul>
+      </div>
+      <div class="foot-note">
+        <p>Orbit is in active development. The screens on this site are from the current development line and show synthetic data only.</p>
+        <p>Development disclosure: Orbit was coded by Claude under human direction.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

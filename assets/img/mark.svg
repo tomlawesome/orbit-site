@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Orbit">
+  <!-- The ring and planet the login and logout screens draw (Dawn.svelte,
+       Dusk.svelte), cut heavier so the ring survives a 16px tab, on the
+       star-chart ground the tab strip already paints (theme-color).
+       Ratified by the owner on #1009, 2026-09-16; the PNGs beside this file
+       are rendered from it by web/scripts/render-icons.mjs. -->
+  <rect width="64" height="64" rx="14" fill="#060b1c"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#8791b3" stroke-width="4"/>
+  <circle cx="48.5" cy="22.5" r="5.5" fill="#d8b45a"/>
+</svg>
