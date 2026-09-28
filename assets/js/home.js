@@ -150,6 +150,16 @@ export function renderGalaxy() {
   }
 }
 
+/* The camera: each household has its own absolute starfield offset, so a
+   flight animates between two truths and never snaps back. Parallax by
+   depth: the far tile moves less than the near one. */
+export function setCamera(id) {
+  if (!state.skyCams) return;
+  const [x, y] = households[id].pos;
+  state.skyCams.far.style.transform = `translate(${(-x * 0.18).toFixed(0)}px,${(-y * 0.18).toFixed(0)}px)`;
+  state.skyCams.near.style.transform = `translate(${(-x * 0.4).toFixed(0)}px,${(-y * 0.4).toFixed(0)}px)`;
+}
+
 /* The camera flight (v18, one motion): the old chart leaves with the camera,
    the destination rides home to the exact centre, and the new chart grows out
    of the shared centre. */
@@ -164,18 +174,13 @@ export function flyTo(id, done) {
   hero.style.setProperty("--tox", `${dx}px`); hero.style.setProperty("--toy", `${dy}px`);
   target?.classList.add("target");
   hero.classList.add("flying");
-  if (state.skyCams) {
-    const from = households[state.camera].pos, to = households[id].pos;
-    state.skyCams.far.style.transform = `translate(${(-(to[0] - from[0]) * 0.18).toFixed(0)}px,${(-(to[1] - from[1]) * 0.18).toFixed(0)}px)`;
-    state.skyCams.near.style.transform = `translate(${(-(to[0] - from[0]) * 0.4).toFixed(0)}px,${(-(to[1] - from[1]) * 0.4).toFixed(0)}px)`;
-  }
+  setCamera(id);
   const land = () => {
     state.camera = id;
     renderDial(); renderManifest(); renderGalaxy();
     hero.classList.add("arriving");
     const dial = $("#dial");
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
-    if (state.skyCams) { state.skyCams.far.style.transform = ""; state.skyCams.near.style.transform = ""; }
     $("#back").textContent = id === "willow" ? "— your sky" : `— ${households[id].name}`;
     setTimeout(() => { hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); }, reduced ? 50 : 900);
   };
@@ -470,6 +475,7 @@ function wireCreate() {
 
 export function mountHome(skyCams) {
   state.skyCams = skyCams;
+  setCamera(state.camera);
   $("#account-orb").textContent = account.initials;
   $("#who-name").textContent = account.name;
   $("#relay-addr").textContent = account.relay;
