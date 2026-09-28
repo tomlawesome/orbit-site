@@ -365,6 +365,8 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 @keyframes ping{0%{transform:scale(.6);stroke-opacity:.7}70%{transform:scale(3.2);stroke-opacity:0}100%{stroke-opacity:0}}
 .dial .breathe{animation:breathe 4.2s ease-in-out infinite}
 .dial .body-link{cursor:pointer}
+.dial .body-link:focus:not(:focus-visible){outline:none}
+.dial :is(.chrome,.trails,.pings,.belts){pointer-events:none}
 .dial .body-link :is(circle,path){pointer-events:all;transition:transform .25s;transform-origin:center;transform-box:fill-box}
 .dial .body-link:hover circle,.dial .body-link.lit circle{transform:scale(1.5)}
 .dial .body-link:focus-visible{outline:none}
@@ -387,8 +389,14 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .chart-callout .line{position:absolute;top:50%;width:26px;height:1px;background:var(--accent);opacity:.85}
 .chart-callout.side-right .line{left:-27px}
 .chart-callout.side-left .line{right:-27px}
+.chart-callout.side-below .line,.chart-callout.side-above .line{top:auto;left:var(--tail,50%);width:1px;height:26px}
+.chart-callout.side-below .line{top:-27px}
+.chart-callout.side-above .line{bottom:-27px}
 .chart-callout b{display:block;font-weight:600;font-size:13.5px}
 .chart-callout small{font:11.5px var(--mono);color:var(--ink-mid)}
+.chart-callout .chip{display:none;margin-top:7px;font:11px var(--mono);color:var(--accent-text);border:1px solid var(--line);border-radius:99px;padding:5px 12px;cursor:pointer;background:none}
+.chart-callout.tap{pointer-events:auto;cursor:pointer}
+.chart-callout.tap .chip{display:block;width:max-content}
 .hero-foot{position:relative;margin-top:26px;display:flex;flex-direction:column;align-items:center;gap:13px;width:min(360px,90vw)}
 .splash-search{position:relative;width:100%}
 .splash-search input{background:none;border:0;outline:0;border-bottom:1px solid var(--line);width:100%;text-align:center;

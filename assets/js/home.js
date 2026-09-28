@@ -81,18 +81,29 @@ export function renderDial() {
     }
     if (it.days < 0 && it.kind !== "expiry" && !suggestion) el("circle", { class: "ping", cx: f1(p.x), cy: f1(p.y), r: "8", fill: "none", style: "stroke:var(--overdue)" }, $("#dial .pings"));
     if (it.documents?.length) el("ellipse", { class: "belt", cx: f1(p.x), cy: f1(p.y), rx: f1(r + 6.5), ry: f1(r * 0.66), transform: `rotate(-24 ${f1(p.x)} ${f1(p.y)})`, fill: "none", style: "stroke:var(--accent)", "stroke-width": "1.3", opacity: ".8" }, $("#dial .belts"));
-    link.addEventListener("click", (e) => { e.preventDefault(); openRow(it.id, true); });
-    link.addEventListener("pointerenter", () => showBodyCallout(link, it, suggestion));
-    link.addEventListener("focus", () => showBodyCallout(link, it, suggestion));
-    link.addEventListener("pointerleave", hideBodyCallout);
-    link.addEventListener("blur", hideBodyCallout);
+    /* CON-5: on touch the first tap buys the callout and the second opens;
+       with a pointer, hover shows it and a click opens. */
+    link.addEventListener("pointerdown", (e) => { link.dataset.ptype = e.pointerType; });
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (link.dataset.ptype === "touch" && armedBody !== it.id) { showBodyCallout(link, it, suggestion, true); return; }
+      hideBodyCallout(); openRow(it.id, true);
+    });
+    link.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") showBodyCallout(link, it, suggestion); });
+    link.addEventListener("focus", () => { if (link.dataset.ptype !== "touch") showBodyCallout(link, it, suggestion); });
+    link.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") hideBodyCallout(); });
+    link.addEventListener("blur", () => { if (!armedBody) hideBodyCallout(); });
   }
   svg.appendChild($("#dial .sun-link"));
 }
 
 const bodyCallout = () => $("#body-callout");
-function showBodyCallout(link, it, suggestion) {
+let armedBody = null;
+function showBodyCallout(link, it, suggestion, tapped = false) {
   const c = bodyCallout();
+  armedBody = tapped ? it.id : null;
+  c.classList.toggle("tap", tapped);
+  c.onclick = tapped ? () => { hideBodyCallout(); openRow(it.id, true); } : null;
   const box = link.getBoundingClientRect();
   c.querySelector("b").textContent = it.title;
   c.querySelector("small").textContent = suggestion
@@ -101,13 +112,23 @@ function showBodyCallout(link, it, suggestion) {
   c.classList.add("show");
   const w = c.offsetWidth, h = c.offsetHeight;
   const right = box.left + box.width / 2 < innerWidth / 2;
-  c.classList.toggle("side-right", right); c.classList.toggle("side-left", !right);
   let x = right ? box.right + 30 : box.left - 30 - w;
   let y = box.top + box.height / 2 - h / 2;
-  x = Math.max(8, Math.min(x, innerWidth - 8 - w)); y = Math.max(8, Math.min(y, innerHeight - 8 - h));
+  x = Math.max(8, Math.min(x, innerWidth - 8 - w));
+  /* no room beside it (a phone): drop below the body, or rise above, never over it */
+  let side = right ? "side-right" : "side-left";
+  if (x < box.right + 6 && x + w > box.left - 6) {
+    x = Math.max(8, Math.min(box.left + box.width / 2 - w / 2, innerWidth - 8 - w));
+    const below = box.bottom + 30 + h <= innerHeight - 8;
+    y = below ? box.bottom + 30 : box.top - 30 - h;
+    side = below ? "side-below" : "side-above";
+    c.style.setProperty("--tail", `${box.left + box.width / 2 - x}px`);
+  }
+  y = Math.max(8, Math.min(y, innerHeight - 8 - h));
+  for (const k of ["side-right", "side-left", "side-below", "side-above"]) c.classList.toggle(k, k === side);
   c.style.left = `${x}px`; c.style.top = `${y}px`;
 }
-function hideBodyCallout() { bodyCallout().classList.remove("show"); }
+function hideBodyCallout() { bodyCallout().classList.remove("show", "tap"); armedBody = null; }
 
 /* ── the other systems, out in the fixed sky ──────────────────────────── */
 export function renderGalaxy() {
@@ -493,6 +514,9 @@ export function mountHome(skyCams) {
   addEventListener("resize", () => { if (!state.flying) renderGalaxy(); });
   $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });
+  /* a tap anywhere else, or a scroll, lets the callout go */
+  document.addEventListener("pointerdown", (e) => { if (armedBody && !e.target.closest(".body-link") && !e.target.closest("#body-callout")) hideBodyCallout(); });
+  addEventListener("scroll", () => { if (armedBody) hideBodyCallout(); }, { passive: true });
   document.addEventListener("click", (e) => { if (!e.target.closest("#account") && !e.target.closest("#account-orb")) $("#account").classList.remove("open"); });
   $$("[data-copy]").forEach((b) => b.addEventListener("click", () => {
     if (!navigator.clipboard) return;
