@@ -6,7 +6,7 @@ import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAW
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall } from "./data.js";
-import { DAWN, DUSK, mountRasters } from "./flight.js";
+import { DAWN, DUSK, mountRasters, createJourney } from "./flight.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -30,31 +30,47 @@ let arrived = false;
 try { arrived = sessionStorage.getItem("orbit-site-arrived") === "1"; } catch { /* this visit only */ }
 const wantsDrawer = location.hash === "#install" ? "installdrawer" : location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
 
+const journey = createJourney({
+  canvas: $("#warp"), mark: $("#flightmark"), name: $("#launchname"),
+  dawnGlyph: () => $("#login-glyph svg"), duskGlyph: () => $("#dusk-glyph svg"),
+  on: {
+    /* the climb: the door is let go, the bare sky lands, the instrument arrives */
+    release() { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); },
+    land() { const h = $("#home"); h.hidden = false; h.classList.add("shown"); home.renderGalaxy(); },
+    settled() { document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); player.show(); },
+    /* the descent: the sky disperses, the dusk comes up under the cooling dawn */
+    dusk() { const d = $("#dusk"); d.hidden = false; },
+    farewell() { const h = $("#home"); h.classList.remove("shown"); h.hidden = true; },
+  },
+});
+
 function showDoor() {
+  journey.reset();
   const door = $("#door");
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
-  door.hidden = false; door.classList.remove("leaving");
-  document.body.classList.add("at-door"); document.body.classList.remove("lit", "farewell");
+  door.hidden = false; door.classList.add("shown");
+  document.body.classList.add("at-door"); document.body.classList.remove("lit");
   $("#home").classList.remove("shown"); $("#home").hidden = true;
-  $("#dusk").hidden = true; $("#dusk").classList.remove("shown");
+  $("#dusk").hidden = true;
   requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
 }
 
-function launch(fromDoor = true) {
-  const door = $("#door"), homeEl = $("#home");
-  homeEl.hidden = false;
-  home.renderGalaxy();
-  requestAnimationFrame(() => homeEl.classList.add("shown"));
-  if (fromDoor) {
-    $("#gate").classList.add("flash");
-    door.classList.add("leaving");
-  }
-  document.body.classList.remove("at-door");
-  const dial = $("#dial");
-  dial.classList.remove("arrive"); void dial.offsetWidth; dial.classList.add("arrive");
-  setTimeout(() => { door.hidden = true; $("#gate").classList.remove("flash"); }, fromDoor && !reduced ? 1600 : 50);
+/* the gate: the flight, whole — 4.8 seconds of climb, the bare sky, the
+   instrument two seconds after it (the app's own beats, to the millisecond) */
+function launch() {
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }
-  if (wantsDrawer) { setTimeout(() => home.openDrawer(wantsDrawer, true), 900); player.show(); return; }
+  $("#gate").classList.add("flash");
+  const h = home.household();
+  journey.ascend({ title: h.name, subtitle: "welcome back" });
+}
+
+/* arriving already signed in: no flight, the sky is simply there */
+function arrive() {
+  const homeEl = $("#home");
+  $("#door").hidden = true; document.body.classList.remove("at-door");
+  homeEl.hidden = false; home.renderGalaxy();
+  requestAnimationFrame(() => homeEl.classList.add("shown"));
+  if (wantsDrawer) setTimeout(() => home.openDrawer(wantsDrawer, true), 900);
   player.show();
 }
 
@@ -62,20 +78,13 @@ function signOut() {
   if (!duskDrawn) { duskDrawn = true; afterFirstFrame(duskRasters.start); }
   player.stop(false);
   home.closeDrawers();
-  const dusk = $("#dusk");
-  dusk.hidden = false;
-  requestAnimationFrame(() => { dusk.classList.add("shown"); setTimeout(() => document.body.classList.add("farewell"), 400); });
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
+  const h = home.household();
+  journey.descend({ title: h.name });
 }
 
-$("#gate").addEventListener("click", () => launch(true));
+$("#gate").addEventListener("click", launch, { once: false });
 $("#signout").addEventListener("click", signOut);
-$("#gate-back").addEventListener("click", () => { showDoor(); });
+$("#gate-back").addEventListener("click", showDoor);
 
-if (arrived || wantsDrawer) {
-  $("#door").hidden = true;
-  document.body.classList.remove("at-door");
-  launch(false);
-} else {
-  showDoor();
-}
+if (arrived || wantsDrawer) arrive(); else showDoor();

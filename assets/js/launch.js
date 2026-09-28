@@ -1,18 +1,20 @@
 /*
- * THE LAUNCH — the install page. The dawn the sign-in leaves from, the ring
- * the mark wears, and the install itself as one turn of that ring: each stage
- * a body, lit in order, with the README's own sentence for it beneath.
+ * THE LAUNCH — the install page. The same door, the same flight the app
+ * makes out of it, and a landing of its own: the ring the mark wears, with
+ * the six stages of the install as bodies on it, each lit in turn with the
+ * README's own sentence beneath. The one line is on both surfaces.
  */
-import { initTheme, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, reduced } from "./sky.js";
-import { DAWN, mountRasters } from "./flight.js";
+import { initTheme, mountFlightSky, mountTiledSky, mountGrain, DAWN_FAR, DAWN_NEAR, reduced } from "./sky.js";
+import { DAWN, mountRasters, createJourney } from "./flight.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
 mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
+mountTiledSky($("#launchpad .sky"), "pad");
 mountGrain($(".grain"));
 const rasters = mountRasters($("#door .world"), DAWN, "dawn");
-requestAnimationFrame(() => setTimeout(rasters.start, 0));
-requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
+const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
+let dawnDrawn = false;
 
 /* the stages, in the order the installer takes them (README, "Quick start") */
 const STAGES = [
@@ -33,10 +35,10 @@ const bodies = STAGES.map((st, i) => {
   g.style.setProperty("--i", i);
   const cx = (100 + 72 * Math.cos(a)).toFixed(2), cy = (100 + 72 * Math.sin(a)).toFixed(2);
   g.style.transformOrigin = `${cx}px ${cy}px`;
-  const halo = document.createElementNS(SVG, "circle"); halo.setAttribute("class", "halo"); halo.setAttribute("cx", cx); halo.setAttribute("cy", cy); halo.setAttribute("r", "11");
-  const hit = document.createElementNS(SVG, "circle"); hit.setAttribute("class", "hit"); hit.setAttribute("cx", cx); hit.setAttribute("cy", cy); hit.setAttribute("r", "14");
-  const dot = document.createElementNS(SVG, "circle"); dot.setAttribute("class", "dot"); dot.setAttribute("cx", cx); dot.setAttribute("cy", cy); dot.setAttribute("r", "5.2");
-  g.append(halo, hit, dot); host.appendChild(g);
+  for (const [cls, r] of [["halo", "11"], ["hit", "14"], ["dot", "5.2"]]) {
+    const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", r); g.appendChild(c);
+  }
+  host.appendChild(g);
   g.addEventListener("click", () => { go(i); rest(); });
   g.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") { go(i); rest(); } });
   g.addEventListener("focus", () => { go(i); rest(); });
@@ -52,7 +54,7 @@ function go(i) {
   const prev = at; at = i;
   bodies.forEach((b, j) => { b.classList.toggle("on", j === i); b.classList.toggle("done", j < i); });
   const from = prev < 0 ? i * (100 / 6) : prev * (100 / 6), to = i * (100 / 6);
-  light.style.transition = "none"; light.style.strokeDasharray = `0.01 100`; light.style.strokeDashoffset = `${-from}`;
+  light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; light.style.strokeDashoffset = `${-from}`;
   void light.getBoundingClientRect();
   const len = ((to - from) + 100) % 100 || (prev < 0 ? 0 : 100);
   light.style.transition = reduced ? "none" : "stroke-dasharray 1.1s cubic-bezier(.2,.7,.2,1)";
@@ -64,9 +66,30 @@ function go(i) {
 function next() { go((at + 1) % STAGES.length); }
 function tick() { clearTimeout(timer); timer = setTimeout(() => { if (Date.now() > held) next(); tick(); }, 4200); }
 function rest() { held = Date.now() + 9000; }
+function still() { clearTimeout(timer); at = -1; bodies.forEach((b) => b.classList.remove("on", "done")); light.style.transition = "none"; light.style.strokeDasharray = "0.01 100"; stage.classList.remove("in"); document.body.classList.remove("arrived"); }
 
-/* first light: the ring's bodies arrive one by one, then the turn begins */
-setTimeout(() => { document.body.classList.add("arrived"); setTimeout(() => { go(0); tick(); }, reduced ? 100 : 1500); }, reduced ? 200 : 900);
+/* the flight: the door leaves, the ring lands, the turn begins */
+const journey = createJourney({
+  canvas: $("#warp"), mark: $("#flightmark"), name: $("#launchname"),
+  dawnGlyph: () => $("#login-glyph svg"), duskGlyph: () => null,
+  on: {
+    release() { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); },
+    land() { $("#launchpad").hidden = false; },
+    settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); setTimeout(() => { go(0); tick(); }, reduced ? 100 : 1500); },
+  },
+});
+function showDawn() {
+  journey.reset(); still();
+  $("#launchpad").hidden = true;
+  const door = $("#door");
+  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(rasters.start); }
+  door.hidden = false; door.classList.add("shown");
+  document.body.classList.add("at-door"); document.body.classList.remove("lit");
+  requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
+}
+$("#gate").addEventListener("click", () => { $("#gate").classList.add("flash"); journey.ascend({ title: "Orbit", subtitle: "quick start" }); });
+$("#again").addEventListener("click", showDawn);
+showDawn();
 
 /* copy the one line */
 document.querySelectorAll("[data-copy]").forEach((button) => {
