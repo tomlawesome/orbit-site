@@ -618,6 +618,11 @@ body.bare #home .chips,body.bare #home #manifest,body.bare #home .back,body.bare
 body.bare #home .dial,body.bare #home .minisys{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
 @keyframes condense{from{transform:scale(1.72);opacity:0;filter:blur(11px)}40%{opacity:.8}68%{filter:blur(2.5px)}to{transform:scale(1);filter:blur(0)}}
 #home .dial .chrome{transform-box:view-box;transform-origin:50% 50%}
+/* the red ring, when the walk names it */
+.dial .danger{transform-box:fill-box;transform-origin:center}
+.dial.warn .danger{animation:dangerpulse 1.1s ease-in-out infinite}
+.dial.warn .danger circle[stroke]{stroke-opacity:.95;stroke-width:1.5}
+@keyframes dangerpulse{0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}
 body.instrument #home .dial .chrome{animation:instrumentarrive 1.8s cubic-bezier(.2,.26,.35,1) both}
 @keyframes instrumentarrive{from{transform:scale(.16);opacity:0}55%{opacity:1}to{transform:scale(1);opacity:1}}
 body.instrument #home .orb,body.instrument #home .nstar,body.instrument #home .drawer,body.instrument #home .hero-foot,
@@ -645,6 +650,8 @@ body.dispersing .transport{opacity:0}
 body.launchpage{overflow:hidden}
 #launchpad{position:fixed;inset:0;z-index:2;background:var(--bg)}
 #launchpad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
+#launchpad .back.sky{left:auto;right:24px}
+#launchpad .scenes{position:absolute;inset:0;z-index:1;pointer-events:none}
 #launchpad .back:hover,#door .back:hover{color:var(--accent-text)}
 #door .back{position:absolute;top:22px;left:24px;z-index:4;color:#7e819a;text-decoration:none;opacity:0;transition:opacity 1.2s ease .6s}
 body.lit #door .back{opacity:1}
@@ -678,9 +685,9 @@ body.arrived #launchpad .stage-body{transform:scale(1)}
 #launchpad .doorfoot a:hover{color:var(--accent-text)}
 /* the landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching #launchpad{visibility:hidden;pointer-events:none}
-body.bare #launchpad .stage,body.bare #launchpad .doorfoot,body.bare #launchpad .back,body.bare #launchpad .word{opacity:0;pointer-events:none}
+body.bare #launchpad .stage,body.bare #launchpad .doorfoot,body.bare #launchpad .back,body.bare #launchpad .word,body.bare #launchpad .scenes{opacity:0;pointer-events:none}
 body.bare #launchpad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
-body.instrument #launchpad .word,body.instrument #launchpad .doorfoot,body.instrument #launchpad .back{animation:chromein 1.3s ease .45s both}
+body.instrument #launchpad .word,body.instrument #launchpad .doorfoot,body.instrument #launchpad .back,body.instrument #launchpad .scenes{animation:chromein 1.3s ease .45s both}
 /* the one line: on the dawn, gone for the flight, back with the instrument */
 .launchcmd{position:fixed;left:50%;transform:translateX(-50%);bottom:max(64px,calc(22px + 6svh));width:min(760px,calc(100% - 40px));z-index:40;
   opacity:0;transition:opacity 1.4s ease 1.8s;pointer-events:none}
