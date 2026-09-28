@@ -7,7 +7,7 @@ import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall } from "./data.js";
 import { DAWN, DUSK, mountRasters, createJourney, UP, RIGHT, LEFT } from "./flight.js";
-import { SECTIONS, createRing, wirePlanets } from "./pads.js";
+import { SECTIONS, createRing, createDocs, createInfo, wirePlanets } from "./pads.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -37,7 +37,7 @@ const PADS = {
   docs: { el: $("#docspad"), profile: RIGHT },
   info: { el: $("#infopad"), profile: LEFT },
 };
-for (const [id, pad] of Object.entries(PADS)) { mountTiledSky(pad.el.querySelector(".sky"), `pad-${id}`); pad.ring = createRing(pad.el, SECTIONS[id]); }
+for (const [id, pad] of Object.entries(PADS)) { mountTiledSky(pad.el.querySelector(".sky"), `pad-${id}`); pad.ring = id === "install" ? createRing(pad.el, SECTIONS[id]) : id === "docs" ? createDocs(pad.el) : createInfo(pad.el); }
 let current = null;   /* "door" | "home" | a pad id */
 const visibleGlyph = () => (current === "home" ? $("#dial") : current && PADS[current] ? PADS[current].el.querySelector(".ring") : $("#login-glyph svg"));
 
