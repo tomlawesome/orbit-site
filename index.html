@@ -62,15 +62,26 @@
     </svg></div>
     <div class="loginchrome">
       <div class="lockup">
-        <div class="glyph" id="login-glyph"><svg width="420" height="420" viewBox="0 0 200 200" aria-hidden="true">
+        <div class="glyph" id="login-glyph"><svg width="420" height="420" viewBox="0 0 200 200">
           <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>
-          <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g></svg></div>
+          <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g>
+          <!-- the other doors: three more bodies on the same ring -->
+          <a class="planet" href="#docs" data-section="docs" data-name="Docs" data-line="the README, the guarantees, sign-in, security, the launcher" aria-label="Docs"><g class="spin s1"><circle cx="100" cy="28" r="5" fill="#8fb8ff"/></g></a>
+          <a class="planet" href="#install" data-section="install" data-name="Install" data-line="one line, six stages, one turn of the ring" aria-label="Install"><g class="spin s2"><circle cx="100" cy="28" r="5" fill="#4ade80"/></g></a>
+          <a class="planet" href="#info" data-section="info" data-name="Information" data-line="what Orbit is, in its own words" aria-label="Information"><g class="spin s3"><circle cx="100" cy="28" r="5" fill="#f87171"/></g></a>
+        </svg></div>
         <h1 class="name">orbit</h1>
         <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button></div>
       </div>
     </div>
     <p class="doorword"><b>Everything in your orbit, on track.</b></p>
-    <p class="doorfoot"><span>self-hosted</span><span class="sep">·</span><a href="install.html">install</a><span class="sep">·</span><a href="https://github.com/tomlawesome/orbit">source</a><span class="sep">·</span><span>AGPL-3.0</span></p>
+    <div class="doorcmd">
+      <div class="cmd">
+        <code title="click to copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <button class="copy launch" id="launch" type="button" aria-label="Launch: the install, in one turn of the ring">Launch</button>
+      </div>
+    </div>
+    <div class="chart-callout planet-tip" id="planet-tip" aria-hidden="true"><span class="line"></span><b></b><small></small></div>
   </div>
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->
@@ -290,6 +301,90 @@
     <button class="tb" id="tp-stop" type="button" aria-label="Stop the walk"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
     <div class="bar"><span class="rail"></span><span class="played"></span><span class="name" aria-hidden="true"></span></div>
     <span class="count" aria-live="polite"></span>
+  </div>
+
+  <!-- ═══ THE LANDINGS: install, docs, information ═══════════════════ -->
+  <div class="pad" id="installpad" hidden>
+    <div class="sky" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <canvas class="scenes" aria-hidden="true"></canvas>
+    <button class="corner back dawn" type="button">— the dawn</button>
+    <button class="corner back tosky" type="button">your sky →</button>
+    <div class="loginchrome">
+      <div class="lockup">
+        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
+          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
+          <circle class="light" cx="100" cy="100" r="72" fill="none" stroke="#d8b45a" stroke-width="2.6" stroke-linecap="round" pathLength="100"/>
+          <g class="stages"></g>
+        </svg></div>
+        <div class="word">
+          <h1>Get into Orbit</h1>
+          <button class="gate" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash">copy the line</button>
+        </div>
+      </div>
+    </div>
+    <div class="stage" aria-live="polite">
+      <span class="corner"><b class="n">01</b> / <span class="total">06</span> <span class="sep">—</span> <span class="label"></span></span>
+      <p class="line"></p>
+      <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
+    </div>
+    <div class="launchcmd">
+      <div class="cmd">
+        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+      </div>
+      <p class="needs">an empty directory <span class="sep">·</span> Linux, amd64 or arm64 <span class="sep">·</span> Docker Compose v2 <span class="sep">·</span> curl <span class="sep">·</span> git not required</p>
+    </div>
+  </div>
+  <div class="pad" id="docspad" hidden>
+    <div class="sky" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <canvas class="scenes" aria-hidden="true"></canvas>
+    <button class="corner back dawn" type="button">— the dawn</button>
+    <button class="corner back tosky" type="button">your sky →</button>
+    <div class="loginchrome">
+      <div class="lockup">
+        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
+          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
+          <circle class="light" cx="100" cy="100" r="72" fill="none" stroke="#d8b45a" stroke-width="2.6" stroke-linecap="round" pathLength="100"/>
+          <g class="stages"></g>
+        </svg></div>
+        <div class="word">
+          <h1>The docs</h1>
+          <a class="gate" href="https://github.com/tomlawesome/orbit#readme" target="_blank" rel="noopener">the README →</a>
+        </div>
+      </div>
+    </div>
+    <div class="stage" aria-live="polite">
+      <span class="corner"><b class="n">01</b> / <span class="total">06</span> <span class="sep">—</span> <span class="label"></span></span>
+      <p class="line"></p>
+      <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
+    </div>
+  </div>
+  <div class="pad" id="infopad" hidden>
+    <div class="sky" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+    <canvas class="scenes" aria-hidden="true"></canvas>
+    <button class="corner back dawn" type="button">— the dawn</button>
+    <button class="corner back tosky" type="button">your sky →</button>
+    <div class="loginchrome">
+      <div class="lockup">
+        <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
+          <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
+          <circle class="light" cx="100" cy="100" r="72" fill="none" stroke="#d8b45a" stroke-width="2.6" stroke-linecap="round" pathLength="100"/>
+          <g class="stages"></g>
+        </svg></div>
+        <div class="word">
+          <h1>Orbit</h1>
+          <a class="gate" href="https://github.com/tomlawesome/orbit" target="_blank" rel="noopener">the source →</a>
+        </div>
+      </div>
+    </div>
+    <div class="stage" aria-live="polite">
+      <span class="corner"><b class="n">01</b> / <span class="total">06</span> <span class="sep">—</span> <span class="label"></span></span>
+      <p class="line"></p>
+      <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
+    </div>
   </div>
 
   <!-- ═══ THE FLIGHT: the canvas between the dawn and the sky ═══════════ -->

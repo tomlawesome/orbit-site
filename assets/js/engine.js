@@ -387,7 +387,7 @@ export function createFlight(canvas, options = {}) {
 
   /** @param {Profile} profile */
   function setCamera(profile) {
-    VPX = W / 2; VPY = profile.vpY * H;
+    VPX = (profile.vpX ?? 0.5) * W; VPY = profile.vpY * H;   /* site: the sideways flights set vpX */
     A0 = profile.a0 * Math.PI / 180; A1 = profile.a1 * Math.PI / 180;
     RMAX = DIAG * 1.55;
   }

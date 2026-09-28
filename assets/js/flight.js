@@ -120,7 +120,16 @@ export function mountRasters(world, groups, prefix) {
    and rides to the centre of the screen, and the name written once on the
    void. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP } from "./engine.js";
+
+/* The sideways flights: the climb's own speed, atmosphere and traffic, with
+   the vanishing point moved to one edge and every bearing turned with it. */
+const turned = (deg) => PROPS_UP.map((g) => ({ ...g, ang: g.ang + deg }));
+export const RIGHT = { ...UP, vpX: 0.94, vpY: 0.5, a0: UP.a0 + 90, a1: UP.a1 + 90, props: turned(90) };
+export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90, props: turned(-90) };
+/* the descent that sets down on the dawn again, rather than cooling into the dusk */
+export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
+export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
@@ -155,43 +164,46 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.classList.remove("on"); mark.classList.add("collapse");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
-  function landMark() {
+  function landMark(glyph) {
     const from = { left: innerWidth / 2 - 18, top: innerHeight / 2 - 18, width: 36, height: 36 };
     mark.style.transition = "none";
     mark.style.left = `${from.left}px`; mark.style.top = `${from.top}px`; mark.style.width = "36px"; mark.style.height = "36px";
     mark.classList.remove("collapse"); mark.classList.add("on");
-    const glyph = duskGlyph(); if (!glyph) return;
+    if (!glyph) return;
     const g = glyph.getBoundingClientRect();
     glyph.style.visibility = "hidden";
     mark.style.left = `${g.left}px`; mark.style.top = `${g.top}px`; mark.style.width = `${g.width}px`; mark.style.height = `${g.height}px`;
     flip(from, g.left, g.top, g.width, g.height, MARK_RIDE_DOWN);
   }
+  let flight = { profile: UP, glyph: dawnGlyph, on: {} };
   const ascentStep = (act) => {
     switch (act) {
       case "arming": body.classList.add("arming"); break;
-      case "warp": body.classList.add("showwarp"); engine.start(UP); break;
-      case "mark": body.classList.remove("arming"); liftMark(dawnGlyph(), innerHeight * 0.5, MARK_ARRIVE, MARK_RIDE_UP); break;
-      case "release": body.classList.remove("showdawn"); on.release?.(); break;
+      case "warp": body.classList.add("showwarp"); engine.start(flight.profile); break;
+      case "mark": body.classList.remove("arming"); liftMark(flight.glyph(), innerHeight * 0.5, MARK_ARRIVE, MARK_RIDE_UP); break;
+      case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
       case "markOut": dropMark(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
-      case "land": body.classList.remove("showwarp", "launching"); body.classList.add("bare"); on.land?.(); break;
-      case "instrument": body.classList.remove("bare"); body.classList.add("instrument"); on.settled?.(); break;
+      case "land": body.classList.remove("showwarp", "launching"); body.classList.add("bare"); (flight.on.land ?? on.land)?.(); break;
+      case "instrument": body.classList.remove("bare"); body.classList.add("instrument"); (flight.on.settled ?? on.settled)?.(); break;
     }
   };
+  let descent = { onto: "dusk", on: {} };
+  const landingGlyph = () => (descent.onto === "dawn" ? dawnGlyph() : duskGlyph());
   const descentStep = (act) => {
     switch (act) {
       case "withdraw": body.classList.remove("instrument"); body.classList.add("withdrawing"); break;
       case "disperse": body.classList.add("dispersing"); break;
-      case "warp": body.classList.add("showwarp"); engine.start(DOWN); break;
-      case "release": body.classList.remove("withdrawing"); on.released?.(); break;
+      case "warp": body.classList.add("showwarp"); engine.start(descent.onto === "dawn" ? DOWN_DAWN : DOWN); break;
+      case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
-      case "dusk": body.classList.add("showdusk"); on.dusk?.(); break;
-      case "markIn": landMark(); break;
+      case "dusk": body.classList.add(descent.onto === "dawn" ? "showdawn" : "showdusk"); (descent.on.surface ?? on.dusk)?.(); break;
+      case "markIn": landMark(landingGlyph()); break;
       case "warpOut": body.classList.remove("showwarp"); break;
-      case "markHome": { mark.classList.remove("on"); const g = duskGlyph(); if (g) g.style.visibility = ""; break; }
-      case "farewell": body.classList.add("farewell"); on.farewell?.(); break;
+      case "markHome": { mark.classList.remove("on"); const g = landingGlyph(); if (g) g.style.visibility = ""; break; }
+      case "farewell": body.classList.add("farewell"); (descent.on.farewell ?? on.farewell)?.(); break;
     }
   };
   function reset() {
@@ -201,16 +213,23 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.classList.remove("on", "collapse"); name.classList.remove("on");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
-  function ascend({ title = "", subtitle = "" } = {}) {
+  const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
+  /* fly: any profile, from any surface's glyph, to whichever landing `on` describes */
+  function fly(profile, { title = "", subtitle = "", glyph = dawnGlyph, on: hooks = {} } = {}) {
     cancelTimeline();
-    name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
+    body.classList.remove(...CLASSES);
+    flight = { profile, glyph, on: hooks };
+    write(title, subtitle);
     body.classList.add("showdawn", "launching");
     cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : ascentBeats(), ascentStep);
   }
-  function descend({ title = "", subtitle = "signing out" } = {}) {
+  const ascend = (o = {}) => fly(UP, o);
+  function descend({ title = "", subtitle = "signing out", onto = "dusk", on: hooks = {} } = {}) {
     cancelTimeline();
-    name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
+    body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
+    descent = { onto, on: hooks };
+    write(title, subtitle);
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : descentBeats(), descentStep);
   }
-  return { ascend, descend, reset, reduced };
+  return { fly, ascend, descend, reset, reduced };
 }

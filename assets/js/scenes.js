@@ -8,7 +8,7 @@ const CONS = [[-150, -58, 3.2], [-52, -96, 2.2], [24, -24, 3.8], [104, -72, 2.4]
 const hexa = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
 const ease = (u) => 1 - Math.pow(1 - Math.min(1, Math.max(0, u)), 3);
 
-export function createScenes(canvas, ringEl) {
+export function createScenes(canvas, ringEl, { text = true } = {}) {
   const ctx = canvas.getContext("2d");
   let W = 0, H = 0, dpr = 1, raf = 0, cur = -1, prev = -1, since = 0, started = 0;
   let PEN = {};
@@ -106,7 +106,7 @@ export function createScenes(canvas, ringEl) {
     ctx.fillStyle = PEN.core; ctx.beginPath(); ctx.arc(0, 0, 4 * sc, 0, 6.284); ctx.fill();
     /* pinned: the hairline bracket and the digest, once it has settled */
     const v = ease((t - 1500) / 700);
-    if (v > 0) {
+    if (v > 0 && text) {
       ctx.globalAlpha = a * v; ctx.strokeStyle = PEN.pen; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(0, 0, 14 * sc, 0, 6.284); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(14 * sc, 0); ctx.lineTo(34 * sc, 0); ctx.stroke();
@@ -127,6 +127,7 @@ export function createScenes(canvas, ringEl) {
       const q = ph + t * w, bx = Math.cos(q) * r, by = Math.sin(q) * r;
       if (on) { ctx.globalAlpha = a * 0.16 * (1 + 0.5 * Math.sin(t / 400)); ctx.fillStyle = PEN.ok; ctx.beginPath(); ctx.arc(bx, by, 11 + 6 * (1 - u), 0, 6.284); ctx.fill(); }
       ctx.globalAlpha = a; ctx.fillStyle = on ? PEN.ok : PEN.pen; ctx.beginPath(); ctx.arc(bx, by, on ? 4.2 : 3.2, 0, 6.284); ctx.fill();
+      if (!text) return;
       ctx.globalAlpha = a * 0.8; ctx.fillStyle = PEN.hi; ctx.font = `9px "JetBrains Mono", monospace`; ctx.textBaseline = "middle"; ctx.textAlign = bx >= 0 ? "left" : "right";
       ctx.fillText(["postgres", "orbit", "clamav"][i], bx + (bx >= 0 ? 10 : -10), by);
     });
@@ -142,7 +143,7 @@ export function createScenes(canvas, ringEl) {
     for (const [off, mul] of [[0, 0.42], [0.3, 0.2]]) { const q = ((t / 3800) + off) % 1; ctx.strokeStyle = hexa(PEN.sun, Math.pow(1 - q, 1.6) * mul * a); ctx.beginPath(); ctx.arc(cx, cy, S * (1.05 + q * 2.4), 0, 6.284); ctx.stroke(); }
     /* the last line of the log, and the one-time link reaching the ring */
     const u = ease((t - 600) / 1100);
-    if (u > 0) {
+    if (u > 0 && text) {
       const x0 = Math.max(16, cx - S * 2.7), y0 = cy - S * 1.55;
       ctx.save(); ctx.globalAlpha = a * u; ctx.strokeStyle = PEN.pen; ctx.lineWidth = 1;
       ctx.strokeRect(x0, y0 - 9, S * 1.5, 18);
@@ -161,8 +162,8 @@ export function createScenes(canvas, ringEl) {
     if (!started) started = now;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     const f = frame(); const x = Math.min(1, (now - since) / 700);
-    if (prev >= 0 && x < 1) SCENES[prev](now - started, (1 - x) * 0.6, f);
-    if (cur >= 0) SCENES[cur](now - since, x * 0.6, f);
+    if (prev >= 0 && x < 1) SCENES[prev % SCENES.length](now - started, (1 - x) * 0.6, f);
+    if (cur >= 0) SCENES[cur % SCENES.length](now - since, x * 0.6, f);
     raf = requestAnimationFrame(draw);
   }
   return {
