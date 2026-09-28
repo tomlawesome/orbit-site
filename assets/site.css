@@ -660,7 +660,7 @@ body.dispersing .transport{opacity:0}
 .planet-tip.tap{pointer-events:auto;cursor:pointer}
 .planet-tip.tap small::after{content:" · open →";color:var(--accent-text)}
 /* the one line beneath the sunrise, and the way it opens */
-.doorcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(30px,calc(14px + 4svh));width:min(560px,calc(100% - 40px));z-index:3;
+.doorcmd{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(150px,32vw) + 52px);width:min(560px,calc(100% - 40px));z-index:3;
   opacity:0;transition:opacity 1.6s ease 2.4s}
 body.lit .doorcmd{opacity:1}
 body.launching .doorcmd,body.showwarp .doorcmd{opacity:0;transition:opacity .4s ease;pointer-events:none}
@@ -726,7 +726,7 @@ body.instrument .launchcmd{opacity:1}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
-  .doorcmd{bottom:22px}}
+}
 @media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .scenes,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
 .doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
@@ -738,5 +738,4 @@ body.instrument .launchcmd{opacity:1}
 body.bare .pad .doorfoot{opacity:0}
 body.instrument .pad .doorfoot{animation:chromein 1.3s ease .45s both}
 body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
-.doorcmd{bottom:max(52px,calc(36px + 4svh))}
-@media (max-width:560px){.doorcmd{bottom:48px}.launchcmd{bottom:96px}}
+@media (max-width:560px){.doorcmd{top:calc(50% + min(150px,32vw) + 44px)}.launchcmd{bottom:96px}}
