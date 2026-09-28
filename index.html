@@ -1,253 +1,405 @@
 <!doctype html>
-<html lang="en-GB">
+<html lang="en-GB" data-theme="starchart">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Orbit — everything in your orbit, on track</title>
-  <meta name="description" content="Orbit is a self-hosted home operations hub for maintenance, renewals, recurring services, contracts, cover, and the people who share them. One container, one command to install." />
-  <meta name="theme-color" content="#05070d" />
+  <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. One container, one command to install." />
+  <meta name="theme-color" content="#060b1c" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="icon" href="assets/img/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Orbit — everything in your orbit, on track" />
-  <meta property="og:description" content="A self-hosted home operations hub for the things your household has to keep on top of." />
+  <meta property="og:description" content="A self-hosted home operations hub. The year is the orbit; your household is the sun." />
   <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
+  <script>/* the reader's own sky, before first paint */try{var t=localStorage.getItem("orbit-theme");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="assets/site.css" />
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap">
-      <a class="brand" href="./"><img src="assets/img/mark.svg" alt="" width="26" height="26" />orbit</a>
-      <nav class="site-nav" aria-label="Site">
-        <a href="./" aria-current="page">Home</a>
-        <a href="install.html">Install</a>
-        <a href="launcher.html">Launcher</a>
-        <a href="security.html">Security</a>
-        <a class="gh" href="https://github.com/tomlawesome/orbit">GitHub</a>
-      </nav>
-    </div>
+  <div class="sky" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="chrome">
+    <a class="mark-row" href="./" aria-label="Orbit home">
+      <svg width="24" height="24" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/>
+        <g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g>
+      </svg>orbit</a>
+    <nav class="edge" aria-label="Site">
+      <a href="install.html">Install</a>
+      <a href="launcher.html">Launcher</a>
+      <a href="security.html">Security</a>
+      <a class="gh" href="https://github.com/tomlawesome/orbit">GitHub</a>
+      <span class="swatches" role="group" aria-label="Your sky">
+        <button class="sw" type="button" data-pack="starchart" style="--sw:#060b1c" aria-label="Star chart" title="star chart"></button>
+        <button class="sw" type="button" data-pack="afterdark" style="--sw:#05070d" aria-label="After dark" title="after dark"></button>
+        <button class="sw" type="button" data-pack="clouds" style="--sw:#eef2f9" aria-label="Clouds" title="clouds"></button>
+        <button class="sw" type="button" data-pack="dawn" style="--sw:#d2d3d4" aria-label="Dawn" title="dawn"></button>
+        <button class="sw" type="button" data-pack="retrograde" style="--sw:#080a14;--sw-shadow:inset 0 0 0 1px #ff4fd8" aria-label="Retrograde" title="retrograde"></button>
+      </span>
+    </nav>
   </header>
 
   <main>
-    <div class="hero wrap">
-      <span class="label">Self-hosted · open source · one container</span>
-      <h1>Everything in your <em>orbit</em>, on track.</h1>
-      <p class="lede">Boilers need servicing. Insurance renews. Cars need inspections. Devices leave warranty. Orbit brings those scattered responsibilities into one calm, shared view, on a server you run.</p>
-      <div class="cta">
-        <a class="btn primary" href="install.html">Install Orbit</a>
-        <a class="btn" href="https://github.com/tomlawesome/orbit">View on GitHub</a>
-      </div>
-      <div class="cmd">
-        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
-      </div>
-      <div class="screen">
-        <img src="assets/img/home.webp" alt="Orbit's home screen: a year dial with the household at its centre, this year's items as planets on their orbits, and other households drawn as small systems around the edge of the sky" width="1600" height="1000" fetchpriority="high" />
-      </div>
-      <p class="screen-note faint">Your home, drawn as a year. Each item is a planet; its position on the dial is when it's next due.</p>
-    </div>
+    <!-- 01 · ARRIVE — the home screen itself: the year is the orbit -->
+    <section class="hero" id="arrive" data-chapter="Arrive">
+      <div class="minisys a" aria-hidden="true"><svg viewBox="0 0 150 130">
+        <text class="mslabel" x="4" y="14">Seaside cottage</text>
+        <path class="lead" d="M4 19 H96 L108 34"/>
+        <circle class="msring" cx="108" cy="72" r="34"/>
+        <circle cx="96" cy="60" r="2.2" fill="var(--ok)"/><circle cx="124" cy="80" r="2.6" fill="var(--sun)"/><circle cx="102" cy="90" r="1.8" fill="var(--warm)"/>
+      </svg></div>
+      <div class="minisys b" aria-hidden="true"><svg viewBox="0 0 150 130">
+        <text class="mslabel" x="52" y="14">The narrowboat</text>
+        <path class="lead" d="M52 19 H146 M62 19 L48 34"/>
+        <circle class="msring" cx="42" cy="72" r="34"/>
+        <circle cx="30" cy="64" r="2" fill="var(--ok)"/><circle cx="56" cy="84" r="2.6" fill="var(--sun)"/><circle cx="52" cy="54" r="1.6" fill="var(--upcoming)"/>
+      </svg></div>
 
-    <section>
-      <div class="wrap">
-        <div class="section-head">
-          <span class="label">Why Orbit</span>
-          <h2>Your home has an orbit</h2>
-          <p>Contracts roll over. Cover lapses. Services come round again. Orbit keeps the important things visible before they become urgent, for everyone who shares the place.</p>
+      <div class="hero-inner">
+        <div class="dialwrap">
+          <svg class="dial" viewBox="0 0 380 380" role="img"
+               aria-label="The year dial: the household at the centre, this year's items placed round the ring by when they are due; the nearer the ring, the sooner">
+            <defs>
+              <filter id="sun" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="9"/></filter>
+              <radialGradient id="p-ruby" cx="34%" cy="30%" r="72%">
+                <stop offset="0%" stop-color="var(--p-ruby-1,#ffb3ab)"/><stop offset="42%" stop-color="var(--p-ruby-2,#e0453e)"/><stop offset="100%" stop-color="var(--p-ruby-3,#7e1a1f)"/>
+              </radialGradient>
+              <radialGradient id="p-jade" cx="34%" cy="30%" r="72%">
+                <stop offset="0%" stop-color="var(--p-jade-1,#b8f5cf)"/><stop offset="45%" stop-color="var(--p-jade-2,#2fae6a)"/><stop offset="100%" stop-color="var(--p-jade-3,#12603a)"/>
+              </radialGradient>
+              <radialGradient id="p-amber" cx="34%" cy="30%" r="72%">
+                <stop offset="0%" stop-color="var(--p-amber-1,#ffe1a0)"/><stop offset="45%" stop-color="var(--p-amber-2,#f0a52b)"/><stop offset="100%" stop-color="var(--p-amber-3,#8a5a10)"/>
+              </radialGradient>
+              <radialGradient id="p-sky" cx="34%" cy="30%" r="72%">
+                <stop offset="0%" stop-color="var(--p-sky-1,#cfe4ff)"/><stop offset="45%" stop-color="var(--p-sky-2,#6fa3ef)"/><stop offset="100%" stop-color="var(--p-sky-3,#2a4f8f)"/>
+              </radialGradient>
+              <radialGradient id="danger4" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#f87171" stop-opacity=".10"/><stop offset="55%" stop-color="#f87171" stop-opacity=".035"/><stop offset="85%" stop-color="#f87171" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <g class="chrome">
+              <g class="celestial" style="display:var(--celestial)">
+                <g stroke="var(--chart-line-soft)" stroke-width=".5">
+                  <line x1="190" y1="14" x2="190" y2="34"/><line x1="314.5" y1="65.5" x2="300" y2="80"/>
+                  <line x1="366" y1="190" x2="346" y2="190"/><line x1="314.5" y1="314.5" x2="300" y2="300"/>
+                  <line x1="190" y1="366" x2="190" y2="346"/><line x1="65.5" y1="314.5" x2="80" y2="300"/>
+                  <line x1="14" y1="190" x2="34" y2="190"/><line x1="65.5" y1="65.5" x2="80" y2="80"/>
+                </g>
+                <circle cx="190" cy="190" r="168" fill="none" stroke="var(--chart-line-soft)" stroke-width=".5"/>
+              </g>
+              <circle cx="190" cy="190" r="62" fill="url(#danger4)"/>
+              <circle cx="190" cy="190" r="62" fill="none" stroke="var(--overdue)" stroke-opacity=".3" stroke-width="1" stroke-dasharray="3 5"/>
+              <circle cx="190" cy="190" r="106" fill="none" stroke="var(--chart-line-soft)" stroke-width=".75"/>
+              <circle cx="190" cy="190" r="150" fill="none" stroke="var(--chart-line)" stroke-width="1.5"/>
+              <g stroke="var(--chart-line)" stroke-width="1.5">
+                <line x1="190" y1="40" x2="190" y2="47"/><line x1="265" y1="60.1" x2="261.5" y2="66.2"/>
+                <line x1="319.9" y1="115" x2="313.8" y2="118.5"/><line x1="340" y1="190" x2="333" y2="190"/>
+                <line x1="319.9" y1="265" x2="313.8" y2="261.5"/><line x1="265" y1="319.9" x2="261.5" y2="313.8"/>
+                <line x1="190" y1="340" x2="190" y2="333"/><line x1="115" y1="319.9" x2="118.5" y2="313.8"/>
+                <line x1="60.1" y1="265" x2="66.2" y2="261.5"/><line x1="40" y1="190" x2="47" y2="190"/>
+                <line x1="60.1" y1="115" x2="66.2" y2="118.5"/><line x1="115" y1="60.1" x2="118.5" y2="66.2"/>
+              </g>
+              <path d="M190 38 l5.5 9 h-11 Z" style="fill:var(--accent)"/>
+            </g>
+            <g class="bodies"></g>
+            <a class="sun-link" href="#households" aria-label="Willow House, your household">
+              <circle cx="190" cy="190" r="13" style="fill:var(--sun)" filter="url(#sun)" opacity=".8"/>
+              <circle cx="190" cy="190" r="7" style="fill:var(--sun-core)"/>
+              <text id="dial-name" x="190" y="212" font-size="10" fill="var(--ink-mid)" text-anchor="middle">Willow House</text>
+            </a>
+          </svg>
         </div>
-        <div class="cards">
-          <div class="card">
-            <span class="glyph">◆</span>
-            <h3>See what is next</h3>
-            <p>An urgency-aware view of what's coming, what's overdue and what was just done. The dial shows the year; the list shows what needs attention this month.</p>
+
+        <div class="hero-foot">
+          <span class="corner">— Your home has an orbit</span>
+          <h1 class="balance">Everything in your <em>orbit</em>, on track.</h1>
+          <p class="lede balance">Boilers need servicing. Insurance renews. Cars need inspections. Devices leave warranty. Orbit brings those scattered responsibilities into one calm, shared view, on a server you run.</p>
+          <div class="hero-cta">
+            <a class="gate" href="install.html">Get into Orbit</a>
+            <a class="quiet-link" href="https://github.com/tomlawesome/orbit">Source on GitHub</a>
           </div>
-          <div class="card">
-            <span class="glyph">↻</span>
-            <h3>Keep the rhythm</h3>
-            <p>Complete, renew, reschedule, snooze, cancel or restore an item, and Orbit works out the next date for anything that recurs.</p>
-          </div>
-          <div class="card">
-            <span class="glyph">✦</span>
-            <h3>Share the load</h3>
-            <p>Households have members. Add people who already use your Orbit, hand items over, and keep more than one household in the same sky.</p>
+          <div class="cmd">
+            <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+            <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
           </div>
         </div>
       </div>
     </section>
 
-    <section>
-      <div class="wrap">
-        <div class="section-head">
-          <span class="label">A tour</span>
-          <h2>Around the sky</h2>
-          <p>Screens from the current development line, showing synthetic household data. Select one to enlarge it.</p>
+    <!-- 02 · THE DIAL -->
+    <section class="chapter" id="dial" data-chapter="The dial">
+      <div class="wrap scene">
+        <div class="words">
+          <span class="corner">02 · <b>The dial</b></span>
+          <h2 class="balance">Bodies orbit by when they're due.</h2>
+          <div class="lines">
+            <p>The nearer the ring, the sooner.</p>
+            <p>Today sits at twelve o'clock. Each day of lead time is one degree round; distance grows with time. Overdue falls inward, toward the sun. A bigger body costs more. The law is the same for every household and never changes.</p>
+          </div>
+          <p class="more">Hover a body on the dial above to read it. Every position up there is the law's own output for a sample household, not a picture of one.</p>
         </div>
-        <div class="gallery">
-          <figure>
-            <button type="button"><img src="assets/img/item.webp" data-full="assets/img/item.webp" alt="An item's detail card: a car MOT, when it's due, its orbital period, cost, reminders, and the documents that ride with it" width="1600" height="1000" loading="lazy" /></button>
-            <figcaption><strong>Every item, in detail</strong>Due date, how often it comes round, cost, reminders, and the documents attached to it.</figcaption>
-          </figure>
-          <figure>
-            <button type="button"><img src="assets/img/inbox.webp" data-full="assets/img/inbox.webp" alt="The inbox: documents Orbit has read, filed against items, and messages it could not process, waiting for review" width="1600" height="1000" loading="lazy" /></button>
-            <figcaption><strong>An inbox that reads for you</strong>Forwarded documents are read, matched to items and queued for your say-so. Nothing enters your orbit without it.</figcaption>
-          </figure>
-          <figure>
-            <button type="button"><img src="assets/img/relay.webp" data-full="assets/img/relay.webp" alt="The relay: a private forwarding address, its connection status, and the messages that arrived but could not be read" width="1600" height="1000" loading="lazy" /></button>
-            <figcaption><strong>Your relay</strong>A private address of your own. Forward a renewal email or a receipt and it arrives in your review queue.</figcaption>
-          </figure>
-          <figure>
-            <button type="button"><img src="assets/img/create.webp" data-full="assets/img/create.webp" alt="Creating a new entry: choose a type, a section, and drop a document for Orbit to read the details from" width="1600" height="1000" loading="lazy" /></button>
-            <figcaption><strong>Add something in seconds</strong>Pick a type and a section, or drop a document and let Orbit read the dates, amounts and reference numbers.</figcaption>
-          </figure>
-          <figure>
-            <button type="button"><img src="assets/img/tour-light.webp" data-full="assets/img/tour-light.webp" alt="The same home screen under the daylight sky, with a guided tour pointing out the households you don't belong to" width="1600" height="1000" loading="lazy" /></button>
-            <figcaption><strong>Choose your sky</strong>Star chart, after dark, clouds, dawn or retrograde. The same orbit under a different light.</figcaption>
-          </figure>
-          <figure class="tall">
-            <button type="button"><img src="assets/img/mobile.webp" data-full="assets/img/mobile.webp" alt="Orbit on a phone: the year dial, other households, and a list of what needs attention" width="400" height="850" loading="lazy" /></button>
-            <figcaption><strong>In your pocket</strong>The whole sky at phone width. Install it to your home screen as a web app.</figcaption>
-          </figure>
+        <div class="screen">
+          <button type="button" data-caption="home · the year dial, the belt of other households, the manifest below">
+            <img src="assets/img/home.webp" alt="Orbit's home screen: the year dial with the household at the centre, this year's items placed as bodies round the ring, and other households drawn as small systems out in the sky" width="1600" height="1000" loading="lazy" />
+          </button>
         </div>
       </div>
     </section>
 
-    <section>
-      <div class="wrap">
-        <div class="section-head">
-          <span class="label">Designed around your household</span>
-          <h2>Built for the things a home actually has</h2>
-        </div>
-        <div class="features">
-          <div>
-            <h3>Sections that fit your life</h3>
-            <p>Home, Vehicles, Devices and Services come as defaults. Add, rename, reorder or hide sections to match the place you live in.</p>
-          </div>
-          <div>
-            <h3>A complete record of care</h3>
-            <p>Schedule history, activity, archived records, reminders and the supporting documents, encrypted at rest and scanned before they're stored.</p>
-          </div>
-          <div>
-            <h3>More than one household</h3>
-            <p>A cottage, a relative's flat, the boat. Each household is its own system in the sky, with its own members and its own orbit.</p>
-          </div>
-          <div>
-            <h3>Reminders that reach you</h3>
-            <p>Email reminders and browser notifications, with a first warning and a final one, timed to how close each item is.</p>
-          </div>
-          <div>
-            <h3>Private by design</h3>
-            <p>Local password accounts are always available. Add an identity provider with OpenID Connect if you have one. Nothing is exposed to an unauthenticated visitor.</p>
-          </div>
-          <div>
-            <h3>Yours to keep</h3>
-            <p>Backups and restores are part of the product, with a recovery bundle for the keys. Your household's data does not depend on a hosted service.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="wrap">
-        <div class="section-head">
-          <span class="label">Under the hood</span>
-          <h2>One app. Standard supporting services.</h2>
-          <p>Orbit deliberately keeps the operational footprint small. There is no custom database image and no separate frontend and backend to maintain.</p>
-        </div>
-        <div class="stack">
-          <div class="node core">
-            <span class="label">Core</span>
-            <strong>orbit</strong>
-            <p>The complete application: interface, authenticated APIs, migrations and the reminder scheduler, in one container.</p>
-          </div>
-          <div class="node core">
-            <span class="label">Core</span>
-            <strong>orbit-postgres</strong>
-            <p>The official PostgreSQL 18 image, pinned by digest, with a persistent volume.</p>
-          </div>
-          <div class="node core">
-            <span class="label">Core</span>
-            <strong>document volume</strong>
-            <p>Supporting documents are written as ciphertext only. The key never leaves the host.</p>
-          </div>
-          <div class="node core">
-            <span class="label">Core</span>
-            <strong>orbit-clamav</strong>
-            <p>The official scanner, fed a quarantined stream on a private network. No host port, no credentials, no documents.</p>
-          </div>
-          <div class="node optional">
-            <span class="label quiet">Optional</span>
-            <strong>OIDC provider</strong>
-            <p>Sign in with an identity provider you already run, alongside local accounts.</p>
-          </div>
-          <div class="node optional">
-            <span class="label quiet">Optional</span>
-            <strong>SMTP · Web Push</strong>
-            <p>Where reminders go.</p>
-          </div>
-          <div class="node optional">
-            <span class="label quiet">Optional</span>
-            <strong>Tika · Ollama</strong>
-            <p>Local document text extraction and a local model server, off by default and never required.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="wrap split">
-        <div>
-          <span class="label">Install</span>
-          <h2>One line, then a guided install</h2>
-          <p class="muted">On a Linux host with Docker Compose, one command downloads a signed manifest, verifies the launcher and installer against it, and only then hands over. The launcher walks you through the rest and shows every step as it runs.</p>
-          <div class="cta" style="justify-content:flex-start">
-            <a class="btn primary" href="install.html">Installation guide</a>
-            <a class="btn" href="launcher.html">About the launcher</a>
+    <!-- 03 · ADD -->
+    <section class="chapter" id="add" data-chapter="Add">
+      <div class="wrap scene flip">
+        <div class="words">
+          <span class="corner">03 · <b>Add</b></span>
+          <h2 class="balance">Add anything, by hand or by forwarding a document.</h2>
+          <div class="lines">
+            <p>A type, a section, a date. Or drop the paper and let Orbit read the dates, amounts and reference numbers out of it.</p>
+            <p>Anything Orbit inferred is drawn as a proposal, with a dashed ring and an explicit accept. Nothing it guessed becomes true until you say so.</p>
           </div>
         </div>
         <div class="screen">
-          <img src="assets/img/launcher-install-console.webp" alt="The Orbit launcher's mission console, a terminal screen listing each install step as it completes: host, image, assets, configuration, compose, database, application" width="1600" height="900" loading="lazy" />
+          <button type="button" data-caption="create · a new entry, over the instance's own households in the distance">
+            <img src="assets/img/create.webp" alt="Creating a new entry: choose a type and a section, or drop a document for Orbit to read the details from, while the instance's other households float in the distance behind the card" width="1600" height="1000" loading="lazy" />
+          </button>
+          <div class="callout top pin-br"><span>drop a document — we'll read what we can</span><i></i></div>
         </div>
       </div>
     </section>
+
+    <!-- 04 · LANDS / THE BELT -->
+    <section class="chapter" id="lands" data-chapter="The belt">
+      <div class="wrap scene">
+        <div class="words">
+          <span class="corner">04 · <b>The belt</b></span>
+          <h2 class="balance">Every body carries its documents in a belt around it.</h2>
+          <div class="lines">
+            <p>The belt is what you have attached to it.</p>
+            <p>Open a body and everything Orbit holds about it is there: when it's due, its orbital period, what it costs, the reminders, and the papers riding with it. The page itself, read without leaving the sky.</p>
+          </div>
+        </div>
+        <div class="screen">
+          <button type="button" data-caption="item · a car MOT, its belt, and the papers riding with it">
+            <img src="assets/img/item.webp" alt="An item's card: a car MOT, when it's due, its orbital period, cost and reminders, with the documents attached to it drawn as a belt of bodies around it" width="1600" height="1000" loading="lazy" />
+          </button>
+          <div class="callout label pin-tr"><span>2 documents ride in the belt</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 · BELOW THE DIAL -->
+    <section class="chapter" id="manifest" data-chapter="Below the dial">
+      <div class="wrap scene flip">
+        <div class="words">
+          <span class="corner">05 · <b>Below the dial</b></span>
+          <h2 class="balance">The manifest lists what's ahead, nearest first.</h2>
+          <div class="lines">
+            <p>Same law as the dial, read top to bottom instead of round the ring.</p>
+            <p>Needs attention, then later this year, month by month. Complete, renew, reschedule or snooze a row in place, and Orbit works out the next date for anything that comes round again. A repeat is never finished; it comes round. A one-off simply ends.</p>
+          </div>
+          <p class="more">In your pocket the whole sky fits at phone width, and installs to the home screen as a web app.</p>
+        </div>
+        <div class="screen pocket">
+          <button type="button" data-caption="pocket · the dial, the other households, and what needs attention">
+            <img src="assets/img/mobile.webp" alt="Orbit on a phone: the year dial, chips for the other households, and the manifest of what needs attention" width="400" height="850" loading="lazy" />
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 · PAPER BY POST -->
+    <section class="chapter" id="relay" data-chapter="Paper by post">
+      <div class="wrap scene">
+        <div class="words">
+          <span class="corner">06 · <b>Paper by post</b></span>
+          <h2 class="balance">Forward a bill to your relay address and Orbit reads a copy.</h2>
+          <div class="lines">
+            <p>Your mail is never redirected — it keeps arriving exactly where it always has.</p>
+            <p>Every account gets a private relay address of its own. Send a renewal, a receipt or a certificate there and it lands in your review queue with the dates already read.</p>
+          </div>
+        </div>
+        <div class="screen">
+          <button type="button" data-caption="relay · your private forwarding address, listening">
+            <img src="assets/img/relay.webp" alt="The relay: a private forwarding address, its connection status, and a note of the messages that arrived but could not be read" width="1600" height="1000" loading="lazy" />
+          </button>
+          <div class="callout label pin-bl"><span>connected · listening</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 · INBOX -->
+    <section class="chapter" id="inbox" data-chapter="Inbox">
+      <div class="wrap scene flip">
+        <div class="words">
+          <span class="corner">07 · <b>Inbox</b></span>
+          <h2 class="balance">Mail lands here first.</h2>
+          <div class="lines">
+            <p>Filed, waiting for review, or still being read. Nothing joins your orbit without your say-so.</p>
+            <p>What Orbit could file is filed against the body it belongs to. What it isn't sure about waits for you, with its reading beside it. What it couldn't read at all says so, plainly, and keeps the original.</p>
+          </div>
+        </div>
+        <div class="screen">
+          <button type="button" data-caption="inbox · filed, for your review, still reading, failed to process">
+            <img src="assets/img/inbox.webp" alt="The inbox in lanes: documents Orbit has filed, ones waiting for your review with their reading beside them, and messages it could not process" width="1600" height="1000" loading="lazy" />
+          </button>
+          <div class="callout top pin-bl"><span>Nothing joins your orbit without your say-so.</span><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 · OTHER HOUSEHOLDS -->
+    <section class="chapter" id="households" data-chapter="Other households">
+      <div class="wrap scene">
+        <div class="words">
+          <span class="corner">08 · <b>Other households</b></span>
+          <h2 class="balance">That's your sun, at centre — your household, always here.</h2>
+          <div class="lines">
+            <p>The rest of the sky holds systems you don't belong to — tap one to fly there.</p>
+            <p>A cottage, a relative's flat, the boat. Each household is its own system in one fixed sky, at a bearing that never moves, with its own members and its own orbit. Owners add people by display name; nobody's email is exposed.</p>
+          </div>
+        </div>
+        <div class="systems" aria-hidden="true">
+          <svg viewBox="0 0 640 300" preserveAspectRatio="xMidYMid slice">
+            <g>
+              <text class="mslabel" x="60" y="52">Gran's flat</text>
+              <path class="lead" d="M60 57 H150 L164 74"/>
+              <circle class="msring" cx="164" cy="110" r="34"/>
+              <circle cx="150" cy="98" r="2.2" fill="var(--ok)"/><circle cx="180" cy="122" r="2.8" fill="var(--sun)"/><circle cx="160" cy="132" r="1.7" fill="var(--warm)"/>
+            </g>
+            <g>
+              <text class="mslabel" x="430" y="44">Mum &amp; Dad's</text>
+              <path class="lead" d="M430 49 H530 M440 49 L426 66"/>
+              <circle class="msring" cx="420" cy="102" r="34"/>
+              <circle cx="410" cy="90" r="2" fill="var(--ok)"/><circle cx="436" cy="118" r="2.6" fill="var(--sun)"/><circle cx="404" cy="112" r="1.8" fill="var(--upcoming)"/>
+            </g>
+            <g>
+              <text class="mslabel" x="500" y="232">The narrowboat</text>
+              <path class="lead" d="M500 237 H620 M510 237 L496 220"/>
+              <circle class="msring" cx="470" cy="204" r="30"/>
+              <circle cx="460" cy="194" r="2" fill="var(--ok)"/><circle cx="484" cy="214" r="2.4" fill="var(--sun)"/>
+            </g>
+            <g>
+              <circle cx="300" cy="196" r="14" class="you" opacity=".35" filter="url(#sun)"/>
+              <circle cx="300" cy="196" r="6" class="you"/>
+              <text class="youname" x="300" y="222" text-anchor="middle">Willow House</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 · YOUR SKY -->
+    <section class="chapter" id="sky" data-chapter="Your sky">
+      <div class="wrap scene flip">
+        <div class="words">
+          <span class="corner">09 · <b>Your sky</b></span>
+          <h2 class="balance">Five skies. One identity.</h2>
+          <div class="lines">
+            <p>Star chart, after dark, clouds, dawn and retrograde. The same orbit under a different light.</p>
+            <p>Dark is the identity; the daylight skies are derived from the same tokens, not inverted. Every one clears the contrast law as words on its own ground. Try one on this page — the site wears the packs the app does.</p>
+          </div>
+          <div class="skyrow" role="group" aria-label="Choose a sky">
+            <button class="skycard" type="button" data-pack="starchart" style="--sw:#060b1c"><i></i><span>star chart</span></button>
+            <button class="skycard" type="button" data-pack="afterdark" style="--sw:#05070d"><i></i><span>after dark</span></button>
+            <button class="skycard" type="button" data-pack="clouds" style="--sw:#eef2f9"><i></i><span>clouds</span></button>
+            <button class="skycard" type="button" data-pack="dawn" style="--sw:#d2d3d4"><i></i><span>dawn</span></button>
+            <button class="skycard" type="button" data-pack="retrograde" style="--sw:#080a14;--sw-shadow:inset 0 0 0 1px #ff4fd8"><i></i><span>retrograde</span></button>
+          </div>
+        </div>
+        <div class="screen">
+          <button type="button" data-caption="home · the daylight sky, with the walk pointing out the other households">
+            <img src="assets/img/tour-light.webp" alt="The same home screen under the daylight sky: the dial drawn in ink on a warming morning gradient, with a callout pointing out the households you don't belong to" width="1600" height="1000" loading="lazy" />
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 · YOURS -->
+    <section class="chapter" id="yours" data-chapter="Yours">
+      <div class="wrap scene">
+        <div class="words">
+          <span class="corner">10 · <b>Yours</b></span>
+          <h2 class="balance">One app. Standard supporting services. Your server.</h2>
+          <div class="lines">
+            <p>Orbit runs on a machine you control. There is no hosted tenancy and no phone-home for your data.</p>
+            <p>The footprint is deliberately small: the whole application in one container, the official PostgreSQL image pinned by digest, a document volume that only ever sees ciphertext, and the official scanner fed a quarantined stream on a private network. Backups, restores and a recovery bundle for the keys are part of the product.</p>
+          </div>
+          <p class="more"><a href="security.html">How Orbit handles your data →</a></p>
+        </div>
+        <div>
+          <div class="kvs" aria-label="The stack">
+            <div class="kv"><span>orbit</span><b>one container · interface, APIs, migrations, reminders</b></div>
+            <div class="kv"><span>orbit-postgres</span><b>official PostgreSQL 18 · digest-pinned</b></div>
+            <div class="kv"><span>documents</span><b>encrypted at rest · ciphertext only</b></div>
+            <div class="kv"><span>orbit-clamav</span><b>official scanner · no port, no secrets</b></div>
+            <div class="kv"><span>sign-in</span><b class="ok">local accounts · OIDC optional</b></div>
+            <div class="kv"><span>tika · ollama</span><b class="opt">optional · off by default</b></div>
+            <div class="kv"><span>licence</span><b class="opt">AGPL-3.0-or-later</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 · GET INTO ORBIT -->
+    <section class="chapter" id="install" data-chapter="Get into Orbit">
+      <div class="wrap scene flip">
+        <div class="words">
+          <span class="corner">11 · <b>Get into Orbit</b></span>
+          <h2 class="balance">One line, then a guided install.</h2>
+          <div class="lines">
+            <p>On a Linux host with Docker Compose, one command downloads a signed manifest, verifies the launcher and the installer against it, and only then hands over.</p>
+            <p>The launcher walks you through the rest in its own console, showing every step of the installer as it runs, and gives you the address when the deployment is healthy.</p>
+          </div>
+          <div class="cmd" style="margin-top:20px">
+            <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+            <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+          </div>
+          <p class="more"><a href="install.html">The installation guide →</a> &nbsp; <a href="launcher.html">About the launcher →</a></p>
+        </div>
+        <div class="screen">
+          <button type="button" data-caption="the launcher · the mission console, mid-install">
+            <img src="assets/img/launcher-install-console.webp" alt="The Orbit launcher's mission console: a terminal screen listing each install step as it completes — host, image, assets, configuration, compose, database, application" width="1600" height="900" loading="lazy" />
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div class="closing">
+      <p class="balance">That was a year, in one turn of the ring.</p>
+      <p>Now it's yours.</p>
+      <div class="hero-cta">
+        <a class="gate" href="install.html">Get into Orbit</a>
+      </div>
+    </div>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">
-      <div>
-        <h3>Orbit</h3>
-        <ul>
-          <li><a href="install.html">Install</a></li>
-          <li><a href="launcher.html">The launcher</a></li>
-          <li><a href="security.html">Security &amp; privacy</a></li>
-        </ul>
-      </div>
-      <div>
-        <h3>Source</h3>
-        <ul>
-          <li><a href="https://github.com/tomlawesome/orbit">tomlawesome/orbit</a></li>
-          <li><a href="https://github.com/tomlawesome/orbit-launcher">tomlawesome/orbit-launcher</a></li>
-          <li><a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a></li>
-        </ul>
-      </div>
-      <div>
-        <h3>Licence</h3>
-        <ul>
-          <li>AGPL-3.0-or-later</li>
-          <li><a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">Read the licence</a></li>
-        </ul>
-      </div>
-      <div class="foot-note">
-        <p>Orbit is in active development. The screens on this site are from the current development line and show synthetic data only.</p>
-        <p>Development disclosure: Orbit was coded by Claude under human direction.</p>
-      </div>
+  <footer class="foot">
+    <div class="row">
+      <a href="https://github.com/tomlawesome/orbit">tomlawesome/orbit</a>
+      <a href="https://github.com/tomlawesome/orbit-launcher">orbit-launcher</a>
+      <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">security policy</a>
+      <a href="https://github.com/tomlawesome/orbit/blob/main/LICENSE">AGPL-3.0</a>
+    </div>
+    <div class="row">
+      <span>Screens are from the current development line and show synthetic data only.</span>
+      <span>Development disclosure: Orbit was coded by Claude under human direction.</span>
     </div>
   </footer>
 
-  <dialog class="lightbox"><img alt="" /><p></p></dialog>
-  <script src="assets/site.js" defer></script>
+  <div class="transport" aria-label="Chapters">
+    <span class="mark" aria-hidden="true"></span>
+    <div class="bar"><span class="rail"></span><span class="played"></span><span class="name" aria-hidden="true"></span></div>
+    <span class="count" aria-live="polite"></span>
+  </div>
+
+  <div class="callout free bottom" role="tooltip"><span class="tt"></span><span class="t"></span><i></i></div>
+  <dialog class="reader"><img alt="" /><p></p></dialog>
+  <div class="grain" aria-hidden="true"><canvas></canvas></div>
+  <script src="assets/sky.js" defer></script>
 </body>
 </html>

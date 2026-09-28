@@ -12,8 +12,9 @@ GitHub Pages. Plain HTML and CSS, no build step.
 | `launcher.html` | The launcher |
 | `security.html` | Security and privacy |
 | `404.html` | Not-found page (Pages serves it automatically) |
-| `assets/site.css`, `assets/site.js` | Shared styles and the two small behaviours (copy button, lightbox) |
-| `assets/img/` | Screens as WebP, icons, the starfield, the social-preview image |
+| `assets/site.css` | The five theme packs (carried from orbit `web/src/lib/packs.css`) and every rule that spends them |
+| `assets/sky.js` | The seeded sky, the grain, the live year dial, the sky switcher, the transport and the reader |
+| `assets/img/` | Screens as WebP, icons, the social-preview image |
 | `.nojekyll` | Tells Pages to serve the files as they are |
 
 Links between pages are relative, so the site works at
