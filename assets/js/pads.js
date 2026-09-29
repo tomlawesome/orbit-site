@@ -273,8 +273,22 @@ export function createRing(pad, section) {
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
 export function wirePlanets(door, onGo) {
-  door.querySelectorAll(".planet").forEach((p) => {
-    p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
-  });
+  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: +p.dataset.r + 21 }));
+  planets.forEach(({ p }) => p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); }));
+  /* each label sits just past its leader's end, on the side away from the
+     planet: above it when the planet is high, beside it when it is out to
+     the side, below when it is low — so nothing ever crosses the leader */
+  function place() {
+    if (!door.hidden) for (const { spin, tag, r } of planets) {
+      const m = new DOMMatrix(getComputedStyle(spin).transform);
+      const a = Math.atan2(m.b, m.a);                       /* the spin's turn */
+      const ux = Math.sin(a), uy = -Math.cos(a);           /* the planet started at the top */
+      tag.setAttribute("x", (100 + ux * r).toFixed(2)); tag.setAttribute("y", (100 + uy * r).toFixed(2));
+      tag.setAttribute("text-anchor", ux > 0.38 ? "start" : ux < -0.38 ? "end" : "middle");
+      tag.setAttribute("dominant-baseline", uy < -0.55 ? "auto" : uy > 0.55 ? "hanging" : "middle");
+    }
+    requestAnimationFrame(place);
+  }
+  requestAnimationFrame(place);
   return { hide() {} };
 }
