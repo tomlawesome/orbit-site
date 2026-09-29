@@ -94,7 +94,7 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   pad.ring.stop();
-  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", on: {
+  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { const door = $("#door"); door.classList.add("shown"); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });

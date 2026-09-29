@@ -605,7 +605,7 @@ body.showwarp #warp{opacity:1;transition:opacity .45s ease}
 #flightmark.on{opacity:1}
 #flightmark.collapse{opacity:0;transform:scale(.05);transition:opacity .55s ease .1s,transform .7s cubic-bezier(.6,0,.9,.4)}
 #flightmark svg{width:100%;height:100%;display:block}
-#flightmark .core{fill:#fff6e6}
+#flightmark .core{display:none}   /* the site's mark has no star at its centre */
 #launchname{position:fixed;left:0;right:0;top:26%;z-index:39;text-align:center;pointer-events:none;opacity:0;transition:opacity .55s ease;
   font:600 13px var(--display);letter-spacing:.62em;text-transform:uppercase;color:#dfe6f7;text-shadow:0 0 30px rgba(216,180,90,.4)}
 #launchname.on{opacity:1}
@@ -689,18 +689,16 @@ body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
 .pad .stage-body{cursor:pointer;outline:0;opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
 body.arrived .pad .stage-body{opacity:1}
 .pad .stage-body .hit{fill:transparent}
-.pad .stage-body .dot{fill:var(--ink-mid);transition:fill .5s,r .4s,filter .5s}
-.pad .stage-body .halo{fill:none;stroke:var(--ink-faint);stroke-opacity:.6;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
-.pad .stage-body .lead{stroke:var(--ink-faint);stroke-opacity:.6;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
-.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{fill:var(--c);filter:drop-shadow(0 0 6px var(--c))}
+.pad .stage-body .dot{fill:var(--c);opacity:.8;transition:fill .5s,r .4s,filter .5s,opacity .5s}
+.pad .stage-body .halo{fill:none;stroke:var(--c);stroke-opacity:.38;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
+.pad .stage-body .lead{stroke:var(--c);stroke-opacity:.38;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
+.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{opacity:1;filter:drop-shadow(0 0 6px var(--c))}
 .pad .stage-body.on .dot{r:5}
 .pad .stage-body.on .halo,.pad .stage-body:hover .halo,.pad .stage-body:focus-visible .halo,.pad .stage-body.on .lead,.pad .stage-body:hover .lead,.pad .stage-body:focus-visible .lead{stroke:var(--c);stroke-opacity:1}
 .pad .orbits circle{fill:none;stroke:var(--ink-faint);stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
-.pad .labels .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:var(--ink-mid);transition:fill .5s;
+.pad .labels .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:var(--c);opacity:.62;transition:opacity .5s;
   paint-order:stroke;stroke:var(--bg);stroke-width:1.6px;stroke-linejoin:round;pointer-events:none}
-.pad .labels .tag.on{fill:var(--c)}
-.pad .stage.inring .label{color:var(--c,var(--accent-text))}
-.pad .stage.inring .corner .n{color:var(--c,var(--accent-text))}
+.pad .labels .tag.on{opacity:1}
 .pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
 .pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
 .pad .gate{opacity:1;transform:none;transition:filter .35s ease}
@@ -725,7 +723,7 @@ body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .h
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 /* the install's own line, back with the instrument */
-.launchcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(64px,calc(22px + 6svh));width:min(760px,calc(100% - 40px));z-index:3;
+.launchcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(70px,calc(24px + 7svh));width:min(760px,calc(100% - 40px));z-index:3;
   opacity:0;transition:opacity 1.3s ease .9s}
 body.instrument .launchcmd{opacity:1}
 .launchcmd .cmd{background:rgba(10,13,24,.72);backdrop-filter:blur(10px);border-color:#2a3148}
@@ -838,13 +836,49 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 @media (max-width:700px){.pad.info .three{grid-template-columns:1fr}.pad.info .facts{grid-template-columns:1fr}.pad.docs .index{padding-top:84px}.pad.docs .entry .where{display:none}}
 @media (prefers-reduced-motion:reduce){.pad.info .chapter{transition:none;opacity:1;transform:none}.pad.info .sun,.pad.info .system .o1,.pad.info .system .o2{animation:none}}
 
-/* the install: each stage's words inside the ring */
-.pad .lockup .stage.inring{position:static;grid-area:1/1;align-self:center;justify-self:center;transform:none;top:auto;left:auto;
-  width:calc(min(380px,64vw,42svh) * .64);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
-.pad .stage.inring .label{font:10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-text)}
-.pad .stage.inring .line{margin:0;font:500 clamp(15px,1.7vw,18px)/1.45 var(--display);color:var(--ink);letter-spacing:-.005em;text-wrap:balance}
-body.bare .pad .stage.inring{opacity:0}
-@media (max-width:560px){.pad .lockup .stage.inring{width:calc(min(380px,62vw,38svh) * .7)}.pad .stage.inring .line{font-size:13.5px}}
+/* ══ THE INSTALL: the ring on the left, the words beside it, the six in a
+   rail under them; on a phone the words sit inside the ring instead ══ */
+#installpad .stagegrid{position:relative;display:grid;grid-template-columns:auto minmax(280px,400px);align-items:center;gap:clamp(40px,6vw,88px);transform:translateY(-5svh)}
+#installpad .lockup{--c:var(--accent)}
+#installpad .tint{grid-area:1/1;width:min(380px,64vw,42svh);aspect-ratio:1;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 50% 66%,var(--c) 0%,transparent 58%);opacity:0;transition:opacity .9s ease,background .6s}
+#installpad .lockup.in .tint{opacity:.14}
+#installpad .face{grid-area:1/1;pointer-events:none;display:grid;place-items:center;padding-bottom:6px}
+#installpad .face .big{font:500 clamp(72px,8vw,104px)/1 var(--display);letter-spacing:-.06em;color:var(--c);opacity:0;transform:scale(.92);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+#installpad .lockup.in .face .big{opacity:.15;transform:none}
+#installpad .timer{stroke:var(--c);stroke-width:2;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;opacity:0;transition:opacity .4s}
+#installpad .lockup.in .timer{opacity:.85;animation:timerrun var(--hold,5s) linear both}
+@keyframes timerrun{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+#installpad .side{display:flex;flex-direction:column;gap:26px;text-align:left}
+#installpad .side .over{margin:0;color:var(--ink-quiet);text-shadow:none}
+#installpad .side .stage{position:static;transform:none;width:auto;top:auto;left:auto;text-align:left;opacity:0;transition:opacity .5s ease;min-height:150px}
+#installpad .side .stage.in{opacity:1}
+#installpad .stage .corner .n{color:var(--c)}
+#installpad .stage .label{display:block;margin-top:14px;font:500 11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--c)}
+#installpad .stage .line{margin:10px 0 0;font:500 clamp(22px,2.1vw,30px)/1.3 var(--display);letter-spacing:-.012em;color:var(--ink);text-wrap:balance;max-width:18ch}
+#installpad .stage.in .line{animation:ivopen .5s cubic-bezier(.2,.7,.2,1) 1}
+#installpad .rail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+#installpad .rail button{display:grid;grid-template-columns:22px auto;align-items:center;gap:8px;background:none;border:0;padding:5px 0;cursor:pointer;text-align:left;
+  font:500 10.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);transition:color .35s}
+#installpad .rail button i{width:6px;height:6px;border-radius:50%;background:var(--c);opacity:.4;justify-self:center;transition:opacity .35s,box-shadow .35s,transform .35s}
+#installpad .rail button:hover,#installpad .rail button:focus-visible{color:var(--ink-mid);outline:0}
+#installpad .rail button.seen i{opacity:.8}
+#installpad .rail button.on{color:var(--c)}
+#installpad .rail button.on i{opacity:1;box-shadow:0 0 10px var(--c);transform:scale(1.5)}
+body.bare #installpad .side,body.bare #installpad .face,body.bare #installpad .tint{opacity:0;pointer-events:none}
+body.instrument #installpad .side{animation:chromein 1.3s ease .45s both}
+body.withdrawing #installpad .side{animation:chromeout .45s ease both}
+body.dispersing #installpad .face,body.dispersing #installpad .tint{opacity:0}
+@media (max-width:899px){
+  #installpad .stagegrid{display:block;transform:translateY(-2svh)}
+  #installpad .side{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;gap:0}
+  #installpad .side .over,#installpad .rail,#installpad .face{display:none}
+  #installpad .side .stage{pointer-events:auto;text-align:center;min-height:0;width:calc(min(380px,64vw,42svh) * .66);display:flex;flex-direction:column;align-items:center;gap:8px}
+  #installpad .stage .label{margin-top:0;font-size:10.5px}
+  #installpad .stage .line{margin:0;font-size:15px;line-height:1.45;max-width:none}
+  body.instrument #installpad .side{animation:none}
+}
+@media (max-width:560px){#installpad .side .stage{width:calc(min(380px,62vw,38svh) * .72)}#installpad .stage .line{font-size:13.5px}}
 
 /* the information's screens */
 .pad.info .shot{margin:28px 0 0;display:grid;gap:12px}
@@ -883,7 +917,7 @@ body.bare .pad .stage.inring{opacity:0}
 .pad.docs .chart.drawn .star.dim .dot,.pad.docs .chart.drawn .star.hot .dot,.pad.docs .chart.drawn .star.lit .dot{animation:none}
 @keyframes twinkle{from{opacity:1}to{opacity:.55}}
 .pad.docs .field circle{fill:var(--ink);opacity:var(--o)}
-.pad.docs .chart.drawn .field circle{animation:fieldtw 5.5s ease-in-out infinite alternate;animation-delay:var(--d)}
+.pad.docs .chart.drawn .field circle:nth-child(3n){animation:fieldtw 5.5s ease-in-out infinite alternate;animation-delay:var(--d)}
 @keyframes fieldtw{from{opacity:var(--o)}to{opacity:calc(var(--o) * .3)}}
 .pad.docs .grat path{fill:none;stroke:var(--ink);stroke-opacity:.075;stroke-width:.7}
 .pad.docs .con:has(.name:hover) .lines line,.pad.docs .con:has(.name:focus-visible) .lines line{stroke-opacity:.85}

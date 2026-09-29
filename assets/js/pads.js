@@ -287,19 +287,18 @@ export function createInfo(pad) {
 const GAP = 1900, LEAD = 1600, PICK = 2200;
 /* a line is held for as long as it takes to read: a floor, and time per word */
 const holdFor = (text) => 3600 + 260 * text.trim().split(/\s+/).length;
-const PACE = [9, 17, 6.5, 13, 21, 11, 15];   /* degrees per second: each its own, so they pass one another */
+const PACE = [3.4, 5.2, 2.6, 4.4, 6, 3.8];   /* degrees per second: each its own, slow enough to watch, so they pass one another */
 const BOTTOM = 90;
-const glide = (u) => 1 - Math.pow(1 - u, 1.8);   /* moves off, then eases in and settles */
 
 export function createRing(pad, section) {
-  const svg = $(".ring", pad), host = $(".stages", svg);
+  const svg = $(".ring", pad), host = $(".stages", svg), lockup = $(".lockup", pad), big = $(".face .big", pad), rail = $(".rail", pad);
   const stage = $(".stage", pad), n = $(".n", stage), total = $(".total", stage), label = $(".label", stage), line = $(".line", stage), go = $(".go", stage);
   const items = section.items, N = items.length;
   total.textContent = String(N).padStart(2, "0");
   /* each body on an orbit of its own outside the ring, as the doors are on
      the sunrise: a faint path, a hairline circle round the body, a leader
      out to its name, which stays upright wherever the body has got to */
-  const RADIUS = (i) => 80 + i * 6;
+  const RADIUS = (i) => 80 + i * 7;
   const orbits = document.createElementNS(SVG, "g"); orbits.setAttribute("class", "orbits"); svg.insertBefore(orbits, host);
   const labels = document.createElementNS(SVG, "g"); labels.setAttribute("class", "labels"); svg.appendChild(labels);
   const tags = [];
@@ -321,45 +320,75 @@ export function createRing(pad, section) {
     g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(i); } });
     return g;
   });
+  /* the rail beside the ring: the six in order, the one at the bottom lit */
+  const rows = rail ? items.map((it, i) => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.style.setProperty("--c", it.c || "#d8b45a"); b.innerHTML = `<i></i><span>${it.name || it.label}</span>`;
+    b.addEventListener("click", () => pick(i)); li.appendChild(b); rail.appendChild(li); return b;
+  }) : [];
   /* each body: where it is, where it is going, and when it is due */
-  const S = items.map((it, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, locked: false, hold: holdFor(it.line) }));
+  const S = items.map((it, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, kick: 0, locked: false, hold: holdFor(it.line) }));
   const pace = (i) => PACE[i % PACE.length];
   const CYCLE = S.reduce((sum, b) => sum + b.hold + GAP, 0);   /* one turn of the whole sequence */
   let raf = 0, current = -1, running = false;
+  /* the way from one angle to the next: a short push off, a steady drift
+     at one speed for as long as the way is, and a slow settle onto the
+     mark at the end — the docking, not a dash */
   function angleAt(b, now) {
     if (now <= b.t0) return b.from;
     if (now >= b.t1) return b.to;
-    return b.from + (b.to - b.from) * glide((now - b.t0) / (b.t1 - b.t0));
+    const T = b.t1 - b.t0, t = now - b.t0, A = b.to - b.from;
+    const Ti = Math.min(700, T * 0.2), Te = Math.min(1500, T * 0.45);
+    const v = A / (T - Ti / 2 - Te / 2);
+    if (t < Ti) { const u = t / Ti; return b.from + v * Ti * u * u / 2; }
+    if (t < T - Te) return b.from + v * Ti / 2 + v * (t - Ti);
+    const u = (t - (T - Te)) / Te;
+    return b.from + v * Ti / 2 + v * (T - Te - Ti) + v * Te / 2 * (1 - (1 - u) * (1 - u));
+  }
+  /* a released body clears the mark before the next arrives: a push that it
+     gives back over the rest of the way, so it still docks on time */
+  const KICK_T = 2400;
+  function angleWithKick(b, now) {
+    const a = angleAt(b, now);
+    if (!b.kick || now <= b.t0 || now >= b.t1) return a;
+    const t = now - b.t0, T = b.t1 - b.t0, k = Math.min(1, t / KICK_T);
+    return a + b.kick * ((1 - (1 - k) * (1 - k)) - t / T);
   }
   /* plan body i's path so it reaches the bottom at `due`: the way there, plus
      whatever whole turns its own pace would cover in the time it has */
-  function plan(i, now, due) {
-    const b = S[i], from = angleAt(b, now), window = Math.max(1, due - now);
+  function plan(i, now, due, kick = 0) {
+    const b = S[i], from = angleWithKick(b, now), window = Math.max(1, due - now);
     const ahead = (((BOTTOM - from) % 360) + 360) % 360;
     const want = pace(i) * window / 1000;
     const extra = Math.max(0, Math.round((want - ahead) / 360));
-    b.from = from; b.to = from + ahead + 360 * extra; b.t0 = now; b.t1 = due; b.locked = false;
+    b.from = from; b.to = from + ahead + 360 * extra; b.t0 = now; b.t1 = due; b.kick = kick; b.locked = false;
   }
   function lock(i) {
     current = i;
+    const c = items[i].c || "#d8b45a";
     bodies.forEach((g, j) => g.classList.toggle("on", j === i));
-    stage.style.setProperty("--c", items[i].c || "var(--accent)");
-    stage.classList.remove("in"); void stage.offsetWidth;
-    n.textContent = String(i + 1).padStart(2, "0"); label.textContent = items[i].label; line.textContent = items[i].line;
+    rows.forEach((r, j) => { r.classList.toggle("on", j === i); if (j === i) r.classList.add("seen"); });
+    stage.style.setProperty("--c", c);
+    lockup.style.setProperty("--c", c); lockup.style.setProperty("--hold", `${S[i].hold}ms`);
+    stage.classList.remove("in"); lockup.classList.remove("in"); void stage.offsetWidth;
+    n.textContent = String(i + 1).padStart(2, "0"); if (big) big.textContent = n.textContent;
+    label.textContent = items[i].label; line.textContent = items[i].line;
     if (items[i].href) { go.href = items[i].href; go.hidden = false; } else go.hidden = true;
-    stage.classList.add("in");
+    stage.classList.add("in"); lockup.classList.add("in");
   }
   function release(i) {
-    bodies[i].classList.remove("on");
-    if (current === i) stage.classList.remove("in");
+    bodies[i].classList.remove("on"); rows[i]?.classList.remove("on");
+    if (current === i) { stage.classList.remove("in"); lockup.classList.remove("in"); }
   }
   function frame(now) {
     if (!running) return;
     S.forEach((b, i) => {
       const held = now >= b.t1 && now < b.t1 + b.hold;
       if (held && !b.locked) { b.locked = true; lock(i); }
-      if (!held && b.locked) { release(i); plan(i, now, b.t1 + CYCLE); }
-      b.a = angleAt(b, now);
+      if (!held && b.locked) { release(i); plan(i, now, b.t1 + CYCLE, 18); }
+      /* a due that went by unseen (the page was away): the body goes round again */
+      else if (!held && !b.locked && now >= b.t1 + b.hold) plan(i, now, b.t1 + CYCLE);
+      b.a = angleWithKick(b, now);
       bodies[i].setAttribute("transform", `rotate(${b.a.toFixed(2)} 100 100)`);
       /* the name, just past the leader, on the side away from the body */
       const t = (b.a * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t), r = RADIUS(i) + 20;
@@ -371,21 +400,29 @@ export function createRing(pad, section) {
     });
     raf = requestAnimationFrame(frame);
   }
-  /* a body asked for: it comes to the bottom next, and the turn goes on from there */
   /* the dues, in sequence from body i at `first`: each follows the last by its hold and the gap */
   function schedule(first, i, now) {
     let due = first;
     for (let d = 0; d < N; d++) { const j = (i + d) % N; plan(j, now, due); due += S[j].hold + GAP; }
   }
+  /* a body asked for: it comes to the bottom next, and the turn goes on from there */
   function pick(i) {
     const now = performance.now();
     S.forEach((b, j) => { if (b.locked) release(j); });
     schedule(now + PICK, i, now);
   }
+  /* back from another tab: the sequence picks up from the next one, in step */
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || !running) return;
+    const now = performance.now();
+    S.forEach((b, j) => { if (b.locked) release(j); });
+    schedule(now + PICK, current >= 0 ? (current + 1) % N : 0, now);
+  });
   return {
     start() {
       running = true;
       const now = performance.now();
+      rows.forEach((r) => r.classList.remove("seen", "on"));
       /* each starts where its own pace would have it, so the first cycle is already a steady drift */
       let due = now + (reduced ? 200 : LEAD);
       S.forEach((b, i) => { b.a = b.from = b.to = BOTTOM - pace(i) * (due - now) / 1000; b.t0 = b.t1 = now; due += b.hold + GAP; });
@@ -395,7 +432,8 @@ export function createRing(pad, section) {
     stop() {
       running = false; cancelAnimationFrame(raf); raf = 0; current = -1;
       S.forEach((b) => { b.locked = false; });
-      bodies.forEach((g) => g.classList.remove("on")); stage.classList.remove("in");
+      bodies.forEach((g) => g.classList.remove("on")); rows.forEach((r) => r.classList.remove("on"));
+      stage.classList.remove("in"); lockup.classList.remove("in");
     },
   };
 }
