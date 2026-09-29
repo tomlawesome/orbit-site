@@ -17,7 +17,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
-| `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`) |
+| `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`), plus a sideways vanishing point and three more endings |
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections — the install's ring and its orbiting stages, the docs' searchable index, the information page — and the planets on the sunrise |

@@ -162,6 +162,7 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 .loginchrome .lockup{position:relative;display:inline-grid;place-items:center;text-align:center}
 .loginchrome .lockup .glyph{grid-area:1/1;line-height:0}
 .loginchrome .lockup .glyph svg{width:min(420px,84vw);height:auto;overflow:visible}
+@media (max-width:560px){#door .loginchrome .lockup .glyph svg{width:min(420px,72vw)}}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
 @keyframes spinback{to{transform:rotate(360deg)}}
 .loginchrome .lockup .name{grid-area:1/1;font:600 clamp(48px,14vw,72px) var(--display);letter-spacing:.015em;line-height:1;color:#e9edf8}
@@ -654,14 +655,18 @@ body.dispersing .transport{opacity:0}
 .planet .s1{animation-duration:58s;animation-delay:-14s}
 .planet .s2{animation-duration:46s;animation-delay:-33s}
 .planet .s3{animation-duration:67s;animation-delay:-40s}
-.planet .tagpos{transform-origin:100px 7.5px;animation:spinforth linear infinite}
+.planet .tagpos{animation:spinforth linear infinite}
+.planet[data-r="84"] .tagpos{transform-origin:100px -2px}
+.planet[data-r="93"] .tagpos{transform-origin:100px -11px}
+.planet[data-r="102"] .tagpos{transform-origin:100px -20px}
+.orbits circle{fill:none;stroke:#8791b3;stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
 .planet .s1 .tagpos{animation-duration:58s;animation-delay:-14s}
 .planet .s2 .tagpos{animation-duration:46s;animation-delay:-33s}
 .planet .s3 .tagpos{animation-duration:67s;animation-delay:-40s}
 .planet .hit{fill:transparent}
 .planet .body{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
 .planet .lead{stroke:#4a5468;stroke-width:.6;transition:stroke .25s}
-.planet .tag{font:500 4.6px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
+.planet .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
 .planet:hover .spin,.planet:focus-visible .spin,.planet:hover .tagpos,.planet:focus-visible .tagpos{animation-play-state:paused}
 .planet:hover .body,.planet:focus-visible .body{r:6.5;filter:drop-shadow(0 0 6px currentColor)}
 .planet:hover .lead,.planet:focus-visible .lead{stroke:var(--c)}
@@ -779,10 +784,12 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .doorfoot.by{position:static;margin:20px 0 0}
 /* arrives as the sky does: the search condenses out of the light, the index with the instrument */
 body.bare .pad.docs .index>:not(.search),body.bare .pad.docs .doorfoot{opacity:0}
-body.bare .pad.docs .search{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
+body.bare .pad.docs .search{animation:slidein 1.1s cubic-bezier(.2,.75,.25,1) both}
+@keyframes slidein{from{transform:translateX(56px);opacity:0}to{transform:none;opacity:1}}
 body.instrument .pad.docs .index>:not(.search),body.instrument .pad.docs .doorfoot{animation:chromein 1.3s ease .45s both}
 body.withdrawing .pad.docs .index,body.withdrawing .pad.docs .doorfoot{animation:chromeout .45s ease both}
-body.dispersing .pad.docs .search{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
+body.dispersing .pad.docs .search{animation:slideout .7s cubic-bezier(.5,0,.9,.45) both}
+@keyframes slideout{to{transform:translateX(56px);opacity:0}}
 
 /* ══ THE INFORMATION: a place to be ════════════════════════════════════ */
 .pad.info .about{width:min(640px,calc(100% - 40px));margin:0 auto;padding:0 0 40px}
@@ -847,3 +854,37 @@ body.bare .pad .stage.inring{opacity:0}
 .pad.info .about{width:min(760px,calc(100% - 40px))}
 .pad.info .chapter>h2,.pad.info .chapter>p,.pad.info .facts,.pad.info .three,.pad.info .system,.pad.info .links{max-width:640px}
 @media (max-width:700px){.pad.info .shot.pair,.pad.info .shot.pair.even{grid-template-columns:1fr}.pad.info .shot.pair img.phone{width:min(200px,54%);justify-self:start}}
+
+/* the docs' sky: a constellation per source, lit by its answers */
+.pad.docs .constellations{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:22px 0 8px}
+.pad.docs .con{position:relative;background:none;border:1px solid transparent;border-radius:14px;padding:10px 8px 10px;cursor:pointer;color:var(--ink-mid);text-align:center;
+  transition:border-color .25s,background .25s,transform .25s}
+.pad.docs .con:hover{border-color:var(--line);background:var(--panel);transform:translateY(-1px)}
+.pad.docs .con[aria-pressed=true]{border-color:color-mix(in srgb,var(--c) 55%,transparent);background:color-mix(in srgb,var(--c) 7%,var(--panel));box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 18%,transparent),0 14px 40px color-mix(in srgb,var(--c) 10%,transparent)}
+.pad.docs .con svg{display:block;width:100%;max-width:104px;height:auto;margin:0 auto;overflow:visible}
+.pad.docs .con polyline{fill:none;stroke:var(--c);stroke-opacity:.28;stroke-width:1;transition:stroke-opacity .35s}
+.pad.docs .con circle{fill:var(--ink-faint);opacity:.45;transition:fill .35s,opacity .35s}
+.pad.docs .con circle.lit{fill:var(--c);opacity:1;filter:drop-shadow(0 0 4px var(--c))}
+.pad.docs .con:hover polyline,.pad.docs .con[aria-pressed=true] polyline{stroke-opacity:.8}
+.pad.docs .con .name{display:block;margin-top:8px;font:10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mid)}
+.pad.docs .con[aria-pressed=true] .name{color:var(--c)}
+.pad.docs .con .n{position:absolute;top:8px;right:10px;font:9.5px var(--mono);color:var(--ink-faint)}
+.pad.docs .con[aria-pressed=true] .n{color:var(--c)}
+/* the entries: stars in their constellation's colour, arriving in order */
+.pad.docs .entry{grid-template-columns:auto 1fr auto;animation:ivopen .45s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(28ms * var(--i))}
+.pad.docs .entry .star{grid-row:1/3;align-self:center;width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px color-mix(in srgb,var(--c) 70%,transparent);opacity:.85}
+.pad.docs .entry b{grid-column:2}
+.pad.docs .entry small{grid-column:2}
+.pad.docs .entry .where{grid-column:3}
+.pad.docs .entry.read .star{opacity:.35;box-shadow:none}
+.pad.docs .entry.read b::after{content:"read";margin-left:10px;font:9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);vertical-align:middle}
+.pad.docs .entry.cursor{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+.pad.docs .results h4 i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c,var(--ink-faint));margin:0 8px 1px 0;box-shadow:0 0 8px var(--c,transparent)}
+.pad.docs .key{border-color:color-mix(in srgb,var(--c) 28%,var(--line))}
+.pad.docs .key:hover{border-color:var(--c);color:var(--c)}
+.pad.docs .linkish{background:none;border:0;padding:0;font:inherit;color:var(--accent-text);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.pad.docs .hint{margin:8px 0 0;font:10.5px var(--mono);letter-spacing:.08em;color:var(--ink-faint);text-align:center}
+.pad.docs .hint kbd{font:inherit;border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin:0 2px}
+.pad.docs .hint .sep{margin:0 10px}
+.pad.docs .search{box-shadow:0 20px 60px rgba(0,0,0,.35)}
+@media (max-width:700px){.pad.docs .constellations{grid-template-columns:repeat(3,1fr);gap:6px}.pad.docs .con{padding:8px 4px}.pad.docs .con svg{max-width:78px}.pad.docs .con .name{font-size:9px;letter-spacing:.1em}.pad.docs .con .n{display:none}.pad.docs .hint{display:none}}

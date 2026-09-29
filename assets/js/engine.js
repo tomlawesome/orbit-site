@@ -749,8 +749,49 @@ export function createFlight(canvas, options = {}) {
     if (mix > 0.002) drawWorld(c, /** @type {Atmosphere} */ (P.palTo), mix);
 
     /* THE REVEAL, read forwards on the climb and backwards on the descent —
-       so the arrival's slow bloom is also the departure's slow contraction. */
-    drawBloom(bloomAt(active.rev ? mirror(tc) : tc));
+       so the arrival's slow bloom is also the departure's slow contraction.
+       site: a profile may name another ending; the app's own is the bloom. */
+    const q = bloomAt(active.rev ? mirror(tc) : tc);
+    if (!P.ending || P.ending === "bloom") drawBloom(q); else drawEnding(P.ending, q);
+  }
+
+  /* site: the other endings — each landing arrives its own way.
+     "ring": the ring the mark wears, drawn once out of the vanishing light.
+     "sweep": a band of light crossing the sky the way the flight was going.
+     "halo": a warm light rising at the top, where the landing's sun will be. */
+  function drawEnding(kind, b) {
+    if (b <= 0) return;
+    const cx = W / 2, cy = H / 2;
+    if (kind === "ring") {
+      ctx.lineWidth = 1.2;
+      for (const [off, mul, spd] of [[0, 0.7, 0.42], [0.18, 0.35, 0.34], [0.36, 0.18, 0.28]]) {
+        const q = Math.max(0, Math.min(1, (b - off) / (1 - off)));
+        if (q <= 0) continue;
+        ctx.strokeStyle = hexa(PACK.accent, Math.pow(1 - q, 1.2) * mul);
+        ctx.beginPath(); ctx.arc(cx, cy, 24 + q * H * spd, 0, 6.284); ctx.stroke();
+      }
+      const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, H * 0.16);
+      core.addColorStop(0, hexa(PACK.sunCore, Math.pow(b, 0.8) * 0.35 * (1 - b)));
+      core.addColorStop(1, hexa(PACK.accent, 0));
+      ctx.fillStyle = core; ctx.fillRect(0, 0, W, H);
+    } else if (kind === "sweep") {
+      const dir = VPX > W / 2 ? -1 : 1;                       /* away from the vanishing point */
+      const x = VPX + dir * (b * (W + 600) - 300);
+      const g = ctx.createLinearGradient(x - 260, 0, x + 260, 0);
+      const a = Math.sin(Math.PI * b) * 0.22;
+      g.addColorStop(0, hexa(PACK.up, 0)); g.addColorStop(0.5, hexa(PACK.starNear, a)); g.addColorStop(1, hexa(PACK.up, 0));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = hexa(PACK.star, a * 1.6); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    } else if (kind === "halo") {
+      const sy = H * 0.24, e = Math.pow(b, 0.7);
+      const halo = ctx.createRadialGradient(cx, sy, 0, cx, sy, H * 0.9);
+      halo.addColorStop(0, hexa(PACK.sun, e * 0.22)); halo.addColorStop(0.45, hexa(PACK.sun, e * 0.07)); halo.addColorStop(1, hexa(PACK.sun, 0));
+      ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H);
+      const core = ctx.createRadialGradient(cx, sy, 0, cx, sy, 26 + e * 70);
+      core.addColorStop(0, hexa(PACK.sunCore, Math.min(1, e * 1.1))); core.addColorStop(0.5, hexa(PACK.sun, e * 0.5)); core.addColorStop(1, hexa(PACK.sun, 0));
+      ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, sy, 26 + e * 70, 0, 6.284); ctx.fill();
+    }
   }
 
   /** @param {number} now */

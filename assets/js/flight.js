@@ -125,8 +125,10 @@ import { createFlight, UP, DOWN, PROPS_UP } from "./engine.js";
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
 const turned = (deg) => PROPS_UP.map((g) => ({ ...g, ang: g.ang + deg }));
-export const RIGHT = { ...UP, vpX: 0.94, vpY: 0.5, a0: UP.a0 + 90, a1: UP.a1 + 90, props: turned(90) };
-export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90, props: turned(-90) };
+export const RIGHT = { ...UP, vpX: 0.94, vpY: 0.5, a0: UP.a0 + 90, a1: UP.a1 + 90, props: turned(90), ending: "sweep" };
+export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90, props: turned(-90), ending: "halo" };
+/* the install's climb: the same ascent, ending on the ring rather than the sun */
+export const UP_RING = { ...UP, props: PROPS_UP.map((g) => ({ ...g })), ending: "ring" };
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
 export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
 export { UP, DOWN };
