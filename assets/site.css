@@ -179,10 +179,6 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 body.lit .gate{opacity:1;transform:none}
 .gate:hover{filter:brightness(1.08)}
 .gate.flash{filter:brightness(1.25);box-shadow:0 0 0 6px rgba(216,180,90,.22),0 0 60px rgba(216,180,90,.6)}
-.doorword{position:absolute;left:50%;transform:translateX(-50%);width:min(56ch,calc(100% - 48px));top:calc(50% - var(--lift) + var(--R) * .66);z-index:3;text-align:center;
-  font:13.5px/1.5 var(--ui);color:#8791b3;opacity:0;transition:opacity 1.6s ease 2s;text-wrap:balance}
-body.lit .doorword{opacity:1}
-.doorword b{color:#e9edf8;font-weight:500}
 .doorfoot{position:absolute;left:0;right:0;bottom:22px;z-index:3;text-align:center;font:10.5px var(--mono);
   letter-spacing:.14em;text-transform:uppercase;color:#7c8699;opacity:0;transition:opacity 1.6s ease 2.4s;padding:0 16px}
 body.lit .doorfoot{opacity:1}
