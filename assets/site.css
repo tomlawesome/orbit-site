@@ -683,17 +683,24 @@ body.launching .doorcmd,body.showwarp .doorcmd{opacity:0;transition:opacity .4s 
 .pad .mark-row.home:hover{color:var(--ink)}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
 .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
+#installpad .loginchrome .lockup .glyph svg{width:min(380px,64vw,42svh)}
 .pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
 body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
 .pad .stage-body{cursor:pointer;outline:0;opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
 body.arrived .pad .stage-body{opacity:1}
 .pad .stage-body .hit{fill:transparent}
-.pad .stage-body .dot{fill:var(--ink-mid);transition:fill .5s,r .4s}
-.pad .stage-body .halo{fill:var(--accent);opacity:0;transition:opacity .5s}
-.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{fill:var(--accent)}
-.pad .stage-body.on .dot{r:6.4}
-.pad .stage-body.on .halo{opacity:.16}
-.pad .stage-body:focus-visible .halo{opacity:.28}
+.pad .stage-body .dot{fill:var(--ink-mid);transition:fill .5s,r .4s,filter .5s}
+.pad .stage-body .halo{fill:none;stroke:var(--ink-faint);stroke-opacity:.6;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
+.pad .stage-body .lead{stroke:var(--ink-faint);stroke-opacity:.6;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
+.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{fill:var(--c);filter:drop-shadow(0 0 6px var(--c))}
+.pad .stage-body.on .dot{r:5}
+.pad .stage-body.on .halo,.pad .stage-body:hover .halo,.pad .stage-body:focus-visible .halo,.pad .stage-body.on .lead,.pad .stage-body:hover .lead,.pad .stage-body:focus-visible .lead{stroke:var(--c);stroke-opacity:1}
+.pad .orbits circle{fill:none;stroke:var(--ink-faint);stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
+.pad .labels .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:var(--ink-mid);transition:fill .5s;
+  paint-order:stroke;stroke:var(--bg);stroke-width:1.6px;stroke-linejoin:round;pointer-events:none}
+.pad .labels .tag.on{fill:var(--c)}
+.pad .stage.inring .label{color:var(--c,var(--accent-text))}
+.pad .stage.inring .corner .n{color:var(--c,var(--accent-text))}
 .pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
 .pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
 .pad .gate{opacity:1;transform:none;transition:filter .35s ease}
@@ -729,6 +736,7 @@ body.instrument .launchcmd{opacity:1}
 @media (max-width:560px){
   .pad .loginchrome{padding-bottom:16svh}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
+  #installpad .loginchrome .lockup .glyph svg{width:min(380px,62vw,38svh)}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
 }
@@ -832,11 +840,11 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 
 /* the install: each stage's words inside the ring */
 .pad .lockup .stage.inring{position:static;grid-area:1/1;align-self:center;justify-self:center;transform:none;top:auto;left:auto;
-  width:calc(min(420px,84vw,48svh) * .64);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+  width:calc(min(380px,64vw,42svh) * .64);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
 .pad .stage.inring .label{font:10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-text)}
 .pad .stage.inring .line{margin:0;font:500 clamp(15px,1.7vw,18px)/1.45 var(--display);color:var(--ink);letter-spacing:-.005em;text-wrap:balance}
 body.bare .pad .stage.inring{opacity:0}
-@media (max-width:560px){.pad .lockup .stage.inring{width:calc(min(420px,84vw,42svh) * .66)}.pad .stage.inring .line{font-size:14.5px}}
+@media (max-width:560px){.pad .lockup .stage.inring{width:calc(min(380px,62vw,38svh) * .7)}.pad .stage.inring .line{font-size:13.5px}}
 
 /* the information's screens */
 .pad.info .shot{margin:28px 0 0;display:grid;gap:12px}
