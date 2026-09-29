@@ -58,10 +58,14 @@ function walk(n, [cx, cy, w, h], rnd) {
   }
   return pts;
 }
-/* the boxes the constellations are scattered into: a loose grid across the
-   chart, each cell nudged so no two sit in a row */
-function boxes(n, W, H, narrow, rnd) {
-  const cols = narrow ? 2 : Math.min(4, Math.ceil(n / 2)), rows = Math.ceil(n / cols);
+/* the boxes the constellations are scattered into. On a wide screen the
+   chart is the whole top of the page and the figures keep to its sides and
+   the band under the search, clear of the heading; otherwise a loose grid
+   across the chart, each cell nudged so no two sit in a row */
+const WIDE_SLOTS = [[190, 110, 260, 130], [1410, 110, 260, 130], [250, 300, 270, 130], [1350, 300, 270, 130], [180, 490, 250, 110], [1420, 490, 250, 110], [640, 340, 260, 100], [960, 340, 260, 100], [800, 500, 260, 100]];
+function boxes(n, W, H, mode, rnd) {
+  if (mode === "wide" && n <= WIDE_SLOTS.length) return WIDE_SLOTS.slice(0, n).map(([cx, cy, w, h]) => [cx + (rnd() - 0.5) * 40, cy + (rnd() - 0.5) * 30, w, h]);
+  const cols = mode === "narrow" ? 2 : Math.min(4, Math.ceil(n / 2)), rows = Math.ceil(n / cols);
   const cw = W / cols, ch = H / rows, out = [];
   for (let i = 0; i < n; i++) {
     const c = i % cols, r = Math.floor(i / cols);
@@ -74,14 +78,14 @@ function boxes(n, W, H, narrow, rnd) {
    of a graticule, the way a printed sky chart is ruled */
 function field(W, H, rnd) {
   let dots = "";
-  for (let i = 0; i < (W > 700 ? 110 : 80); i++) {
+  for (let i = 0; i < (W > 1200 ? 190 : W > 700 ? 110 : 80); i++) {
     const r = (0.5 + rnd() * rnd() * 1.3).toFixed(2), o = (0.15 + rnd() * 0.45).toFixed(2);
     dots += `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * H).toFixed(0)}" r="${r}" style="--o:${o};--d:${(rnd() * 6).toFixed(1)}s"/>`;
   }
   const arcs = [];
   /* parallels: shallow arcs bowing upward; meridians: leaning lines */
   for (let k = 0; k < 4; k++) { const y = H * (0.18 + k * 0.22), b = H * 0.07; arcs.push(`M-20 ${y.toFixed(0)} Q ${W / 2} ${(y - b).toFixed(0)} ${W + 20} ${y.toFixed(0)}`); }
-  for (let k = 0; k < 6; k++) { const x = W * (0.08 + k * 0.17), lean = (x - W / 2) * 0.12; arcs.push(`M${(x - lean).toFixed(0)} -20 Q ${(x + lean * 0.3).toFixed(0)} ${H / 2} ${(x + lean).toFixed(0)} ${H + 20}`); }
+  for (let k = 0; k < (W > 1200 ? 9 : 6); k++) { const x = W * (W > 1200 ? 0.06 + k * 0.11 : 0.08 + k * 0.17), lean = (x - W / 2) * 0.12; arcs.push(`M${(x - lean).toFixed(0)} -20 Q ${(x + lean * 0.3).toFixed(0)} ${H / 2} ${(x + lean).toFixed(0)} ${H + 20}`); }
   return `<g class="field">${dots}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
 }
 const hrefOf = (slug, id) => (id === "top" ? `#docs/${slug}` : `#docs/${slug}/${id}`);
@@ -101,7 +105,8 @@ export function createDocs(pad) {
   const score = (e, words) => { const t = norm(e.t), s = norm(e.s); return words.reduce((n, w) => n + (t.includes(w) ? 4 : s.includes(w) ? 2 : 1), 0); };
   /* what the import wrote: the sources, and every section as an entry */
   let DOCS = [], ENTRIES = [], GROUPS = {}, generated = "", loading = null;
-  let group = null, cursor = -1, narrow = false, starOf = new Map();
+  let group = null, cursor = -1, mode = "", starOf = new Map();
+  const modeNow = () => (innerWidth < 700 ? "narrow" : innerWidth < 1100 ? "mid" : "wide");
   let recent = []; try { recent = JSON.parse(localStorage.getItem("orbit-site-read") || "[]"); } catch { /* fine */ }
   const remember = (href) => {
     recent = [href, ...recent.filter((h) => h !== href)].slice(0, 24); try { localStorage.setItem("orbit-site-read", JSON.stringify(recent)); } catch { /* fine */ }
@@ -125,13 +130,15 @@ export function createDocs(pad) {
 
   /* ── the chart ── */
   function drawChart() {
-    narrow = innerWidth < 700;
-    const W = narrow ? 600 : 1000, H = narrow ? Math.max(640, 170 * Math.ceil(DOCS.length / 2)) : Math.max(420, 200 * Math.ceil(DOCS.length / 4));
+    mode = modeNow();
+    const narrow = mode === "narrow", wide = mode === "wide" && DOCS.length <= WIDE_SLOTS.length;
+    const W = wide ? 1600 : narrow ? 600 : 1000, H = wide ? 600 : narrow ? Math.max(640, 170 * Math.ceil(DOCS.length / 2)) : Math.max(420, 200 * Math.ceil(DOCS.length / 4));
     chart.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    chart.classList.toggle("wide", wide);
     const rnd = seededRng(SEED);
     starOf = new Map();
     let html = field(W, H, seededRng(SEED + 7)), gi = 0;
-    const cells = boxes(DOCS.length, W, H, narrow, seededRng(SEED + 3));
+    const cells = boxes(DOCS.length, W, H, wide ? "wide" : mode, seededRng(SEED + 3));
     for (const d of DOCS) {
       const name = d.name, g = GROUPS[name], mine = ENTRIES.filter((e) => e.g === name), pts = walk(mine.length, cells[gi], rnd);
       const segs = pts.slice(1).map((p, i) => { const q = pts[i]; const len = Math.hypot(p[0] - q[0], p[1] - q[1]); return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" style="--l:${len.toFixed(0)};--i:${i}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}"/>`; }).join("");
@@ -245,7 +252,7 @@ export function createDocs(pad) {
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
     else if (e.key === "Enter" && cursor >= 0 && !e.target.matches("input,button,a,[role=link]")) { entries()[cursor]?.click(); }
   });
-  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (DOCS.length && (innerWidth < 700) !== narrow) { drawChart(); render(); } }, 150); });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (DOCS.length && modeNow() !== mode) { drawChart(); render(); } }, 150); });
   /* now and then a meteor crosses the chart — never when motion is reduced */
   let mt = 0;
   const meteor = () => {
