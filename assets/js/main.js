@@ -30,7 +30,7 @@ const player = createPlayer();
 let arrived = false;
 try { arrived = sessionStorage.getItem("orbit-site-arrived") === "1"; } catch { /* this visit only */ }
 const wantsDrawer = location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
-const wantsPad = ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash] ?? null;
+const wantsPad = ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash.split("/")[0]] ?? null;
 /* the landings: each a pad, a ring, and a way to fly there */
 const PADS = {
   install: { el: $("#installpad"), profile: UP_RING },

@@ -955,3 +955,68 @@ body.dispersing #installpad .face,body.dispersing #installpad .tint{opacity:0}
 .pad.docs .hint .sep{margin:0 10px}
 .pad.docs .search{box-shadow:0 20px 60px rgba(0,0,0,.35)}
 @media (max-width:700px){.pad.docs .hint{display:none}}
+
+/* ══ THE READER: a source from the repositories, set as a page ══ */
+.pad.docs .stamp{margin:8px 0 0;text-align:center;font:10.5px var(--mono);letter-spacing:.08em;color:var(--ink-faint)}
+.pad.docs .reader{--c:var(--accent);width:min(1060px,calc(100% - 40px));margin:0 auto;padding:88px 0 60px}
+.pad.docs .reader.in{animation:chromein .5s ease both}
+.pad.docs .reader .tochart{display:inline-block;background:none;border:0;padding:0;cursor:pointer;margin-bottom:28px;color:var(--ink-quiet);text-shadow:none}
+.pad.docs .reader .tochart:hover{color:var(--accent-text)}
+.pad.docs .readhead .from{display:block;margin-bottom:14px;color:var(--c);text-shadow:none}
+.pad.docs .readhead h1{font:600 clamp(30px,4.4vw,46px)/1.08 var(--display);letter-spacing:-.015em;color:var(--ink);margin:0 0 14px;max-width:22ch;text-wrap:balance}
+.pad.docs .readhead .source{margin:0 0 44px;font:11px var(--mono);letter-spacing:.06em;color:var(--ink-faint)}
+.pad.docs .readhead .source a{color:var(--ink-mid);text-decoration:none;border-bottom:1px solid var(--line)}
+.pad.docs .readhead .source a:hover{color:var(--accent-text)}
+.pad.docs .readgrid{display:grid;grid-template-columns:minmax(0,720px) 220px;gap:64px;align-items:start}
+.pad.docs .onpage{position:sticky;top:96px;order:2}
+.pad.docs .onpage .corner{display:block;margin-bottom:12px}
+.pad.docs .onpage ol{list-style:none;margin:0;padding:0;border-left:1px solid var(--line-soft)}
+.pad.docs .onpage a{display:block;padding:5px 0 5px 14px;margin-left:-1px;border-left:1px solid transparent;font:12.5px/1.4 var(--ui);color:var(--ink-mid);text-decoration:none;transition:color .25s,border-color .25s}
+.pad.docs .onpage a:hover{color:var(--ink)}
+.pad.docs .onpage a.on{color:var(--c);border-left-color:var(--c)}
+.pad.docs .body{order:1;min-width:0;font:16px/1.7 var(--ui);color:var(--ink)}
+.pad.docs .body h2,.pad.docs .body h3,.pad.docs .body h4{position:relative;color:var(--ink);scroll-margin-top:96px}
+.pad.docs .body h2{font:600 26px/1.2 var(--display);letter-spacing:-.012em;margin:56px 0 16px}
+.pad.docs .body .sec:first-child h2{margin-top:0}
+.pad.docs .body h3{font:600 18.5px/1.3 var(--display);margin:36px 0 10px}
+.pad.docs .body h4{font:600 15px/1.4 var(--display);margin:26px 0 8px}
+.pad.docs .body .anchor{position:absolute;left:-1.2em;width:1.2em;text-align:center;color:var(--ink-faint);text-decoration:none;font-weight:400;opacity:0;transition:opacity .2s}
+.pad.docs .body h2:hover .anchor,.pad.docs .body h3:hover .anchor,.pad.docs .body h4:hover .anchor{opacity:.75}
+.pad.docs .body p{margin:0 0 16px}
+.pad.docs .body a{color:var(--accent-text);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);text-underline-offset:3px}
+.pad.docs .body a:hover{text-decoration-color:var(--accent)}
+.pad.docs .body code{font:13.5px var(--mono);background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:1px 6px;color:var(--ink)}
+.pad.docs .body pre.code{position:relative;margin:0 0 20px;padding:16px 18px;background:var(--panel-raised);border:1px solid var(--line);border-radius:14px;overflow:auto;font:13px/1.6 var(--mono);color:var(--ink);tab-size:2}
+.pad.docs .body pre.code code{background:none;border:0;padding:0;font:inherit}
+.pad.docs .body pre.code[data-lang]::before{content:attr(data-lang);position:absolute;top:8px;right:14px;font:9.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
+.pad.docs .body ul,.pad.docs .body ol{margin:0 0 16px;padding-left:24px}
+.pad.docs .body li{margin:5px 0}
+.pad.docs .body li>p{margin:0 0 6px}
+.pad.docs .body table{display:block;width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 24px;font-size:14px;line-height:1.5}
+.pad.docs .body th{text-align:left;font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:8px 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+.pad.docs .body td{padding:9px 12px 9px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.pad.docs .body td code{white-space:nowrap}
+.pad.docs .body .alert{margin:0 0 20px;padding:14px 18px;border-left:2px solid var(--a,var(--accent));background:var(--panel);border-radius:0 12px 12px 0}
+.pad.docs .body .alert b{display:block;font:500 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--a,var(--accent));margin-bottom:6px}
+.pad.docs .body .alert :last-child{margin-bottom:0}
+.pad.docs .body .alert.note{--a:var(--upcoming)}
+.pad.docs .body .alert.tip{--a:var(--ok)}
+.pad.docs .body .alert.important{--a:var(--accent)}
+.pad.docs .body .alert.warning{--a:var(--warm)}
+.pad.docs .body .alert.caution{--a:var(--overdue)}
+.pad.docs .body blockquote{margin:0 0 18px;padding:2px 18px;border-left:2px solid var(--line);color:var(--ink-mid)}
+.pad.docs .body .centred{text-align:center}
+.pad.docs .body img{max-width:100%;height:auto;border-radius:12px;border:1px solid var(--line-soft);margin:6px 0 18px}
+.pad.docs .body hr{border:0;border-top:1px solid var(--line-soft);margin:36px 0}
+.pad.docs .body figure.diagram{margin:0 0 22px;padding:18px;background:var(--panel);border:1px solid var(--line-soft);border-radius:14px;overflow-x:auto}
+.pad.docs .body figure.diagram svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.pad.docs .body figure.diagram figcaption{font:10.5px var(--mono);letter-spacing:.1em;color:var(--ink-faint)}
+.pad.docs .body details{margin:0 0 16px;padding:12px 16px;border:1px solid var(--line-soft);border-radius:12px}
+.pad.docs .body summary{cursor:pointer;font-weight:500}
+.pad.docs .readnav{display:flex;justify-content:space-between;gap:20px;margin-top:64px;padding-top:24px;border-top:1px solid var(--line-soft)}
+.pad.docs .readnav a{--c:var(--accent);text-decoration:none;color:var(--ink-mid);font:500 15px var(--display);max-width:46%;transition:color .25s}
+.pad.docs .readnav a:hover{color:var(--c)}
+.pad.docs .readnav a b{display:block;font:500 10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
+.pad.docs .readnav .next{text-align:right}
+body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
+@media (max-width:900px){.pad.docs .readgrid{grid-template-columns:1fr;gap:0}.pad.docs .onpage{position:static;order:0;margin-bottom:30px}.pad.docs .body{font-size:15.5px}.pad.docs .body h2{font-size:23px;margin-top:44px}.pad.docs .body .anchor{display:none}}
