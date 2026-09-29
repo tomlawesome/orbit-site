@@ -830,3 +830,11 @@ body.withdrawing .pad.info .about{animation:chromeout .45s ease both}
 body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 @media (max-width:700px){.pad.info .three{grid-template-columns:1fr}.pad.info .facts{grid-template-columns:1fr}.pad.docs .index{padding-top:84px}.pad.docs .entry .where{display:none}}
 @media (prefers-reduced-motion:reduce){.pad.info .chapter{transition:none;opacity:1;transform:none}.pad.info .sun,.pad.info .system .o1,.pad.info .system .o2{animation:none}}
+
+/* the install: each stage's words inside the ring */
+.pad .lockup .stage.inring{position:static;grid-area:1/1;align-self:center;justify-self:center;transform:none;top:auto;left:auto;
+  width:calc(min(420px,84vw,48svh) * .64);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.pad .stage.inring .label{font:10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--accent-text)}
+.pad .stage.inring .line{margin:0;font:500 clamp(15px,1.7vw,18px)/1.45 var(--display);color:var(--ink);letter-spacing:-.005em;text-wrap:balance}
+body.bare .pad .stage.inring{opacity:0}
+@media (max-width:560px){.pad .lockup .stage.inring{width:calc(min(420px,84vw,42svh) * .66)}.pad .stage.inring .line{font-size:14.5px}}
