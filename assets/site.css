@@ -838,3 +838,14 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad .stage.inring .line{margin:0;font:500 clamp(15px,1.7vw,18px)/1.45 var(--display);color:var(--ink);letter-spacing:-.005em;text-wrap:balance}
 body.bare .pad .stage.inring{opacity:0}
 @media (max-width:560px){.pad .lockup .stage.inring{width:calc(min(420px,84vw,42svh) * .66)}.pad .stage.inring .line{font-size:14.5px}}
+
+/* the information's screens */
+.pad.info .shot{margin:28px 0 0;display:grid;gap:12px}
+.pad.info .shot img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--line);background:#060b1c;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.pad.info .shot.pair{grid-template-columns:minmax(0,1fr) minmax(0,23%);align-items:end}
+.pad.info .shot.pair img.phone{width:100%}
+.pad.info .shot.pair.even{grid-template-columns:1fr 1fr;align-items:start}
+.pad.info .shot figcaption{grid-column:1/-1;font:12px/1.55 var(--mono);color:var(--ink-quiet);letter-spacing:.02em;max-width:60ch;margin-top:2px}
+.pad.info .about{width:min(760px,calc(100% - 40px))}
+.pad.info .chapter>h2,.pad.info .chapter>p,.pad.info .facts,.pad.info .three,.pad.info .system,.pad.info .links{max-width:640px}
+@media (max-width:700px){.pad.info .shot.pair,.pad.info .shot.pair.even{grid-template-columns:1fr}.pad.info .shot.pair img.phone{width:min(200px,54%);justify-self:start}}
