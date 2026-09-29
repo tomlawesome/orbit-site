@@ -161,7 +161,7 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
   transition:opacity .8s ease,transform 1s cubic-bezier(.3,.7,.3,1)}
 .loginchrome .lockup{position:relative;display:inline-grid;place-items:center;text-align:center}
 .loginchrome .lockup .glyph{grid-area:1/1;line-height:0}
-.loginchrome .lockup .glyph svg{width:min(420px,84vw);height:auto}
+.loginchrome .lockup .glyph svg{width:min(420px,84vw);height:auto;overflow:visible}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
 @keyframes spinback{to{transform:rotate(360deg)}}
 .loginchrome .lockup .name{grid-area:1/1;font:600 clamp(48px,14vw,72px) var(--display);letter-spacing:.015em;line-height:1;color:#e9edf8}
@@ -646,28 +646,26 @@ body.dispersing .transport{opacity:0}
   body.dispersing #home{transition:none}
 }
 
-/* ══ THE DOORS ON THE RING: three more bodies, each a section ══════════ */
+/* ══ THE DOORS ON THE RING: three more bodies, each a section, each named
+   the way the app names the systems in its sky — a hairline leader and a
+   small word, upright however far round the ring the body has travelled ══ */
 .planet{cursor:pointer;outline:0}
 .planet .spin{transform-origin:100px 100px;animation:spinback linear infinite}
 .planet .s1{animation-duration:58s;animation-delay:-14s}
 .planet .s2{animation-duration:46s;animation-delay:-33s}
 .planet .s3{animation-duration:67s;animation-delay:-40s}
-.planet circle{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
-.planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
-.planet:hover circle,.planet:focus-visible circle{r:7;filter:drop-shadow(0 0 6px currentColor)}
+.planet .tagpos{transform-origin:100px 7.5px;animation:spinforth linear infinite}
+.planet .s1 .tagpos{animation-duration:58s;animation-delay:-14s}
+.planet .s2 .tagpos{animation-duration:46s;animation-delay:-33s}
+.planet .s3 .tagpos{animation-duration:67s;animation-delay:-40s}
 .planet .hit{fill:transparent}
-.planet-tip{position:fixed;z-index:39;pointer-events:none;opacity:0;transform:translateY(-6px);transition:opacity .18s ease,transform .22s cubic-bezier(.2,.7,.2,1);
-  display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;
-  padding:12px 16px 12px 14px;border-radius:14px;background:rgba(9,12,22,.78);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.07);
-  box-shadow:0 18px 50px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05);max-width:min(320px,calc(100vw - 24px))}
-.planet-tip.show{opacity:1;transform:none}
-.planet-tip .stem{position:absolute;left:var(--sx,50%);top:-14px;width:1px;height:14px;background:linear-gradient(to bottom,transparent,var(--c))}
-.planet-tip::before{content:"";grid-row:1/3;width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}
-.planet-tip b{font:600 14px var(--display);color:#e9edf8;letter-spacing:.01em}
-.planet-tip small{font:11px/1.5 var(--mono);color:#8791b3;letter-spacing:.02em}
-.planet-tip .go{display:none;grid-column:2;margin-top:6px;font:10px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--c)}
-.planet-tip.tap{pointer-events:auto;cursor:pointer}
-.planet-tip.tap .go{display:block}
+.planet .body{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
+.planet .lead{stroke:#4a5468;stroke-width:.6;transition:stroke .25s}
+.planet .tag{font:500 4.6px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
+.planet:hover .spin,.planet:focus-visible .spin,.planet:hover .tagpos,.planet:focus-visible .tagpos{animation-play-state:paused}
+.planet:hover .body,.planet:focus-visible .body{r:6.5;filter:drop-shadow(0 0 6px currentColor)}
+.planet:hover .lead,.planet:focus-visible .lead{stroke:var(--c)}
+.planet:hover .tag,.planet:focus-visible .tag{fill:var(--c)}
 /* the one line beneath the sunrise, and the way it opens */
 .doorcmd{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(150px,32vw) + 52px);width:min(560px,calc(100% - 40px));z-index:3;
   opacity:0;transition:opacity 1.6s ease 2.4s}
@@ -735,7 +733,7 @@ body.instrument .launchcmd{opacity:1}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
 }
-@media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.planet .spin,.planet .tagpos{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
 .doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
 .doorfoot.by a{color:#a6b0c8;text-decoration:none}

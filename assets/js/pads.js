@@ -216,36 +216,10 @@ export function createRing(pad, section) {
   };
 }
 
-/* the planets on the sunrise's ring: each one a door, with a word for it */
-export function wirePlanets(door, tip, onGo) {
-  let armed = null, timer = 0;
-  const place = (p) => {
-    const b = p.getBoundingClientRect();
-    const left = Math.max(12, Math.min(b.left + b.width / 2 - tip.offsetWidth / 2, innerWidth - 12 - tip.offsetWidth));
-    tip.style.left = `${left}px`; tip.style.top = `${b.bottom + 14}px`;
-    tip.style.setProperty("--sx", `${b.left + b.width / 2 - left}px`);
-  };
-  const showTip = (p, tapped) => {
-    tip.style.setProperty("--c", getComputedStyle(p).getPropertyValue("--c") || "#d8b45a");
-    tip.querySelector("b").textContent = p.dataset.name; tip.querySelector("small").textContent = p.dataset.line;
-    tip.classList.add("show"); tip.classList.toggle("tap", tapped); place(p);
-    clearInterval(timer); timer = setInterval(() => place(p), 120);
-    armed = tapped ? p : null;
-  };
-  const hide = () => { tip.classList.remove("show", "tap"); clearInterval(timer); armed = null; };
+/* the planets on the sunrise's ring: each one a door, named on the ring itself */
+export function wirePlanets(door, onGo) {
   door.querySelectorAll(".planet").forEach((p) => {
-    p.addEventListener("pointerdown", (e) => { p.dataset.ptype = e.pointerType; });
-    p.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") showTip(p, false); });
-    p.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") hide(); });
-    p.addEventListener("focus", () => { if (p.dataset.ptype !== "touch") showTip(p, false); });
-    p.addEventListener("blur", () => { if (!armed) hide(); });
-    p.addEventListener("click", (e) => {
-      e.preventDefault();
-      if (p.dataset.ptype === "touch" && armed !== p) { showTip(p, true); return; }
-      hide(); onGo(p.dataset.section);
-    });
+    p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
   });
-  tip.addEventListener("click", () => { if (armed) { const s = armed.dataset.section; hide(); onGo(s); } });
-  document.addEventListener("pointerdown", (e) => { if (armed && !e.target.closest(".planet") && !e.target.closest(".planet-tip")) hide(); });
-  return { hide };
+  return { hide() {} };
 }
