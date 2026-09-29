@@ -7,7 +7,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 
 | Path | What |
 | --- | --- |
-| `index.html` | The sunrise (the hub: three more planets on the ring, each a section, and the one line with *Launch*), the sky, the dusk, the three landings, and the flight's chrome |
+| `index.html` | The sunrise (the hub: three more planets on their own orbits round the ring, each a section), the sky, the dusk, the three landings, and the flight's chrome |
 | `install.html` | Arrives at `./#install` |
 | `404.html` | Not found |
 | `assets/site.css` | The five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
@@ -24,7 +24,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `.nojekyll` | Pages serves the files as they are |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#key` and `#inbox`
-open a drawer on the sky. Demo is the gate (up), install is *Launch* (up),
+open a drawer on the sky. Demo is the gate (up), install is the purple planet (up),
 docs fly right, information flies left; *the dawn* descends back.
 
 What a visit changes on the sky (adds, completions, snoozes, accepted or
