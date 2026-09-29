@@ -310,13 +310,16 @@ export function openRow(id, scroll = false) {
   view.className = "itemview"; view.id = `${id}-view`;
   const section = household().sections.find((s) => s.id === it.section)?.name ?? "";
   const kv = (k, v, cls = "") => `<div class="kv"><span>${k}</span><b class="${cls}">${v}</b></div>`;
+  const doneToday = !!it.completedOn && law.daysBetween(today, it.completedOn) === 0;
   let html = kv("due", `${law.tminus(it.days)} · ${law.longDate(it.dueDate)}`, it.days < 0 ? "over" : "");
+  if (it.completedOn) html += kv("last completed", doneToday ? "today" : law.longDate(it.completedOn));
   if (it.snoozed) html += kv("snoozed", "a week, from the last reminder");
   html += kv("section", section) + kv("type", it.kind) + kv("orbital period", law.every(it.recurrenceMonths)) + kv("cost", law.money(it.costMinor, it.costIsEstimate));
   if (it.provider) html += kv("provider", it.provider);
   if (it.reminderDays?.length) html += kv("reminders", it.reminderDays.map((d) => `${d}d before`).join(" · "));
   if (it.documents?.length) html += `<h4>documents</h4>` + it.documents.map((d) => `<div class="doc">◆<span>${d.name}<small>${d.meta}</small></span></div>`).join("");
-  html += `<div class="acts" aria-label="Item actions"><button type="button" class="done" data-act="complete">complete</button><button type="button" data-act="snooze">snooze a week</button></div>`;
+  /* a completion is once a day, as the app records it; a snooze is a week from today, and a second snooze changes nothing */
+  html += `<div class="acts" aria-label="Item actions"><button type="button" class="done" data-act="complete"${doneToday ? " disabled" : ""}>${doneToday ? "completed today" : "complete"}</button><button type="button" data-act="snooze"${it.snoozed ? " disabled" : ""}>${it.snoozed ? "snoozed a week" : "snooze a week"}</button></div>`;
   html += `<div class="ivfoot"><span class="ivnote">${it.recurrenceMonths ? "a repeat is never finished; it comes round" : "one-off — does not come round"}</span></div>`;
   view.innerHTML = html;
   view.querySelector('[data-act="complete"]').addEventListener("click", (e) => { e.stopPropagation(); complete(id); });
@@ -343,7 +346,9 @@ export function complete(id) {
   const found = itemById(id);
   if (!found) return;
   const { item: it } = found;
+  if (it.completedOn && law.daysBetween(today, it.completedOn) === 0) return;   /* done today already */
   const from = law.dialPlacement(it.days);
+  it.completedOn = new Date(today.getTime());
   if (it.recurrenceMonths) {
     let next = addMonths(it.dueDate, it.recurrenceMonths);
     while (law.daysBetween(today, next) < 1) next = addMonths(next, it.recurrenceMonths);
@@ -364,7 +369,11 @@ export function complete(id) {
 export function snooze(id) {
   const found = itemById(id);
   if (!found) return;
-  found.item.dueDate = law.addDays(found.item.dueDate, 7); found.item.snoozed = true;
+  if (found.item.snoozed) return;
+  const week = law.addDays(today, 7);
+  if (found.item.dueDate < week) found.item.dueDate = week;
+  found.item.snoozed = true;
+  refreshDays(household());
   renderDial(); renderManifest(); openRow(id); changed();
 }
 export function addItem(fields) {

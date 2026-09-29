@@ -478,6 +478,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .itemview .acts button{font:12px var(--mono);color:var(--ink-mid);background:none;border:1px solid var(--line);border-radius:99px;padding:6px 13px;cursor:pointer}
 .itemview .acts button:hover{border-color:var(--accent);color:var(--accent-text)}
 .itemview .acts button.done{border-color:var(--ok);color:var(--ok-text)}
+.itemview .acts button:disabled{opacity:.55;cursor:default;border-color:var(--line)!important;color:var(--ink-faint)!important}
 .itemview .ivfoot{display:flex;align-items:center;gap:18px;margin-top:16px}
 .itemview .ivnote{font:11px var(--mono);color:var(--ink-faint);letter-spacing:.04em}
 .horizon{margin-top:34px;text-align:center;font:11px var(--mono);color:var(--ink-faint);letter-spacing:.08em}
