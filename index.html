@@ -65,10 +65,11 @@
         <div class="glyph" id="login-glyph"><svg width="420" height="420" viewBox="0 0 200 200">
           <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>
           <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g>
-          <!-- the other doors: three more bodies on the same ring -->
-          <a class="planet" href="#docs" style="--c:#8fb8ff" data-section="docs" aria-label="Docs"><g class="spin s1"><circle class="hit" cx="100" cy="28" r="17"/><line class="lead" x1="100" y1="21.5" x2="100" y2="13"/><circle class="body" cx="100" cy="28" r="5" fill="#8fb8ff"/><g class="tagpos"><text class="tag" x="100" y="7.5" text-anchor="middle">docs</text></g></g></a>
-          <a class="planet" href="#install" style="--c:#7c3aed" data-section="install" aria-label="Install"><g class="spin s2"><circle class="hit" cx="100" cy="28" r="17"/><line class="lead" x1="100" y1="21.5" x2="100" y2="13"/><circle class="body" cx="100" cy="28" r="5" fill="#7c3aed"/><g class="tagpos"><text class="tag" x="100" y="7.5" text-anchor="middle">install</text></g></g></a>
-          <a class="planet" href="#info" style="--c:#f87171" data-section="info" aria-label="Information"><g class="spin s3"><circle class="hit" cx="100" cy="28" r="17"/><line class="lead" x1="100" y1="21.5" x2="100" y2="13"/><circle class="body" cx="100" cy="28" r="5" fill="#f87171"/><g class="tagpos"><text class="tag" x="100" y="7.5" text-anchor="middle">information</text></g></g></a>
+          <!-- the other doors: three more bodies, each on an orbit of its own outside the ring -->
+          <g class="orbits" aria-hidden="true"><circle cx="100" cy="100" r="84"/><circle cx="100" cy="100" r="93"/><circle cx="100" cy="100" r="102"/></g>
+          <a class="planet" href="#docs" data-r="84" style="--c:#8fb8ff" data-section="docs" aria-label="Docs"><g class="spin s1"><circle class="hit" cx="100" cy="16" r="15"/><line class="lead" x1="100" y1="10.5" x2="100" y2="3"/><circle class="body" cx="100" cy="16" r="4.2" fill="#8fb8ff"/><g class="tagpos"><text class="tag" x="100" y="-2" text-anchor="middle">docs</text></g></g></a>
+          <a class="planet" href="#install" data-r="93" style="--c:#7c3aed" data-section="install" aria-label="Install"><g class="spin s2"><circle class="hit" cx="100" cy="7" r="15"/><line class="lead" x1="100" y1="1.5" x2="100" y2="-6"/><circle class="body" cx="100" cy="7" r="4.2" fill="#7c3aed"/><g class="tagpos"><text class="tag" x="100" y="-11" text-anchor="middle">install</text></g></g></a>
+          <a class="planet" href="#info" data-r="102" style="--c:#f87171" data-section="info" aria-label="Information"><g class="spin s3"><circle class="hit" cx="100" cy="-2" r="15"/><line class="lead" x1="100" y1="-7.5" x2="100" y2="-15"/><circle class="body" cx="100" cy="-2" r="4.2" fill="#f87171"/><g class="tagpos"><text class="tag" x="100" y="-20" text-anchor="middle">information</text></g></g></a>
         </svg></div>
         <h1 class="name">orbit</h1>
         <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button></div>
@@ -347,8 +348,10 @@
           <input type="search" placeholder="search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
           <kbd>/</kbd>
         </label>
+        <div class="constellations" role="group" aria-label="Where to look"></div>
         <div class="keys" aria-label="Start here"></div>
         <div class="results" aria-live="polite"></div>
+        <p class="hint"><kbd>/</kbd> search <span class="sep">·</span> <kbd>↑</kbd><kbd>↓</kbd> move <span class="sep">·</span> <kbd>↵</kbd> open</p>
       </div>
       <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
     </div>

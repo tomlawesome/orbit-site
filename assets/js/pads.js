@@ -67,9 +67,20 @@ export const INDEX = [
   { g: "The launcher", t: "Stack", s: "Go, with Bubble Tea for the full-screen event loop and Lip Gloss for layout. Linux only.", href: L + "stack", k: "go bubbletea lipgloss" },
 ];
 
-/* the docs: a search over the index, grouped where nothing is typed */
+/* THE DOCS: the index as a sky. Each source is a constellation — a few
+   stars joined in the chart pen, in its own colour — and every entry a
+   star in it. Type, and the constellations show where the answers are;
+   choose one, and only its stars are listed. The arrow keys walk the
+   list and enter opens the doc. */
+const GROUPS = {
+  "README":       { c: "#d8b45a", pts: [[8, 40], [30, 16], [54, 30], [80, 10], [108, 26]] },
+  "Sign-in":      { c: "#8fb8ff", pts: [[10, 18], [36, 44], [60, 20], [86, 40], [110, 14]] },
+  "Security":     { c: "#f87171", pts: [[14, 44], [40, 12], [68, 40], [96, 18]] },
+  "Releases":     { c: "#a78bfa", pts: [[8, 26], [36, 40], [62, 12], [90, 34], [112, 46]] },
+  "The launcher": { c: "#4ade80", pts: [[12, 38], [42, 18], [72, 44], [104, 16]] },
+};
 export function createDocs(pad) {
-  const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad);
+  const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), sky = $(".constellations", pad);
   const norm = (x) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const mark = (text, q) => {
@@ -77,31 +88,75 @@ export function createDocs(pad) {
     const words = q.split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     return esc(text).replace(new RegExp(`(${words.join("|")})`, "gi"), "<mark>$1</mark>");
   };
-  const entry = (e, q) => `<a class="entry" href="${e.href}" target="_blank" rel="noopener"><b>${mark(e.t, q)}</b><small>${mark(e.s, q)}</small><span class="where">${esc(e.g)}</span></a>`;
+  let group = null, cursor = -1;
+  let recent = []; try { recent = JSON.parse(localStorage.getItem("orbit-site-read") || "[]"); } catch { /* fine */ }
+  const remember = (href) => { recent = [href, ...recent.filter((h) => h !== href)].slice(0, 12); try { localStorage.setItem("orbit-site-read", JSON.stringify(recent)); } catch { /* fine */ } };
+
+  /* the constellations: one per source, lit by how many of its stars answer */
+  const glyph = (name, g, n, hits) => {
+    const pts = g.pts, poly = pts.map((p) => p.join(",")).join(" ");
+    const dots = pts.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 2 ? 2 : 2.6}" class="${i < hits ? "lit" : ""}"/>`).join("");
+    return `<button type="button" class="con" data-group="${esc(name)}" style="--c:${g.c}" aria-pressed="false">
+      <svg viewBox="0 0 120 56" aria-hidden="true"><polyline points="${poly}"/>${dots}</svg>
+      <span class="name">${esc(name)}</span><span class="n">${n}</span></button>`;
+  };
+  function paintSky(q) {
+    const words = q ? q.split(/\s+/).filter(Boolean) : [];
+    sky.innerHTML = Object.entries(GROUPS).map(([name, g]) => {
+      const mine = INDEX.filter((e) => e.g === name);
+      const hits = words.length ? mine.filter((e) => matches(e, words)).length : mine.length;
+      return glyph(name, g, words.length ? hits : mine.length, words.length ? Math.ceil(hits / mine.length * g.pts.length) : g.pts.length);
+    }).join("");
+    sky.querySelectorAll(".con").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.group === group));
+      b.addEventListener("click", () => { group = group === b.dataset.group ? null : b.dataset.group; render(); });
+    });
+  }
+  const matches = (e, words) => { const hay = norm(`${e.t} ${e.s} ${e.k || ""}`); return words.every((w) => hay.includes(w)); };
+  const score = (e, words) => { const t = norm(e.t), k = norm(e.k || ""); return words.reduce((s, w) => s + (t.includes(w) ? 3 : k.includes(w) ? 2 : 1), 0); };
+  const entry = (e, q, i) => `<a class="entry${recent.includes(e.href) ? " read" : ""}" href="${e.href}" target="_blank" rel="noopener" style="--i:${i};--c:${GROUPS[e.g]?.c ?? "#8791b3"}" data-href="${e.href}">
+      <i class="star"></i><b>${mark(e.t, q)}</b><small>${mark(e.s, q)}</small><span class="where">${esc(e.g)}</span></a>`;
+
   function render() {
-    const q = norm(input.value.trim());
-    if (!q) {
-      const groups = [...new Set(INDEX.map((e) => e.g))];
-      results.innerHTML = groups.map((g) => `<section><h4>${esc(g)}</h4>${INDEX.filter((e) => e.g === g).map((e) => entry(e, "")).join("")}</section>`).join("");
+    const raw = input.value.trim(), q = norm(raw), words = q.split(/\s+/).filter(Boolean);
+    paintSky(q);
+    cursor = -1;
+    let list = INDEX.filter((e) => !group || e.g === group);
+    if (words.length) list = list.filter((e) => matches(e, words)).sort((a, b) => score(b, words) - score(a, words));
+    if (!list.length) {
+      results.innerHTML = `<section class="none"><h4>nothing yet</h4><p>Nothing ${group ? `in ${esc(group)}` : "in the docs"} mentions that. Try another word${group ? `, <button type="button" class="linkish" data-clear>look everywhere</button>` : ""}, or <a href="${R}/issues" target="_blank" rel="noopener">ask on the repository</a>.</p></section>`;
+      results.querySelector("[data-clear]")?.addEventListener("click", () => { group = null; render(); });
       return;
     }
-    const words = q.split(/\s+/).filter(Boolean);
-    const scored = INDEX.map((e) => {
-      const hay = { t: norm(e.t), s: norm(e.s), k: norm(e.k || "") };
-      let score = 0;
-      for (const w of words) { if (hay.t.includes(w)) score += 3; else if (hay.k.includes(w)) score += 2; else if (hay.s.includes(w)) score += 1; else return null; }
-      return { e, score };
-    }).filter(Boolean).sort((a, b) => b.score - a.score);
-    results.innerHTML = scored.length
-      ? `<section><h4>${scored.length} ${scored.length === 1 ? "answer" : "answers"}</h4>${scored.map(({ e }) => entry(e, input.value.trim())).join("")}</section>`
-      : `<section class="none"><h4>nothing yet</h4><p>Nothing in the docs mentions that. Try another word, or <a href="${R}/issues" target="_blank" rel="noopener">ask on the repository</a>.</p></section>`;
+    if (words.length || group) {
+      const label = words.length ? `${list.length} ${list.length === 1 ? "answer" : "answers"}${group ? ` in ${esc(group)}` : ""}` : `${esc(group)} · ${list.length}`;
+      results.innerHTML = `<section><h4>${label}</h4>${list.map((e, i) => entry(e, raw, i)).join("")}</section>`;
+    } else {
+      const groups = [...new Set(INDEX.map((e) => e.g))]; let i = 0;
+      results.innerHTML = groups.map((g) => `<section><h4 style="--c:${GROUPS[g]?.c}"><i></i>${esc(g)}</h4>${INDEX.filter((e) => e.g === g).map((e) => entry(e, "", i++)).join("")}</section>`).join("");
+    }
+    results.querySelectorAll(".entry").forEach((a) => a.addEventListener("click", () => { remember(a.dataset.href); a.classList.add("read"); }));
   }
-  keys.innerHTML = INDEX.filter((e) => e.key).map((e) => `<a class="key" href="${e.href}" target="_blank" rel="noopener">${esc(e.t)}</a>`).join("");
+  const entries = () => [...results.querySelectorAll(".entry")];
+  function move(d) {
+    const es = entries(); if (!es.length) return;
+    cursor = Math.max(0, Math.min(es.length - 1, cursor + d));
+    es.forEach((a, i) => a.classList.toggle("cursor", i === cursor));
+    es[cursor].scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+  }
+  keys.innerHTML = INDEX.filter((e) => e.key).map((e) => `<a class="key" href="${e.href}" target="_blank" rel="noopener" style="--c:${GROUPS[e.g]?.c}">${esc(e.t)}</a>`).join("");
   input.addEventListener("input", render);
+  input.addEventListener("keydown", (e) => { if (e.key === "ArrowDown") { e.preventDefault(); move(1); } if (e.key === "Escape") { input.value = ""; group = null; render(); } });
+  document.addEventListener("keydown", (e) => {
+    if (pad.hidden) return;
+    if (e.key === "/" && !e.target.matches("input,textarea")) { e.preventDefault(); input.focus(); return; }
+    if (e.target === input && e.key !== "ArrowDown") return;
+    if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+    else if (e.key === "Enter" && cursor >= 0 && !e.target.matches("input,button,a")) { entries()[cursor]?.click(); }
+  });
   render();
-  const slash = (e) => { if (e.key === "/" && !pad.hidden && !e.target.matches("input,textarea")) { e.preventDefault(); input.focus(); } };
-  document.addEventListener("keydown", slash);
-  return { start() { render(); }, stop() { input.value = ""; render(); input.blur(); } };
+  return { start() { render(); }, stop() { input.value = ""; group = null; render(); input.blur(); } };
 }
 
 /* the information: a page to read, each chapter arriving as it is reached */

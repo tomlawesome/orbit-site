@@ -6,7 +6,7 @@ import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAW
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall } from "./data.js";
-import { DAWN, DUSK, mountRasters, createJourney, UP, RIGHT, LEFT } from "./flight.js";
+import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT } from "./flight.js";
 import { SECTIONS, createRing, createDocs, createInfo, wirePlanets } from "./pads.js";
 
 const $ = (s) => document.querySelector(s);
@@ -33,7 +33,7 @@ const wantsDrawer = location.hash === "#key" ? "keydrawer" : location.hash === "
 const wantsPad = ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash] ?? null;
 /* the landings: each a pad, a ring, and a way to fly there */
 const PADS = {
-  install: { el: $("#installpad"), profile: UP },
+  install: { el: $("#installpad"), profile: UP_RING },
   docs: { el: $("#docspad"), profile: RIGHT },
   info: { el: $("#infopad"), profile: LEFT },
 };
