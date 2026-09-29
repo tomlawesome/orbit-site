@@ -352,10 +352,20 @@
         <div class="skymap" aria-label="The chart of the docs: each source a constellation, each entry a star">
           <svg class="chart" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
+        <p class="stamp"></p>
         <div class="keys" aria-label="Start here"></div>
         <div class="results" aria-live="polite"></div>
         <p class="hint"><kbd>/</kbd> search <span class="sep">·</span> <kbd>↑</kbd><kbd>↓</kbd> move <span class="sep">·</span> <kbd>↵</kbd> open</p>
       </div>
+      <article class="reader" hidden>
+        <button class="corner tochart" type="button">← the chart</button>
+        <header class="readhead"><span class="corner from"></span><h1></h1><p class="source"></p></header>
+        <div class="readgrid">
+          <nav class="onpage" aria-label="On this page"><span class="corner">on this page</span><ol></ol></nav>
+          <div class="body"></div>
+        </div>
+        <nav class="readnav" aria-label="The next source"></nav>
+      </article>
       <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
     </div>
   </div>
