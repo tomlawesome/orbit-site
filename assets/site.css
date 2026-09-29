@@ -168,7 +168,13 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 /* the door's measure: the ring's width sets where everything under it goes,
    so the line and the command clear the outermost orbit and its name */
 #door{--R:min(420px,84vw,48svh);--lift:4svh}
-@media (max-width:560px){#door{--R:min(420px,60vw,46svh);--lift:2svh}}
+@media (max-width:560px){
+  #door{--R:min(420px,68vw,46svh);--lift:2svh}
+  /* on a phone the ring is small, so the name and the gate keep to its scale */
+  #door .lockup .name{font-size:clamp(40px,13vw,72px)}
+  #door .gate{font-size:10.5px;padding:8px 18px;letter-spacing:.05em}
+  #door .gate-wrap{transform:translateY(min(58px,13vw))}
+}
 #door .loginchrome{padding-bottom:calc(var(--lift) * 2)}
 #door .loginchrome .lockup .glyph svg{width:var(--R)}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}

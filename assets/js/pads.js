@@ -553,7 +553,8 @@ export function createRing(pad, section) {
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
 export function wirePlanets(door, onGo) {
-  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: (+p.dataset.r + 21) / 200 }));
+  /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge */
+  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: (+p.dataset.r + (innerWidth < 560 ? 15 : 21)) / 200 }));
   planets.forEach(({ p }) => {
     p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
     p.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGo(p.dataset.section); } });
@@ -562,20 +563,28 @@ export function wirePlanets(door, onGo) {
      stays upright; the spin's own clock says where the body is, so nothing
      is read back from the layout, and a name moves every third frame,
      which at these speeds no eye can tell from every frame */
-  let last = 0, size = 0;
-  const measure = () => { size = door.querySelector(".planets").clientWidth || 0; };
+  let last = 0, size = 0, cx = 0, widths = [];
+  const measure = () => {
+    const box = door.querySelector(".planets"), r = box.getBoundingClientRect();
+    size = box.clientWidth || 0; cx = r.left + r.width / 2;
+    widths = planets.map(({ tag }) => tag.offsetWidth);
+  };
   measure(); addEventListener("resize", measure);
   function place(now) {
     if (!size) measure();
     if (!door.hidden && now - last > 48 && size) {
       last = now;
-      for (const { spin, tag, r } of planets) {
-        const anim = spin.getAnimations()[0]; if (!anim) continue;
+      planets.forEach(({ spin, tag, r }, i) => {
+        const anim = spin.getAnimations()[0]; if (!anim) return;
         const t = anim.effect.getTiming(), a = (((anim.currentTime || 0) - (t.delay || 0)) / (t.duration || 1)) * Math.PI * 2;
         const ux = Math.sin(a), uy = -Math.cos(a);           /* the body started at the top */
         const ax = ux > 0.38 ? 0 : ux < -0.38 ? -100 : -50, ay = uy < -0.55 ? -100 : uy > 0.55 ? 0 : -50;
-        tag.style.transform = `translate(calc(${(ux * r * size).toFixed(1)}px + ${ax}%), calc(${(uy * r * size).toFixed(1)}px + ${ay}%))`;
-      }
+        let x = ux * r * size;
+        /* a name near the edge of a small screen slides in rather than off it */
+        const w = widths[i] || 0, left = cx + x + (ax / 100) * w, right = left + w;
+        if (left < 8) x += 8 - left; else if (right > innerWidth - 8) x -= right - (innerWidth - 8);
+        tag.style.transform = `translate(calc(${x.toFixed(1)}px + ${ax}%), calc(${(uy * r * size).toFixed(1)}px + ${ay}%))`;
+      });
     }
     requestAnimationFrame(place);
   }
