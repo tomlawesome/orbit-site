@@ -68,6 +68,9 @@ export const DUSK = {
    sharpen, so they are drawn at CSS resolution; only the thin ones (the sun's
    core, the arc over the limb, the rim) are drawn at device resolution. */
 const SOFT = new Set(["zod", "sway1", "sway2", "scatter", "glow", "belt", "afterglow"]);
+/* and the softest of them — nothing in them narrower than a 12-unit blur —
+   at half of that, which a blur that wide cannot tell apart */
+const SOFTEST = new Set(["zod", "sway1", "sway2", "glow", "belt"]);
 const cache = new Map();
 function decodeSvg(svg) {
   const img = new Image();
@@ -82,7 +85,10 @@ async function rasterise(key, svg, w, h) {
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
   canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-  const url = canvas.toDataURL("image/png");
+  /* encoded off the main thread where the browser allows it, so the page
+     keeps answering while the light lands */
+  const blob = await new Promise((r) => { try { canvas.toBlob(r, "image/png"); } catch { r(null); } });
+  const url = blob ? URL.createObjectURL(blob) : canvas.toDataURL("image/png");
   cache.set(key, url);
   return url;
 }
@@ -101,7 +107,7 @@ export function mountRasters(world, groups, prefix) {
     const base = Math.max(innerWidth / 1600, innerHeight / 1000);
     world.dataset.rasterised = "pending";
     for (const [name, { defs, body }] of Object.entries(groups)) {
-      const scale = base * (SOFT.has(name) ? 1 : dpr);
+      const scale = base * (SOFTEST.has(name) ? 0.5 : SOFT.has(name) ? 1 : dpr);
       const w = Math.max(1, Math.round(1600 * scale)), h = Math.max(1, Math.round(1000 * scale));
       const url = await rasterise(`${prefix}-${name}|${w}|${h}`, frame(defs, body, w, h), w, h);
       if (id !== run) return;
@@ -120,7 +126,7 @@ export function mountRasters(world, groups, prefix) {
    and rides to the centre of the screen, and the name written once on the
    void. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, REV, SWEEP } from "./engine.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -131,6 +137,11 @@ export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90
 export const UP_RING = { ...UP, props: PROPS_UP.map((g) => ({ ...g })), ending: "ring" };
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
 export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
+/* the descent from a landing: that landing's own climb run backwards — its
+   vanishing point, its bearings, its traffic met the other way, and its own
+   ending undone first, so a ring leaves as a ring and a sweep as a sweep */
+const mirrored = (props) => props.map((g) => ({ kind: g.kind, shape: g.shape, k: g.k, ang: g.ang, z: g.z, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
+export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, props: mirrored(P.props) });
 export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
 
@@ -191,13 +202,13 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
       case "instrument": body.classList.remove("bare"); body.classList.add("instrument"); (flight.on.settled ?? on.settled)?.(); break;
     }
   };
-  let descent = { onto: "dusk", on: {} };
+  let descent = { onto: "dusk", from: null, on: {} };
   const landingGlyph = () => (descent.onto === "dawn" ? dawnGlyph() : duskGlyph());
   const descentStep = (act) => {
     switch (act) {
       case "withdraw": body.classList.remove("instrument"); body.classList.add("withdrawing"); break;
       case "disperse": body.classList.add("dispersing"); break;
-      case "warp": body.classList.add("showwarp"); engine.start(descent.onto === "dawn" ? DOWN_DAWN : DOWN); break;
+      case "warp": body.classList.add("showwarp"); engine.start(descent.from ? descentFrom(descent.from) : descent.onto === "dawn" ? DOWN_DAWN : DOWN); break;
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
@@ -226,10 +237,10 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : ascentBeats(), ascentStep);
   }
   const ascend = (o = {}) => fly(UP, o);
-  function descend({ title = "", subtitle = "signing out", onto = "dusk", on: hooks = {} } = {}) {
+  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {} } = {}) {
     cancelTimeline();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
-    descent = { onto, on: hooks };
+    descent = { onto, from, on: hooks };
     write(title, subtitle);
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : descentBeats(), descentStep);
   }
