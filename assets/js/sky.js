@@ -24,13 +24,25 @@ const TILED_LAYERS = [
   { count: 95, rMin: 0.4, rSpan: 0.5, oMin: 0.12, oSpan: 0.23 },
   { count: 46, rMin: 0.8, rSpan: 0.7, oMin: 0.3, oSpan: 0.4 },
 ];
+/* the drift is a transform on the layer's own <svg> element, not on a group
+   inside one: an element the compositor can move on its own, so the sky
+   costs nothing per frame. The tile is 1600 units wide; `--tile` says how
+   many pixels that is at this size, so the seam never shows */
+export function measureTile(host) {
+  const set = () => {
+    const scale = Math.max(host.clientWidth / 1600, host.clientHeight / 1000);
+    host.style.setProperty("--tile", `${(1600 * scale).toFixed(1)}px`);
+  };
+  set();
+  let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(set, 100); });
+}
 export function mountTiledSky(host, idPrefix = "sky") {
   const rng = seededRng(17170812);
-  const svg = el("svg", { viewBox: "0 0 1600 1000", preserveAspectRatio: "xMidYMid slice" });
   const cams = {};
   ["far", "near"].forEach((cls, index) => {
+    const svg = el("svg", { class: cls, viewBox: "0 0 1600 1000", preserveAspectRatio: "xMidYMid slice" }, host);
     const cam = el("g", { class: "cam" }, svg);
-    const layer = el("g", { class: cls, fill: cls === "far" ? "var(--star-far)" : "var(--star-near)" }, cam);
+    const layer = el("g", { fill: cls === "far" ? "var(--star-far)" : "var(--star-near)" }, cam);
     const tile = el("g", { id: `${cls}tile-${idPrefix}` }, layer);
     const { count, rMin, rSpan, oMin, oSpan } = TILED_LAYERS[index];
     for (let i = 0; i < count; i++) {
@@ -39,7 +51,7 @@ export function mountTiledSky(host, idPrefix = "sky") {
     el("use", { href: `#${tile.id}`, x: "1600" }, layer);
     cams[cls] = cam;
   });
-  host.appendChild(svg);
+  measureTile(host);
   return cams;
 }
 
@@ -60,19 +72,22 @@ export const DUSK_FAR = tile(100, 0.4, 0.55, 0.14, 0.28, true);
 export const DUSK_NEAR = tile(48, 0.8, 0.85, 0.40, 0.38, false);
 
 export function mountFlightSky(host, far, near, idPrefix) {
-  const svg = el("svg", { viewBox: "0 0 1600 1000", preserveAspectRatio: "xMidYMid slice" });
-  const farG = el("g", { class: "far", fill: "var(--star-far, #e9edf8)" }, svg);
-  const farTile = el("g", { id: `${idPrefix}-far` }, farG);
-  for (const s of far) {
-    const c = el("circle", { cx: s.cx, cy: s.cy, r: s.r, opacity: s.opacity }, farTile);
-    if (s.delay) { c.setAttribute("class", "tw"); c.style.animationDelay = `${s.delay}s`; }
-  }
-  el("use", { href: `#${idPrefix}-far`, x: "1600" }, farG);
-  const nearG = el("g", { class: "near", fill: "var(--star-near, #f4f0ff)" }, svg);
-  const nearTile = el("g", { id: `${idPrefix}-near` }, nearG);
-  for (const s of near) el("circle", { cx: s.cx, cy: s.cy, r: s.r, opacity: s.opacity }, nearTile);
-  el("use", { href: `#${idPrefix}-near`, x: "1600" }, nearG);
-  host.appendChild(svg);
+  /* three layers: the far field, the few stars that twinkle (so the far
+     field never repaints), and the near field — each drifting on its own */
+  const layer = (cls, fill, id, stars) => {
+    const svg = el("svg", { class: cls, viewBox: "0 0 1600 1000", preserveAspectRatio: "xMidYMid slice" }, host);
+    const g = el("g", { fill }, svg);
+    const tile = el("g", { id }, g);
+    for (const s of stars) {
+      const c = el("circle", { cx: s.cx, cy: s.cy, r: s.r, opacity: s.opacity }, tile);
+      if (s.delay) { c.setAttribute("class", "tw"); c.style.animationDelay = `${s.delay}s`; }
+    }
+    el("use", { href: `#${id}`, x: "1600" }, g);
+  };
+  layer("far", "var(--star-far, #e9edf8)", `${idPrefix}-far`, far.filter((s) => !s.delay));
+  layer("far tws", "var(--star-far, #e9edf8)", `${idPrefix}-tw`, far.filter((s) => s.delay));
+  layer("near", "var(--star-near, #f4f0ff)", `${idPrefix}-near`, near);
+  measureTile(host);
 }
 
 /* POL-13: film grain, one 256px tile, repeated */

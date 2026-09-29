@@ -101,8 +101,16 @@ const frame = (defs, body, w, h) =>
    stays answerable while they land; the result is kept per size. */
 export function mountRasters(world, groups, prefix) {
   let timer, run = 0;
+  /* where the sunrise point (800, 920 in the slice) falls on screen, for the
+     layers that turn about it */
+  const origin = () => {
+    const W = world.clientWidth || innerWidth, H = world.clientHeight || innerHeight, s = Math.max(W / 1600, H / 1000);
+    world.style.setProperty("--ox", `${((W - 1600 * s) / 2 + 800 * s).toFixed(1)}px`);
+    world.style.setProperty("--oy", `${((H - 1000 * s) / 2 + 920 * s).toFixed(1)}px`);
+  };
   async function build() {
     const id = ++run;
+    origin();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const base = Math.max(innerWidth / 1600, innerHeight / 1000);
     world.dataset.rasterised = "pending";
@@ -118,6 +126,7 @@ export function mountRasters(world, groups, prefix) {
     world.dataset.rasterised = "ready";
   }
   const start = () => { build(); addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(build, 120); }); };
+  origin(); addEventListener("resize", origin);
   return { start };
 }
 
