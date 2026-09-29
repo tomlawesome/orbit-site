@@ -19,7 +19,7 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs"
 /* the sources: a slug for the route, the constellation's name and colour,
    where the file lives, and for the README, where the page should begin */
 export const SOURCES = [
-  { slug: "readme",         name: "README",         c: "#d8b45a", repo: "tomlawesome/orbit",          path: "README.md",                       from: "Quick start", title: "Orbit" },
+  { slug: "readme",         name: "README",         c: "#d8b45a", repo: "tomlawesome/orbit",          path: "README.md",                       from: "Quick start", title: "Orbit", skip: ["A quick visual tour"] },
   { slug: "sign-in",        name: "Sign-in",        c: "#8fb8ff", repo: "tomlawesome/orbit",          path: "docs/authentication.md" },
   { slug: "security",       name: "Security",       c: "#f87171", repo: "tomlawesome/orbit",          path: "SECURITY.md" },
   { slug: "releases",       name: "Releases",       c: "#a78bfa", repo: "tomlawesome/orbit",          path: "docs/releasing.md" },
@@ -135,7 +135,8 @@ function render(md, src, bySourcePath) {
     else cur.tokens.push(t);
   }
   if (cur.heading || cur.tokens.length) groups.push(cur);
-  const sections = groups.map((g) => {
+  /* sections the site leaves out (the README's picture tour shows an older Orbit) */
+  const sections = groups.filter((g) => !(g.heading && (src.skip || []).includes(g.heading.text.trim()))).map((g) => {
     const before = headings.length;
     const html = marked.parser(g.tokens);
     const own = headings.slice(before);
