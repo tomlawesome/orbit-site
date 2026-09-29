@@ -136,7 +136,6 @@ function signOut() {
 $("#gate").addEventListener("click", launch);
 $("#signout").addEventListener("click", signOut);
 $("#gate-back").addEventListener("click", showDoor);
-$("#launch").addEventListener("click", () => flyToPad("install"));
 const planets = wirePlanets($("#door"), flyToPad);
 for (const pad of Object.values(PADS)) {
   pad.el.querySelector(".back.dawn").addEventListener("click", backToDawn);
