@@ -13,12 +13,12 @@ export const SECTIONS = {
   install: {
     title: "Orbit", subtitle: "quick start",
     items: [
-      { label: "before anything runs", line: "A signed manifest is verified first." },
-      { label: "every file", line: "Its checksum is checked against that manifest — and a second, independent signature, if cosign is installed." },
-      { label: "the launcher", line: "Only once everything checks out does it hand off to the launcher: Install, Update, Repair." },
-      { label: "the image", line: "Pulled and resolved to an immutable digest. A mutable reference is never deployed." },
-      { label: "the stack", line: "orbit, the official PostgreSQL and the isolated scanner — done only once each is healthy." },
-      { label: "claim", line: "The last line of the container's log is a one-time link. Open it to create the first administrator." },
+      { label: "before anything runs", name: "manifest", c: "#d8b45a", line: "A signed manifest is verified first." },
+      { label: "every file", name: "checksums", c: "#8fb8ff", line: "Its checksum is checked against that manifest — and a second, independent signature, if cosign is installed." },
+      { label: "the launcher", name: "launcher", c: "#a78bfa", line: "Only once everything checks out does it hand off to the launcher: Install, Update, Repair." },
+      { label: "the image", name: "image", c: "#f87171", line: "Pulled and resolved to an immutable digest. A mutable reference is never deployed." },
+      { label: "the stack", name: "stack", c: "#4ade80", line: "orbit, the official PostgreSQL and the isolated scanner — done only once each is healthy." },
+      { label: "claim", name: "claim", c: "#f0b429", line: "The last line of the container's log is a one-time link. Open it to create the first administrator." },
     ],
   },
   docs: { title: "Orbit", subtitle: "the docs" },
@@ -186,14 +186,25 @@ export function createRing(pad, section) {
   const stage = $(".stage", pad), n = $(".n", stage), total = $(".total", stage), label = $(".label", stage), line = $(".line", stage), go = $(".go", stage);
   const items = section.items, N = items.length;
   total.textContent = String(N).padStart(2, "0");
+  /* each body on an orbit of its own outside the ring, as the doors are on
+     the sunrise: a faint path, a hairline circle round the body, a leader
+     out to its name, which stays upright wherever the body has got to */
+  const RADIUS = (i) => 80 + i * 6;
+  const orbits = document.createElementNS(SVG, "g"); orbits.setAttribute("class", "orbits"); svg.insertBefore(orbits, host);
+  const labels = document.createElementNS(SVG, "g"); labels.setAttribute("class", "labels"); svg.appendChild(labels);
+  const tags = [];
   const bodies = items.map((it, i) => {
+    const R = RADIUS(i), x = 100 + R;
+    const path = document.createElementNS(SVG, "circle"); path.setAttribute("cx", "100"); path.setAttribute("cy", "100"); path.setAttribute("r", R); orbits.appendChild(path);
     const g = document.createElementNS(SVG, "g");
     g.setAttribute("class", "stage-body"); g.setAttribute("tabindex", "0"); g.setAttribute("role", "button");
     g.setAttribute("aria-label", `${it.label}: ${it.line}`);
-    g.style.setProperty("--i", i);
-    for (const [cls, r] of [["halo", "11"], ["hit", "14"], ["dot", "5.2"]]) {
-      const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", "172"); c.setAttribute("cy", "100"); c.setAttribute("r", r); g.appendChild(c);
+    g.style.setProperty("--i", i); g.style.setProperty("--c", it.c || "#d8b45a");
+    for (const [cls, r] of [["hit", "13"], ["halo", "7.2"], ["dot", "4"]]) {
+      const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", x); c.setAttribute("cy", "100"); c.setAttribute("r", r); g.appendChild(c);
     }
+    const lead = document.createElementNS(SVG, "line"); lead.setAttribute("class", "lead"); lead.setAttribute("x1", x + 7.2); lead.setAttribute("y1", "100"); lead.setAttribute("x2", x + 15); lead.setAttribute("y2", "100"); g.appendChild(lead);
+    const tag = document.createElementNS(SVG, "text"); tag.setAttribute("class", "tag"); tag.textContent = it.name || it.label; tag.style.setProperty("--c", it.c || "#d8b45a"); labels.appendChild(tag); tags.push(tag);
     host.appendChild(g);
     g.addEventListener("click", () => pick(i));
     g.addEventListener("focus", () => pick(i));
@@ -222,6 +233,7 @@ export function createRing(pad, section) {
   function lock(i) {
     current = i;
     bodies.forEach((g, j) => g.classList.toggle("on", j === i));
+    stage.style.setProperty("--c", items[i].c || "var(--accent)");
     stage.classList.remove("in"); void stage.offsetWidth;
     n.textContent = String(i + 1).padStart(2, "0"); label.textContent = items[i].label; line.textContent = items[i].line;
     if (items[i].href) { go.href = items[i].href; go.hidden = false; } else go.hidden = true;
@@ -239,6 +251,13 @@ export function createRing(pad, section) {
       if (!held && b.locked) { release(i); plan(i, now, b.t1 + CYCLE); }
       b.a = angleAt(b, now);
       bodies[i].setAttribute("transform", `rotate(${b.a.toFixed(2)} 100 100)`);
+      /* the name, just past the leader, on the side away from the body */
+      const t = (b.a * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t), r = RADIUS(i) + 20;
+      const tag = tags[i];
+      tag.setAttribute("x", (100 + ux * r).toFixed(2)); tag.setAttribute("y", (100 + uy * r).toFixed(2));
+      tag.setAttribute("text-anchor", ux > 0.38 ? "start" : ux < -0.38 ? "end" : "middle");
+      tag.setAttribute("dominant-baseline", uy < -0.55 ? "auto" : uy > 0.55 ? "hanging" : "middle");
+      tag.classList.toggle("on", b.locked);
     });
     raf = requestAnimationFrame(frame);
   }
