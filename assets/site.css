@@ -724,15 +724,13 @@ body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,
 body.instrument .launchcmd{opacity:1}
 .launchcmd .cmd{background:rgba(10,13,24,.72);backdrop-filter:blur(10px);border-color:#2a3148}
 .launchcmd .cmd code{color:#e9edf8}
-.launchcmd .needs{margin:12px 0 0;text-align:center;font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#7e819a;white-space:nowrap}
-.launchcmd .needs .sep{margin:0 8px;color:#4a5468}
-@media (max-height:700px){.pad .stage .line{font-size:13.5px}.launchcmd .needs{display:none}}
+@media (max-height:700px){.pad .stage .line{font-size:13.5px}}
 @media (max-width:560px){
   .pad .loginchrome{padding-bottom:16svh}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
   #installpad .loginchrome .lockup .glyph svg{width:min(380px,62vw,38svh)}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
-  .launchcmd{bottom:82px}.launchcmd .needs{display:none}
+  .launchcmd{bottom:82px}
 }
 @media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
