@@ -757,7 +757,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad .scroll{position:absolute;inset:0;z-index:3;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .pad .topfade{position:absolute;top:0;left:0;right:0;height:92px;z-index:4;pointer-events:none;background:linear-gradient(to bottom,var(--bg) 34%,transparent)}
 .pad .back,.pad .mark-row.home{z-index:5}
-.pad.docs .index{width:min(680px,calc(100% - 40px));margin:0 auto;padding:96px 0 40px}
+.pad.docs .index{width:min(760px,calc(100% - 40px));margin:0 auto;padding:96px 0 40px}
 .pad.docs .index>.corner{display:block;margin-bottom:12px}
 .pad.docs h1{font:600 clamp(26px,4.2vw,38px)/1.1 var(--display);letter-spacing:-.01em;color:var(--ink);max-width:16ch;text-wrap:balance;margin:0 0 26px}
 .pad.docs .search{display:flex;align-items:center;gap:12px;padding:0 16px 0 18px;height:54px;border-radius:99px;background:var(--panel-raised);backdrop-filter:blur(16px);
@@ -857,21 +857,60 @@ body.bare .pad .stage.inring{opacity:0}
 .pad.info .chapter>h2,.pad.info .chapter>p,.pad.info .facts,.pad.info .three,.pad.info .system,.pad.info .links{max-width:640px}
 @media (max-width:700px){.pad.info .shot.pair,.pad.info .shot.pair.even{grid-template-columns:1fr}.pad.info .shot.pair img.phone{width:min(200px,54%);justify-self:start}}
 
-/* the docs' sky: a constellation per source, lit by its answers */
-.pad.docs .constellations{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:22px 0 8px}
-.pad.docs .con{position:relative;background:none;border:1px solid transparent;border-radius:14px;padding:10px 8px 10px;cursor:pointer;color:var(--ink-mid);text-align:center;
-  transition:border-color .25s,background .25s,transform .25s}
-.pad.docs .con:hover{border-color:var(--line);background:var(--panel);transform:translateY(-1px)}
-.pad.docs .con[aria-pressed=true]{border-color:color-mix(in srgb,var(--c) 55%,transparent);background:color-mix(in srgb,var(--c) 7%,var(--panel));box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 18%,transparent),0 14px 40px color-mix(in srgb,var(--c) 10%,transparent)}
-.pad.docs .con svg{display:block;width:100%;max-width:104px;height:auto;margin:0 auto;overflow:visible}
-.pad.docs .con polyline{fill:none;stroke:var(--c);stroke-opacity:.28;stroke-width:1;transition:stroke-opacity .35s}
-.pad.docs .con circle{fill:var(--ink-faint);opacity:.45;transition:fill .35s,opacity .35s}
-.pad.docs .con circle.lit{fill:var(--c);opacity:1;filter:drop-shadow(0 0 4px var(--c))}
-.pad.docs .con:hover polyline,.pad.docs .con[aria-pressed=true] polyline{stroke-opacity:.8}
-.pad.docs .con .name{display:block;margin-top:8px;font:10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-mid)}
-.pad.docs .con[aria-pressed=true] .name{color:var(--c)}
-.pad.docs .con .n{position:absolute;top:8px;right:10px;font:9.5px var(--mono);color:var(--ink-faint)}
-.pad.docs .con[aria-pressed=true] .n{color:var(--c)}
+/* the docs' chart: the sources as constellations across the sky */
+.pad.docs .skymap{margin:26px -40px 6px;position:relative}
+.pad.docs .chart{display:block;width:100%;height:auto;overflow:visible}
+.pad.docs .con .lines line{stroke:var(--c);stroke-opacity:.42;stroke-width:1;transition:stroke-opacity .5s}
+.pad.docs .chart.drawn .con .lines line{animation:drawline 1.1s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(.35s * var(--g) + 120ms * var(--i))}
+@keyframes drawline{to{stroke-dashoffset:0}}
+.pad.docs .chart:not(.drawn) .con .lines line{stroke-dashoffset:0}
+.pad.docs .star{cursor:pointer;outline:0;opacity:1}
+.pad.docs .chart.drawn .star{animation:starin .6s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(.35s * var(--g) + 120ms * var(--i))}
+@keyframes starin{from{opacity:0}to{opacity:1}}
+.pad.docs .star .hit{fill:transparent}
+.pad.docs .star .dot{fill:var(--ink);transition:fill .35s,r .35s,opacity .4s}
+.pad.docs .star .glow{fill:var(--c);opacity:0;transition:opacity .35s}
+.pad.docs .star.key .dot{fill:var(--c)}
+.pad.docs .star.lit .dot,.pad.docs .star.hot .dot,.pad.docs .star:focus-visible .dot{fill:var(--c);r:4}
+.pad.docs .star.lit .glow,.pad.docs .star.hot .glow,.pad.docs .star:focus-visible .glow{opacity:.35}
+.pad.docs .star.hot .glow{opacity:.55}
+.pad.docs .star.dim .dot{opacity:.22;animation:none}
+.pad.docs .star .ring{fill:none;stroke:var(--c);stroke-width:.8;stroke-opacity:0;transition:stroke-opacity .4s}
+.pad.docs .star.read .ring{stroke-opacity:.55}
+.pad.docs .star.read.dim .ring{stroke-opacity:.15}
+/* the stars breathe; the field twinkles more slowly */
+.pad.docs .chart.drawn .star .dot{animation:twinkle var(--tw,4s) ease-in-out infinite alternate;animation-delay:calc(.35s * var(--g) + 120ms * var(--i) + var(--td,0s))}
+.pad.docs .chart.drawn .star.dim .dot,.pad.docs .chart.drawn .star.hot .dot,.pad.docs .chart.drawn .star.lit .dot{animation:none}
+@keyframes twinkle{from{opacity:1}to{opacity:.55}}
+.pad.docs .field circle{fill:var(--ink);opacity:var(--o)}
+.pad.docs .chart.drawn .field circle{animation:fieldtw 5.5s ease-in-out infinite alternate;animation-delay:var(--d)}
+@keyframes fieldtw{from{opacity:var(--o)}to{opacity:calc(var(--o) * .3)}}
+.pad.docs .grat path{fill:none;stroke:var(--ink);stroke-opacity:.075;stroke-width:.7}
+.pad.docs .con:has(.name:hover) .lines line,.pad.docs .con:has(.name:focus-visible) .lines line{stroke-opacity:.85}
+.pad.docs .meteor{stroke:var(--ink);stroke-width:1.2;stroke-linecap:round;opacity:0;stroke-dasharray:var(--l) var(--l);stroke-dashoffset:var(--l)}
+.pad.docs .meteor.go{animation:meteor 1.4s cubic-bezier(.3,.6,.3,1) both}
+@keyframes meteor{0%{opacity:0;stroke-dashoffset:var(--l)}12%{opacity:.9}70%{opacity:.5}100%{opacity:0;stroke-dashoffset:calc(-1 * var(--l))}}
+@media (prefers-reduced-motion:reduce){.pad.docs .chart.drawn .star .dot,.pad.docs .chart.drawn .field circle{animation:none}}
+.pad.docs .con.quiet .lines line{stroke-opacity:.12}
+.pad.docs .con.chosen .lines line{stroke-opacity:.85}
+.pad.docs .con .name{cursor:pointer;outline:0}
+.pad.docs .con .name line{stroke:var(--c);stroke-opacity:.4;stroke-width:.8}
+.pad.docs .con .name text{font:500 10.5px "JetBrains Mono",monospace;letter-spacing:1.8px;text-transform:uppercase;fill:var(--ink-mid);transition:fill .3s;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
+.pad.docs .con .name .n{fill:var(--ink-faint);letter-spacing:1px}
+.pad.docs .con .name:hover text,.pad.docs .con .name:focus-visible text,.pad.docs .con.chosen .name text{fill:var(--c)}
+.pad.docs .con.chosen .name .n{fill:var(--c)}
+.pad.docs .con.quiet .name text{fill:var(--ink-faint)}
+.pad.docs .tip{pointer-events:none;opacity:0;transition:opacity .15s}
+.pad.docs .tip.show{opacity:1}
+.pad.docs .tip line{stroke:var(--c);stroke-width:.8}
+.pad.docs .tip text{font:500 11.5px "JetBrains Mono",monospace;letter-spacing:.6px;fill:var(--ink);paint-order:stroke;stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}
+.pad.docs .entry.hot{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 14%,transparent)}
+.pad.docs .entry.pick{animation:pick 1.8s ease both}
+@keyframes pick{0%,60%{border-color:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent)}100%{}}
+.pad.docs .entry.hot .star{opacity:1;box-shadow:0 0 14px var(--c)}
+.pad.docs .results h4 .linkish{margin-left:10px;font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--ink-faint)}
+.pad.docs .results h4 .linkish:hover{color:var(--accent-text)}
+@media (max-width:700px){.pad.docs .skymap{margin:18px -10px 0}.pad.docs .con .name text{font-size:12.5px}.pad.docs .tip text{font-size:13px}.pad.docs .star .hit{r:18}}
 /* the entries: stars in their constellation's colour, arriving in order */
 .pad.docs .entry{grid-template-columns:auto 1fr auto;animation:ivopen .45s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(28ms * var(--i))}
 .pad.docs .entry .star{grid-row:1/3;align-self:center;width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px color-mix(in srgb,var(--c) 70%,transparent);opacity:.85}
@@ -889,4 +928,4 @@ body.bare .pad .stage.inring{opacity:0}
 .pad.docs .hint kbd{font:inherit;border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin:0 2px}
 .pad.docs .hint .sep{margin:0 10px}
 .pad.docs .search{box-shadow:0 20px 60px rgba(0,0,0,.35)}
-@media (max-width:700px){.pad.docs .constellations{grid-template-columns:repeat(3,1fr);gap:6px}.pad.docs .con{padding:8px 4px}.pad.docs .con svg{max-width:78px}.pad.docs .con .name{font-size:9px;letter-spacing:.1em}.pad.docs .con .n{display:none}.pad.docs .hint{display:none}}
+@media (max-width:700px){.pad.docs .hint{display:none}}

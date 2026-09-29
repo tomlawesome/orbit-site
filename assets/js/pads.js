@@ -4,7 +4,7 @@
  * The install's bodies are the stages of the install; the docs' are the
  * documents; the information's are what Orbit is, in the README's words.
  */
-import { reduced } from "./sky.js";
+import { reduced, seededRng } from "./sky.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
@@ -67,20 +67,56 @@ export const INDEX = [
   { g: "The launcher", t: "Stack", s: "Go, with Bubble Tea for the full-screen event loop and Lip Gloss for layout. Linux only.", href: L + "stack", k: "go bubbletea lipgloss" },
 ];
 
-/* THE DOCS: the index as a sky. Each source is a constellation — a few
-   stars joined in the chart pen, in its own colour — and every entry a
-   star in it. Type, and the constellations show where the answers are;
-   choose one, and only its stars are listed. The arrow keys walk the
-   list and enter opens the doc. */
+/* THE DOCS: the index as a chart of the sky. Each source is a constellation
+   in its own colour, its stars the entries — placed once by a seeded walk,
+   so the same sky every visit — scattered as constellations are, not
+   ranked in a row. They draw themselves star by star on arrival. Hover a
+   star for its title; click it to read; type and the stars that answer
+   light while the rest dim. A constellation's name filters the list. */
 const GROUPS = {
-  "README":       { c: "#d8b45a", pts: [[8, 40], [30, 16], [54, 30], [80, 10], [108, 26]] },
-  "Sign-in":      { c: "#8fb8ff", pts: [[10, 18], [36, 44], [60, 20], [86, 40], [110, 14]] },
-  "Security":     { c: "#f87171", pts: [[14, 44], [40, 12], [68, 40], [96, 18]] },
-  "Releases":     { c: "#a78bfa", pts: [[8, 26], [36, 40], [62, 12], [90, 34], [112, 46]] },
-  "The launcher": { c: "#4ade80", pts: [[12, 38], [42, 18], [72, 44], [104, 16]] },
+  "README":       { c: "#d8b45a", wide: [190, 160, 170, 115], tall: [170, 150, 130, 130] },
+  "Sign-in":      { c: "#8fb8ff", wide: [520, 130, 180, 100], tall: [440, 135, 130, 120] },
+  "Security":     { c: "#f87171", wide: [850, 95, 100, 70],   tall: [150, 380, 100, 70] },
+  "Releases":     { c: "#a78bfa", wide: [740, 300, 120, 80],  tall: [450, 380, 110, 80] },
+  "The launcher": { c: "#4ade80", wide: [370, 330, 110, 60],  tall: [300, 560, 120, 60] },
 };
+const SEED = 20260929;
+/* a constellation: a gentle walk of N stars inside its box — each step turns
+   a little, turns back at the box's edge, and never lands on a star already
+   placed, so the shape reads as a figure and not a row */
+function walk(n, [cx, cy, w, h], rnd) {
+  const pts = []; let x = cx - w / 2 + rnd() * w * 0.25, y = cy + (rnd() - 0.5) * h * 0.5, ang = (rnd() - 0.5) * 0.9;
+  const step = Math.max(24, Math.min(w, h * 1.6) / Math.max(1, n - 1) * 1.35), minD = step * 0.55;
+  const inside = (px, py) => Math.abs(px - cx) <= w / 2 && Math.abs(py - cy) <= h / 2;
+  for (let i = 0; i < n; i++) {
+    pts.push([x, y]);
+    let nx, ny, tries = 0;
+    do {
+      ang += (rnd() - 0.5) * 1.6 + (tries > 3 ? 1.2 : 0);
+      nx = x + Math.cos(ang) * step * (0.7 + rnd() * 0.6); ny = y + Math.sin(ang) * step * (0.55 + rnd() * 0.6);
+      tries++;
+    } while (tries < 12 && (!inside(nx, ny) || pts.some(([a, b]) => Math.hypot(a - nx, b - ny) < minD)));
+    if (!inside(nx, ny)) { nx = Math.max(cx - w / 2, Math.min(cx + w / 2, nx)); ny = Math.max(cy - h / 2, Math.min(cy + h / 2, ny)); }
+    x = nx; y = ny;
+  }
+  return pts;
+}
+/* the chart behind the constellations: a field of faint stars and the arcs
+   of a graticule, the way a printed sky chart is ruled */
+function field(W, H, rnd) {
+  let dots = "";
+  for (let i = 0; i < (W > 700 ? 110 : 80); i++) {
+    const r = (0.5 + rnd() * rnd() * 1.3).toFixed(2), o = (0.15 + rnd() * 0.45).toFixed(2);
+    dots += `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * H).toFixed(0)}" r="${r}" style="--o:${o};--d:${(rnd() * 6).toFixed(1)}s"/>`;
+  }
+  const arcs = [];
+  /* parallels: shallow arcs bowing upward; meridians: leaning lines */
+  for (let k = 0; k < 4; k++) { const y = H * (0.18 + k * 0.22), b = H * 0.07; arcs.push(`M-20 ${y.toFixed(0)} Q ${W / 2} ${(y - b).toFixed(0)} ${W + 20} ${y.toFixed(0)}`); }
+  for (let k = 0; k < 6; k++) { const x = W * (0.08 + k * 0.17), lean = (x - W / 2) * 0.12; arcs.push(`M${(x - lean).toFixed(0)} -20 Q ${(x + lean * 0.3).toFixed(0)} ${H / 2} ${(x + lean).toFixed(0)} ${H + 20}`); }
+  return `<g class="field">${dots}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
+}
 export function createDocs(pad) {
-  const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), sky = $(".constellations", pad);
+  const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), chart = $(".skymap .chart", pad);
   const norm = (x) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const mark = (text, q) => {
@@ -88,38 +124,91 @@ export function createDocs(pad) {
     const words = q.split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     return esc(text).replace(new RegExp(`(${words.join("|")})`, "gi"), "<mark>$1</mark>");
   };
-  let group = null, cursor = -1;
-  let recent = []; try { recent = JSON.parse(localStorage.getItem("orbit-site-read") || "[]"); } catch { /* fine */ }
-  const remember = (href) => { recent = [href, ...recent.filter((h) => h !== href)].slice(0, 12); try { localStorage.setItem("orbit-site-read", JSON.stringify(recent)); } catch { /* fine */ } };
-
-  /* the constellations: one per source, lit by how many of its stars answer */
-  const glyph = (name, g, n, hits) => {
-    const pts = g.pts, poly = pts.map((p) => p.join(",")).join(" ");
-    const dots = pts.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 2 ? 2 : 2.6}" class="${i < hits ? "lit" : ""}"/>`).join("");
-    return `<button type="button" class="con" data-group="${esc(name)}" style="--c:${g.c}" aria-pressed="false">
-      <svg viewBox="0 0 120 56" aria-hidden="true"><polyline points="${poly}"/>${dots}</svg>
-      <span class="name">${esc(name)}</span><span class="n">${n}</span></button>`;
-  };
-  function paintSky(q) {
-    const words = q ? q.split(/\s+/).filter(Boolean) : [];
-    sky.innerHTML = Object.entries(GROUPS).map(([name, g]) => {
-      const mine = INDEX.filter((e) => e.g === name);
-      const hits = words.length ? mine.filter((e) => matches(e, words)).length : mine.length;
-      return glyph(name, g, words.length ? hits : mine.length, words.length ? Math.ceil(hits / mine.length * g.pts.length) : g.pts.length);
-    }).join("");
-    sky.querySelectorAll(".con").forEach((b) => {
-      b.setAttribute("aria-pressed", String(b.dataset.group === group));
-      b.addEventListener("click", () => { group = group === b.dataset.group ? null : b.dataset.group; render(); });
-    });
-  }
   const matches = (e, words) => { const hay = norm(`${e.t} ${e.s} ${e.k || ""}`); return words.every((w) => hay.includes(w)); };
   const score = (e, words) => { const t = norm(e.t), k = norm(e.k || ""); return words.reduce((s, w) => s + (t.includes(w) ? 3 : k.includes(w) ? 2 : 1), 0); };
+  let group = null, cursor = -1, narrow = false, starOf = new Map();
+  let recent = []; try { recent = JSON.parse(localStorage.getItem("orbit-site-read") || "[]"); } catch { /* fine */ }
+  const remember = (href) => {
+    recent = [href, ...recent.filter((h) => h !== href)].slice(0, 12); try { localStorage.setItem("orbit-site-read", JSON.stringify(recent)); } catch { /* fine */ }
+    chart.querySelector(`.star[data-star="${starOf.get(href)}"]`)?.classList.add("read");
+  };
+
+  /* ── the chart ── */
+  function drawChart() {
+    narrow = innerWidth < 700;
+    const W = narrow ? 600 : 1000, H = narrow ? 640 : 420;
+    chart.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const rnd = seededRng(SEED);
+    starOf = new Map();
+    let html = field(W, H, seededRng(SEED + 7)), gi = 0;
+    for (const [name, g] of Object.entries(GROUPS)) {
+      const mine = INDEX.filter((e) => e.g === name), pts = walk(mine.length, narrow ? g.tall : g.wide, rnd);
+      const segs = pts.slice(1).map((p, i) => { const q = pts[i]; const len = Math.hypot(p[0] - q[0], p[1] - q[1]); return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" style="--l:${len.toFixed(0)};--i:${i}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}"/>`; }).join("");
+      const stars = pts.map(([x, y], i) => { const e = mine[i]; starOf.set(e.href, `${gi}-${i}`); return `<g class="star${e.key ? " key" : ""}${recent.includes(e.href) ? " read" : ""}" data-star="${gi}-${i}" data-href="${e.href}" style="--i:${i};--tw:${(2.6 + rnd() * 3).toFixed(1)}s;--td:${(rnd() * 4).toFixed(1)}s" tabindex="0" role="link" aria-label="${esc(e.t)}"><circle class="hit" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="14"/><circle class="glow" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 8 : 6.5}"/><circle class="ring" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 7 : 6}"/><circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 3.8 : 2.8}"/></g>`; }).join("");
+      /* the name sits just under the constellation's lowest star */
+      const low = pts.reduce((a, p) => (p[1] > a[1] ? p : a), pts[0]), nx = Math.max(70, Math.min(W - 70, low[0]));
+      html += `<g class="con" data-group="${esc(name)}" style="--c:${g.c};--g:${gi}"><g class="lines">${segs}</g><g class="stars">${stars}</g>
+        <g class="name" role="button" tabindex="0" aria-pressed="false" aria-label="Only ${esc(name)}"><line x1="${low[0].toFixed(1)}" y1="${(low[1] + 8).toFixed(1)}" x2="${nx.toFixed(1)}" y2="${(low[1] + 24).toFixed(1)}"/><text x="${nx.toFixed(1)}" y="${(low[1] + 38).toFixed(1)}" text-anchor="middle">${esc(name)}<tspan class="n"> · ${mine.length}</tspan></text></g></g>`;
+      gi++;
+    }
+    html += `<line class="meteor" aria-hidden="true"/><g class="tip" aria-hidden="true"><line/><text/></g>`;
+    chart.innerHTML = html;
+    /* a star: its title beside it; a click reads it; a name: only that constellation */
+    const tip = chart.querySelector(".tip"), tipLine = tip.querySelector("line"), tipText = tip.querySelector("text");
+    const showTip = (s) => {
+      const c = s.querySelector(".dot"), x = +c.getAttribute("cx"), y = +c.getAttribute("cy"), e = INDEX.find((e) => e.href === s.dataset.href);
+      const vb = chart.viewBox.baseVal, right = x < vb.width * 0.55, dx = right ? 22 : -22;
+      tipLine.setAttribute("x1", x + (right ? 9 : -9)); tipLine.setAttribute("y1", y); tipLine.setAttribute("x2", x + dx); tipLine.setAttribute("y2", y - 14);
+      tipText.setAttribute("x", x + dx + (right ? 4 : -4)); tipText.setAttribute("y", y - 18); tipText.setAttribute("text-anchor", right ? "start" : "end"); tipText.textContent = e.t;
+      tip.style.setProperty("--c", GROUPS[e.g].c); tip.classList.add("show"); s.classList.add("hot");
+      results.querySelector(`.entry[data-href="${CSS.escape(s.dataset.href)}"]`)?.classList.add("hot");
+    };
+    const hideTip = (s) => { tip.classList.remove("show"); s?.classList.remove("hot"); results.querySelectorAll(".entry.hot").forEach((a) => a.classList.remove("hot")); };
+    chart.querySelectorAll(".star").forEach((s) => {
+      s.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") showTip(s); });
+      s.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch") hideTip(s); });
+      s.addEventListener("focus", () => showTip(s)); s.addEventListener("blur", () => hideTip(s));
+      s.addEventListener("click", (e) => {
+        const entry = results.querySelector(`.entry[data-href="${CSS.escape(s.dataset.href)}"]`);
+        if (e.pointerType === "touch" || (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) {
+          /* a finger: the star picks its entry out of the list; the entry opens it */
+          showTip(s); if (entry) { entry.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }); entry.classList.add("pick"); setTimeout(() => entry.classList.remove("pick"), 1800); }
+          return;
+        }
+        remember(s.dataset.href); entry?.classList.add("read"); window.open(s.dataset.href, "_blank", "noopener");
+      });
+      s.addEventListener("keydown", (e) => { if (e.key === "Enter") { remember(s.dataset.href); window.open(s.dataset.href, "_blank", "noopener"); } });
+    });
+    chart.querySelectorAll(".con .name").forEach((n) => {
+      const pick = () => { const g = n.closest(".con").dataset.group; group = group === g ? null : g; render(); };
+      n.addEventListener("click", pick); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    });
+    lightChart();
+  }
+  /* what the sky says about what is typed and chosen */
+  function lightChart() {
+    const q = norm(input.value.trim()), words = q.split(/\s+/).filter(Boolean);
+    chart.querySelectorAll(".con").forEach((con) => {
+      const g = con.dataset.group, mine = INDEX.filter((e) => e.g === g);
+      let hits = 0;
+      con.querySelectorAll(".star").forEach((s) => {
+        const e = mine.find((e) => e.href === s.dataset.href);
+        const on = (!group || group === g) && (!words.length || matches(e, words));
+        s.classList.toggle("lit", on && (words.length > 0 || group === g)); s.classList.toggle("dim", !on);
+        if (on) hits++;
+      });
+      con.classList.toggle("quiet", hits === 0 && (words.length > 0 || group));
+      con.classList.toggle("chosen", group === g);
+      con.querySelector(".name").setAttribute("aria-pressed", String(group === g));
+    });
+  }
+
+  /* ── the list ── */
   const entry = (e, q, i) => `<a class="entry${recent.includes(e.href) ? " read" : ""}" href="${e.href}" target="_blank" rel="noopener" style="--i:${i};--c:${GROUPS[e.g]?.c ?? "#8791b3"}" data-href="${e.href}">
       <i class="star"></i><b>${mark(e.t, q)}</b><small>${mark(e.s, q)}</small><span class="where">${esc(e.g)}</span></a>`;
-
   function render() {
     const raw = input.value.trim(), q = norm(raw), words = q.split(/\s+/).filter(Boolean);
-    paintSky(q);
+    lightChart();
     cursor = -1;
     let list = INDEX.filter((e) => !group || e.g === group);
     if (words.length) list = list.filter((e) => matches(e, words)).sort((a, b) => score(b, words) - score(a, words));
@@ -130,12 +219,19 @@ export function createDocs(pad) {
     }
     if (words.length || group) {
       const label = words.length ? `${list.length} ${list.length === 1 ? "answer" : "answers"}${group ? ` in ${esc(group)}` : ""}` : `${esc(group)} · ${list.length}`;
-      results.innerHTML = `<section><h4>${label}</h4>${list.map((e, i) => entry(e, raw, i)).join("")}</section>`;
+      results.innerHTML = `<section><h4 style="--c:${group ? GROUPS[group]?.c : ""}"><i></i>${label}${group ? ` <button type="button" class="linkish" data-clear>everywhere</button>` : ""}</h4>${list.map((e, i) => entry(e, raw, i)).join("")}</section>`;
+      results.querySelector("[data-clear]")?.addEventListener("click", () => { group = null; render(); });
     } else {
       const groups = [...new Set(INDEX.map((e) => e.g))]; let i = 0;
       results.innerHTML = groups.map((g) => `<section><h4 style="--c:${GROUPS[g]?.c}"><i></i>${esc(g)}</h4>${INDEX.filter((e) => e.g === g).map((e) => entry(e, "", i++)).join("")}</section>`).join("");
     }
-    results.querySelectorAll(".entry").forEach((a) => a.addEventListener("click", () => { remember(a.dataset.href); a.classList.add("read"); }));
+    results.querySelectorAll(".entry").forEach((a) => {
+      a.addEventListener("click", () => { remember(a.dataset.href); a.classList.add("read"); });
+      /* the list lights the sky too: hovering an entry finds its star */
+      const star = () => chart.querySelector(`.star[data-star="${starOf.get(a.dataset.href)}"]`);
+      a.addEventListener("pointerenter", () => star()?.classList.add("hot"));
+      a.addEventListener("pointerleave", () => star()?.classList.remove("hot"));
+    });
   }
   const entries = () => [...results.querySelectorAll(".entry")];
   function move(d) {
@@ -153,10 +249,24 @@ export function createDocs(pad) {
     if (e.target === input && e.key !== "ArrowDown") return;
     if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-    else if (e.key === "Enter" && cursor >= 0 && !e.target.matches("input,button,a")) { entries()[cursor]?.click(); }
+    else if (e.key === "Enter" && cursor >= 0 && !e.target.matches("input,button,a,[role=link]")) { entries()[cursor]?.click(); }
   });
-  render();
-  return { start() { render(); }, stop() { input.value = ""; group = null; render(); input.blur(); } };
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if ((innerWidth < 700) !== narrow) { drawChart(); render(); } }, 150); });
+  /* now and then a meteor crosses the chart — never when motion is reduced */
+  let mt = 0;
+  const meteor = () => {
+    const vb = chart.viewBox.baseVal, m = chart.querySelector(".meteor");
+    if (!m || pad.hidden || document.hidden) { mt = setTimeout(meteor, 4000); return; }
+    const x = vb.width * (0.15 + Math.random() * 0.7), y = vb.height * (0.05 + Math.random() * 0.5), len = 90 + Math.random() * 120, a = (0.35 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1) + Math.PI / 2;
+    m.setAttribute("x1", x.toFixed(0)); m.setAttribute("y1", y.toFixed(0)); m.setAttribute("x2", (x + Math.cos(a - Math.PI / 2) * len).toFixed(0)); m.setAttribute("y2", (y + Math.sin(a - Math.PI / 2) * len).toFixed(0));
+    m.style.setProperty("--l", len.toFixed(0) + "px"); m.classList.remove("go"); void m.getBoundingClientRect(); m.classList.add("go");
+    mt = setTimeout(meteor, 9000 + Math.random() * 11000);
+  };
+  drawChart(); render();
+  return {
+    start() { render(); chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
+    stop() { input.value = ""; group = null; render(); input.blur(); chart.classList.remove("drawn"); clearTimeout(mt); },
+  };
 }
 
 /* the information: a page to read, each chapter arriving as it is reached */
