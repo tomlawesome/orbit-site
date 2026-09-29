@@ -666,10 +666,11 @@ body.dispersing .transport{opacity:0}
 .planet .hit{fill:transparent}
 .planet .body{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
 .planet .lead{stroke:#4a5468;stroke-width:.6;transition:stroke .25s}
+.planet .halo{fill:none;stroke:#4a5468;stroke-width:.6;transition:stroke .25s,r .25s}
 .planet .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
 .planet:hover .spin,.planet:focus-visible .spin,.planet:hover .tagpos,.planet:focus-visible .tagpos{animation-play-state:paused}
-.planet:hover .body,.planet:focus-visible .body{r:6.5;filter:drop-shadow(0 0 6px currentColor)}
-.planet:hover .lead,.planet:focus-visible .lead{stroke:var(--c)}
+.planet:hover .body,.planet:focus-visible .body{r:5.2;filter:drop-shadow(0 0 6px currentColor)}
+.planet:hover .lead,.planet:focus-visible .lead,.planet:hover .halo,.planet:focus-visible .halo{stroke:var(--c)}
 .planet:hover .tag,.planet:focus-visible .tag{fill:var(--c)}
 /* the one line beneath the sunrise, and the way it opens */
 .doorcmd{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(150px,32vw) + 52px);width:min(560px,calc(100% - 40px));z-index:3;
