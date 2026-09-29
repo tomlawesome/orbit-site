@@ -266,16 +266,16 @@ export function createDocs(pad) {
     const d = DOCS.find((x) => x.slug === slug) || doc, at = DOCS.findIndex((x) => x.slug === slug);
     const prev = at > 0 ? DOCS[at - 1] : null, next = at > -1 && at < DOCS.length - 1 ? DOCS[at + 1] : null;
     reader.style.setProperty("--c", d.c);
-    $(".readhead .from", reader).textContent = `— the docs · ${d.name}`;
+    $(".readhead .from .src", reader).textContent = d.name;
     $(".readhead h1", reader).textContent = doc.title;
     $(".readhead .source", reader).innerHTML = `set from <a href="https://github.com/${esc(doc.repo)}/blob/main/${esc(doc.path)}" target="_blank" rel="noopener">${esc(doc.repo)} · ${esc(doc.path)}</a>${generated ? ` · imported ${esc(when(generated))}` : ""}`;
-    $(".onpage ol", reader).innerHTML = doc.sections.filter((s) => s.id !== "top").map((s) => `<li><a href="${hrefOf(slug, s.id)}" data-id="${esc(s.id)}">${esc(s.title)}</a></li>`).join("");
-    $(".onpage", reader).hidden = doc.sections.length < 3;
+    $(".onpage", reader).hidden = doc.sections.filter((s) => s.id !== "top").length < 2;
     $(".body", reader).innerHTML = doc.sections.map((s) => `<section class="sec" data-id="${esc(s.id)}">${s.html}</section>`).join("");
     $(".readnav", reader).innerHTML = `${prev ? `<a class="prev" href="#docs/${prev.slug}" style="--c:${prev.c}"><b>before</b>${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a class="next" href="#docs/${next.slug}" style="--c:${next.c}"><b>next</b>${esc(next.title)}</a>` : "<span></span>"}`;
     if (indexScroll === 0 && reader.hidden) indexScroll = scroll.scrollTop;
     reader.hidden = false; index.hidden = true; pad.classList.add("reading");
     reader.classList.remove("in"); void reader.offsetWidth; reader.classList.add("in");
+    pageChart(slug, doc); otherCharts(slug);   /* once shown, so the margin's names can be measured */
     remember(hrefOf(slug, doc.sections.some((s) => s.id === anchor) ? anchor : "top"));
     if (push) { try { history.pushState({ docs: slug, anchor }, "", hrefOf(slug, anchor || "top")); } catch { /* fine */ } }
     const target = anchor && reader.querySelector(`#${CSS.escape(anchor)}`);
@@ -290,10 +290,38 @@ export function createDocs(pad) {
     scroll.scrollTop = indexScroll; indexScroll = 0;
     if (push) { try { history.pushState(null, "", "#docs"); } catch { /* fine */ } }
   }
-  /* the table of contents follows the reading */
+  /* the page's own constellation: its sections as a line of stars down the
+     margin, in reading order, the one being read lit */
+  function pageChart(slug, doc) {
+    const svg = $(".pagechart", reader), secs = doc.sections.filter((s) => s.id !== "top"), rnd = seededRng(SEED + slug.length * 31 + secs.length);
+    const STEP = 42, W = 240, H = 16 + STEP * secs.length;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.style.height = `${H}px`;
+    const pts = secs.map((s, i) => [18 + rnd() * 22, 20 + i * STEP + (rnd() - 0.5) * 10]);
+    const lines = pts.slice(1).map((p, i) => { const q = pts[i], len = Math.hypot(p[0] - q[0], p[1] - q[1]); return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}" style="--i:${i}"/>`; }).join("");
+    const stars = secs.map((s, i) => { const [x, y] = pts[i], href = hrefOf(slug, s.id); return `<g class="pstar${recent.includes(href) ? " read" : ""}" data-id="${esc(s.id)}" data-href="${href}" style="--i:${i}" tabindex="0" role="link" aria-label="${esc(s.title)}"><rect class="hit" x="0" y="${(y - STEP / 2).toFixed(1)}" width="${W}" height="${STEP}"/><circle class="glow" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="7"/><circle class="ring" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6"/><circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8"/><text x="${(x + 16).toFixed(1)}" y="${y.toFixed(1)}" dominant-baseline="middle">${esc(s.title)}</text></g>`; }).join("");
+    svg.innerHTML = `<g class="lines">${lines}</g>${stars}`;
+    svg.querySelectorAll(".pstar").forEach((g) => {
+      g.addEventListener("click", () => go(g.dataset.href));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(g.dataset.href); } });
+    });
+    /* a title too long for the margin is trimmed to fit */
+    svg.querySelectorAll(".pstar text").forEach((t) => { let s = t.textContent; while (t.getComputedTextLength() > W - +t.getAttribute("x") - 4 && s.length > 4) { s = s.slice(0, -2); t.textContent = s + "…"; } });
+    svg.classList.remove("drawn"); void svg.getBoundingClientRect(); svg.classList.add("drawn");
+  }
+  /* the other sources, each its own small constellation in the far margin */
+  function otherCharts(slug) {
+    const host = $(".others .minis", reader);
+    host.innerHTML = DOCS.filter((d) => d.slug !== slug).map((d, k) => {
+      const n = Math.min(9, Math.max(3, d.sections.length)), rnd = seededRng(SEED + d.slug.length * 17 + n), pts = walk(n, [90, 30, 140, 40], rnd);
+      const lines = pts.slice(1).map((p, i) => { const q = pts[i]; return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}"/>`; }).join("");
+      const stars = pts.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2"/>`).join("");
+      return `<a class="mini" href="#docs/${d.slug}" style="--c:${d.c};--i:${k}"><svg viewBox="0 0 180 60" aria-hidden="true"><g class="lines">${lines}</g><g class="stars">${stars}</g></svg><span>${esc(d.name)}</span></a>`;
+    }).join("");
+  }
+  /* the page's constellation follows the reading */
   function watchToc() {
     tocWatch?.disconnect();
-    const links = [...reader.querySelectorAll(".onpage a")]; if (!links.length) return;
+    const links = [...reader.querySelectorAll(".pagechart .pstar")]; if (!links.length) return;
     const seen = new Map();
     tocWatch = new IntersectionObserver((es) => {
       for (const e of es) seen.set(e.target.dataset.id, e.isIntersecting);
@@ -337,7 +365,7 @@ export function createDocs(pad) {
     const h = a.getAttribute("href") || "";
     if (h.startsWith("#docs")) { e.preventDefault(); go(h); }
   });
-  $(".tochart", reader).addEventListener("click", () => close());
+  $(".readhead .todocs", reader).addEventListener("click", () => close());
   addEventListener("popstate", () => { if (!pad.hidden) go(location.hash.startsWith("#docs") ? location.hash : "#docs", false); });
   return {
     start() { load().then(() => { render(); chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); if (location.hash.startsWith("#docs/")) go(location.hash, false); }); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
