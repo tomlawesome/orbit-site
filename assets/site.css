@@ -103,21 +103,22 @@ p{margin:0}
 
 /* the sky: two tiled layers, drifting (POL-11), never sitting still */
 .sky{position:fixed;inset:-4%;z-index:0;pointer-events:none;opacity:var(--stars);transition:opacity .4s;overflow:hidden}
-.sky svg{position:absolute;inset:0;width:100%;height:100%}
+.sky svg{position:absolute;inset:0;width:100%;height:100%;will-change:transform}
 .sky .far{animation:driftf 400s linear infinite}
 .sky .near{animation:driftn 195s linear infinite}
-@keyframes driftf{to{transform:translateX(-1600px)}}
-@keyframes driftn{to{transform:translateX(-1600px)}}
+/* the tile is 1600 units; --tile is that in pixels at this size (sky.js measures it) */
+@keyframes driftf{to{transform:translateX(calc(-1 * var(--tile,1600px)))}}
+@keyframes driftn{to{transform:translateX(calc(-1 * var(--tile,1600px)))}}
 [data-theme=dawn] .sky .far circle,[data-theme=clouds] .sky .far circle{opacity:.5;stroke:var(--star-far);stroke-width:.7}
 [data-theme=dawn] .sky .near circle,[data-theme=clouds] .sky .near circle{opacity:.8;stroke:var(--star-near);stroke-width:.7}
 .sky .cam{transition:transform 1.25s cubic-bezier(.5,.4,.15,1)}
 .vignette{position:fixed;inset:0;z-index:1;pointer-events:none;
   background:radial-gradient(ellipse at 50% 34%,transparent 55%,rgba(0,0,0,.28) 100%)}
 [data-theme=dawn] .vignette,[data-theme=clouds] .vignette{background:linear-gradient(180deg,transparent 60%,rgba(255,196,120,.16) 100%)}
-.grain{position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.5;mix-blend-mode:overlay}
+.grain{position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.26}
 .grain canvas{display:block;width:100%;height:100%;opacity:0;transition:opacity .5s ease-out}
 .grain[data-ready] canvas{opacity:1}
-[data-theme=dawn] .grain,[data-theme=clouds] .grain{opacity:.28;mix-blend-mode:multiply}
+[data-theme=dawn] .grain,[data-theme=clouds] .grain{opacity:.16}
 body.at-door .grain{opacity:.26}
 
 /* ══ THE DOOR: the sign-in's dawn ═══════════════════════════════════════ */
@@ -125,8 +126,11 @@ body.at-door .grain{opacity:.26}
 #door.shown,body.showdawn #door{opacity:1;pointer-events:auto}
 body.showdawn #door{pointer-events:none}
 #door .dsky,#dusk .dsky{position:absolute;inset:-4%;overflow:hidden}
-#door .dsky svg,#dusk .dsky svg,#door .world svg,#dusk .world svg{position:absolute;inset:0;width:100%;height:100%}
+#door .dsky svg,#dusk .dsky svg,#door .world .wl,#dusk .world .wl{position:absolute;inset:0;width:100%;height:100%}
+#door .dsky svg,#dusk .dsky svg{will-change:transform}
 #door .world,#dusk .world{position:absolute;inset:0}
+.world .defs{width:0;height:0;position:absolute}
+.world .dawnlayer,.world .rays,.world .sunpt{position:absolute;inset:0}
 #door .dsky .far{animation:driftf 360s linear infinite}
 #door .dsky .near{animation:driftn 180s linear infinite}
 #dusk .dsky .far{animation:recede 360s linear infinite}
@@ -144,18 +148,17 @@ body.lit .shimmer{opacity:.9}
 @keyframes sweep{to{stroke-dashoffset:-100}}
 .sunpt{opacity:0;transition:opacity 3.2s ease .5s}
 body.lit .sunpt{opacity:1}
-.sunpt-breathe{animation:breathe-sun 7s ease-in-out infinite alternate}
+.world .breath{animation:breathe-world 9s ease-in-out infinite alternate;will-change:opacity}
+@keyframes breathe-world{from{opacity:.84}to{opacity:1}}
 @keyframes breathe-sun{from{opacity:.8}to{opacity:1}}
-.rays{transform-origin:800px 920px;opacity:0;transform:scale(1,.55);transition:opacity 3.4s ease .4s,transform 4s cubic-bezier(.2,.7,.2,1) .4s}
+.rays{transform-origin:var(--ox,50%) var(--oy,92%);opacity:0;transform:scale(1,.55);transition:opacity 3.4s ease .4s,transform 4s cubic-bezier(.2,.7,.2,1) .4s}
 body.lit .rays{opacity:1;transform:scale(1,1)}
 /* the fans are pictures rotating, so each rides its own compositing layer */
-.rays .sway1{transform-origin:800px 920px;will-change:transform;animation:sway1 41s ease-in-out infinite alternate}
-.rays .sway2{transform-origin:800px 920px;will-change:transform;animation:sway2 63s ease-in-out infinite alternate}
+.rays .sway1{transform-origin:var(--ox,50%) var(--oy,92%);will-change:transform;animation:sway1 41s ease-in-out infinite alternate}
+.rays .sway2{transform-origin:var(--ox,50%) var(--oy,92%);will-change:transform;animation:sway2 63s ease-in-out infinite alternate}
 @keyframes sway1{from{transform:rotate(-1.8deg)}to{transform:rotate(2.1deg)}}
 @keyframes sway2{from{transform:rotate(1.5deg)}to{transform:rotate(-1.3deg)}}
-.scatter{animation:breathe-band 9s ease-in-out infinite alternate}
 @keyframes breathe-band{from{opacity:.8}to{opacity:1}}
-.zodiacal{animation:zbreathe 13s ease-in-out infinite alternate;mix-blend-mode:screen}
 @keyframes zbreathe{from{opacity:.55}to{opacity:.95}}
 .loginchrome{position:absolute;inset:0;z-index:3;display:grid;place-items:center;
   transition:opacity .8s ease,transform 1s cubic-bezier(.3,.7,.3,1)}
@@ -169,6 +172,7 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 #door .loginchrome{padding-bottom:calc(var(--lift) * 2)}
 #door .loginchrome .lockup .glyph svg{width:var(--R)}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
+#login-glyph{position:relative}
 @keyframes spinback{to{transform:rotate(360deg)}}
 .loginchrome .lockup .name{grid-area:1/1;font:600 clamp(48px,14vw,72px) var(--display);letter-spacing:.015em;line-height:1;color:#e9edf8}
 .gate-wrap{grid-area:1/1;align-self:center;justify-self:center;transform:translateY(min(74px,15vw))}
@@ -194,9 +198,9 @@ body.showdusk #dusk{opacity:1}
 @keyframes spinforth{to{transform:rotate(-360deg)}}
 #dusk .gate{transition:opacity .9s ease .6s,transform .9s ease .6s,filter .35s ease}
 body.farewell #dusk .gate{opacity:1;transform:none}
-#dusk .afterglow{animation:breathe-ember 12s ease-in-out infinite alternate}
+#dusk .afterglow{animation:breathe-ember 12s ease-in-out infinite alternate;will-change:opacity}
 @keyframes breathe-ember{from{opacity:.85}to{opacity:1}}
-#dusk .belt{animation:zbreathe 13s ease-in-out infinite alternate;mix-blend-mode:screen}
+#dusk .belt{animation:zbreathe 13s ease-in-out infinite alternate;will-change:opacity}
 #dusk .shimmer{stroke-dasharray:3 97;animation:sweepback 34s linear infinite;opacity:.7;transition:none}
 @keyframes sweepback{to{stroke-dashoffset:100}}
 #dusk .farewell{position:absolute;left:0;right:0;bottom:calc(50% - 240px);text-align:center;z-index:3;
@@ -592,7 +596,7 @@ dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;colo
 
 @media (prefers-reduced-motion:reduce){
   .sky .far,.sky .near,#door .dsky .far,#door .dsky .near,#dusk .dsky .far,#dusk .dsky .near,.tw,.rays .sway1,.rays .sway2,
-  .scatter,.zodiacal,.sunpt-breathe,.shimmer,.dial.arrive,.dial.bloom,.dial .ping,.dial .breathe,.inbox-orb.waiting svg,
+  .world .breath,.shimmer,.dial.arrive,.dial.bloom,.dial .ping,.dial .breathe,.inbox-orb.waiting svg,
   .nstar .glint,.mark-row .tr,.loginchrome .lockup .glyph .tr,#dusk .afterglow,#dusk .belt{animation:none}
   .dial .ping{display:none}
   .rays .sway1,.rays .sway2{will-change:auto}
@@ -651,21 +655,27 @@ body.dispersing .transport{opacity:0}
 /* ══ THE DOORS ON THE RING: three more bodies, each a section, each named
    the way the app names the systems in its sky — a hairline leader and a
    small word, upright however far round the ring the body has travelled ══ */
-.planet{cursor:pointer;outline:0}
-.planet .spin{transform-origin:100px 100px;animation:spinback linear infinite}
-.planet .s1{animation-duration:58s;animation-delay:-14s}
-.planet .s2{animation-duration:46s;animation-delay:-33s}
-.planet .s3{animation-duration:67s;animation-delay:-40s}
 .orbits circle{fill:none;stroke:#8791b3;stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
-.planet .hit{fill:transparent}
-.planet .body{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
-.planet .lead{stroke:#4a5468;stroke-width:.6;transition:stroke .25s}
-.planet .halo{fill:none;stroke:#4a5468;stroke-width:.6;transition:stroke .25s,r .25s}
-.planet .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
+/* the bodies: html over the ring's svg, each turned by the compositor; the
+   ring is 200 units across, so a unit is var(--R) / 200 */
+.planets{grid-area:1/1;position:relative;width:var(--R);aspect-ratio:1;--u:calc(var(--R) / 200)}
+.planets .trdot{position:absolute;left:50%;top:50%;width:0;height:0;animation:spinback 40s linear infinite;will-change:transform}
+.planets .trdot i{position:absolute;left:calc(63 * var(--u));top:calc(-36.5 * var(--u));width:calc(14 * var(--u));height:calc(14 * var(--u));border-radius:50%;background:#d8b45a;transform:translate(-50%,-50%)}
+.planet{position:absolute;left:50%;top:50%;width:0;height:0;outline:0;text-decoration:none;color:#8791b3}
+.planet .spin{position:absolute;left:0;top:0;width:0;height:0;animation:spinback var(--dur) linear infinite;animation-delay:var(--delay);will-change:transform}
+.planet .spin i{position:absolute;left:0;top:calc(-1 * var(--r) * var(--u));transform:translate(-50%,-50%);border-radius:50%;box-sizing:border-box}
+.planet .hit{width:calc(30 * var(--u));height:calc(30 * var(--u));cursor:pointer}
+.planet .halo{width:calc(15.2 * var(--u));height:calc(15.2 * var(--u));border:max(1px,calc(.6 * var(--u))) solid #4a5468;transition:border-color .25s;pointer-events:none}
+.planet .lead{width:max(1px,calc(.6 * var(--u)));height:calc(9.4 * var(--u));border-radius:0;background:#4a5468;transform:translate(-50%,calc(-50% - 12.3 * var(--u)));transition:background .25s;pointer-events:none}
+.planet .body{width:calc(8.4 * var(--u));height:calc(8.4 * var(--u));background:var(--c);transition:transform .25s,box-shadow .25s;pointer-events:none}
+.planet .tag{position:absolute;left:0;top:0;white-space:nowrap;font:500 calc(4.4 * var(--u)) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:#8791b3;
+  text-shadow:0 0 2px #04060e,0 0 4px #04060e,0 0 8px #04060e;transition:color .25s;will-change:transform;pointer-events:none}
 .planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
-.planet:hover .body,.planet:focus-visible .body{r:5.2;filter:drop-shadow(0 0 6px currentColor)}
-.planet:hover .lead,.planet:focus-visible .lead,.planet:hover .halo,.planet:focus-visible .halo{stroke:var(--c)}
-.planet:hover .tag,.planet:focus-visible .tag{fill:var(--c)}
+.planet:hover .body,.planet:focus-visible .body{transform:translate(-50%,-50%) scale(1.24);box-shadow:0 0 6px var(--c)}
+.planet:hover .lead,.planet:focus-visible .lead{background:var(--c)}
+.planet:hover .halo,.planet:focus-visible .halo{border-color:var(--c)}
+.planet:hover .tag,.planet:focus-visible .tag{color:var(--c)}
+body.launching #door .planets,body.showwarp #door .planets{opacity:0;transition:opacity .3s}
 /* the one line beneath the sunrise, and the way it opens */
 
 /* ══ THE LANDINGS: the ring the mark wears, with a section's bodies on it ══ */
@@ -675,22 +685,28 @@ body.dispersing .transport{opacity:0}
 .pad .mark-row.home:hover{color:var(--ink)}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
 .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
-#installpad .loginchrome .lockup .glyph svg{width:min(380px,64vw,42svh)}
 .pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
 body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
-.pad .stage-body{cursor:pointer;outline:0;opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
+#installpad{--RI:min(380px,64vw,42svh)}
+#installpad .loginchrome .lockup .glyph svg{width:var(--RI)}
+#installpad .bodies{grid-area:1/1;position:relative;width:var(--RI);aspect-ratio:1;--u:calc(var(--RI) / 200)}
+#installpad .timerlayer{grid-area:1/1;width:var(--RI);height:var(--RI);overflow:visible;pointer-events:none}
+.pad .stage-body{position:absolute;left:50%;top:50%;width:0;height:0;padding:0;border:0;background:none;cursor:pointer;outline:0;will-change:transform;
+  opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
 body.arrived .pad .stage-body{opacity:1}
-.pad .stage-body .hit{fill:transparent}
-.pad .stage-body .dot{fill:var(--c);opacity:.8;transition:fill .5s,r .4s,filter .5s,opacity .5s}
-.pad .stage-body .halo{fill:none;stroke:var(--c);stroke-opacity:.38;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
-.pad .stage-body .lead{stroke:var(--c);stroke-opacity:.38;stroke-width:.6;transition:stroke .5s,stroke-opacity .5s}
-.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{opacity:1;filter:drop-shadow(0 0 6px var(--c))}
-.pad .stage-body.on .dot{r:5}
-.pad .stage-body.on .halo,.pad .stage-body:hover .halo,.pad .stage-body:focus-visible .halo,.pad .stage-body.on .lead,.pad .stage-body:hover .lead,.pad .stage-body:focus-visible .lead{stroke:var(--c);stroke-opacity:1}
+.pad .stage-body i{position:absolute;left:calc(var(--r) * var(--u));top:0;transform:translate(-50%,-50%);border-radius:50%;box-sizing:border-box;display:block}
+.pad .stage-body .hit{width:calc(26 * var(--u));height:calc(26 * var(--u))}
+.pad .stage-body .dot{width:calc(8 * var(--u));height:calc(8 * var(--u));background:var(--c);opacity:.8;transition:transform .4s,box-shadow .5s,opacity .5s}
+.pad .stage-body .halo{width:calc(14.4 * var(--u));height:calc(14.4 * var(--u));border:max(1px,calc(.6 * var(--u))) solid var(--c);opacity:.38;transition:opacity .5s}
+.pad .stage-body .lead{width:calc(7.8 * var(--u));height:max(1px,calc(.6 * var(--u)));border-radius:0;background:var(--c);opacity:.38;transform:translate(calc(-50% + 11.1 * var(--u)),-50%);transition:opacity .5s}
+.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{opacity:1;box-shadow:0 0 6px var(--c)}
+.pad .stage-body.on .dot{transform:translate(-50%,-50%) scale(1.25)}
+.pad .stage-body.on .halo,.pad .stage-body:hover .halo,.pad .stage-body:focus-visible .halo,.pad .stage-body.on .lead,.pad .stage-body:hover .lead,.pad .stage-body:focus-visible .lead{opacity:1}
 .pad .orbits circle{fill:none;stroke:var(--ink-faint);stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
-.pad .labels .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:var(--c);opacity:.62;transition:opacity .5s;
-  paint-order:stroke;stroke:var(--bg);stroke-width:1.6px;stroke-linejoin:round;pointer-events:none}
-.pad .labels .tag.on{opacity:1}
+.pad .bodies .tag{position:absolute;left:50%;top:50%;white-space:nowrap;font:500 calc(4.4 * var(--u)) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:var(--c);opacity:.62;
+  text-shadow:0 0 2px var(--bg),0 0 4px var(--bg),0 0 8px var(--bg);transition:opacity .5s;will-change:transform;pointer-events:none}
+.pad .bodies .tag.on{opacity:1}
+body.bare .pad .bodies{opacity:0}
 .pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
 .pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
 .pad .gate{opacity:1;transform:none;transition:filter .35s ease}
@@ -718,13 +734,13 @@ body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,
 .launchcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(70px,calc(24px + 7svh));width:min(760px,calc(100% - 40px));z-index:3;
   opacity:0;transition:opacity 1.3s ease .9s}
 body.instrument .launchcmd{opacity:1}
-.launchcmd .cmd{background:rgba(10,13,24,.72);backdrop-filter:blur(10px);border-color:#2a3148}
+.launchcmd .cmd{background:rgba(10,13,24,.86);border-color:#2a3148}
 .launchcmd .cmd code{color:#e9edf8}
 @media (max-height:700px){.pad .stage .line{font-size:13.5px}}
 @media (max-width:560px){
   .pad .loginchrome{padding-bottom:16svh}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
-  #installpad .loginchrome .lockup .glyph svg{width:min(380px,62vw,38svh)}
+  #installpad{--RI:min(380px,62vw,38svh)}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}
 }
@@ -750,7 +766,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .index{width:min(760px,calc(100% - 40px));margin:0 auto;padding:96px 0 40px}
 .pad.docs .index>.corner{display:block;margin-bottom:12px}
 .pad.docs h1{font:600 clamp(26px,4.2vw,38px)/1.1 var(--display);letter-spacing:-.01em;color:var(--ink);max-width:16ch;text-wrap:balance;margin:0 0 26px}
-.pad.docs .search{display:flex;align-items:center;gap:12px;padding:0 16px 0 18px;height:54px;border-radius:99px;background:var(--panel-raised);backdrop-filter:blur(16px);
+.pad.docs .search{display:flex;align-items:center;gap:12px;padding:0 16px 0 18px;height:54px;border-radius:99px;background:color-mix(in srgb,var(--bg) 55%,var(--panel-raised));
   border:1px solid var(--line);color:var(--ink-mid);transition:border-color .25s,box-shadow .25s}
 .pad.docs .search:focus-within{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent-text)}
 .pad.docs .search input{flex:1;min-width:0;background:none;border:0;outline:0;font:16px var(--ui);color:var(--ink)}
@@ -765,7 +781,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .results h4{font:10.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 10px 2px;font-weight:500}
 .pad.docs .entry{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:14px;row-gap:3px;align-items:baseline;
   padding:13px 16px;margin:0 0 6px;border-radius:12px;border:1px solid var(--line-soft);background:var(--panel);text-decoration:none;color:var(--ink);
-  transition:border-color .2s,transform .2s;backdrop-filter:blur(8px)}
+  transition:border-color .2s,transform .2s}
 .pad.docs .entry:hover{border-color:var(--accent);transform:translateY(-1px)}
 .pad.docs .entry b{grid-column:1;font:600 14px var(--display);letter-spacing:.005em}
 .pad.docs .entry small{grid-column:1;font:12.5px/1.5 var(--ui);color:var(--ink-mid)}
@@ -832,7 +848,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
    rail under them; on a phone the words sit inside the ring instead ══ */
 #installpad .stagegrid{position:relative;display:grid;grid-template-columns:auto minmax(280px,400px);align-items:center;gap:clamp(40px,6vw,88px);transform:translateY(-5svh)}
 #installpad .lockup{--c:var(--accent)}
-#installpad .tint{grid-area:1/1;width:min(380px,64vw,42svh);aspect-ratio:1;border-radius:50%;pointer-events:none;
+#installpad .tint{grid-area:1/1;width:var(--RI);aspect-ratio:1;border-radius:50%;pointer-events:none;
   background:radial-gradient(circle at 50% 66%,var(--c) 0%,transparent 58%);opacity:0;transition:opacity .9s ease,background .6s}
 #installpad .lockup.in .tint{opacity:.14}
 #installpad .face{grid-area:1/1;pointer-events:none;display:grid;place-items:center;padding-bottom:6px}
@@ -865,12 +881,12 @@ body.dispersing #installpad .face,body.dispersing #installpad .tint{opacity:0}
   #installpad .stagegrid{display:block;transform:translateY(-2svh)}
   #installpad .side{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;gap:0}
   #installpad .side .over,#installpad .rail,#installpad .face{display:none}
-  #installpad .side .stage{pointer-events:auto;text-align:center;min-height:0;width:calc(min(380px,64vw,42svh) * .66);display:flex;flex-direction:column;align-items:center;gap:8px}
+  #installpad .side .stage{pointer-events:auto;text-align:center;min-height:0;width:calc(var(--RI) * .66);display:flex;flex-direction:column;align-items:center;gap:8px}
   #installpad .stage .label{margin-top:0;font-size:10.5px}
   #installpad .stage .line{margin:0;font-size:15px;line-height:1.45;max-width:none}
   body.instrument #installpad .side{animation:none}
 }
-@media (max-width:560px){#installpad .side .stage{width:calc(min(380px,62vw,38svh) * .72)}#installpad .stage .line{font-size:13.5px}}
+@media (max-width:560px){#installpad .side .stage{width:calc(var(--RI) * .72)}#installpad .stage .line{font-size:13.5px}}
 
 /* the information's screens */
 .pad.info .shot{margin:28px 0 0;display:grid;gap:12px}
@@ -905,18 +921,16 @@ body.dispersing #installpad .face,body.dispersing #installpad .tint{opacity:0}
 .pad.docs .star.read .ring{stroke-opacity:.55}
 .pad.docs .star.read.dim .ring{stroke-opacity:.15}
 /* the stars breathe; the field twinkles more slowly */
-.pad.docs .chart.drawn .star .dot{animation:twinkle var(--tw,4s) ease-in-out infinite alternate;animation-delay:calc(.35s * var(--g) + 120ms * var(--i) + var(--td,0s))}
+.pad.docs .chart.drawn .star:nth-child(odd) .dot{animation:twinkle var(--tw,4s) ease-in-out infinite alternate;animation-delay:calc(.35s * var(--g) + 120ms * var(--i) + var(--td,0s))}
 .pad.docs .chart.drawn .star.dim .dot,.pad.docs .chart.drawn .star.hot .dot,.pad.docs .chart.drawn .star.lit .dot{animation:none}
 @keyframes twinkle{from{opacity:1}to{opacity:.55}}
 .pad.docs .field circle{fill:var(--ink);opacity:var(--o)}
-.pad.docs .chart.drawn .field circle:nth-child(3n){animation:fieldtw 5.5s ease-in-out infinite alternate;animation-delay:var(--d)}
-@keyframes fieldtw{from{opacity:var(--o)}to{opacity:calc(var(--o) * .3)}}
 .pad.docs .grat path{fill:none;stroke:var(--ink);stroke-opacity:.075;stroke-width:.7}
 .pad.docs .con:has(.name:hover) .lines line,.pad.docs .con:has(.name:focus-visible) .lines line{stroke-opacity:.85}
 .pad.docs .meteor{stroke:var(--ink);stroke-width:1.2;stroke-linecap:round;opacity:0;stroke-dasharray:var(--l) var(--l);stroke-dashoffset:var(--l)}
 .pad.docs .meteor.go{animation:meteor 1.4s cubic-bezier(.3,.6,.3,1) both}
 @keyframes meteor{0%{opacity:0;stroke-dashoffset:var(--l)}12%{opacity:.9}70%{opacity:.5}100%{opacity:0;stroke-dashoffset:calc(-1 * var(--l))}}
-@media (prefers-reduced-motion:reduce){.pad.docs .chart.drawn .star .dot,.pad.docs .chart.drawn .field circle{animation:none}}
+@media (prefers-reduced-motion:reduce){.pad.docs .chart.drawn .star .dot{animation:none}}
 .pad.docs .con.quiet .lines line{stroke-opacity:.12}
 .pad.docs .con.chosen .lines line{stroke-opacity:.85}
 .pad.docs .con .name{cursor:pointer;outline:0}

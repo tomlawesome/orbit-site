@@ -396,7 +396,7 @@ const PACE = [3.4, 5.2, 2.6, 4.4, 6, 3.8];   /* degrees per second: each its own
 const BOTTOM = 90;
 
 export function createRing(pad, section) {
-  const svg = $(".ring", pad), host = $(".stages", svg), lockup = $(".lockup", pad), big = $(".face .big", pad), rail = $(".rail", pad);
+  const svg = $(".ring", pad), host = $(".stages", svg), lockup = $(".lockup", pad), big = $(".face .big", pad), rail = $(".rail", pad), field = $(".bodies", pad);
   const stage = $(".stage", pad), n = $(".n", stage), total = $(".total", stage), label = $(".label", stage), line = $(".line", stage), go = $(".go", stage);
   const items = section.items, N = items.length;
   total.textContent = String(N).padStart(2, "0");
@@ -405,26 +405,23 @@ export function createRing(pad, section) {
      out to its name, which stays upright wherever the body has got to */
   const RADIUS = (i) => 80 + i * 7;
   const orbits = document.createElementNS(SVG, "g"); orbits.setAttribute("class", "orbits"); svg.insertBefore(orbits, host);
-  const labels = document.createElementNS(SVG, "g"); labels.setAttribute("class", "labels"); svg.appendChild(labels);
   const tags = [];
   const bodies = items.map((it, i) => {
-    const R = RADIUS(i), x = 100 + R;
+    const R = RADIUS(i);
     const path = document.createElementNS(SVG, "circle"); path.setAttribute("cx", "100"); path.setAttribute("cy", "100"); path.setAttribute("r", R); orbits.appendChild(path);
-    const g = document.createElementNS(SVG, "g");
-    g.setAttribute("class", "stage-body"); g.setAttribute("tabindex", "0"); g.setAttribute("role", "button");
-    g.setAttribute("aria-label", `${it.label}: ${it.line}`);
-    g.style.setProperty("--i", i); g.style.setProperty("--c", it.c || "#d8b45a");
-    for (const [cls, r] of [["hit", "13"], ["halo", "7.2"], ["dot", "4"]]) {
-      const c = document.createElementNS(SVG, "circle"); c.setAttribute("class", cls); c.setAttribute("cx", x); c.setAttribute("cy", "100"); c.setAttribute("r", r); g.appendChild(c);
-    }
-    const lead = document.createElementNS(SVG, "line"); lead.setAttribute("class", "lead"); lead.setAttribute("x1", x + 7.2); lead.setAttribute("y1", "100"); lead.setAttribute("x2", x + 15); lead.setAttribute("y2", "100"); g.appendChild(lead);
-    const tag = document.createElementNS(SVG, "text"); tag.setAttribute("class", "tag"); tag.textContent = it.name || it.label; tag.style.setProperty("--c", it.c || "#d8b45a"); labels.appendChild(tag); tags.push(tag);
-    host.appendChild(g);
+    /* the body is html: a button the compositor turns about the centre, its
+       halo, leader and dot hung off it at the orbit's radius */
+    const g = document.createElement("button");
+    g.type = "button"; g.className = "stage-body"; g.setAttribute("aria-label", `${it.label}: ${it.line}`);
+    g.style.setProperty("--i", i); g.style.setProperty("--c", it.c || "#d8b45a"); g.style.setProperty("--r", R);
+    g.innerHTML = '<i class="hit"></i><i class="halo"></i><i class="lead"></i><i class="dot"></i>';
+    const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = it.name || it.label; tag.style.setProperty("--c", it.c || "#d8b45a");
+    field.appendChild(g); field.appendChild(tag); tags.push(tag);
     g.addEventListener("click", () => pick(i));
     g.addEventListener("focus", () => pick(i));
-    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(i); } });
     return g;
   });
+  let size = 0; const measure = () => { size = field.clientWidth || 0; }; measure(); addEventListener("resize", measure);
   /* the rail beside the ring: the six in order, the one at the bottom lit */
   const rows = rail ? items.map((it, i) => {
     const li = document.createElement("li"), b = document.createElement("button");
@@ -485,8 +482,11 @@ export function createRing(pad, section) {
     bodies[i].classList.remove("on"); rows[i]?.classList.remove("on");
     if (current === i) { stage.classList.remove("in"); lockup.classList.remove("in"); }
   }
+  let lastNames = 0;
   function frame(now) {
     if (!running) return;
+    const names = now - lastNames > 48;
+    if (!size) measure();
     S.forEach((b, i) => {
       const held = now >= b.t1 && now < b.t1 + b.hold;
       if (held && !b.locked) { b.locked = true; lock(i); }
@@ -494,15 +494,16 @@ export function createRing(pad, section) {
       /* a due that went by unseen (the page was away): the body goes round again */
       else if (!held && !b.locked && now >= b.t1 + b.hold) plan(i, now, b.t1 + CYCLE);
       b.a = angleWithKick(b, now);
-      bodies[i].setAttribute("transform", `rotate(${b.a.toFixed(2)} 100 100)`);
-      /* the name, just past the leader, on the side away from the body */
-      const t = (b.a * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t), r = RADIUS(i) + 20;
-      const tag = tags[i];
-      tag.setAttribute("x", (100 + ux * r).toFixed(2)); tag.setAttribute("y", (100 + uy * r).toFixed(2));
-      tag.setAttribute("text-anchor", ux > 0.38 ? "start" : ux < -0.38 ? "end" : "middle");
-      tag.setAttribute("dominant-baseline", uy < -0.55 ? "auto" : uy > 0.55 ? "hanging" : "middle");
-      tag.classList.toggle("on", b.locked);
+      bodies[i].style.transform = `rotate(${b.a.toFixed(2)}deg)`;
+      /* the name, just past the leader, on the side away from the body — moved every third frame */
+      if (names) {
+        const t = (b.a * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t), r = (RADIUS(i) + 20) / 200 * size;
+        const ax = ux > 0.38 ? 0 : ux < -0.38 ? -100 : -50, ay = uy < -0.55 ? -100 : uy > 0.55 ? 0 : -50;
+        tags[i].style.transform = `translate(calc(${(ux * r).toFixed(1)}px + ${ax}%), calc(${(uy * r).toFixed(1)}px + ${ay}%))`;
+        tags[i].classList.toggle("on", b.locked);
+      }
     });
+    if (names) lastNames = now;
     raf = requestAnimationFrame(frame);
   }
   /* the dues, in sequence from body i at `first`: each follows the last by its hold and the gap */
@@ -545,19 +546,29 @@ export function createRing(pad, section) {
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
 export function wirePlanets(door, onGo) {
-  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: +p.dataset.r + 21 }));
-  planets.forEach(({ p }) => p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); }));
-  /* each label sits just past its leader's end, on the side away from the
-     planet: above it when the planet is high, beside it when it is out to
-     the side, below when it is low — so nothing ever crosses the leader */
-  function place() {
-    if (!door.hidden) for (const { spin, tag, r } of planets) {
-      const m = new DOMMatrix(getComputedStyle(spin).transform);
-      const a = Math.atan2(m.b, m.a);                       /* the spin's turn */
-      const ux = Math.sin(a), uy = -Math.cos(a);           /* the planet started at the top */
-      tag.setAttribute("x", (100 + ux * r).toFixed(2)); tag.setAttribute("y", (100 + uy * r).toFixed(2));
-      tag.setAttribute("text-anchor", ux > 0.38 ? "start" : ux < -0.38 ? "end" : "middle");
-      tag.setAttribute("dominant-baseline", uy < -0.55 ? "auto" : uy > 0.55 ? "hanging" : "middle");
+  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: (+p.dataset.r + 21) / 200 }));
+  planets.forEach(({ p }) => {
+    p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
+    p.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGo(p.dataset.section); } });
+  });
+  /* the name rides just past the leader, on the side away from the body, and
+     stays upright; the spin's own clock says where the body is, so nothing
+     is read back from the layout, and a name moves every third frame,
+     which at these speeds no eye can tell from every frame */
+  let last = 0, size = 0;
+  const measure = () => { size = door.querySelector(".planets").clientWidth || 0; };
+  measure(); addEventListener("resize", measure);
+  function place(now) {
+    if (!size) measure();
+    if (!door.hidden && now - last > 48 && size) {
+      last = now;
+      for (const { spin, tag, r } of planets) {
+        const anim = spin.getAnimations()[0]; if (!anim) continue;
+        const t = anim.effect.getTiming(), a = (((anim.currentTime || 0) - (t.delay || 0)) / (t.duration || 1)) * Math.PI * 2;
+        const ux = Math.sin(a), uy = -Math.cos(a);           /* the body started at the top */
+        const ax = ux > 0.38 ? 0 : ux < -0.38 ? -100 : -50, ay = uy < -0.55 ? -100 : uy > 0.55 ? 0 : -50;
+        tag.style.transform = `translate(calc(${(ux * r * size).toFixed(1)}px + ${ax}%), calc(${(uy * r * size).toFixed(1)}px + ${ay}%))`;
+      }
     }
     requestAnimationFrame(place);
   }
