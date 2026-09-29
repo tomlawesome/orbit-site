@@ -93,7 +93,7 @@ const STATE_VERSION = 1;
 export function serialise() {
   return {
     v: STATE_VERSION,
-    households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: it.dueDate.toISOString().slice(0, 10) }))])),
+    households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: it.dueDate.toISOString().slice(0, 10), completedOn: it.completedOn ? it.completedOn.toISOString().slice(0, 10) : undefined }))])),
     review: inbox.review.map((r) => r.id),
   };
 }
@@ -101,7 +101,7 @@ export function hydrate(saved) {
   if (!saved || saved.v !== STATE_VERSION) return false;
   for (const [id, items] of Object.entries(saved.households ?? {})) {
     if (!households[id]) continue;
-    households[id].items = items.map((it) => ({ ...it, dueDate: new Date(`${it.dueDate}T00:00:00`) }));
+    households[id].items = items.map((it) => ({ ...it, dueDate: new Date(`${it.dueDate}T00:00:00`), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined }));
   }
   if (Array.isArray(saved.review)) inbox.review = pristineReview.filter((r) => saved.review.includes(r.id));
   return true;
