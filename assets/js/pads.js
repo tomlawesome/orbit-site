@@ -119,8 +119,10 @@ export function createInfo(pad) {
    line appears, rests there while the line is read, and drifts on before the
    next comes round. Each body's path is planned back from the moment it is
    due: it covers what its pace allows in the time it has, and no more. */
-const PERIOD = 5200, HOLD = 3400, LEAD = 1600, PICK = 2200;
-const PACE = [12, 10.5, 13, 11, 12.5, 11.5, 10];   /* degrees per second */
+const GAP = 1900, LEAD = 1600, PICK = 2200;
+/* a line is held for as long as it takes to read: a floor, and time per word */
+const holdFor = (text) => 3600 + 260 * text.trim().split(/\s+/).length;
+const PACE = [9, 17, 6.5, 13, 21, 11, 15];   /* degrees per second: each its own, so they pass one another */
 const BOTTOM = 90;
 const glide = (u) => 1 - Math.pow(1 - u, 1.8);   /* moves off, then eases in and settles */
 
@@ -144,8 +146,9 @@ export function createRing(pad, section) {
     return g;
   });
   /* each body: where it is, where it is going, and when it is due */
-  const S = items.map((_, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, locked: false }));
+  const S = items.map((it, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, locked: false, hold: holdFor(it.line) }));
   const pace = (i) => PACE[i % PACE.length];
+  const CYCLE = S.reduce((sum, b) => sum + b.hold + GAP, 0);   /* one turn of the whole sequence */
   let raf = 0, current = -1, running = false;
   function angleAt(b, now) {
     if (now <= b.t0) return b.from;
@@ -176,25 +179,33 @@ export function createRing(pad, section) {
   function frame(now) {
     if (!running) return;
     S.forEach((b, i) => {
-      const held = now >= b.t1 && now < b.t1 + HOLD;
+      const held = now >= b.t1 && now < b.t1 + b.hold;
       if (held && !b.locked) { b.locked = true; lock(i); }
-      if (!held && b.locked) { release(i); plan(i, now, b.t1 + N * PERIOD); }
+      if (!held && b.locked) { release(i); plan(i, now, b.t1 + CYCLE); }
       b.a = angleAt(b, now);
       bodies[i].setAttribute("transform", `rotate(${b.a.toFixed(2)} 100 100)`);
     });
     raf = requestAnimationFrame(frame);
   }
   /* a body asked for: it comes to the bottom next, and the turn goes on from there */
+  /* the dues, in sequence from body i at `first`: each follows the last by its hold and the gap */
+  function schedule(first, i, now) {
+    let due = first;
+    for (let d = 0; d < N; d++) { const j = (i + d) % N; plan(j, now, due); due += S[j].hold + GAP; }
+  }
   function pick(i) {
     const now = performance.now();
-    S.forEach((b, j) => { if (b.locked) release(j); plan(j, now, now + PICK + (((j - i) % N) + N) % N * PERIOD); });
+    S.forEach((b, j) => { if (b.locked) release(j); });
+    schedule(now + PICK, i, now);
   }
   return {
     start() {
       running = true;
       const now = performance.now();
       /* each starts where its own pace would have it, so the first cycle is already a steady drift */
-      S.forEach((b, i) => { const due = now + (reduced ? 200 : LEAD) + i * PERIOD; b.a = b.from = b.to = BOTTOM - pace(i) * (due - now) / 1000; b.t0 = b.t1 = now; plan(i, now, due); });
+      let due = now + (reduced ? 200 : LEAD);
+      S.forEach((b, i) => { b.a = b.from = b.to = BOTTOM - pace(i) * (due - now) / 1000; b.t0 = b.t1 = now; due += b.hold + GAP; });
+      schedule(now + (reduced ? 200 : LEAD), 0, now);
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     stop() {
