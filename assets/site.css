@@ -162,7 +162,7 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 .loginchrome .lockup{position:relative;display:inline-grid;place-items:center;text-align:center}
 .loginchrome .lockup .glyph{grid-area:1/1;line-height:0}
 .loginchrome .lockup .glyph svg{width:min(420px,84vw);height:auto;overflow:visible}
-@media (max-width:560px){#door .loginchrome .lockup .glyph svg{width:min(420px,72vw)}}
+@media (max-width:560px){#door .loginchrome .lockup .glyph svg{width:min(420px,68vw)}}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
 @keyframes spinback{to{transform:rotate(360deg)}}
 .loginchrome .lockup .name{grid-area:1/1;font:600 clamp(48px,14vw,72px) var(--display);letter-spacing:.015em;line-height:1;color:#e9edf8}
@@ -655,20 +655,13 @@ body.dispersing .transport{opacity:0}
 .planet .s1{animation-duration:58s;animation-delay:-14s}
 .planet .s2{animation-duration:46s;animation-delay:-33s}
 .planet .s3{animation-duration:67s;animation-delay:-40s}
-.planet .tagpos{animation:spinforth linear infinite}
-.planet[data-r="84"] .tagpos{transform-origin:100px -2px}
-.planet[data-r="93"] .tagpos{transform-origin:100px -11px}
-.planet[data-r="102"] .tagpos{transform-origin:100px -20px}
 .orbits circle{fill:none;stroke:#8791b3;stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
-.planet .s1 .tagpos{animation-duration:58s;animation-delay:-14s}
-.planet .s2 .tagpos{animation-duration:46s;animation-delay:-33s}
-.planet .s3 .tagpos{animation-duration:67s;animation-delay:-40s}
 .planet .hit{fill:transparent}
 .planet .body{transition:r .25s,filter .25s;transform-box:fill-box;transform-origin:center}
 .planet .lead{stroke:#4a5468;stroke-width:.6;transition:stroke .25s}
 .planet .halo{fill:none;stroke:#4a5468;stroke-width:.6;transition:stroke .25s,r .25s}
 .planet .tag{font:500 4.4px "JetBrains Mono",monospace;letter-spacing:.9px;text-transform:uppercase;fill:#8791b3;transition:fill .25s;paint-order:stroke;stroke:#04060e;stroke-width:1.6px;stroke-linejoin:round}
-.planet:hover .spin,.planet:focus-visible .spin,.planet:hover .tagpos,.planet:focus-visible .tagpos{animation-play-state:paused}
+.planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
 .planet:hover .body,.planet:focus-visible .body{r:5.2;filter:drop-shadow(0 0 6px currentColor)}
 .planet:hover .lead,.planet:focus-visible .lead,.planet:hover .halo,.planet:focus-visible .halo{stroke:var(--c)}
 .planet:hover .tag,.planet:focus-visible .tag{fill:var(--c)}
@@ -739,7 +732,7 @@ body.instrument .launchcmd{opacity:1}
   .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
   .launchcmd{bottom:82px}.launchcmd .needs{display:none}
 }
-@media (prefers-reduced-motion:reduce){.planet .spin,.planet .tagpos{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
 .doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
 .doorfoot.by a{color:#a6b0c8;text-decoration:none}
