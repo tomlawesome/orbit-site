@@ -1032,8 +1032,14 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad.forming .copy.core,#installpad.forming .dark{opacity:0;transition:opacity 1.2s ease;pointer-events:none}
 #installpad.formed .sky,#installpad.formed .vignette,#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot{opacity:1;transition:opacity 1.6s ease}
 #installpad.formed .copy.core,#installpad.formed .dark,#installpad.formed .eclipse{animation:none;opacity:1;transition:opacity 1.2s ease}
-body.eclipsing #door .loginchrome,body.eclipsing #door .planets,body.eclipsing #door .doorfoot{opacity:0;transition:opacity .9s ease;pointer-events:none}
+/* while the eclipse forms, the door keeps only its sky, its sunrise and the planet that was clicked */
+body.eclipsing #door .lockup>:not(.planets),body.eclipsing #door .doorfoot,body.eclipsing #door .trdot,body.eclipsing #door .planet:not(.chosen),
+body.eclipsing #door .planet.chosen .tag,body.eclipsing #door .planet.chosen .halo,body.eclipsing #door .planet.chosen .lead{opacity:0;transition:opacity .9s ease}
+body.eclipsing #door .loginchrome{pointer-events:none}
+body.eclipsing #door .planet.chosen .body{transform:translate(-50%,-50%);box-shadow:none}
 body.bare #installpad .eclipse,body.bare #installpad .copy.core,body.bare #installpad .dark{opacity:0}
 body.instrument #installpad .eclipse,body.instrument #installpad .copy.core{animation:chromein 1.6s ease .3s both}
 body.instrument #installpad .dark{animation:chromein 1.6s ease 1.1s both}
 body.withdrawing #installpad .eclipse,body.withdrawing #installpad .copy.core,body.withdrawing #installpad .dark{animation:chromeout .45s ease both}
+/* while forming or unforming, the pad has no chrome of its own: the shot is the door's */
+body #installpad.forming .sky,body #installpad.forming .vignette,body #installpad.forming .back,body #installpad.forming .home,body #installpad.forming .doorfoot,body #installpad.forming .copy.core,body #installpad.forming .dark,body #installpad.forming .eclipse{animation:none}
