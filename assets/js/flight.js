@@ -149,8 +149,21 @@ export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
 /* the descent from a landing: that landing's own climb run backwards — its
    vanishing point, its bearings, its traffic met the other way, and its own
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
-const mirrored = (props) => props.map((g) => ({ kind: g.kind, shape: g.shape, k: g.k, ang: g.ang, z: g.z, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
-export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, props: mirrored(P.props) });
+const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
+export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, props: mirrored(P.props) });
+/* the flight to the docs, carrying the chart: its constellations pass on the
+   way — each set about its own centre in a ~300-unit box, in its colour, with
+   its name — and on arrival the streaks settle into the chart itself */
+export function docsFlight({ rect, geometry }) {
+  const props = geometry.cons.map((con, i) => {
+    const xs = con.pts.map((p) => p[0]), ys = con.pts.map((p) => p[1]);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const span = Math.max(40, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), k = 300 / span;
+    return { kind: "chart", name: con.name, c: con.c, pts: con.pts.map((p) => [(p[0] - cx) * k, (p[1] - cy) * k]),
+      t0: 640 + i * 190, dur: 1500 + (i % 3) * 380, ang: 128 + ((i * 47) % 100), z: 0.42 + ((i * 3) % 5) * 0.09, spin: (i % 2 ? -1 : 1) * (0.06 + (i % 3) * 0.04) };
+  });
+  return { ...RIGHT, props, ending: "chart", chart: { rect, geometry } };
+}
 export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
 
