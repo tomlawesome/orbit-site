@@ -371,6 +371,12 @@ export function createFlight(canvas, options = {}) {
   let rnd = seededRng(FLIGHT_SEED);
   /** @type {Star[]} */
   const STARS = [];
+  /* site: the celestial sphere — the chart's ruling as the sky you move
+     through: its parallels are rings about the way ahead that sweep past
+     with the speed of the flight, its meridians the lines they cross */
+  /** @type {{ r: number, z: number }[]} */
+  const SPHERE = [];
+  const SPHERE_N = 9, MERIDIANS = 15;
   const NEB = NEB_SPEC.map((n) => ({ ...n }));
   /** @type {FlightState | null} */
   let flight = null;
@@ -396,6 +402,10 @@ export function createFlight(canvas, options = {}) {
     if (u > 0.93) return PACK.accent;
     if (u > 0.82) return PACK.up;
     return u > 0.45 ? PACK.star : PACK.starNear;
+  }
+  function seedSphere() {
+    SPHERE.length = 0;
+    for (let i = 0; i < SPHERE_N; i++) SPHERE.push({ r: ((i + 0.5) / SPHERE_N) * RMAX * 0.85, z: 0.14 + (i % 3) * 0.03 });
   }
   function seedStars() {
     STARS.length = 0;
@@ -713,6 +723,30 @@ export function createFlight(canvas, options = {}) {
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     }
 
+    /* site: the sphere, ruled faint beneath the stars — its rings ride the
+       same law as the streaks, only slower, so they read as the far sky */
+    if (av > 0.02) {
+      const lift = Math.min(1, (av - 0.02) / 0.3);
+      ctx.strokeStyle = PACK.pen; ctx.lineWidth = 1.1;
+      for (const ring of SPHERE) {
+        ring.r *= (1 + v * dt * P.K * ring.z);
+        if (ring.r > RMAX * 0.98 || ring.r < 24) { ring.r = active.rev ? RMAX * 0.9 : 24 + rnd() * 40; }
+        const a = 0.26 * lift * Math.min(1, ring.r / 260) * Math.min(1, (RMAX - ring.r) / (RMAX * 0.35));
+        if (a <= 0.004) continue;
+        ctx.globalAlpha = a;
+        ctx.beginPath(); ctx.arc(VPX, VPY, ring.r, A0 - 0.2, A1 + 0.2); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.10 * lift;
+      ctx.beginPath();
+      for (let k = 0; k < MERIDIANS; k++) {
+        const a = A0 + (k + 0.5) / MERIDIANS * (A1 - A0);
+        ctx.moveTo(VPX + Math.cos(a) * 180, VPY + Math.sin(a) * 180);
+        ctx.lineTo(VPX + Math.cos(a) * RMAX, VPY + Math.sin(a) * RMAX);
+      }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     /* stars — additive, so the dense lanes bloom where they cross */
     ctx.lineCap = "round";
     ctx.globalCompositeOperation = "lighter";
@@ -898,7 +932,7 @@ export function createFlight(canvas, options = {}) {
   function prime(P) {
     rnd = seededRng(FLIGHT_SEED);
     const dpr = sizeCanvas();
-    setCamera(P); seedStars();
+    setCamera(P); seedStars(); seedSphere();
     for (const g of P.props) {
       g.p = P.rev ? 1 : 0;             /* reversed, the traffic starts at the edge */
       g.rad = g.ang * Math.PI / 180;
