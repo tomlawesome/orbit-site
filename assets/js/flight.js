@@ -152,6 +152,14 @@ export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
 const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
 export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props) });
+/* the demo's climb: the rest of the galaxy passes — the other households in
+   the sample, each with its items as bodies where its dial has them — and
+   the flight lands on your own. `homes` is [{ name, bodies:[[x,y,colour,r]] }] */
+export function demoFlight(homes) {
+  const BEAR = [44, 136, 74, 106, 58, 122], ZED = [0.5, 0.42, 0.62, 0.46, 0.56, 0.4];
+  const props = homes.map((h, i) => ({ kind: "home", name: h.name, bodies: h.bodies, t0: 760 + i * 380, dur: 2000 + (i % 3) * 350, ang: BEAR[i % BEAR.length], z: ZED[i % ZED.length], spin: 0 }));
+  return { ...UP, props };
+}
 /* the flight to the docs, carrying the chart: its constellations pass on the
    way — each set about its own centre in a ~300-unit box, in its colour, with
    its name — and on arrival the streaks settle into the chart itself */

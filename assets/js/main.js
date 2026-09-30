@@ -5,8 +5,9 @@
 import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
-import { recall } from "./data.js";
-import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight } from "./flight.js";
+import { recall, households } from "./data.js";
+import * as law from "./law.js";
+import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
 import { SECTIONS, createInstall, createDocs, createInfo, wirePlanets } from "./pads.js";
 
 const $ = (s) => document.querySelector(s);
@@ -112,7 +113,13 @@ function launch() {
   planets.hide();
   if (current === "door") $("#gate").classList.add("flash");
   const h = home.household();
-  journey.fly(UP, { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, on: {
+  /* the other households pass on the way, each as its own dial would draw it */
+  const SEC = { sage: "#8fbf9f", blue: "#8fb8ff", sand: "#d8b45a", plum: "#b79ae0" };
+  const others = Object.values(households).filter((o) => o.id !== h.id).map((o) => ({
+    name: o.name,
+    bodies: o.items.filter((it) => it.status === "active").map((it) => { const p = law.dialPlacement(law.daysBetween(new Date(new Date().setHours(0, 0, 0, 0)), it.dueDate)); const r = 22 + Math.min(1, Math.max(0, (p.radius - 40) / 140)) * 58; return [Math.cos(p.angle) * r, Math.sin(p.angle) * r, SEC[o.sections.find((sc) => sc.id === it.section)?.accent] || "#8fb8ff", 3.2]; }),
+  }));
+  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { history.replaceState(null, "", " "); } catch { /* fine */ } },
     settled() { document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); player.show(); },
