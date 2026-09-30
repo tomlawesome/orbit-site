@@ -34,6 +34,7 @@ export function createInstall(pad) {
   /* where the pointer pushes the disc, and where the disc is */
   const aim = { x: 0, y: 0 }, disc = { x: 0, y: 0 };
   let pointerOn = false, pressed = false;
+  const mode = () => (location.hash.split("/")[1] === "moon" ? "moon" : "still");
   const imgs = SHOTS.map(([n]) => { const i = new Image(); i.decoding = "async"; i.src = `assets/img/launcher/${n}.webp`; return i; });
   let corona = null, sun = null, coronaSize = 0;
 
@@ -53,16 +54,30 @@ export function createInstall(pad) {
     corona = document.createElement("canvas"); corona.width = corona.height = Math.round(coronaSize * dpr);
     const c = corona.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const o = coronaSize / 2;
-    /* the streamers: the corona's soft light, a little uneven the way a real one is */
+    /* the corona: a soft base, then streamers — many thin rays of uneven
+       length, denser at the poles the way a real one is — then the
+       chromosphere, a hair of rose at the limb, and a few prominences */
+    const rnd = (() => { let x = 20260930; return () => (x = (x * 48271) % 2147483647) / 2147483647; })();
     for (let k = 0; k < 3; k++) {
-      const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * (1.35 + k * 0.5));
-      g.addColorStop(0, hexa(k ? RIM : SUN, k ? 0.16 / k : 0.42)); g.addColorStop(1, hexa(RIM, 0));
-      c.fillStyle = g; c.beginPath(); c.arc(o, o, R * (1.35 + k * 0.5), 0, 6.284); c.fill();
+      const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * (1.3 + k * 0.45));
+      g.addColorStop(0, hexa(k ? RIM : SUN, k ? 0.13 / k : 0.34)); g.addColorStop(1, hexa(RIM, 0));
+      c.fillStyle = g; c.beginPath(); c.arc(o, o, R * (1.3 + k * 0.45), 0, 6.284); c.fill();
     }
-    /* the rim itself */
-    c.lineWidth = 1.6; c.strokeStyle = hexa(CORE, 0.9); c.shadowColor = SUN; c.shadowBlur = 14;
-    c.beginPath(); c.arc(o, o, R * 1.005, 0, 6.284); c.stroke();
-    c.shadowBlur = 0;
+    c.save(); c.translate(o, o); c.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 260; i++) {
+      const a = rnd() * 6.283, polar = Math.pow(Math.abs(Math.sin(a * 2)), 0.6);
+      const len = R * (0.25 + rnd() * rnd() * 1.1 * (0.5 + polar)), w = 0.6 + rnd() * 2.2, al = 0.05 + rnd() * 0.16;
+      const g = c.createLinearGradient(0, R, 0, R + len); g.addColorStop(0, hexa(SUN, al)); g.addColorStop(0.35, hexa(SUN, al * 0.5)); g.addColorStop(1, hexa(RIM, 0));
+      c.save(); c.rotate(a); c.fillStyle = g; c.beginPath(); c.moveTo(-w, R * 0.99); c.lineTo(w, R * 0.99); c.lineTo(w * 0.3, R + len); c.lineTo(-w * 0.3, R + len); c.closePath(); c.fill(); c.restore();
+    }
+    c.restore();
+    /* the chromosphere and the prominences */
+    c.lineWidth = 2.2; c.strokeStyle = hexa("#ff8a6a", 0.55); c.beginPath(); c.arc(o, o, R * 1.002, 0, 6.284); c.stroke();
+    for (const [pa, pl, pw] of [[0.7, 0.14, 0.09], [2.3, 0.1, 0.06], [3.9, 0.17, 0.11], [5.2, 0.08, 0.05]]) {
+      const g = c.createRadialGradient(o + Math.cos(pa) * R, o + Math.sin(pa) * R, 0, o + Math.cos(pa) * R, o + Math.sin(pa) * R, R * pl);
+      g.addColorStop(0, hexa("#ff9a7a", 0.55)); g.addColorStop(0.5, hexa("#ff6a4a", 0.18)); g.addColorStop(1, hexa("#ff6a4a", 0));
+      c.fillStyle = g; c.beginPath(); c.ellipse(o + Math.cos(pa) * R, o + Math.sin(pa) * R, R * pl, R * pw, pa, 0, 6.284); c.fill();
+    }
     /* the command, written round the rim, once, letter by letter */
     /* as large as the ring allows: the whole line on the rim once, with a breath at the end */
     let fs = Math.max(11.5, Math.min(16.5, R * 0.1));
@@ -103,10 +118,12 @@ export function createInstall(pad) {
     if (pad.hidden || document.hidden || !corona) return;
     const t = (now - t0) / 1000, p = ease(progress);
     /* the disc: pushed by the pointer, drifting back when let go; and off for good as the page is scrolled */
-    const push = pointerOn ? Math.min(1, Math.hypot(aim.x, aim.y) / 2.2) : 0;
+    /* moon: the disc is a body with weight, nudged a little by the pointer and lagging behind it; still: only the scroll moves it */
+    const moon = mode() === "moon";
+    const push = moon && pointerOn ? Math.min(1, Math.hypot(aim.x, aim.y) / 2.6) : 0;
     const ang = Math.atan2(aim.y, aim.x);
-    const tx = pointerOn ? Math.cos(ang) * push * R * (pressed ? 1.15 : 0.7) : 0, ty = pointerOn ? Math.sin(ang) * push * R * (pressed ? 1.15 : 0.7) : 0;
-    disc.x = lerp(disc.x, tx, 0.06); disc.y = lerp(disc.y, ty, 0.06);
+    const tx = push ? Math.cos(ang) * push * R * (pressed ? 0.5 : 0.22) : 0, ty = push ? Math.sin(ang) * push * R * (pressed ? 0.5 : 0.22) : 0;
+    disc.x = lerp(disc.x, tx, 0.022); disc.y = lerp(disc.y, ty, 0.022);
     const off = p * R * 3.8;
     const dx = cx + disc.x + off * 0.62, dy = cy + disc.y - off * 0.6;
     const rot = reduced ? 0 : t * 0.045;
@@ -135,11 +152,24 @@ export function createInstall(pad) {
     ctx.fillStyle = l; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
     if (rise > 0) { ctx.globalAlpha = rise; ctx.drawImage(sun, cx - R, cy - R, R * 2, R * 2); ctx.globalAlpha = 1; }
     ctx.restore();
+    /* the diamond ring: as the disc first clears the limb, one point of true light flares where the sun shows */
+    const sep = Math.hypot(dx - cx, dy - cy) / R, ring = Math.max(0, Math.min(1, (sep - 0.01) / 0.05)) * Math.max(0, 1 - (sep - 0.06) / 0.5);
+    if (ring > 0.01) {
+      const ax = Math.atan2(cy - dy, cx - dx), px = cx + Math.cos(ax) * R * 0.97, py = cy + Math.sin(ax) * R * 0.97;
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      const g = ctx.createRadialGradient(px, py, 0, px, py, R * 0.55 * ring);
+      g.addColorStop(0, hexa(CORE, 0.95 * ring)); g.addColorStop(0.12, hexa(SUN, 0.5 * ring)); g.addColorStop(1, hexa(SUN, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, R * 0.55 * ring, 0, 6.284); ctx.fill();
+      ctx.strokeStyle = hexa(CORE, 0.55 * ring); ctx.lineWidth = 1.2;
+      for (const sa of [0, 1.05, 2.1]) { ctx.beginPath(); ctx.moveTo(px - Math.cos(sa) * R * 0.5 * ring, py - Math.sin(sa) * R * 0.5 * ring); ctx.lineTo(px + Math.cos(sa) * R * 0.5 * ring, py + Math.sin(sa) * R * 0.5 * ring); ctx.stroke(); }
+      ctx.restore();
+    }
     /* the disc: the sky's own black, a hair larger than the sun, with the faintest lit edge on the side the light comes from */
     ctx.globalAlpha = 1;
     ctx.globalAlpha = 1 - clamp01((progress - 0.7) / 0.3);   /* the disc thins to nothing as it leaves */
-    ctx.fillStyle = "#060b1c";
-    ctx.beginPath(); ctx.arc(dx, dy, R * 1.012, 0, 6.284); ctx.fill();
+    const body = ctx.createRadialGradient(dx - R * 0.3, dy - R * 0.3, R * 0.1, dx, dy, R * 1.012);
+    body.addColorStop(0, "#0b1226"); body.addColorStop(0.7, "#070c1c"); body.addColorStop(1, "#04070f");
+    ctx.fillStyle = body; ctx.beginPath(); ctx.arc(dx, dy, R * 1.012, 0, 6.284); ctx.fill();
     const lx = cx - dx, ly = cy - dy, ld = Math.hypot(lx, ly) || 1;
     if (ld > 2) {
       const e = ctx.createRadialGradient(dx + lx / ld * R * 0.9, dy + ly / ld * R * 0.9, R * 0.2, dx, dy, R * 1.012);
@@ -151,9 +181,11 @@ export function createInstall(pad) {
     copy.style.opacity = String(1 - p * 1.6);
     gate.style.opacity = String(clamp01((progress - 0.9) / 0.1)); gate.style.pointerEvents = progress > 0.92 ? "auto" : "none";
   }
+  pad.querySelector(".modes").addEventListener("click", (e) => { const a = e.target.closest("a"); if (!a) return; e.preventDefault(); try { history.replaceState(null, "", a.getAttribute("href")); } catch { /* fine */ } mark(); });
+  const mark = () => pad.querySelectorAll(".modes a").forEach((a) => a.classList.toggle("on", a.getAttribute("href").endsWith(mode())));
   return {
     start() {
-      running = true; t0 = performance.now(); track.scrollTop = 0; progress = 0; shown = -1; disc.x = disc.y = 0;
+      running = true; t0 = performance.now(); mark(); track.scrollTop = 0; progress = 0; shown = -1; disc.x = disc.y = 0;
       pad.classList.remove("open", "risen");
       size(); addEventListener("resize", size);
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
