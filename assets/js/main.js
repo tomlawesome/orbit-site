@@ -8,7 +8,8 @@ import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
 import * as law from "./law.js";
 import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
-import { SECTIONS, createInstall, createDocs, createInfo, wirePlanets } from "./pads.js";
+import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
+import { createInstall } from "./install.js";
 
 const $ = (s) => document.querySelector(s);
 initTheme();
@@ -85,7 +86,7 @@ function flyToPad(id) {
     title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph,
     on: {
       release: leaveCurrent,
-      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
+      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
       settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); pad.ring.start(); },
     },
   });

@@ -307,26 +307,39 @@
     <div class="vignette" aria-hidden="true"></div>
     <button class="corner back dawn" type="button">— the dawn</button>
     <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <div class="loginchrome">
-      <div class="installgrid">
-        <div class="lockup">
-          <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
-            <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
-          </svg></div>
-          <!-- the ring is a porthole onto a terminal: the one line, and copy -->
-          <div class="port">
-            <code class="line" title="click to copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-            <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
-          </div>
+    <!-- three concepts for the install, for review: the launch pad, the terminal, the cockpit -->
+    <section class="concept pad-c" data-concept="pad" hidden>
+      <div class="horizon" aria-hidden="true"><div class="glow"></div><div class="limb"></div></div>
+      <div class="rule" aria-hidden="true"><ol class="telemetry"></ol><div class="firstlight"><b>the last line is a one-time link</b><span>open it to create the first administrator</span></div></div>
+      <div class="lift" aria-hidden="true"></div>
+      <div class="padhead">
+        <span class="corner">— the install</span>
+        <div class="platform">
+          <code class="cmdline" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+          <button class="ignite" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash">copy · ignition</button>
         </div>
-        <!-- what you will see: the launcher itself, its own screens in order -->
-        <figure class="term" aria-label="The launcher, screen by screen">
-          <figcaption><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">orbit-launcher</span><span class="scene"></span></figcaption>
-          <div class="screen"><img alt="" decoding="async" /><img alt="" decoding="async" /></div>
-        </figure>
       </div>
-      <p class="oneline">One line. It does the rest, and tells you as it goes.</p>
-    </div>
+    </section>
+    <section class="concept term-c" data-concept="terminal" hidden>
+      <div class="screens" aria-hidden="true"><img alt="" decoding="async" /><img alt="" decoding="async" /></div>
+      <pre class="tty" aria-label="The install command"><span class="prompt">$ </span><span class="typed"></span><span class="caret"></span></pre>
+      <button class="key" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" hidden><kbd>⌘</kbd> copy</button>
+      <p class="scene" aria-live="polite"></p>
+    </section>
+    <section class="concept cockpit-c" data-concept="cockpit" hidden>
+      <div class="outside" aria-hidden="true">
+        <div class="stars"></div>
+        <div class="earth"><div class="clouds"></div><div class="rim"></div></div>
+        <div class="sun"></div>
+      </div>
+      <div class="frame" aria-hidden="true"><div class="pillar l"></div><div class="pillar r"></div><div class="brow"></div><div class="sill"></div></div>
+      <div class="panels">
+        <div class="screen s1" aria-hidden="true"><div class="hd">ORBIT · Install</div><ol class="log"></ol></div>
+        <div class="screen s2"><div class="hd">the one line</div><code class="cmdline" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash">copy</button></div>
+        <div class="screen s3" aria-hidden="true"><div class="hd">host</div><p class="host">an empty directory<br/>Linux, Docker Compose v2, curl</p><div class="gauge"><i></i></div></div>
+      </div>
+    </section>
+    <nav class="concepts corner" aria-label="Concepts for review"><a href="#install/pad">pad</a><a href="#install/terminal">terminal</a><a href="#install/cockpit">cockpit</a></nav>
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
   <div class="pad docs" id="docspad" hidden>
