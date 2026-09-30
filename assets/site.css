@@ -1015,106 +1015,31 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 .pad.docs .chart.drawn.settled .star{animation:none;opacity:1}
 .pad.docs .chart.drawn.settled .star .dot{animation:none}
 
-/* ══ THE INSTALL, three ways, for review ══════════════════════════════ */
-#installpad .concept{position:absolute;inset:0;z-index:3}
-#installpad .cmdline{display:block;font:14px/1.6 var(--mono);color:var(--ink);overflow-wrap:anywhere;cursor:copy;transition:color .3s}
-#installpad .cmdline .prompt{color:var(--accent-text)}
-#installpad .cmdline[data-done]{color:var(--accent-text)}
-#installpad .concepts{position:absolute;left:50%;top:22px;transform:translateX(-50%);z-index:5;display:flex;gap:18px;text-shadow:none}
-#installpad .concepts a{color:var(--ink-faint);text-decoration:none;padding:4px 0;border-bottom:1px solid transparent}
-#installpad .concepts a.on{color:var(--accent-text);border-bottom-color:var(--accent)}
-#installpad .concepts a:hover{color:var(--ink)}
-body.bare #installpad .concept,body.bare #installpad .concepts{opacity:0}
-body.instrument #installpad .concept,body.instrument #installpad .concepts{animation:chromein 1.2s ease .3s both}
-body.withdrawing #installpad .concept,body.withdrawing #installpad .concepts{animation:chromeout .45s ease both}
-
-/* ── 1 · the launch pad ── */
-.pad-c{--hz:30svh}
-.pad-c .horizon{position:absolute;left:0;right:0;bottom:0;height:var(--hz);pointer-events:none;overflow:hidden}
-.pad-c .horizon .limb{position:absolute;left:50%;top:0;width:320vw;height:320vw;transform:translateX(-50%);border-radius:50%;background:#04060e;box-shadow:0 0 0 1.5px rgba(255,217,137,.55),0 -18px 60px rgba(226,119,43,.28),0 -60px 160px rgba(226,119,43,.14)}
-.pad-c .horizon .glow{position:absolute;left:50%;top:0;transform:translate(-50%,-50%);width:min(900px,90vw);height:140px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(216,180,90,.26),rgba(226,119,43,.09) 45%,transparent 70%);opacity:.45;transition:opacity 1.2s}
-.pad-c.lit .horizon .glow{opacity:1}
-.pad-c .padhead{position:absolute;left:50%;bottom:calc(var(--hz) + 30px);transform:translateX(-50%);width:min(760px,calc(100% - 40px));text-align:center;z-index:2}
-.pad-c .padhead>.corner{display:block;margin-bottom:14px}
-.pad-c .platform{display:flex;flex-direction:column;align-items:center;gap:16px;padding:22px 26px 20px;border:1px solid var(--line);border-radius:18px;background:rgba(6,11,28,.72);box-shadow:0 0 0 1px rgba(216,180,90,0),0 30px 80px rgba(0,0,0,.45);transition:box-shadow 1s,border-color 1s}
-.pad-c.lit .platform{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent),0 0 60px color-mix(in srgb,var(--accent) 22%,transparent),0 30px 80px rgba(0,0,0,.45)}
-.pad-c .cmdline{font-size:15px}
-.pad-c .ignite{font:600 11px var(--display);letter-spacing:.14em;text-transform:uppercase;color:#04060e;background:var(--accent);border:0;border-radius:99px;padding:11px 26px;cursor:pointer;box-shadow:0 0 28px rgba(216,180,90,.22);transition:filter .3s}
-.pad-c .ignite:hover{filter:brightness(1.08)}
-.pad-c .rule{position:absolute;left:50%;top:132px;bottom:calc(var(--hz) + 210px);width:1px;background:linear-gradient(to bottom,transparent,var(--line) 12%,var(--line) 88%,transparent);transform:translateX(-50%)}
-.pad-c .telemetry{position:absolute;left:22px;top:0;bottom:0;margin:0;padding:0;list-style:none;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;overflow:hidden;width:max-content}
-.pad-c .telemetry li{font:12px/1.5 var(--mono);color:var(--ink-mid);opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s}
-.pad-c .telemetry li i{display:inline-block;width:18px;color:var(--ok);font-style:normal}
-.pad-c .telemetry li b{font-weight:500;color:var(--ink)}
-.pad-c .telemetry li span{color:var(--ink-faint)}
-.pad-c .telemetry li.on{opacity:1;transform:none}
-.pad-c .firstlight{position:absolute;left:50%;top:-40px;transform:translateX(-50%);width:max-content;text-align:center;opacity:0;transition:opacity 1.4s ease .3s}
-.pad-c .firstlight b{display:block;font:500 13px var(--display);color:var(--ink)}
-.pad-c .firstlight span{font:10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
-.pad-c .firstlight::before{content:"";position:absolute;left:50%;top:-90px;width:160px;height:160px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,246,230,.9),rgba(248,201,94,.35) 30%,transparent 65%);opacity:0;transition:opacity 1.6s}
-.pad-c.done .firstlight,.pad-c.done .firstlight::before{opacity:1}
-.pad-c .lift{position:absolute;left:0;right:0;bottom:var(--hz);height:60svh;pointer-events:none;background:repeating-linear-gradient(to right,transparent 0 22px,rgba(233,237,248,.35) 22px 23px,transparent 23px 41px);mask-image:linear-gradient(to top,rgba(0,0,0,.9),transparent 70%);-webkit-mask-image:linear-gradient(to top,rgba(0,0,0,.9),transparent 70%);opacity:0}
-.pad-c.lit .lift{animation:lift 9s linear infinite;opacity:.35}
-@keyframes lift{from{background-position:0 0;mask-position:0 0}to{background-position:0 -600px}}
-@media (max-width:700px){.pad-c{--hz:22svh}.pad-c .padhead{bottom:calc(var(--hz) + 18px)}.pad-c .cmdline{font-size:12.5px}.pad-c .telemetry li{font-size:11px}.pad-c .rule{bottom:calc(var(--hz) + 200px)}}
-
-/* ── 2 · the terminal that is the page ── */
-.term-c{background:#07090f}
-.term-c .screens{position:absolute;inset:0}
-.term-c .screens img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;opacity:0;transition:opacity 1.3s ease}
-.term-c .screens img.on{opacity:1}
-.term-c .tty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0;width:min(900px,calc(100% - 48px));font:clamp(15px,1.6vw,22px)/1.6 var(--mono);color:#e9edf8;white-space:pre-wrap;overflow-wrap:anywhere;transition:opacity .9s,transform .9s cubic-bezier(.2,.7,.2,1)}
-.term-c .tty .prompt{color:#d8b45a}
-.term-c .caret{display:inline-block;width:.6em;height:1.15em;background:#e9edf8;vertical-align:text-bottom;margin-left:2px;animation:blink 1.05s steps(1) infinite}
-@keyframes blink{50%{opacity:0}}
-.term-c.running .tty{opacity:0;transform:translate(-50%,-50%) translateY(-40px);pointer-events:none}
-.term-c .key{position:absolute;left:50%;top:calc(50% + 72px);transform:translateX(-50%);font:500 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:#e9edf8;background:#141a2a;border:1px solid #2a3148;border-bottom-width:3px;border-radius:8px;padding:10px 18px;cursor:pointer;transition:opacity .5s,transform .1s}
-.term-c .key kbd{font:inherit;color:#8791b3;margin-right:8px}
-.term-c .key:active{transform:translateX(-50%) translateY(2px);border-bottom-width:1px}
-.term-c .key[data-done]{color:#d8b45a;border-color:#d8b45a}
-.term-c.running .key{top:auto;bottom:88px}
-.term-c .scene{position:absolute;left:24px;bottom:44px;margin:0;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:#7e8cb8}
-#installpad[data-concept="terminal"] .sky,#installpad[data-concept="terminal"] .vignette,#installpad[data-concept="terminal"] .doorfoot{display:none}
-@media (max-width:700px){.term-c .screens img{object-fit:cover;transform:scale(1.6)}.term-c .key{bottom:96px}.term-c .scene{bottom:98px;left:20px}}
-
-/* ── 3 · the cockpit ── */
-.cockpit-c{overflow:hidden;background:#02040a}
-.cockpit-c .outside{position:absolute;inset:0}
-.cockpit-c .stars{position:absolute;inset:-20% 0;background-image:radial-gradient(1.6px 1.6px at 20% 30%,#e9edf8 50%,transparent 60%),radial-gradient(1.5px 1.5px at 70% 15%,#f4f0ff 50%,transparent 60%),radial-gradient(1px 1px at 45% 60%,#e9edf8 50%,transparent 60%),radial-gradient(1px 1px at 85% 45%,#e9edf8 50%,transparent 60%),radial-gradient(1.2px 1.2px at 10% 70%,#f4f0ff 50%,transparent 60%),radial-gradient(1px 1px at 60% 85%,#e9edf8 50%,transparent 60%),radial-gradient(1px 1px at 30% 90%,#e9edf8 50%,transparent 60%),radial-gradient(1.4px 1.4px at 92% 78%,#f4f0ff 50%,transparent 60%),radial-gradient(1px 1px at 52% 22%,#e9edf8 50%,transparent 60%);background-size:420px 420px,560px 560px,380px 380px,610px 610px,470px 470px,530px 530px,350px 350px,640px 640px,400px 400px;opacity:1;filter:drop-shadow(0 0 1px rgba(255,255,255,.6));animation:climb 14s linear infinite}
-@keyframes climb{to{transform:translateY(40%)}}
-.cockpit-c.level .stars{animation-duration:60s}
-.cockpit-c .earth{position:absolute;left:50%;top:110%;width:280vmax;height:280vmax;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle at 50% 8%,#7fb0ff 0%,#3d6fd6 9%,#1c3b8a 18%,#0c1d4a 30%,#050b1f 42%);box-shadow:0 0 90px 30px rgba(120,170,255,.28),0 0 220px 80px rgba(70,120,230,.14);transition:top 7s cubic-bezier(.3,.05,.2,1)}
-.cockpit-c.level .earth{top:66%}
-.cockpit-c .earth .rim{position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 3px 0 rgba(210,230,255,.75),inset 0 18px 40px rgba(140,190,255,.35)}
-.cockpit-c .earth .clouds{position:absolute;inset:0;border-radius:50%;overflow:hidden;opacity:.55;background:radial-gradient(ellipse 18% 4% at 38% 6%,rgba(255,255,255,.55),transparent 70%),radial-gradient(ellipse 26% 5% at 58% 9%,rgba(255,255,255,.45),transparent 70%),radial-gradient(ellipse 14% 3% at 24% 10%,rgba(255,255,255,.4),transparent 70%),radial-gradient(ellipse 30% 6% at 72% 13%,rgba(255,255,255,.32),transparent 70%),radial-gradient(ellipse 20% 4% at 46% 15%,rgba(255,255,255,.28),transparent 70%);animation:drift 90s linear infinite}
-@keyframes drift{to{transform:rotate(1.2deg)}}
-.cockpit-c .sun{position:absolute;right:-8vw;top:-8vw;width:26vw;height:26vw;border-radius:50%;background:radial-gradient(circle,rgba(255,246,230,.95),rgba(248,201,94,.4) 22%,rgba(226,119,43,.08) 48%,transparent 66%);opacity:0;transition:opacity 4s ease 2s}
-.cockpit-c.level .sun{opacity:1}
-.cockpit-c .frame{position:absolute;inset:0;pointer-events:none}
-.cockpit-c .frame>div{position:absolute;background:linear-gradient(180deg,#0b0f1a,#05070d);box-shadow:inset 0 0 0 1px rgba(135,145,179,.18)}
-.cockpit-c .pillar{top:-6%;bottom:22%;width:7vw;min-width:34px}
-.cockpit-c .pillar.l{left:-2vw;transform:skewX(-6deg)}
-.cockpit-c .pillar.r{right:-2vw;transform:skewX(6deg)}
-.cockpit-c .brow{left:-2%;right:-2%;top:-14%;height:20%;border-radius:0 0 50% 50%/0 0 100% 100%}
-.cockpit-c .sill{left:-2%;right:-2%;bottom:0;height:28%;border-radius:50% 50% 0 0/22% 22% 0 0}
-.cockpit-c .panels{position:absolute;left:0;right:0;bottom:0;height:27%;display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:14px;padding:26px min(9vw,120px) 30px;align-items:stretch}
-.cockpit-c .screen{position:relative;border:1px solid #1e2740;border-radius:10px;background:linear-gradient(180deg,#0a1224,#070c18);box-shadow:inset 0 0 40px rgba(60,90,160,.12),0 0 0 4px #0b0f1a;padding:12px 14px;overflow:hidden;font:12px/1.55 var(--mono);color:var(--ink-mid)}
-.cockpit-c .screen::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0 2px,rgba(0,0,0,.14) 2px 3px);pointer-events:none}
-.cockpit-c .screen .hd{font:500 10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#7e8cb8;margin-bottom:8px}
-.cockpit-c .log{list-style:none;margin:0;padding:0;max-height:calc(100% - 26px);overflow:hidden}
-.cockpit-c .log li{opacity:0;transition:opacity .25s;color:var(--ink)}
-.cockpit-c .log li i{display:inline-block;width:14px;color:var(--ok);font-style:normal}
-.cockpit-c .log li span{color:var(--ink-faint)}
-.cockpit-c .log li.on{opacity:1}
-.cockpit-c .s2{opacity:.35;transition:opacity 1.4s ease}
-.cockpit-c .s2 .cmdline{font-size:12.5px;line-height:1.5;opacity:0;transition:opacity 1.2s ease .6s}
-.cockpit-c .s2 .copy{position:absolute;right:12px;bottom:10px;font:500 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#04060e;background:var(--accent);border:0;border-radius:99px;padding:7px 14px;cursor:pointer;opacity:0;transition:opacity 1.2s ease 1s}
-.cockpit-c.level .s2{opacity:1}
-.cockpit-c.level .s2 .cmdline,.cockpit-c.level .s2 .copy{opacity:1}
-.cockpit-c .s3 .host{margin:0;font:12px/1.5 var(--mono);color:var(--ink)}
-.cockpit-c .gauge{position:absolute;left:14px;right:14px;bottom:12px;height:3px;background:#1e2740;border-radius:2px;overflow:hidden}
-.cockpit-c .gauge i{display:block;height:100%;width:0;background:var(--accent);transition:width 9s linear}
-.cockpit-c.level .gauge i{width:100%}
-#installpad[data-concept="cockpit"] .sky,#installpad[data-concept="cockpit"] .vignette{display:none}
-@media (max-width:900px){.cockpit-c .panels{grid-template-columns:1fr;height:44%;padding:16px 16px 60px;gap:10px}.cockpit-c .s1,.cockpit-c .s3{display:none}.cockpit-c .sill{height:46%}.cockpit-c .pillar{bottom:44%}.cockpit-c.level .earth{top:52%}}
-@media (prefers-reduced-motion:reduce){.cockpit-c .stars,.cockpit-c .earth .clouds,.pad-c.lit .lift{animation:none}.cockpit-c .earth{transition:none}}
+/* ══ THE INSTALL: one real object, and the scroll as its clock ═══════════ */
+#installpad .stage{position:absolute;inset:0;z-index:2;width:100%;height:100%;pointer-events:none}
+#installpad .track{position:absolute;inset:0;z-index:3;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+#installpad .track::-webkit-scrollbar{display:none}
+#installpad .spacer{height:380svh}
+#installpad .sticky{position:sticky;top:0;height:100svh;margin-top:-380svh;pointer-events:none}
+#installpad .lead{position:absolute;left:50%;top:clamp(56px,7svh,90px);transform:translateX(-50%);width:min(1100px,calc(100% - 48px));text-align:center;pointer-events:auto;transition:opacity .6s,transform .8s cubic-bezier(.2,.7,.2,1)}
+#installpad .lead>.corner{display:block;margin-bottom:16px}
+#installpad .theline{margin:0 auto;font:600 clamp(17px,2.1vw,30px)/1.3 var(--display);letter-spacing:-.012em;color:var(--ink);text-wrap:balance;overflow-wrap:anywhere;cursor:copy;max-width:36ch;transition:color .3s}
+#installpad .theline .prompt{color:var(--accent-text);margin-right:.35em}
+#installpad .theline[data-done]{color:var(--accent-text)}
+#installpad .copy.magnet{margin-top:16px;font:600 11.5px var(--display);letter-spacing:.14em;text-transform:uppercase;color:#04060e;background:var(--accent);border:0;border-radius:99px;padding:12px 30px;cursor:pointer;box-shadow:0 0 34px color-mix(in srgb,var(--accent) 28%,transparent);transition:transform .25s cubic-bezier(.2,.7,.2,1),filter .3s,box-shadow .3s}
+#installpad .copy.magnet:hover{filter:brightness(1.08);box-shadow:0 0 48px color-mix(in srgb,var(--accent) 40%,transparent)}
+#installpad .copy.magnet[data-done]{filter:brightness(1.15)}
+#installpad.scrolled .lead{opacity:.55;transform:translateX(-50%) translateY(-18px)}
+#installpad.scrolled .lead:hover{opacity:1}
+#installpad .flat{position:absolute;left:50%;top:50%;transform:translate(-50%,-44%);margin:0;width:min(900px,calc(100% - 40px));aspect-ratio:16/9;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0b0e14;box-shadow:0 40px 100px rgba(0,0,0,.5)}
+#installpad .flat img{width:100%;height:100%;object-fit:cover;display:block}
+#installpad .scene{position:absolute;left:24px;bottom:44px;margin:0;display:flex;gap:12px;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint)}
+#installpad .scene .n{color:var(--accent-text)}
+#installpad .cue{position:absolute;right:24px;bottom:44px;margin:0;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);animation:cue 2.4s ease-in-out infinite;transition:opacity .5s}
+@keyframes cue{50%{transform:translateY(-5px);opacity:.5}}
+#installpad.scrolled .cue{opacity:0}
+body.bare #installpad .track,body.bare #installpad .stage{opacity:0}
+body.instrument #installpad .track,body.instrument #installpad .stage{animation:chromein 1.3s ease .35s both}
+body.withdrawing #installpad .track,body.withdrawing #installpad .stage{animation:chromeout .45s ease both}
+@media (max-width:700px){#installpad .lead{top:64px}#installpad .theline{font-size:17px;max-width:none}#installpad .scene{bottom:96px}#installpad .cue{bottom:96px}#installpad .flat{transform:translate(-50%,-30%)}}
+@media (prefers-reduced-motion:reduce){#installpad .cue{animation:none}}
