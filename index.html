@@ -308,36 +308,26 @@
     <button class="corner back dawn" type="button">— the dawn</button>
     <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
     <div class="loginchrome">
-      <div class="stagegrid">
+      <div class="installgrid">
         <div class="lockup">
-          <div class="tint" aria-hidden="true"></div>
           <div class="glyph"><svg width="420" height="420" viewBox="0 0 200 200" class="ring">
             <circle class="orbit" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
-            <g class="stages"></g>
           </svg></div>
-          <svg class="timerlayer" viewBox="0 0 200 200" aria-hidden="true"><circle class="timer" cx="100" cy="100" r="72" fill="none" pathLength="100" transform="rotate(90 100 100)"/></svg>
-          <div class="bodies" aria-label="The six stages"></div>
-          <div class="face" aria-hidden="true"><b class="big">01</b></div>
-        </div>
-        <div class="side">
-          <p class="over corner">— the install</p>
-          <div class="stage" aria-live="polite">
-            <span class="corner"><b class="n">01</b> / <span class="total">06</span></span>
-            <span class="label"></span>
-            <p class="line"></p>
-            <a class="go" href="#" target="_blank" rel="noopener" hidden>read it →</a>
+          <!-- the ring is a porthole onto a terminal: the one line, and copy -->
+          <div class="port">
+            <code class="line" title="click to copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+            <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
           </div>
-          <ol class="rail" aria-label="The six stages, in order"></ol>
         </div>
+        <!-- what you will see: the launcher itself, its own screens in order -->
+        <figure class="term" aria-label="The launcher, screen by screen">
+          <figcaption><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="title">orbit-launcher</span><span class="scene"></span></figcaption>
+          <div class="screen"><img alt="" decoding="async" /><img alt="" decoding="async" /></div>
+        </figure>
       </div>
+      <p class="oneline">One line. It does the rest, and tells you as it goes.</p>
     </div>
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
-    <div class="launchcmd">
-      <div class="cmd">
-        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
-      </div>
-    </div>
   </div>
   <div class="pad docs" id="docspad" hidden>
     <div class="sky" aria-hidden="true"></div>

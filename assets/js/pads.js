@@ -10,17 +10,7 @@ const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
 
 export const SECTIONS = {
-  install: {
-    title: "Orbit", subtitle: "quick start",
-    items: [
-      { label: "before anything runs", name: "manifest", c: "#d8b45a", line: "A signed manifest is verified first." },
-      { label: "every file", name: "checksums", c: "#8fb8ff", line: "Its checksum is checked against that manifest — and a second, independent signature, if cosign is installed." },
-      { label: "the launcher", name: "launcher", c: "#a78bfa", line: "Only once everything checks out does it hand off to the launcher: Install, Update, Repair." },
-      { label: "the image", name: "image", c: "#f87171", line: "Pulled and resolved to an immutable digest. A mutable reference is never deployed." },
-      { label: "the stack", name: "stack", c: "#4ade80", line: "orbit, the official PostgreSQL and the isolated scanner — done only once each is healthy." },
-      { label: "claim", name: "claim", c: "#f0b429", line: "The last line of the container's log is a one-time link. Open it to create the first administrator." },
-    ],
-  },
+  install: { title: "Orbit", subtitle: "the install" },
   docs: { title: "Orbit", subtitle: "the docs" },
   info: { title: "Orbit", subtitle: "about" },
 };
@@ -417,158 +407,40 @@ export function createInfo(pad) {
    line appears, rests there while the line is read, and drifts on before the
    next comes round. Each body's path is planned back from the moment it is
    due: it covers what its pace allows in the time it has, and no more. */
-const GAP = 1900, LEAD = 1600, PICK = 2200;
 /* a line is held for as long as it takes to read: a floor, and time per word */
-const holdFor = (text) => 3600 + 260 * text.trim().split(/\s+/).length;
-const PACE = [3.4, 5.2, 2.6, 4.4, 6, 3.8];   /* degrees per second: each its own, slow enough to watch, so they pass one another */
-const BOTTOM = 90;
 
-export function createRing(pad, section) {
-  const svg = $(".ring", pad), host = $(".stages", svg), lockup = $(".lockup", pad), big = $(".face .big", pad), rail = $(".rail", pad), field = $(".bodies", pad);
-  const stage = $(".stage", pad), n = $(".n", stage), total = $(".total", stage), label = $(".label", stage), line = $(".line", stage), go = $(".go", stage);
-  const items = section.items, N = items.length;
-  total.textContent = String(N).padStart(2, "0");
-  /* each body on an orbit of its own outside the ring, as the doors are on
-     the sunrise: a faint path, a hairline circle round the body, a leader
-     out to its name, which stays upright wherever the body has got to */
-  const RADIUS = (i) => 80 + i * 7;
-  const orbits = document.createElementNS(SVG, "g"); orbits.setAttribute("class", "orbits"); svg.insertBefore(orbits, host);
-  const tags = [];
-  const bodies = items.map((it, i) => {
-    const R = RADIUS(i);
-    const path = document.createElementNS(SVG, "circle"); path.setAttribute("cx", "100"); path.setAttribute("cy", "100"); path.setAttribute("r", R); orbits.appendChild(path);
-    /* the body is html: a button the compositor turns about the centre, its
-       halo, leader and dot hung off it at the orbit's radius */
-    const g = document.createElement("button");
-    g.type = "button"; g.className = "stage-body"; g.setAttribute("aria-label", `${it.label}: ${it.line}`);
-    g.style.setProperty("--i", i); g.style.setProperty("--c", it.c || "#d8b45a"); g.style.setProperty("--r", R);
-    g.innerHTML = '<i class="hit"></i><i class="halo"></i><i class="lead"></i><i class="dot"></i>';
-    const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = it.name || it.label; tag.style.setProperty("--c", it.c || "#d8b45a");
-    field.appendChild(g); field.appendChild(tag); tags.push(tag);
-    g.addEventListener("click", () => pick(i));
-    g.addEventListener("focus", () => pick(i));
-    return g;
-  });
-  let size = 0; const measure = () => { size = field.clientWidth || 0; }; measure(); addEventListener("resize", measure);
-  /* the rail beside the ring: the six in order, the one at the bottom lit */
-  const rows = rail ? items.map((it, i) => {
-    const li = document.createElement("li"), b = document.createElement("button");
-    b.type = "button"; b.style.setProperty("--c", it.c || "#d8b45a"); b.innerHTML = `<i></i><span>${it.name || it.label}</span>`;
-    b.addEventListener("click", () => pick(i)); li.appendChild(b); rail.appendChild(li); return b;
-  }) : [];
-  /* each body: where it is, where it is going, and when it is due */
-  const S = items.map((it, i) => ({ a: 0, from: 0, to: 0, t0: 0, t1: 0, kick: 0, locked: false, hold: holdFor(it.line) }));
-  const pace = (i) => PACE[i % PACE.length];
-  const CYCLE = S.reduce((sum, b) => sum + b.hold + GAP, 0);   /* one turn of the whole sequence */
-  let raf = 0, current = -1, running = false;
-  /* the way from one angle to the next: a short push off, a steady drift
-     at one speed for as long as the way is, and a slow settle onto the
-     mark at the end — the docking, not a dash */
-  function angleAt(b, now) {
-    if (now <= b.t0) return b.from;
-    if (now >= b.t1) return b.to;
-    const T = b.t1 - b.t0, t = now - b.t0, A = b.to - b.from;
-    const Ti = Math.min(700, T * 0.2), Te = Math.min(1500, T * 0.45);
-    const v = A / (T - Ti / 2 - Te / 2);
-    if (t < Ti) { const u = t / Ti; return b.from + v * Ti * u * u / 2; }
-    if (t < T - Te) return b.from + v * Ti / 2 + v * (t - Ti);
-    const u = (t - (T - Te)) / Te;
-    return b.from + v * Ti / 2 + v * (T - Te - Ti) + v * Te / 2 * (1 - (1 - u) * (1 - u));
+/* THE INSTALL: the one line in the ring, and beside it the launcher itself —
+   its own screens, in the order a session sees them, each held for a
+   reading and crossfaded to the next. Nothing here is written for the page:
+   the command, and the software. */
+const SHOTS = [
+  ["01-splash", "splash"], ["02-install-profile", "install · profile"], ["03-install-ready", "install · ready"],
+  ["04-install-console", "install · running"], ["05-install-success", "install · done"], ["06-splash-alive", "splash · running"],
+  ["07-update-confirm", "update · confirm"], ["08-update-console", "update · running"], ["09-repair-proposed", "repair · proposed"],
+  ["10-repair-applied", "repair · applied"], ["11-remove-confirm", "remove · confirm"], ["12-remove-done", "remove · done"],
+];
+const SHOT_HOLD = 3400;
+export function createInstall(pad) {
+  const term = $(".term", pad), imgs = [...term.querySelectorAll(".screen img")], scene = $(".scene", term);
+  let at = -1, face = 0, timer = 0, running = false;
+  const src = (i) => `assets/img/launcher/${SHOTS[i][0]}.webp`;
+  function show(i) {
+    at = i; face = 1 - face;
+    const img = imgs[face], other = imgs[1 - face];
+    img.src = src(i); img.alt = `The launcher: ${SHOTS[i][1]}`;
+    img.classList.add("on"); other.classList.remove("on");
+    scene.textContent = SHOTS[i][1];
+    /* the next one, fetched while this one is read */
+    const n = new Image(); n.src = src((i + 1) % SHOTS.length);
   }
-  /* a released body clears the mark before the next arrives: a push that it
-     gives back over the rest of the way, so it still docks on time */
-  const KICK_T = 2400;
-  function angleWithKick(b, now) {
-    const a = angleAt(b, now);
-    if (!b.kick || now <= b.t0 || now >= b.t1) return a;
-    const t = now - b.t0, T = b.t1 - b.t0, k = Math.min(1, t / KICK_T);
-    return a + b.kick * ((1 - (1 - k) * (1 - k)) - t / T);
-  }
-  /* plan body i's path so it reaches the bottom at `due`: the way there, plus
-     whatever whole turns its own pace would cover in the time it has */
-  function plan(i, now, due, kick = 0) {
-    const b = S[i], from = angleWithKick(b, now), window = Math.max(1, due - now);
-    const ahead = (((BOTTOM - from) % 360) + 360) % 360;
-    const want = pace(i) * window / 1000;
-    const extra = Math.max(0, Math.round((want - ahead) / 360));
-    b.from = from; b.to = from + ahead + 360 * extra; b.t0 = now; b.t1 = due; b.kick = kick; b.locked = false;
-  }
-  function lock(i) {
-    current = i;
-    const c = items[i].c || "#d8b45a";
-    bodies.forEach((g, j) => g.classList.toggle("on", j === i));
-    rows.forEach((r, j) => { r.classList.toggle("on", j === i); if (j === i) r.classList.add("seen"); });
-    stage.style.setProperty("--c", c);
-    lockup.style.setProperty("--c", c); lockup.style.setProperty("--hold", `${S[i].hold}ms`);
-    stage.classList.remove("in"); lockup.classList.remove("in"); void stage.offsetWidth;
-    n.textContent = String(i + 1).padStart(2, "0"); if (big) big.textContent = n.textContent;
-    label.textContent = items[i].label; line.textContent = items[i].line;
-    if (items[i].href) { go.href = items[i].href; go.hidden = false; } else go.hidden = true;
-    stage.classList.add("in"); lockup.classList.add("in");
-  }
-  function release(i) {
-    bodies[i].classList.remove("on"); rows[i]?.classList.remove("on");
-    if (current === i) { stage.classList.remove("in"); lockup.classList.remove("in"); }
-  }
-  let lastNames = 0;
-  function frame(now) {
+  function tick() {
     if (!running) return;
-    const names = now - lastNames > 48;
-    if (!size) measure();
-    S.forEach((b, i) => {
-      const held = now >= b.t1 && now < b.t1 + b.hold;
-      if (held && !b.locked) { b.locked = true; lock(i); }
-      if (!held && b.locked) { release(i); plan(i, now, b.t1 + CYCLE, 18); }
-      /* a due that went by unseen (the page was away): the body goes round again */
-      else if (!held && !b.locked && now >= b.t1 + b.hold) plan(i, now, b.t1 + CYCLE);
-      b.a = angleWithKick(b, now);
-      bodies[i].style.transform = `rotate(${b.a.toFixed(2)}deg)`;
-      /* the name, just past the leader, on the side away from the body — moved every third frame */
-      if (names) {
-        const t = (b.a * Math.PI) / 180, ux = Math.cos(t), uy = Math.sin(t), r = (RADIUS(i) + 20) / 200 * size;
-        const ax = ux > 0.38 ? 0 : ux < -0.38 ? -100 : -50, ay = uy < -0.55 ? -100 : uy > 0.55 ? 0 : -50;
-        tags[i].style.transform = `translate(calc(${(ux * r).toFixed(1)}px + ${ax}%), calc(${(uy * r).toFixed(1)}px + ${ay}%))`;
-        tags[i].classList.toggle("on", b.locked);
-      }
-    });
-    if (names) lastNames = now;
-    raf = requestAnimationFrame(frame);
+    if (!document.hidden && !pad.hidden) show((at + 1) % SHOTS.length);
+    timer = setTimeout(tick, at === 0 ? SHOT_HOLD * 1.4 : SHOT_HOLD);
   }
-  /* the dues, in sequence from body i at `first`: each follows the last by its hold and the gap */
-  function schedule(first, i, now) {
-    let due = first;
-    for (let d = 0; d < N; d++) { const j = (i + d) % N; plan(j, now, due); due += S[j].hold + GAP; }
-  }
-  /* a body asked for: it comes to the bottom next, and the turn goes on from there */
-  function pick(i) {
-    const now = performance.now();
-    S.forEach((b, j) => { if (b.locked) release(j); });
-    schedule(now + PICK, i, now);
-  }
-  /* back from another tab: the sequence picks up from the next one, in step */
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden || !running) return;
-    const now = performance.now();
-    S.forEach((b, j) => { if (b.locked) release(j); });
-    schedule(now + PICK, current >= 0 ? (current + 1) % N : 0, now);
-  });
   return {
-    start() {
-      running = true;
-      const now = performance.now();
-      rows.forEach((r) => r.classList.remove("seen", "on"));
-      /* each starts where its own pace would have it, so the first cycle is already a steady drift */
-      let due = now + (reduced ? 200 : LEAD);
-      S.forEach((b, i) => { b.a = b.from = b.to = BOTTOM - pace(i) * (due - now) / 1000; b.t0 = b.t1 = now; due += b.hold + GAP; });
-      schedule(now + (reduced ? 200 : LEAD), 0, now);
-      cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
-    },
-    stop() {
-      running = false; cancelAnimationFrame(raf); raf = 0; current = -1;
-      S.forEach((b) => { b.locked = false; });
-      bodies.forEach((g) => g.classList.remove("on")); rows.forEach((r) => r.classList.remove("on"));
-      stage.classList.remove("in"); lockup.classList.remove("in");
-    },
+    start() { running = true; clearTimeout(timer); show(0); timer = setTimeout(tick, SHOT_HOLD * 1.4); },
+    stop() { running = false; clearTimeout(timer); at = -1; imgs.forEach((i) => i.classList.remove("on")); },
   };
 }
 

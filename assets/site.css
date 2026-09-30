@@ -703,62 +703,25 @@ body.launching #door .planets,body.showwarp #door .planets{opacity:0;transition:
 .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
 .pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
 body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
-#installpad{--RI:min(380px,64vw,42svh)}
-#installpad .loginchrome .lockup .glyph svg{width:var(--RI)}
-#installpad .bodies{grid-area:1/1;position:relative;width:var(--RI);aspect-ratio:1;--u:calc(var(--RI) / 200)}
-#installpad .timerlayer{grid-area:1/1;width:var(--RI);height:var(--RI);overflow:visible;pointer-events:none}
-.pad .stage-body{position:absolute;left:50%;top:50%;width:0;height:0;padding:0;border:0;background:none;cursor:pointer;outline:0;will-change:transform;
-  opacity:0;transition:opacity .7s ease calc(.6s + .14s * var(--i))}
-body.arrived .pad .stage-body{opacity:1}
-.pad .stage-body i{position:absolute;left:calc(var(--r) * var(--u));top:0;transform:translate(-50%,-50%);border-radius:50%;box-sizing:border-box;display:block}
-.pad .stage-body .hit{width:calc(26 * var(--u));height:calc(26 * var(--u))}
-.pad .stage-body .dot{width:calc(8 * var(--u));height:calc(8 * var(--u));background:var(--c);opacity:.8;transition:transform .4s,box-shadow .5s,opacity .5s}
-.pad .stage-body .halo{width:calc(14.4 * var(--u));height:calc(14.4 * var(--u));border:max(1px,calc(.6 * var(--u))) solid var(--c);opacity:.38;transition:opacity .5s}
-.pad .stage-body .lead{width:calc(7.8 * var(--u));height:max(1px,calc(.6 * var(--u)));border-radius:0;background:var(--c);opacity:.38;transform:translate(calc(-50% + 11.1 * var(--u)),-50%);transition:opacity .5s}
-.pad .stage-body.on .dot,.pad .stage-body:hover .dot,.pad .stage-body:focus-visible .dot{opacity:1;box-shadow:0 0 6px var(--c)}
-.pad .stage-body.on .dot{transform:translate(-50%,-50%) scale(1.25)}
-.pad .stage-body.on .halo,.pad .stage-body:hover .halo,.pad .stage-body:focus-visible .halo,.pad .stage-body.on .lead,.pad .stage-body:hover .lead,.pad .stage-body:focus-visible .lead{opacity:1}
-.pad .orbits circle{fill:none;stroke:var(--ink-faint);stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
-.pad .bodies .tag{position:absolute;left:50%;top:50%;white-space:nowrap;font:500 calc(4.4 * var(--u)) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:var(--c);opacity:.62;
-  text-shadow:0 0 2px var(--bg),0 0 4px var(--bg),0 0 8px var(--bg);transition:opacity .5s;will-change:transform;pointer-events:none}
-.pad .bodies .tag.on{opacity:1}
-body.bare .pad .bodies{opacity:0}
 .pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
 .pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
 .pad .gate{opacity:1;transform:none;transition:filter .35s ease}
 .pad .gate[data-done]{background:var(--ink)}
-.pad .stage{position:absolute;left:50%;transform:translateX(-50%);top:calc(50% + min(420px,84vw,48svh) * .36 + 26px);width:min(52ch,calc(100% - 48px));z-index:3;text-align:center;
   opacity:0;transition:opacity .5s ease}
-.pad .stage.in{opacity:1}
-.pad .stage .corner{color:var(--ink-quiet);text-shadow:none}
-.pad .stage .corner .n{color:var(--accent-text);font-weight:500}
-.pad .stage .corner .sep{color:var(--ink-faint);margin:0 6px}
-.pad .stage .line{margin:10px 0 0;font:15px/1.5 var(--ui);color:var(--ink);text-wrap:balance}
-.pad .stage.in .line{animation:ivopen .5s cubic-bezier(.2,.7,.2,1) 1}
-.pad .stage .go{display:inline-block;margin-top:10px;font:11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent-text);text-decoration:none}
-.pad .stage .go:hover{color:var(--ink)}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching .pad{visibility:hidden;pointer-events:none}
-body.bare .pad .stage,body.bare .pad .back,body.bare .pad .home,body.bare .pad .word,body.bare .pad .launchcmd{opacity:0;pointer-events:none}
+body.bare .pad .back,body.bare .pad .home,body.bare .pad .word{opacity:0;pointer-events:none}
 body.bare .pad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
 body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .home{animation:chromein 1.3s ease .45s both}
 /* and leaves the way the sky does */
-body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .home,body.withdrawing .pad .stage,body.withdrawing .pad .launchcmd{animation:chromeout .45s ease both}
+body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .home{animation:chromeout .45s ease both}
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 /* the install's own line, back with the instrument */
-.launchcmd{position:absolute;left:50%;transform:translateX(-50%);bottom:max(70px,calc(24px + 7svh));width:min(760px,calc(100% - 40px));z-index:3;
   opacity:0;transition:opacity 1.3s ease .9s}
-body.instrument .launchcmd{opacity:1}
-.launchcmd .cmd{background:rgba(10,13,24,.86);border-color:#2a3148}
-.launchcmd .cmd code{color:#e9edf8}
-@media (max-height:700px){.pad .stage .line{font-size:13.5px}}
 @media (max-width:560px){
   .pad .loginchrome{padding-bottom:16svh}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
-  #installpad{--RI:min(380px,62vw,38svh)}
-  .pad .stage{top:calc(50% - 8svh + min(420px,84vw,42svh) * .36 + 24px)}
-  .launchcmd{bottom:82px}
 }
 @media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
@@ -773,7 +736,6 @@ body.instrument .launchcmd{opacity:1}
 body.bare .pad .doorfoot{opacity:0}
 body.instrument .pad .doorfoot{animation:chromein 1.3s ease .45s both}
 body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
-@media (max-width:560px){.launchcmd{bottom:96px}}
 
 /* ══ THE DOCS: an index, searched ══════════════════════════════════════ */
 .pad .scroll{position:absolute;inset:0;z-index:3;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
@@ -864,44 +826,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 
 /* ══ THE INSTALL: the ring on the left, the words beside it, the six in a
    rail under them; on a phone the words sit inside the ring instead ══ */
-#installpad .stagegrid{position:relative;display:grid;grid-template-columns:auto minmax(280px,400px);align-items:center;gap:clamp(40px,6vw,88px);transform:translateY(-5svh)}
-#installpad .lockup{--c:var(--accent)}
-#installpad .tint{grid-area:1/1;width:var(--RI);aspect-ratio:1;border-radius:50%;pointer-events:none;
-  background:radial-gradient(circle at 50% 66%,var(--c) 0%,transparent 58%);opacity:0;transition:opacity .9s ease,background .6s}
-#installpad .lockup.in .tint{opacity:.14}
-#installpad .face{grid-area:1/1;pointer-events:none;display:grid;place-items:center;padding-bottom:6px}
-#installpad .face .big{font:500 clamp(72px,8vw,104px)/1 var(--display);letter-spacing:-.06em;color:var(--c);opacity:0;transform:scale(.92);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
-#installpad .lockup.in .face .big{opacity:.15;transform:none}
-#installpad .timer{stroke:var(--c);stroke-width:2;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;opacity:0;transition:opacity .4s}
-#installpad .lockup.in .timer{opacity:.85;animation:timerrun var(--hold,5s) linear both}
-@keyframes timerrun{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
-#installpad .side{display:flex;flex-direction:column;gap:26px;text-align:left}
-#installpad .side .over{margin:0;color:var(--ink-quiet);text-shadow:none}
-#installpad .side .stage{position:static;transform:none;width:auto;top:auto;left:auto;text-align:left;opacity:0;transition:opacity .5s ease;min-height:150px}
-#installpad .side .stage.in{opacity:1}
-#installpad .stage .corner .n{color:var(--c)}
-#installpad .stage .label{display:block;margin-top:14px;font:500 11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--c)}
-#installpad .stage .line{margin:10px 0 0;font:500 clamp(22px,2.1vw,30px)/1.3 var(--display);letter-spacing:-.012em;color:var(--ink);text-wrap:balance;max-width:18ch}
-#installpad .stage.in .line{animation:ivopen .5s cubic-bezier(.2,.7,.2,1) 1}
-#installpad .rail{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
-#installpad .rail button{display:grid;grid-template-columns:22px auto;align-items:center;gap:8px;background:none;border:0;padding:5px 0;cursor:pointer;text-align:left;
-  font:500 10.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);transition:color .35s}
-#installpad .rail button i{width:6px;height:6px;border-radius:50%;background:var(--c);opacity:.4;justify-self:center;transition:opacity .35s,box-shadow .35s,transform .35s}
-#installpad .rail button:hover,#installpad .rail button:focus-visible{color:var(--ink-mid);outline:0}
-#installpad .rail button.seen i{opacity:.8}
-#installpad .rail button.on{color:var(--c)}
-#installpad .rail button.on i{opacity:1;box-shadow:0 0 10px var(--c);transform:scale(1.5)}
-body.bare #installpad .side,body.bare #installpad .face,body.bare #installpad .tint{opacity:0;pointer-events:none}
-body.instrument #installpad .side{animation:chromein 1.3s ease .45s both}
-body.withdrawing #installpad .side{animation:chromeout .45s ease both}
-body.dispersing #installpad .face,body.dispersing #installpad .tint{opacity:0}
 @media (max-width:899px){
-  #installpad .stagegrid{display:block;transform:translateY(-2svh)}
-  #installpad .side{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;gap:0}
-  #installpad .side .over,#installpad .rail,#installpad .face{display:none}
-  #installpad .side .stage{pointer-events:auto;text-align:center;min-height:0;width:calc(var(--RI) * .66);display:flex;flex-direction:column;align-items:center;gap:8px}
-  #installpad .stage .label{margin-top:0;font-size:10.5px}
-  #installpad .stage .line{margin:0;font-size:15px;line-height:1.45;max-width:none}
   body.instrument #installpad .side{animation:none}
 }
 @media (max-width:560px){#installpad .side .stage{width:calc(var(--RI) * .72)}#installpad .stage .line{font-size:13.5px}}
@@ -1089,3 +1014,39 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 .pad.docs .chart.settled .con .lines line{animation:none;stroke-dashoffset:0}
 .pad.docs .chart.drawn.settled .star{animation:none;opacity:1}
 .pad.docs .chart.drawn.settled .star .dot{animation:none}
+
+/* ══ THE INSTALL: the one line in the ring, and the launcher beside it ══ */
+#installpad{--RI:min(380px,64vw,42svh)}
+#installpad .loginchrome .lockup .glyph svg{width:var(--RI)}
+#installpad .loginchrome{align-content:center}
+#installpad .installgrid{display:grid;grid-template-columns:auto minmax(380px,600px);align-items:center;gap:clamp(40px,6vw,80px)}
+#installpad .port{grid-area:1/1;width:calc(var(--RI) * .62);display:flex;flex-direction:column;align-items:center;gap:14px;text-align:left}
+#installpad .port .line{display:block;font:13px/1.55 var(--mono);color:var(--ink);overflow-wrap:anywhere;cursor:copy;transition:color .3s}
+#installpad .port .line .prompt{color:var(--accent-text)}
+#installpad .port .line[data-done]{color:var(--accent-text)}
+#installpad .port .copy{font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-mid);background:none;border:1px solid var(--line);border-radius:99px;padding:7px 16px;cursor:pointer;transition:border-color .2s,color .2s}
+#installpad .port .copy:hover{border-color:var(--accent);color:var(--accent-text)}
+#installpad .term{margin:0;position:relative;border:1px solid var(--line);border-radius:14px;background:#0b0e14;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+#installpad .term figcaption{display:flex;align-items:center;gap:12px;height:34px;padding:0 14px;border-bottom:1px solid var(--line-soft);font:10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+#installpad .term .dots{display:flex;gap:6px}
+#installpad .term .dots i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+#installpad .term .title{color:var(--ink-mid)}
+#installpad .term .scene{margin-left:auto;color:var(--accent-text);transition:opacity .4s}
+#installpad .term .screen{position:relative;aspect-ratio:16/9;background:#0b0e14}
+#installpad .term .screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.1s ease}
+#installpad .term .screen img.on{opacity:1}
+#installpad .oneline{margin:38px 0 0;text-align:center;font:15px/1.5 var(--ui);color:var(--ink-mid)}
+body.bare #installpad .port,body.bare #installpad .term,body.bare #installpad .oneline{opacity:0;pointer-events:none}
+body.instrument #installpad .port,body.instrument #installpad .oneline{animation:chromein 1.3s ease .45s both}
+body.instrument #installpad .term{animation:termin 1.4s cubic-bezier(.2,.7,.2,1) .7s both}
+@keyframes termin{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+body.withdrawing #installpad .port,body.withdrawing #installpad .term,body.withdrawing #installpad .oneline{animation:chromeout .45s ease both}
+body.dispersing #installpad .port{opacity:0}
+@media (max-width:1000px){
+  #installpad .installgrid{display:flex;flex-direction:column;gap:30px;transform:none;padding:80px 0 40px}
+  #installpad .term{width:min(600px,calc(100vw - 40px))}
+  #installpad .oneline{margin-top:26px}
+  #installpad .loginchrome{align-content:start;overflow-y:auto}
+}
+@media (max-width:560px){#installpad{--RI:min(380px,74vw,40svh)}#installpad .port{width:calc(var(--RI) * .7)}#installpad .port .line{font-size:12px}}
+@media (prefers-reduced-motion:reduce){#installpad .term .screen img{transition:none}body.instrument #installpad .term{animation:none}}
