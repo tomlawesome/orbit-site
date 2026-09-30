@@ -1025,6 +1025,14 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad .copy.core[data-done]{color:var(--accent-text)}
 #installpad .dark{position:absolute;left:50%;top:calc(47% + min(24vw,24svh) + 58px);transform:translateX(-50%);margin:0;z-index:3;text-align:center;font:600 clamp(17px,1.7vw,24px)/1.35 var(--display);letter-spacing:-.01em;color:var(--ink);text-wrap:balance;width:max-content;max-width:calc(100% - 40px)}
 @media (max-width:700px){#installpad .dark{top:calc(44% + 30vw + 54px);font-size:17px}}
+/* forming: the install sits over the door with no floor of its own, so the door's sun is what climbs;
+   its own sky and chrome arrive at totality */
+#installpad.forming{background:transparent;z-index:37}
+#installpad.forming .sky,#installpad.forming .vignette,#installpad.forming .back,#installpad.forming .home,#installpad.forming .doorfoot{opacity:0;transition:opacity 1.2s ease}
+#installpad.forming .copy.core,#installpad.forming .dark{opacity:0;transition:opacity 1.2s ease;pointer-events:none}
+#installpad.formed .sky,#installpad.formed .vignette,#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot{opacity:1;transition:opacity 1.6s ease}
+#installpad.formed .copy.core,#installpad.formed .dark,#installpad.formed .eclipse{animation:none;opacity:1;transition:opacity 1.2s ease}
+body.eclipsing #door .loginchrome,body.eclipsing #door .planets,body.eclipsing #door .doorfoot{opacity:0;transition:opacity .9s ease;pointer-events:none}
 body.bare #installpad .eclipse,body.bare #installpad .copy.core,body.bare #installpad .dark{opacity:0}
 body.instrument #installpad .eclipse,body.instrument #installpad .copy.core{animation:chromein 1.6s ease .3s both}
 body.instrument #installpad .dark{animation:chromein 1.6s ease 1.1s both}
