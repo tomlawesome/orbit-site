@@ -21,7 +21,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
-| `assets/js/install.js` | The install: an eclipse. The command is the corona, the launcher runs on the sun's face behind a disc the pointer moves, and the scroll brings the sun out |
+| `assets/js/install.js` | The install: an eclipse. The command is the corona, written round the rim and turning slowly; copy is the one word on the disc |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
