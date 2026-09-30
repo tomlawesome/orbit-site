@@ -64,10 +64,15 @@ export function createInstall(pad) {
     c.beginPath(); c.arc(o, o, R * 1.005, 0, 6.284); c.stroke();
     c.shadowBlur = 0;
     /* the command, written round the rim, once, letter by letter */
-    const fs = Math.max(9.5, Math.min(13, R * 0.075));
-    c.font = `500 ${fs}px 'JetBrains Mono', monospace`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillStyle = GOLD;
-    const rr = R * 1.13, gap = fs * 0.62;
-    const total = [...CMD].reduce((s, ch) => s + Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42, 0);
+    /* as large as the ring allows: the whole line on the rim once, with a breath at the end */
+    let fs = Math.max(11.5, Math.min(16.5, R * 0.1));
+    const rr = R * 1.15;
+    const measure = () => { c.font = `600 ${fs}px 'JetBrains Mono', monospace`; const gap = fs * 0.62; return [...CMD].reduce((s, ch) => s + Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42, 0); };
+    let total = measure();
+    if (total > 2 * Math.PI * rr * 0.9) { fs = Math.max(8, fs * (2 * Math.PI * rr * 0.9) / total); total = measure(); }
+    const gap = fs * 0.62;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = "#ffd989"; c.shadowColor = hexa(GOLD, 0.9); c.shadowBlur = 10;
     let a = -Math.PI / 2 - total / rr / 2;
     for (const ch of CMD) {
       const w = Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42;
@@ -75,6 +80,7 @@ export function createInstall(pad) {
       c.save(); c.translate(o + Math.cos(a) * rr, o + Math.sin(a) * rr); c.rotate(a + Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
       a += w / rr / 2;
     }
+    c.shadowBlur = 0;
     /* the sun's face: its glow, drawn once; the launcher's picture goes on top each frame */
     sun = document.createElement("canvas"); sun.width = sun.height = Math.round(R * 2 * dpr);
     const s = sun.getContext("2d"); s.setTransform(dpr, 0, 0, dpr, 0, 0);
