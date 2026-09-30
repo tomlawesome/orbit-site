@@ -1015,31 +1015,24 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 .pad.docs .chart.drawn.settled .star{animation:none;opacity:1}
 .pad.docs .chart.drawn.settled .star .dot{animation:none}
 
-/* ══ THE INSTALL: one real object, and the scroll as its clock ═══════════ */
-#installpad .stage{position:absolute;inset:0;z-index:2;width:100%;height:100%;pointer-events:none}
-#installpad .track{position:absolute;inset:0;z-index:3;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+/* ══ THE INSTALL: an eclipse ══════════════════════════════════════════════ */
+#installpad .eclipse{position:absolute;inset:0;z-index:2;pointer-events:none}
+#installpad .track{position:absolute;inset:0;z-index:3;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;user-select:none;-webkit-user-select:none}
+#installpad{user-select:none;-webkit-user-select:none}
 #installpad .track::-webkit-scrollbar{display:none}
-#installpad .spacer{height:380svh}
-#installpad .sticky{position:sticky;top:0;height:100svh;margin-top:-380svh;pointer-events:none}
-#installpad .lead{position:absolute;left:50%;top:clamp(56px,7svh,90px);transform:translateX(-50%);width:min(1100px,calc(100% - 48px));text-align:center;pointer-events:auto;transition:opacity .6s,transform .8s cubic-bezier(.2,.7,.2,1)}
-#installpad .lead>.corner{display:block;margin-bottom:16px}
-#installpad .theline{margin:0 auto;font:600 clamp(17px,2.1vw,30px)/1.3 var(--display);letter-spacing:-.012em;color:var(--ink);text-wrap:balance;overflow-wrap:anywhere;cursor:copy;max-width:36ch;transition:color .3s}
-#installpad .theline .prompt{color:var(--accent-text);margin-right:.35em}
-#installpad .theline[data-done]{color:var(--accent-text)}
-#installpad .copy.magnet{margin-top:16px;font:600 11.5px var(--display);letter-spacing:.14em;text-transform:uppercase;color:#04060e;background:var(--accent);border:0;border-radius:99px;padding:12px 30px;cursor:pointer;box-shadow:0 0 34px color-mix(in srgb,var(--accent) 28%,transparent);transition:transform .25s cubic-bezier(.2,.7,.2,1),filter .3s,box-shadow .3s}
-#installpad .copy.magnet:hover{filter:brightness(1.08);box-shadow:0 0 48px color-mix(in srgb,var(--accent) 40%,transparent)}
-#installpad .copy.magnet[data-done]{filter:brightness(1.15)}
-#installpad.scrolled .lead{opacity:.55;transform:translateX(-50%) translateY(-18px)}
-#installpad.scrolled .lead:hover{opacity:1}
-#installpad .flat{position:absolute;left:50%;top:50%;transform:translate(-50%,-44%);margin:0;width:min(900px,calc(100% - 40px));aspect-ratio:16/9;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0b0e14;box-shadow:0 40px 100px rgba(0,0,0,.5)}
-#installpad .flat img{width:100%;height:100%;object-fit:cover;display:block}
-#installpad .scene{position:absolute;left:24px;bottom:44px;margin:0;display:flex;gap:12px;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint)}
+#installpad .spacer{height:320svh}
+#installpad .sticky{position:sticky;top:0;height:100svh;margin-top:-320svh;pointer-events:none}
+/* the line is written round the ring on the canvas; here it is for the reader and the clipboard */
+#installpad .theline{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+#installpad .copy.core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:auto;font:500 10.5px var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--ink-mid);background:none;border:0;padding:14px 18px;cursor:pointer;transition:color .3s}
+#installpad .copy.core:hover{color:var(--accent-text)}
+#installpad .copy.core[data-done]{color:var(--accent-text)}
+#installpad .scene{position:absolute;left:24px;bottom:44px;margin:0;display:flex;gap:12px;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);opacity:0;transition:opacity .6s}
 #installpad .scene .n{color:var(--accent-text)}
-#installpad .cue{position:absolute;right:24px;bottom:44px;margin:0;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);animation:cue 2.4s ease-in-out infinite;transition:opacity .5s}
-@keyframes cue{50%{transform:translateY(-5px);opacity:.5}}
-#installpad.scrolled .cue{opacity:0}
-body.bare #installpad .track,body.bare #installpad .stage{opacity:0}
-body.instrument #installpad .track,body.instrument #installpad .stage{animation:chromein 1.3s ease .35s both}
-body.withdrawing #installpad .track,body.withdrawing #installpad .stage{animation:chromeout .45s ease both}
-@media (max-width:700px){#installpad .lead{top:64px}#installpad .theline{font-size:17px;max-width:none}#installpad .scene{bottom:96px}#installpad .cue{bottom:96px}#installpad .flat{transform:translate(-50%,-30%)}}
-@media (prefers-reduced-motion:reduce){#installpad .cue{animation:none}}
+#installpad.open .scene{opacity:1}
+#installpad .gate.rise{position:absolute;left:50%;top:calc(47% + min(24vw,24svh) + 44px);transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity .6s}
+@media (max-width:700px){#installpad .gate.rise{top:calc(44% + 30vw + 40px)}}
+body.bare #installpad .track,body.bare #installpad .eclipse{opacity:0}
+body.instrument #installpad .track,body.instrument #installpad .eclipse{animation:chromein 1.6s ease .3s both}
+body.withdrawing #installpad .track,body.withdrawing #installpad .eclipse{animation:chromeout .45s ease both}
+@media (max-width:700px){#installpad .scene{bottom:96px}}
