@@ -409,41 +409,6 @@ export function createInfo(pad) {
    due: it covers what its pace allows in the time it has, and no more. */
 /* a line is held for as long as it takes to read: a floor, and time per word */
 
-/* THE INSTALL: the one line in the ring, and beside it the launcher itself —
-   its own screens, in the order a session sees them, each held for a
-   reading and crossfaded to the next. Nothing here is written for the page:
-   the command, and the software. */
-const SHOTS = [
-  ["01-splash", "splash"], ["02-install-profile", "install · profile"], ["03-install-ready", "install · ready"],
-  ["04-install-console", "install · running"], ["05-install-success", "install · done"], ["06-splash-alive", "splash · running"],
-  ["07-update-confirm", "update · confirm"], ["08-update-console", "update · running"], ["09-repair-proposed", "repair · proposed"],
-  ["10-repair-applied", "repair · applied"], ["11-remove-confirm", "remove · confirm"], ["12-remove-done", "remove · done"],
-];
-const SHOT_HOLD = 3400;
-export function createInstall(pad) {
-  const term = $(".term", pad), imgs = [...term.querySelectorAll(".screen img")], scene = $(".scene", term);
-  let at = -1, face = 0, timer = 0, running = false;
-  const src = (i) => `assets/img/launcher/${SHOTS[i][0]}.webp`;
-  function show(i) {
-    at = i; face = 1 - face;
-    const img = imgs[face], other = imgs[1 - face];
-    img.src = src(i); img.alt = `The launcher: ${SHOTS[i][1]}`;
-    img.classList.add("on"); other.classList.remove("on");
-    scene.textContent = SHOTS[i][1];
-    /* the next one, fetched while this one is read */
-    const n = new Image(); n.src = src((i + 1) % SHOTS.length);
-  }
-  function tick() {
-    if (!running) return;
-    if (!document.hidden && !pad.hidden) show((at + 1) % SHOTS.length);
-    timer = setTimeout(tick, at === 0 ? SHOT_HOLD * 1.4 : SHOT_HOLD);
-  }
-  return {
-    start() { running = true; clearTimeout(timer); show(0); timer = setTimeout(tick, SHOT_HOLD * 1.4); },
-    stop() { running = false; clearTimeout(timer); at = -1; imgs.forEach((i) => i.classList.remove("on")); },
-  };
-}
-
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
 export function wirePlanets(door, onGo) {
   /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge */
