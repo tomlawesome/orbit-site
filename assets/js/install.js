@@ -40,16 +40,19 @@ export function createInstall(pad) {
        length, denser at the poles the way a real one is — then the
        chromosphere, a hair of rose at the limb, and a few prominences */
     const rnd = (() => { let x = 20260930; return () => (x = (x * 48271) % 2147483647) / 2147483647; })();
-    for (let k = 0; k < 3; k++) {
-      const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * (1.3 + k * 0.45));
-      g.addColorStop(0, hexa(k ? RIM : SUN, k ? 0.13 / k : 0.34)); g.addColorStop(1, hexa(RIM, 0));
-      c.fillStyle = g; c.beginPath(); c.arc(o, o, R * (1.3 + k * 0.45), 0, 6.284); c.fill();
+    /* the far haze, wide and dim, then the base glow, then the inner corona: a
+       tight band of near-white, so the light has a near and a far */
+    for (const [rad, col, al] of [[2.5, RIM, 0.07], [1.9, RIM, 0.13], [1.45, GOLD, 0.26], [1.18, SUN, 0.42]]) {
+      const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * rad);
+      g.addColorStop(0, hexa(col, al)); g.addColorStop(0.5, hexa(col, al * 0.35)); g.addColorStop(1, hexa(col, 0));
+      c.fillStyle = g; c.beginPath(); c.arc(o, o, R * rad, 0, 6.284); c.fill();
     }
     c.save(); c.translate(o, o); c.globalCompositeOperation = "lighter";
-    for (let i = 0; i < 260; i++) {
+    for (let i = 0; i < 320; i++) {
       const a = rnd() * 6.283, polar = Math.pow(Math.abs(Math.sin(a * 2)), 0.6);
-      const len = R * (0.25 + rnd() * rnd() * 1.1 * (0.5 + polar)), w = 0.6 + rnd() * 2.2, al = 0.05 + rnd() * 0.16;
-      const g = c.createLinearGradient(0, R, 0, R + len); g.addColorStop(0, hexa(SUN, al)); g.addColorStop(0.35, hexa(SUN, al * 0.5)); g.addColorStop(1, hexa(RIM, 0));
+      const long = rnd() < 0.3;
+      const len = R * (long ? 0.6 + rnd() * 1.5 * (0.5 + polar) : 0.12 + rnd() * rnd() * 0.5), w = long ? 0.8 + rnd() * 2.6 : 0.4 + rnd() * 1.2, al = long ? 0.05 + rnd() * 0.14 : 0.12 + rnd() * 0.3;
+      const g = c.createLinearGradient(0, R, 0, R + len); g.addColorStop(0, hexa(long ? SUN : "#ffe1a0", al * (long ? 1 : 0.8))); g.addColorStop(0.35, hexa(GOLD, al * 0.5)); g.addColorStop(1, hexa(RIM, 0));
       c.save(); c.rotate(a); c.fillStyle = g; c.beginPath(); c.moveTo(-w, R * 0.99); c.lineTo(w, R * 0.99); c.lineTo(w * 0.3, R + len); c.lineTo(-w * 0.3, R + len); c.closePath(); c.fill(); c.restore();
     }
     c.restore();
@@ -63,18 +66,20 @@ export function createInstall(pad) {
     /* the command, written round the rim, once, letter by letter */
     /* as large as the ring allows: the whole line on the rim once, with a breath at the end */
     let fs = Math.max(11.5, Math.min(16.5, R * 0.1));
-    const rr = R * 1.15;
+    const rr = R * 1.16;
     const measure = () => { c.font = `600 ${fs}px 'JetBrains Mono', monospace`; const gap = fs * 0.62; return [...CMD].reduce((s, ch) => s + Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42, 0); };
     let total = measure();
     if (total > 2 * Math.PI * rr * 0.9) { fs = Math.max(8, fs * (2 * Math.PI * rr * 0.9) / total); total = measure(); }
     const gap = fs * 0.62;
     c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillStyle = "#ffd989"; c.shadowColor = hexa(GOLD, 0.9); c.shadowBlur = 10;
+    c.fillStyle = "#fff4dc"; c.strokeStyle = "rgba(6,11,28,.75)"; c.lineWidth = 3.5; c.lineJoin = "round";
+    c.shadowColor = hexa(GOLD, 0.95); c.shadowBlur = 12;
     let a = -Math.PI / 2 - total / rr / 2;
     for (const ch of CMD) {
       const w = Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42;
       a += w / rr / 2;
-      c.save(); c.translate(o + Math.cos(a) * rr, o + Math.sin(a) * rr); c.rotate(a + Math.PI / 2); c.fillText(ch, 0, 0); c.restore();
+      c.save(); c.translate(o + Math.cos(a) * rr, o + Math.sin(a) * rr); c.rotate(a + Math.PI / 2);
+      c.save(); c.shadowBlur = 0; c.strokeText(ch, 0, 0); c.restore(); c.fillText(ch, 0, 0); c.restore();
       a += w / rr / 2;
     }
     c.shadowBlur = 0;
