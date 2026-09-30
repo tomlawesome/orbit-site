@@ -76,7 +76,41 @@ function leaveCurrent() {
   else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); setTimeout(() => { h.hidden = true; }, 800); }
 }
 /* a section: the flight there, and the landing */
+/* where the door's sun rises, on screen (the world's own origin, set by its rasters) */
+function sunrisePoint() {
+  const w = $("#door .world"), r = w.getBoundingClientRect();
+  const ox = parseFloat(w.style.getPropertyValue("--ox")), oy = parseFloat(w.style.getPropertyValue("--oy"));
+  return { ox: Number.isFinite(ox) ? r.left + ox : innerWidth / 2, oy: Number.isFinite(oy) ? r.top + oy : innerHeight * 0.92 };
+}
+/* the install forms rather than flies: the door's sun climbs to meet the moon */
+function formEclipse() {
+  const pad = PADS.install, door = $("#door");
+  planets.hide(); player.stop(true); home.closeDrawers();
+  const from = current === "door" ? sunrisePoint() : { ox: innerWidth / 2, oy: innerHeight * 1.2 };
+  if (current !== "door") leaveCurrent();
+  document.body.classList.add("eclipsing");
+  pad.el.classList.add("forming"); pad.el.hidden = false; current = "install";
+  try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
+  pad.ring.form(from).then(() => {
+    door.classList.remove("shown"); door.hidden = true;
+    pad.el.classList.remove("forming"); pad.el.classList.add("formed");
+    document.body.classList.remove("eclipsing", "at-door"); document.body.classList.add("instrument", "arrived");
+  });
+}
+function unformEclipse() {
+  const pad = PADS.install, door = $("#door");
+  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
+  door.hidden = false; door.classList.add("shown");
+  document.body.classList.add("eclipsing", "at-door", "lit");
+  pad.el.classList.add("forming"); pad.el.classList.remove("formed");
+  pad.ring.unform(sunrisePoint()).then(() => {
+    pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
+    document.body.classList.remove("eclipsing", "arrived", "instrument");
+    try { history.replaceState(null, "", " "); } catch { /* fine */ }
+  });
+}
 function flyToPad(id) {
+  if (id === "install") { formEclipse(); return; }
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
   /* the docs' flight carries the chart when the chart is ready; otherwise the plain climb */
@@ -95,11 +129,12 @@ function arrivePad(id) {
   const pad = PADS[id];
   $("#door").hidden = true; document.body.classList.remove("at-door");
   pad.el.hidden = false; current = id;
-  document.body.classList.add("instrument", "arrived"); pad.ring.start();
+  document.body.classList.add("instrument", "arrived"); if (id === "install") pad.el.classList.add("formed"); pad.ring.start();
 }
 /* back to the dawn: the descent, setting down on the door */
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
+  if (current === "install") { unformEclipse(); return; }
   pad.ring.stop();
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
