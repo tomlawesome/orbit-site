@@ -6,7 +6,7 @@ import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAW
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall } from "./data.js";
-import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT } from "./flight.js";
+import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight } from "./flight.js";
 import { SECTIONS, createRing, createDocs, createInfo, wirePlanets } from "./pads.js";
 
 const $ = (s) => document.querySelector(s);
@@ -64,6 +64,8 @@ function showDoor() {
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
   requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
+  /* the docs' chart is read early, so the flight there can carry it */
+  setTimeout(() => PADS.docs.ring.ready?.(), 2500);
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
@@ -75,11 +77,14 @@ function leaveCurrent() {
 function flyToPad(id) {
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
-  journey.fly(pad.profile, {
+  /* the docs' flight carries the chart when the chart is ready; otherwise the plain climb */
+  const carried = id === "docs" ? pad.ring.flight() : null;
+  pad.flown = carried ? docsFlight(carried) : pad.profile;
+  journey.fly(pad.flown, {
     title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph,
     on: {
       release: leaveCurrent,
-      land() { pad.el.hidden = false; current = id; try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
+      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
       settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); pad.ring.start(); },
     },
   });
@@ -94,7 +99,7 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   pad.ring.stop();
-  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.profile, on: {
+  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { const door = $("#door"); door.classList.add("shown"); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });

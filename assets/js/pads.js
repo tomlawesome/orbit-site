@@ -75,19 +75,21 @@ function boxes(n, W, H, mode, rnd) {
   return out;
 }
 /* the chart behind the constellations: a field of faint stars and the arcs
-   of a graticule, the way a printed sky chart is ruled */
-function field(W, H, rnd) {
-  let dots = "";
+   of a graticule, the way a printed sky chart is ruled — as data, so the
+   page and the flight's canvas draw the same sky */
+function fieldData(W, H, rnd) {
+  const dots = [];
   for (let i = 0; i < (W > 1200 ? 190 : W > 700 ? 110 : 80); i++) {
-    const r = (0.5 + rnd() * rnd() * 1.3).toFixed(2), o = (0.15 + rnd() * 0.45).toFixed(2);
-    dots += `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * H).toFixed(0)}" r="${r}" style="--o:${o};--d:${(rnd() * 6).toFixed(1)}s"/>`;
+    const r = +(0.5 + rnd() * rnd() * 1.3).toFixed(2), o = +(0.15 + rnd() * 0.45).toFixed(2);
+    dots.push({ x: Math.round(rnd() * W), y: Math.round(rnd() * H), r, o, d: +(rnd() * 6).toFixed(1) });
   }
   const arcs = [];
   /* parallels: shallow arcs bowing upward; meridians: leaning lines */
   for (let k = 0; k < 4; k++) { const y = H * (0.18 + k * 0.22), b = H * 0.07; arcs.push(`M-20 ${y.toFixed(0)} Q ${W / 2} ${(y - b).toFixed(0)} ${W + 20} ${y.toFixed(0)}`); }
   for (let k = 0; k < (W > 1200 ? 9 : 6); k++) { const x = W * (W > 1200 ? 0.06 + k * 0.11 : 0.08 + k * 0.17), lean = (x - W / 2) * 0.12; arcs.push(`M${(x - lean).toFixed(0)} -20 Q ${(x + lean * 0.3).toFixed(0)} ${H / 2} ${(x + lean).toFixed(0)} ${H + 20}`); }
-  return `<g class="field">${dots}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
+  return { dots, arcs };
 }
+const fieldMarkup = ({ dots, arcs }) => `<g class="field">${dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" style="--o:${d.o};--d:${d.d}s"/>`).join("")}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
 const hrefOf = (slug, id) => (id === "top" ? `#docs/${slug}` : `#docs/${slug}/${id}`);
 const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
 
@@ -105,7 +107,7 @@ export function createDocs(pad) {
   const score = (e, words) => { const t = norm(e.t), s = norm(e.s); return words.reduce((n, w) => n + (t.includes(w) ? 4 : s.includes(w) ? 2 : 1), 0); };
   /* what the import wrote: the sources, and every section as an entry */
   let DOCS = [], ENTRIES = [], GROUPS = {}, generated = "", loading = null;
-  let group = null, cursor = -1, mode = "", starOf = new Map();
+  let group = null, cursor = -1, mode = "", starOf = new Map(), geometry = null;
   const modeNow = () => (innerWidth < 700 ? "narrow" : innerWidth < 1100 ? "mid" : "wide");
   let recent = []; try { recent = JSON.parse(localStorage.getItem("orbit-site-read") || "[]"); } catch { /* fine */ }
   const remember = (href) => {
@@ -137,10 +139,13 @@ export function createDocs(pad) {
     chart.classList.toggle("wide", wide);
     const rnd = seededRng(SEED);
     starOf = new Map();
-    let html = field(W, H, seededRng(SEED + 7)), gi = 0;
+    const fd = fieldData(W, H, seededRng(SEED + 7));
+    geometry = { W, H, field: fd, cons: [] };
+    let html = fieldMarkup(fd), gi = 0;
     const cells = boxes(DOCS.length, W, H, wide ? "wide" : mode, seededRng(SEED + 3));
     for (const d of DOCS) {
       const name = d.name, g = GROUPS[name], mine = ENTRIES.filter((e) => e.g === name), pts = walk(mine.length, cells[gi], rnd);
+      geometry.cons.push({ name, c: g.c, pts });
       const segs = pts.slice(1).map((p, i) => { const q = pts[i]; const len = Math.hypot(p[0] - q[0], p[1] - q[1]); return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" style="--l:${len.toFixed(0)};--i:${i}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}"/>`; }).join("");
       const stars = pts.map(([x, y], i) => { const e = mine[i]; starOf.set(e.href, `${gi}-${i}`); return `<g class="star${e.key ? " key" : ""}${recent.includes(e.href) ? " read" : ""}" data-star="${gi}-${i}" data-href="${e.href}" style="--i:${i};--tw:${(2.6 + rnd() * 3).toFixed(1)}s;--td:${(rnd() * 4).toFixed(1)}s" tabindex="0" role="link" aria-label="${esc(e.t)}"><circle class="hit" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="14"/><circle class="glow" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 8 : 6.5}"/><circle class="ring" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 7 : 6}"/><circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 3.8 : 2.8}"/></g>`; }).join("");
       /* the name sits just under the constellation's lowest star */
@@ -374,9 +379,25 @@ export function createDocs(pad) {
   });
   $(".readhead .todocs", reader).addEventListener("click", () => close());
   addEventListener("popstate", () => { if (!pad.hidden) go(location.hash.startsWith("#docs") ? location.hash : "#docs", false); });
+  /* where the chart will sit on screen, measured with the landing still unseen */
+  function chartRect() {
+    const was = pad.hidden;
+    if (was) { pad.style.visibility = "hidden"; pad.hidden = false; }
+    if (modeNow() !== mode && DOCS.length) drawChart();
+    const r = chart.getBoundingClientRect();
+    if (was) { pad.hidden = true; pad.style.visibility = ""; }
+    return { x: r.left, y: r.top, w: r.width, h: r.height };
+  }
   return {
-    start() { load().then(() => { render(); chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); if (location.hash.startsWith("#docs/")) go(location.hash, false); }); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
-    stop() { close(false); input.value = ""; group = null; if (DOCS.length) render(); input.blur(); chart.classList.remove("drawn"); clearTimeout(mt); },
+    ready: load,
+    /* the flight to the docs carries the chart: its constellations pass on the
+       way, and the streaks settle into the chart itself on arrival */
+    flight() { return DOCS.length && geometry ? { rect: chartRect(), geometry } : null; },
+    /* arriving by flight the chart is already on the canvas, so the page's own
+       chart appears whole under it rather than drawing itself in again */
+    settle() { chart.classList.add("drawn", "settled"); },
+    start() { load().then(() => { render(); if (!chart.classList.contains("settled")) { chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); } if (location.hash.startsWith("#docs/")) go(location.hash, false); }); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
+    stop() { close(false); input.value = ""; group = null; if (DOCS.length) render(); input.blur(); chart.classList.remove("drawn", "settled"); clearTimeout(mt); },
     go,
   };
 }

@@ -519,9 +519,32 @@ export function createFlight(canvas, options = {}) {
     ctx.fillStyle = "#fff6e6";
     ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.284); ctx.fill();
   }
+  /* site: a constellation off the docs' own chart, passing in its colour
+     with its name beneath — `pts` in a ~300-unit box about its centre */
+  /** @param {HydratedProp & { pts: number[][], name: string, c: string }} g @param {number} [_t] */
+  function penChart(g, _t) {
+    const pts = g.pts;
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.strokeStyle = g.c; ctx.lineWidth = g.hair * 1.3; ctx.globalAlpha = g.al * 0.7;
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.stroke();
+    ctx.globalAlpha = g.al;
+    ctx.fillStyle = PACK.starNear;
+    for (const p of pts) { ctx.beginPath(); ctx.arc(p[0], p[1], 3.2, 0, 6.284); ctx.fill(); }
+    ctx.fillStyle = g.c; ctx.globalAlpha = g.al * 0.9;
+    ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], 4.2, 0, 6.284); ctx.fill();
+    /* the name, in the chart's own hand */
+    let low = pts[0]; for (const p of pts) if (p[1] > low[1]) low = p;
+    ctx.font = "500 13px 'JetBrains Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    try { ctx.letterSpacing = "2.5px"; } catch { /* older engines: no tracking */ }
+    ctx.fillStyle = PACK.penHi; ctx.globalAlpha = g.al * 0.85;
+    ctx.fillText(g.name.toUpperCase(), 0, low[1] + 22);
+    try { ctx.letterSpacing = "0px"; } catch { /* fine */ }
+  }
   const PEN = {
     con: penConstellation, sys: penSystem, grat: penGraticule,
-    craft: penCraft, comet: penComet,
+    craft: penCraft, comet: penComet, chart: penChart,
   };
 
   /** @param {number} b */
@@ -752,16 +775,17 @@ export function createFlight(canvas, options = {}) {
        so the arrival's slow bloom is also the departure's slow contraction.
        site: a profile may name another ending; the app's own is the bloom. */
     const q = bloomAt(active.rev ? mirror(tc) : tc);
-    if (!P.ending || P.ending === "bloom") drawBloom(q); else drawEnding(P.ending, q);
+    if (!P.ending || P.ending === "bloom") drawBloom(q); else drawEnding(P.ending, q, P);
   }
 
   /* site: the other endings — each landing arrives its own way.
      "ring": the ring the mark wears, drawn once out of the vanishing light.
      "sweep": a band of light crossing the sky the way the flight was going.
      "halo": a warm light rising at the top, where the landing's sun will be. */
-  function drawEnding(kind, b) {
+  function drawEnding(kind, b, P) {
     if (b <= 0) return;
     const cx = W / 2, cy = H / 2;
+    if (kind === "chart" && P.chart) { drawChart(b, P.chart); return; }
     if (kind === "ring") {
       ctx.lineWidth = 1.2;
       for (const [off, mul, spd] of [[0, 0.7, 0.42], [0.18, 0.35, 0.34], [0.36, 0.18, 0.28]]) {
@@ -792,6 +816,55 @@ export function createFlight(canvas, options = {}) {
       core.addColorStop(0, hexa(PACK.sunCore, Math.min(1, e * 1.1))); core.addColorStop(0.5, hexa(PACK.sun, e * 0.5)); core.addColorStop(1, hexa(PACK.sun, 0));
       ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, sy, 26 + e * 70, 0, 6.284); ctx.fill();
     }
+  }
+
+  /* site: the docs' chart, assembling where the page will show it — the
+     field first, then each constellation line by line, then its name — so
+     the page's own chart appears whole beneath it and nothing jumps */
+  /** @param {number} b @param {{ rect: {x:number,y:number,w:number,h:number}, geometry: { W:number, H:number, field: { dots: any[], arcs: string[] }, cons: any[] } }} chart */
+  function drawChart(b, chart) {
+    const { rect, geometry: g } = chart, s = rect.w / g.W;
+    const ease = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 2.2);
+    ctx.save();
+    ctx.translate(rect.x, rect.y); ctx.scale(s, s);
+    /* the ruling and the field, first and faint */
+    const f = ease(b / 0.55);
+    ctx.strokeStyle = PACK.star; ctx.globalAlpha = 0.075 * f; ctx.lineWidth = 0.7;
+    for (const d of g.field.arcs) ctx.stroke(new Path2D(d));
+    ctx.fillStyle = PACK.star;
+    for (const d of g.field.dots) { ctx.globalAlpha = d.o * f; ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 6.284); ctx.fill(); }
+    /* then the constellations, each a little after the last, each line by line */
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    g.cons.forEach((con, gi) => {
+      const t0 = 0.12 + gi * 0.055, span = 0.55;
+      const u = (b - t0) / span; if (u <= 0) return;
+      const n = con.pts.length;
+      ctx.strokeStyle = con.c; ctx.lineWidth = 1;
+      for (let i = 1; i < n; i++) {
+        const li = ease((u - (i - 1) * 0.06) / 0.28); if (li <= 0) break;
+        const a = con.pts[i - 1], p = con.pts[i];
+        ctx.globalAlpha = 0.42;
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0] + (p[0] - a[0]) * li, a[1] + (p[1] - a[1]) * li); ctx.stroke();
+      }
+      ctx.fillStyle = PACK.star;
+      for (let i = 0; i < n; i++) {
+        const si = ease((u - i * 0.06) / 0.2); if (si <= 0) break;
+        ctx.globalAlpha = si; ctx.beginPath(); ctx.arc(con.pts[i][0], con.pts[i][1], 2.8, 0, 6.284); ctx.fill();
+      }
+      let low = con.pts[0]; for (const p of con.pts) if (p[1] > low[1]) low = p;
+      const nx = Math.max(70, Math.min(g.W - 70, low[0])), ni = ease((u - 0.5) / 0.3);
+      if (ni > 0) {
+        ctx.globalAlpha = 0.5 * ni; ctx.strokeStyle = con.c; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(low[0], low[1] + 8); ctx.lineTo(nx, low[1] + 24); ctx.stroke();
+        ctx.font = `500 ${g.W > 1200 ? 11 : 10.5}px 'JetBrains Mono', monospace`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        try { ctx.letterSpacing = "1.8px"; } catch { /* fine */ }
+        ctx.fillStyle = PACK.ink; ctx.globalAlpha = ni;
+        ctx.fillText(`${con.name.toUpperCase()} · ${n}`, nx, low[1] + 38);
+        try { ctx.letterSpacing = "0px"; } catch { /* fine */ }
+      }
+    });
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 
   /** @param {number} now */
