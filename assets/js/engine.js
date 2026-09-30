@@ -557,9 +557,26 @@ export function createFlight(canvas, options = {}) {
     ctx.fillText(g.name.toUpperCase(), 0, low[1] + 22);
     try { ctx.letterSpacing = "0px"; } catch { /* fine */ }
   }
+  /* site: another household in the galaxy, passing — its sun, its year as
+     the rings the app draws, its items as bodies where its dial has them,
+     and its name beneath */
+  /** @param {HydratedProp & { name: string, bodies: Array<[number, number, string, number]> }} g @param {number} [_t] */
+  function penHome(g, _t) {
+    ctx.lineWidth = g.hair; ctx.globalAlpha = g.al * 0.9;
+    ctx.strokeStyle = PACK.pen; ctx.stroke(systemRing78);
+    ctx.strokeStyle = PACK.penLo; ctx.stroke(systemRing52);
+    ctx.globalAlpha = g.al;
+    ctx.fillStyle = PACK.sun; ctx.fill(systemSunDot);
+    for (const b of g.bodies) { ctx.fillStyle = b[2]; ctx.beginPath(); ctx.arc(b[0], b[1], b[3], 0, 6.284); ctx.fill(); }
+    ctx.font = "500 13px 'JetBrains Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    try { ctx.letterSpacing = "2.5px"; } catch { /* fine */ }
+    ctx.fillStyle = PACK.penHi; ctx.globalAlpha = g.al * 0.85;
+    ctx.fillText(g.name.toUpperCase(), 0, 96);
+    try { ctx.letterSpacing = "0px"; } catch { /* fine */ }
+  }
   const PEN = {
     con: penConstellation, sys: penSystem, grat: penGraticule,
-    craft: penCraft, comet: penComet, chart: penChart,
+    craft: penCraft, comet: penComet, chart: penChart, home: penHome,
   };
 
   /** @param {number} b */
@@ -811,7 +828,7 @@ export function createFlight(canvas, options = {}) {
       g.hair = 1.15 / sc;                       /* a true hairline at any size */
       if (x < -600 * sc || x > W + 600 * sc || y < -700 * sc || y > H + 700 * sc) continue;
       ctx.save();
-      ctx.translate(x, y); ctx.rotate(/** @type {number} */ (g.rot0) + g.p * g.spin); ctx.scale(sc, sc);
+      ctx.translate(x, y); if (g.kind !== "home") ctx.rotate(/** @type {number} */ (g.rot0) + g.p * g.spin); ctx.scale(sc, sc);
       PEN[g.kind](/** @type {HydratedProp} */ (g), t);
       ctx.restore();
     }
