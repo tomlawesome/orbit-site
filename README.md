@@ -21,7 +21,8 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
-| `assets/js/install.js` | The install, three ways for review: the launch pad, the terminal, the cockpit (`#install/pad`, `#install/terminal`, `#install/cockpit`) |
+| `assets/js/install.js` | The install: the launcher as one lit object in WebGL, leaning to the pointer, the scroll running the install across its screen; flat captures without WebGL |
+| `assets/vendor/three.module.min.js` | three.js r170 (MIT, licence beside it), loaded only on the install |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
