@@ -20,7 +20,8 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`), plus a sideways vanishing point and three more endings |
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
-| `assets/js/pads.js` | The sections — the install's ring and its orbiting stages, the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
+| `assets/js/pads.js` | The sections — the install's ring and the launcher playing beside it, the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
+| `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
 | `.github/workflows/import-docs.yml` | Runs the import every night and on request, and commits what changed |

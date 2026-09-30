@@ -19,11 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm i --no-save --no-audit --no-fund marked@18
+      - run: npm i --no-save --no-audit --no-fund marked@18 sharp@0.34
       - run: node tools/import-docs.mjs
       - name: commit what changed
         run: |
-          git add assets/docs
+          git add assets/docs assets/img/launcher
           if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "Docs: imported from the repositories"

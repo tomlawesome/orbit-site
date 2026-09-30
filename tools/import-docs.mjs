@@ -168,3 +168,23 @@ for (const src of SOURCES) {
 }
 await writeFile(join(OUT, "index.json"), JSON.stringify(index));
 console.log(`index: ${index.sources.reduce((n, s) => n + s.sections.length, 0)} sections in ${index.sources.length} sources`);
+
+/* the launcher's own screens, for the install page: fetched from the
+   launcher's repository when they are there, kept as they are when not.
+   `sharp` sizes them for the web; without it the pictures are left alone. */
+const SHOTS = ["01-splash", "02-install-profile", "03-install-ready", "04-install-console", "05-install-success", "06-splash-alive",
+  "07-update-confirm", "08-update-console", "09-repair-proposed", "10-repair-applied", "11-remove-confirm", "12-remove-done"];
+const IMG = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "img", "launcher");
+let sharp = null; try { sharp = (await import("sharp")).default; } catch { /* not installed: the pictures stay */ }
+if (sharp && !localRoot) {
+  await mkdir(IMG, { recursive: true });
+  let got = 0;
+  for (const name of SHOTS) {
+    const res = await fetch(`https://raw.githubusercontent.com/tomlawesome/orbit-launcher/main/docs/assets/screenshots/${name}.png`);
+    if (!res.ok) continue;
+    const png = Buffer.from(await res.arrayBuffer());
+    await writeFile(join(IMG, `${name}.webp`), await sharp(png).resize(1280, 720).webp({ quality: 82 }).toBuffer());
+    got++;
+  }
+  console.log(`launcher: ${got} of ${SHOTS.length} screens${got ? "" : " (none on the launcher's main yet; the pictures kept)"}`);
+}
