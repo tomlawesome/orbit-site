@@ -140,18 +140,18 @@ import { createFlight, UP, DOWN, PROPS_UP, UPDUR, REV, SWEEP } from "./engine.js
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
 const turned = (deg) => PROPS_UP.map((g) => ({ ...g, ang: g.ang + deg }));
-export const RIGHT = { ...UP, vpX: 0.94, vpY: 0.5, a0: UP.a0 + 90, a1: UP.a1 + 90, props: turned(90), ending: "sweep" };
-export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90, props: turned(-90), ending: "halo" };
+export const RIGHT = { ...UP, vpX: 0.94, vpY: 0.5, a0: UP.a0 + 90, a1: UP.a1 + 90, props: turned(90), ending: "sweep", tint: "#8fb8ff" };
+export const LEFT = { ...UP, vpX: 0.06, vpY: 0.5, a0: UP.a0 - 90, a1: UP.a1 - 90, props: turned(-90), ending: "halo", tint: "#f87171" };
 /* the install's climb: the quietest of the four — the sphere and the streaks
    only, nothing passing — ending on the ring rather than the sun */
-export const UP_RING = { ...UP, props: [], ending: "ring" };
+export const UP_RING = { ...UP, props: [], ending: "ring", tint: "#a78bfa" };
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
 export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
 /* the descent from a landing: that landing's own climb run backwards — its
    vanishing point, its bearings, its traffic met the other way, and its own
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
 const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
-export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, props: mirrored(P.props) });
+export const descentFrom = (P) => ({ ...DOWN_DAWN, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props) });
 /* the flight to the docs, carrying the chart: its constellations pass on the
    way — each set about its own centre in a ~300-unit box, in its colour, with
    its name — and on arrival the streaks settle into the chart itself */

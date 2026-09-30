@@ -393,13 +393,18 @@ export function createFlight(canvas, options = {}) {
 
   /** @param {Profile} profile */
   function setCamera(profile) {
+    TINT = profile.tint || PACK.accent;
     VPX = (profile.vpX ?? 0.5) * W; VPY = profile.vpY * H;   /* site: the sideways flights set vpX */
     A0 = profile.a0 * Math.PI / 180; A1 = profile.a1 * Math.PI / 180;
     RMAX = DIAG * 1.55;
   }
+  /* site: a flight may carry a colour of its own — the planet's — which takes
+     the place of the accent's gold among the streaks and in the ending,
+     and nowhere else, so it reads as a hint and not a filter */
+  let TINT = PACK.accent;
   function starColour() {
     const u = rnd();
-    if (u > 0.93) return PACK.accent;
+    if (u > 0.93) return TINT;
     if (u > 0.82) return PACK.up;
     return u > 0.45 ? PACK.star : PACK.starNear;
   }
@@ -840,12 +845,12 @@ export function createFlight(canvas, options = {}) {
       for (const [off, mul, spd] of [[0, 0.7, 0.42], [0.18, 0.35, 0.34], [0.36, 0.18, 0.28]]) {
         const q = Math.max(0, Math.min(1, (b - off) / (1 - off)));
         if (q <= 0) continue;
-        ctx.strokeStyle = hexa(PACK.accent, Math.pow(1 - q, 1.2) * mul);
+        ctx.strokeStyle = hexa(TINT, Math.pow(1 - q, 1.2) * mul);
         ctx.beginPath(); ctx.arc(cx, cy, 24 + q * H * spd, 0, 6.284); ctx.stroke();
       }
       const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, H * 0.16);
       core.addColorStop(0, hexa(PACK.sunCore, Math.pow(b, 0.8) * 0.35 * (1 - b)));
-      core.addColorStop(1, hexa(PACK.accent, 0));
+      core.addColorStop(1, hexa(TINT, 0));
       ctx.fillStyle = core; ctx.fillRect(0, 0, W, H);
     } else if (kind === "sweep") {
       const dir = VPX > W / 2 ? -1 : 1;                       /* away from the vanishing point */
@@ -859,7 +864,7 @@ export function createFlight(canvas, options = {}) {
     } else if (kind === "halo") {
       const sy = H * 0.24, e = Math.pow(b, 0.7);
       const halo = ctx.createRadialGradient(cx, sy, 0, cx, sy, H * 0.9);
-      halo.addColorStop(0, hexa(PACK.sun, e * 0.22)); halo.addColorStop(0.45, hexa(PACK.sun, e * 0.07)); halo.addColorStop(1, hexa(PACK.sun, 0));
+      halo.addColorStop(0, hexa(TINT, e * 0.16)); halo.addColorStop(0.45, hexa(TINT, e * 0.05)); halo.addColorStop(1, hexa(TINT, 0));
       ctx.fillStyle = halo; ctx.fillRect(0, 0, W, H);
       const core = ctx.createRadialGradient(cx, sy, 0, cx, sy, 26 + e * 70);
       core.addColorStop(0, hexa(PACK.sunCore, Math.min(1, e * 1.1))); core.addColorStop(0.5, hexa(PACK.sun, e * 0.5)); core.addColorStop(1, hexa(PACK.sun, 0));
