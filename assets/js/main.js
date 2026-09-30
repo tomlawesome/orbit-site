@@ -76,38 +76,64 @@ function leaveCurrent() {
   else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); setTimeout(() => { h.hidden = true; }, 800); }
 }
 /* a section: the flight there, and the landing */
-/* where the door's sun rises, on screen (the world's own origin, set by its rasters) */
-function sunrisePoint() {
-  const w = $("#door .world"), r = w.getBoundingClientRect();
+/* the door as a scene the install can move: where its sun rises, the layers
+   that carry the light, the ground and the stars, and the planet that was clicked */
+function doorScene() {
+  const door = $("#door"), w = $(".world", door), r = w.getBoundingClientRect();
   const ox = parseFloat(w.style.getPropertyValue("--ox")), oy = parseFloat(w.style.getPropertyValue("--oy"));
-  return { ox: Number.isFinite(ox) ? r.left + ox : innerWidth / 2, oy: Number.isFinite(oy) ? r.top + oy : innerHeight * 0.92 };
+  const planet = $('.planet[data-section="install"]', door);
+  return {
+    ox: Number.isFinite(ox) ? r.left + ox : innerWidth / 2, oy: Number.isFinite(oy) ? r.top + oy : innerHeight * 0.92,
+    glow: $(".sunpt", w), rays: $(".rays", w), ground: [$(".limb", w), $(".shimmerlayer", w), $(".wash", w), $(".sunpt", w), $(".rays", w)],
+    stars: $(".dsky", door), dawn: $(".dawnlayer", w), rims: [...w.querySelectorAll(".rim")],
+    planet, body: $(".body", planet),
+  };
 }
-/* the install forms rather than flies: the door's sun climbs to meet the moon */
+/* the install forms rather than flies: the door's own sunrise climbs, and the planet crosses it */
+let sceneTimer = 0;
 function formEclipse() {
   const pad = PADS.install, door = $("#door");
   planets.hide(); player.stop(true); home.closeDrawers();
-  const from = current === "door" ? sunrisePoint() : { ox: innerWidth / 2, oy: innerHeight * 1.2 };
-  if (current !== "door") leaveCurrent();
+  clearTimeout(sceneTimer);
+  /* from anywhere but the door, the dawn comes up under what is leaving */
+  if (current !== "door") {
+    leaveCurrent();
+    if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
+    door.hidden = false; door.classList.add("shown"); document.body.classList.add("at-door", "lit");
+  }
+  const scene = doorScene();
+  scene.planet.classList.add("chosen");
   document.body.classList.add("eclipsing");
   pad.el.classList.add("forming"); pad.el.hidden = false; current = "install";
   try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
-  pad.ring.form(from).then(() => {
-    door.classList.remove("shown"); door.hidden = true;
+  pad.ring.form(scene).then(() => {
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
-    document.body.classList.remove("eclipsing", "at-door"); document.body.classList.add("instrument", "arrived");
+    document.body.classList.add("instrument", "arrived");
+    /* the door goes once the install's own sky is in over it */
+    sceneTimer = setTimeout(() => {
+      if (current !== "install") return;
+      door.classList.remove("shown"); door.hidden = true;
+      document.body.classList.remove("eclipsing", "at-door"); scene.planet.classList.remove("chosen");
+      pad.ring.release(scene);
+    }, 1700);
   });
 }
 function unformEclipse() {
   const pad = PADS.install, door = $("#door");
+  clearTimeout(sceneTimer);
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
-  door.hidden = false; door.classList.add("shown");
+  const scene = doorScene();
+  scene.planet.classList.add("chosen");
   document.body.classList.add("eclipsing", "at-door", "lit");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
-  pad.ring.unform(sunrisePoint()).then(() => {
+  pad.ring.unform(scene).then(() => {
+    door.hidden = false; door.classList.add("shown");
     pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
-    document.body.classList.remove("eclipsing", "arrived", "instrument");
+    document.body.classList.remove("eclipsing", "arrived", "instrument"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
+  /* the door is shown once the scene is set, so it comes up already in the eclipse's night */
+  requestAnimationFrame(() => { door.hidden = false; door.classList.add("shown"); });
 }
 function flyToPad(id) {
   if (id === "install") { formEclipse(); return; }
