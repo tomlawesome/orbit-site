@@ -1029,6 +1029,9 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad .copy.core[data-done]{color:var(--accent-text)}
 #installpad .scene{position:absolute;left:24px;bottom:44px;margin:0;display:flex;gap:12px;font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);opacity:0;transition:opacity .6s}
 #installpad .scene .n{color:var(--accent-text)}
+#installpad .modes{position:absolute;left:50%;top:22px;transform:translateX(-50%);z-index:5;display:flex;gap:18px;text-shadow:none}
+#installpad .modes a{color:var(--ink-faint);text-decoration:none;padding:4px 0;border-bottom:1px solid transparent}
+#installpad .modes a.on{color:var(--accent-text);border-bottom-color:var(--accent)}
 #installpad.open .scene{opacity:1}
 #installpad .gate.rise{position:absolute;left:50%;top:calc(47% + min(24vw,24svh) + 44px);transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity .6s}
 @media (max-width:700px){#installpad .gate.rise{top:calc(44% + 30vw + 40px)}}
