@@ -723,7 +723,10 @@ export function createFlight(canvas, options = {}) {
       if (x1 < -420 || x1 > W + 420 || y1 < -520 || y1 > H + 520) continue;
       const near = Math.min(1, st.r / RMAX);
       const al = Math.min(1, (0.10 + 0.95 * near) * (0.35 + 0.65 * st.z));
-      const r0 = st.r / (1 + v * SHUTTER * P.K * st.z);
+      /* site: at speed the exposure lengthens and the streak thins — the
+         feel of pace, not just its measure */
+      const rush = av * av;
+      const r0 = st.r / (1 + v * SHUTTER * (1 + 0.9 * rush) * P.K * st.z);
       const x0 = VPX + Math.cos(st.a) * r0, y0 = VPY + Math.sin(st.a) * r0;
       const len = Math.hypot(x1 - x0, y1 - y0);
       ctx.globalAlpha = al;
@@ -732,12 +735,24 @@ export function createFlight(canvas, options = {}) {
         ctx.beginPath(); ctx.arc(x1, y1, 0.55 + 1.15 * near * st.z, 0, 6.284); ctx.fill();
       } else {
         ctx.strokeStyle = st.c;
-        ctx.lineWidth = 0.55 + 1.9 * near * st.z;
+        ctx.lineWidth = (0.55 + 1.9 * near * st.z) * (1 - 0.32 * rush);
         ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
       }
     }
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
+    /* site: the doppler wash — the sky ahead shifts cool and the edges warm,
+       rising with the square of the speed so it lives only at the fastest
+       point and is gone before the landing */
+    if (av > 0.55) {
+      const d = Math.pow((av - 0.55) / 0.45, 2) * 0.16;
+      const g = ctx.createRadialGradient(VPX, VPY, 0, VPX, VPY, DIAG * 0.9);
+      g.addColorStop(0, hexa("#8fb8ff", d));
+      g.addColorStop(0.42, hexa("#8fb8ff", 0));
+      g.addColorStop(0.78, hexa("#e2772b", 0));
+      g.addColorStop(1, hexa("#e2772b", d * 0.55));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    }
 
     /* props: relative motion does not stop when the engine does — a prop that
        is still on screen when you brake keeps sailing out of frame. Reversed,

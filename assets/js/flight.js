@@ -254,6 +254,8 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     cancelTimeline();
     body.classList.remove(...CLASSES);
     flight = { profile, glyph, on: hooks };
+    /* which way the flight goes, for the mark's tilt into it */
+    mark.dataset.way = (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
     cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : ascentBeats(), ascentStep);
