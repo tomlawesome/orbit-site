@@ -51,7 +51,9 @@ const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4
    y up, and its radius, in screen heights; the moon's place likewise) */
 export const TUNE = {
   sun: [-0.72, 0.32, 0.55], tiltZ: 0.38, tiltX: -0.12, sky: [1.2, 0.6],
-  rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: 0.55, roll: 0.4 },
+  rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: -0.23, roll: 0.3 },
+  /* the moon the camera passes on the way in: when (k), how far off the path (planet radii, right and up), how big */
+  fly: { k: 0.89, side: [-1.2, -0.8], r: 0.2 },
   land: { R: 0.47, cx: 0.22, cy: -0.12, moon: [-0.3, 0.27], moonR: 8.0 },
   port: { R: 0.26, cx: 0.1, cy: -0.2, moon: [-0.3, 0.04], moonR: 8.0 },
 };
@@ -63,7 +65,8 @@ function world0() {
   SKY = tr(mm(rz(TUNE.sky[0]), rx(TUNE.sky[1])));  /* world → galaxy frame */
   REST = TUNE.rest; FROM = TUNE.from;
 }
-const APPROACH = 12, SETTLE = 9.6, RETURN = 5;
+/* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
+const HOLD = 1.1, APPROACH = 12, SETTLE = 9.6, RETURN = 5;
 
 function layoutFor(W, H) {
   const t = H > W * 1.1 ? TUNE.port : TUNE.land;
@@ -74,7 +77,7 @@ function layoutFor(W, H) {
 export function createInstall(pad, opts = {}) {
   const canvas = $(".orbitgl", pad);
   let world = null, failed = false;
-  let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0];
+  let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0], flyPos = [0, 0, 0, 0];
   let running = false, raf = 0, last = 0, clock = 0;
   /* the approach: u runs 0 → 1 going in, back to 0 going home */
   let u = 1, motion = null;
@@ -102,18 +105,26 @@ export function createInstall(pad, opts = {}) {
     const rd = norm(add(v.fwd, add(mul(v.right, q[0]), mul(v.up, q[1]))));
     const b = dot(v.cam, rd), c = dot(v.cam, v.cam) - lay.moonR * lay.moonR, h = Math.sqrt(Math.max(0, b * b - c));
     moonPos = [...add(v.cam, mul(rd, -b + h > 0 ? -b + h : 12)), 0.075];
+    placeFly(null);
     world?.resize(W, H, scale);
   }
-  /* the camera at a point in the shot: k is how far in (0 at the dot, 1 at rest) */
+  /* the moon passed on the way in: beside the path where the camera is at fly.k */
+  function placeFly(dot0) {
+    const f = TUNE.fly, v = view(f.k, 0, true, dot0);
+    flyPos = [...add(v.cam, add(mul(v.right, f.side[0]), mul(v.up, f.side[1]))), f.r];
+  }
+  /* the camera at a point in the shot: k is how far in (0 at the dot, 1 at rest). It starts just
+     under the plane of the rings, so they are a dark line through the dot, and rises through it
+     late in the shot, when the rings turn to the sun and open */
   function view(k, idle, bare = false, dot0 = null) {
     const L = lay;
-    const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp(k / 0.62));
+    const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp(k / 0.62)), eE = easeTurn(clamp((k - 0.4) / 0.6));
     const d1 = Math.sqrt((L.focal / L.R) ** 2 + 1);
     const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
     const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));
     const drift = reduced ? 0 : idle * 0.0018;
     const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k);
-    const el = lerp(FROM.el, REST.el, eT) + (bare ? 0 : -pointer.sy * 0.03 * k);
+    const el = lerp(FROM.el, REST.el, eE) + (bare ? 0 : -pointer.sy * 0.03 * k);
     const roll = lerp(FROM.roll, REST.roll, eT);
     const c = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
     const cam = mul(c, dist), fwd = mul(c, -1);
@@ -142,7 +153,7 @@ export function createInstall(pad, opts = {}) {
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
-      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos,
+      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
     });
   }
@@ -165,14 +176,19 @@ export function createInstall(pad, opts = {}) {
     pointer.sx += (pointer.x - pointer.sx) * Math.min(1, dt / 900);
     pointer.sy += (pointer.y - pointer.sy) * Math.min(1, dt / 900);
     if (motion) {
-      const t = (now - motion.t0) / 1000;
+      const t = (performance.now() - motion.t0) / 1000;   /* the clock the shot was started on */
       if (motion.reverse) {
         u = clamp(motion.from * (1 - t / RETURN));
+        motion.near?.(u);
+        /* the planet gives itself back to the dot in the last of the shot */
+        canvas.style.opacity = smooth(0.0, 0.05, u).toFixed(3);
         if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
-        u = clamp(t / APPROACH);
-        if (!motion.settled && t >= SETTLE) { motion.settled = true; motion.resolve(); }
-        if (u >= 1) motion = null;
+        /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
+        canvas.style.opacity = smooth(0.55, HOLD, t).toFixed(3);
+        u = clamp((t - HOLD) / APPROACH);
+        if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
+        if (u >= 1) { motion = null; canvas.style.opacity = ""; }
       }
     }
     if (reduced && !motion && frames.length > 2) return;
@@ -181,6 +197,12 @@ export function createInstall(pad, opts = {}) {
     draw(now);
     govern(dt);
   }
+  /* where the dot is, and how big it is once it has swelled (its layout size, not its size mid-transition) */
+  const SWELL = 1.5;
+  const dotOf = (scene) => {
+    const b = scene.body.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * SWELL) };
+  };
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
 
@@ -200,12 +222,13 @@ export function createInstall(pad, opts = {}) {
     form(scene) {
       return new Promise(async (resolve) => {
         this.start();
+        const dot0 = dotOf(scene);
         const ok = world && (await world.bake());
         if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
         pad.classList.add("lit");
-        const b = scene.body.getBoundingClientRect();
-        const dot0 = { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, b.width / 2) };
+        canvas.style.opacity = "0";
         u = 0; clock = 0; frames = [];
+        placeFly(dot0);
         motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false };
       });
     },
@@ -213,13 +236,13 @@ export function createInstall(pad, opts = {}) {
     unform(scene) {
       return new Promise((resolve) => {
         if (!world || reduced || !running) { resolve(); return; }
-        const b = scene.body.getBoundingClientRect();
-        const dot0 = { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, b.width / 2) };
-        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve };
+        const dot0 = dotOf(scene);
+        placeFly(dot0);
+        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };
       });
     },
     stop() {
-      running = false; motion = null; u = 1; cancelAnimationFrame(raf);
+      running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
     },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */

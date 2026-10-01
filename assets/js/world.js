@@ -93,8 +93,9 @@ uniform vec2 uRes, uShift, uSunPx;
 uniform float uFocal, uTime, uBg, uSunVis;
 uniform vec3 uCam, uFwd, uRight, uUp, uSun;
 uniform mat3 uSpin, uTilt, uSkyM;
-uniform vec4 uMoon;
-uniform sampler2D uAlb, uSky, uRing;
+uniform vec4 uMoon, uMoon2;
+uniform sampler2D uAlb, uSky, uRing, uMoonT;
+uniform float uHasMoon;
 uniform vec2 uAlbSize;
 ${NOISE}
 const float FLAT=0.935;                 /* polar radius over equatorial: the spin's bulge */
@@ -161,8 +162,9 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   float u=(r-RIN)/(ROUT-RIN);
   vec4 rs=textureGrad(uRing,vec2(u,0.5),vec2(dFdx(u),0.0),vec2(dFdy(u),0.0));
   float ang=atan(x.z,x.x);
-  float clump=0.9+0.2*snoise(vec3(cos(ang)*r*30.0,sin(ang)*r*30.0,r*140.0));
-  float tau=rs.a*2.6*clump;
+  /* a little clumping round the ring, as the particles' wakes give it */
+  float clump=0.94+0.12*snoise(vec3(cos(ang)*r*30.0,sin(ang)*r*30.0,r*140.0));
+  float tau=-log(max(1.0-rs.a,0.004))*clump;
   float mu=max(abs(d.y),0.01);
   float a=1.0-exp(-tau/mu);
   vec3 lt=uTilt*uSun; float mu0=max(abs(lt.y),0.01);
@@ -170,7 +172,8 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   float sh=lightThrough(X);
   float ph=dot(rd,uSun);
   vec3 c;
-  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*vec3(1.0,0.93,0.84)*SUNI*0.075*(mu0/(mu0+mu))*(0.8+0.4*(1.0-ph))*(0.5+0.5*smoothstep(0.0,0.7,rs.a));
+  /* the lit face: the photograph's colour; the dark face: light let through the thin rings, little through the thick */
+  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*SUNI*0.07*(mu0/(mu0+mu))*(0.85+0.3*(1.0-ph));
   else { float g=0.6, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5); c=rs.rgb*SUNI*0.05*(1.0-exp(-tau/mu0))*exp(-tau*0.5/mu)*hg/max(a,0.02); }
   c*=sh;
   /* the planet's own light on the ring's dark side */
@@ -178,16 +181,34 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   return vec4(c*a,a);
 }
 
-vec3 moon(vec3 P){
-  vec3 m=normalize(P-uMoon.xyz);
-  float cr=0.0, s=1.0;
-  for(int i=0;i<4;i++){float n=snoise(m*(4.0*s)+float(i)*7.3); cr+=smoothstep(0.6,0.88,1.0-abs(n))*0.5/s; s*=2.2;}
-  float n=fbm(m*5.0,6);
-  vec3 alb=mix(srgb(98,82,58),srgb(184,156,108),0.5+0.5*n)*(1.0-0.3*cr);
-  vec3 nb=normalize(m+0.12*vec3(snoise(m*16.0),snoise(m*16.0+3.0),snoise(m*16.0+6.0)));
-  float ndl=max(dot(nb,uSun),0.0);
-  vec3 c=alb*SUNI*ndl*lightThrough(P)/PI;
-  c+=alb*vec3(0.06,0.04,0.1)*max(dot(m,normalize(-uMoon.xyz)),0.0)*0.4;
+vec3 moon(vec3 P,vec4 M,vec3 rd){
+  vec3 m=normalize(P-M.xyz);
+  vec3 alb, nb=m;
+  if(uHasMoon>0.5){
+    /* the Moon's own surface, in gold: its colour, and its craters lit from its elevation */
+    vec2 uv=vec2(atan(m.x,m.z)/TAU+0.5,asin(clamp(m.y,-1.0,1.0))/PI+0.5);
+    vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
+    if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
+    alb=textureGrad(uMoonT,uv,dx,dy).rgb;
+    vec2 sz=vec2(textureSize(uMoonT,0));
+    float coslat=max(sqrt(1.0-m.y*m.y),0.05);
+    vec2 ex=vec2(max(1.0/sz.x,abs(dx.x)+abs(dy.x)),0.0), ey=vec2(0.0,max(1.0/sz.y,abs(dx.y)+abs(dy.y)));
+    float hE=(textureGrad(uMoonT,uv+ex,dx,dy).a-textureGrad(uMoonT,uv-ex,dx,dy).a)/(2.0*ex.x*TAU*coslat);
+    float hN=(textureGrad(uMoonT,uv+ey,dx,dy).a-textureGrad(uMoonT,uv-ey,dx,dy).a)/(2.0*ey.y*PI);
+    vec3 E=normalize(vec3(m.z,0.0,-m.x)+1e-5), Nn=cross(m,E);
+    nb=normalize(m-(E*hE+Nn*hN)*0.03);
+  } else {
+    float cr=0.0, s=1.0;
+    for(int i=0;i<4;i++){float n=snoise(m*(4.0*s)+float(i)*7.3); cr+=smoothstep(0.6,0.88,1.0-abs(n))*0.5/s; s*=2.2;}
+    float n=fbm(m*5.0,6);
+    alb=mix(srgb(98,82,58),srgb(184,156,108),0.5+0.5*n)*(1.0-0.3*cr);
+    nb=normalize(m+0.12*vec3(snoise(m*16.0),snoise(m*16.0+3.0),snoise(m*16.0+6.0)));
+  }
+  /* regolith: between Lambert and Lommel-Seeliger, so the disc is flatter-lit than a ball, as the Moon is */
+  float ndl=max(dot(nb,uSun),0.0), ndv=max(dot(nb,-rd),0.02);
+  float f=mix(ndl,2.0*ndl/(ndl+ndv),0.55);
+  vec3 c=alb*SUNI*f*lightThrough(P)/PI;
+  c+=alb*vec3(0.06,0.04,0.1)*max(dot(m,normalize(-M.xyz)),0.0)*0.4;
   return c;
 }
 
@@ -235,13 +256,14 @@ void main(){
   vec3 ro=uCam, rd=normalize(uFwd+uRight*q.x+uUp*q.y);
   vec3 col=sky(rd)*uBg; float alpha=uBg;
   vec2 tp=planetHit(ro,rd,1.0), ta=planetHit(ro,rd,RA);
-  vec2 tm=sph(ro-uMoon.xyz,rd,uMoon.w);
-  float tOp=1e9; bool onPlanet=false;
-  if(tp.x>0.0){tOp=tp.x; onPlanet=true;}
-  if(tm.x>0.0&&tm.x<tOp){tOp=tm.x; onPlanet=false;}
+  vec2 tm=sph(ro-uMoon.xyz,rd,uMoon.w), tm2=sph(ro-uMoon2.xyz,rd,uMoon2.w);
+  float tOp=1e9; int hit=0;
+  if(tp.x>0.0){tOp=tp.x; hit=1;}
+  if(tm.x>0.0&&tm.x<tOp){tOp=tm.x; hit=2;}
+  if(uMoon2.w>0.0&&tm2.x>0.0&&tm2.x<tOp){tOp=tm2.x; hit=3;}
   float tr; vec4 rc=ring(ro,rd,tr);
   bool ringOn=tr>0.0&&tr<tOp;
-  if(tOp<1e8){ vec3 P=ro+rd*tOp; col=onPlanet?cloudDeck(P,rd):moon(P); alpha=1.0; }
+  if(tOp<1e8){ vec3 P=ro+rd*tOp; col=hit==1?cloudDeck(P,rd):moon(P,hit==2?uMoon:uMoon2,rd); alpha=1.0; }
   if(ringOn&&ta.x>0.0&&tr>ta.y){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
   /* the haze over the cloud tops: violet at the limb, lit where the sun is */
   if(ta.y>0.0&&max(ta.x,0.0)<tOp){
@@ -364,6 +386,8 @@ export function createWorld(canvas, opts = {}) {
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
   const MAP = opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href;
+  const RINGS = opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href;
+  const MOON = opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href;
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
 
   const compile = (type, src) => {
@@ -412,7 +436,7 @@ export function createWorld(canvas, opts = {}) {
   };
   const fb = (t) => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
 
-  /* the textures: the planet's map (loaded), the galaxy (baked), the rings (computed) */
+  /* the textures: the planet's map (loaded), the galaxy (baked), the rings (loaded; drawn until they come) */
   let albT = null, SW = 1, SH = 1;
   const skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE), skyF = fb(skyT);
   const RN = 8192;
@@ -437,6 +461,17 @@ export function createWorld(canvas, opts = {}) {
       albT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(albT);
       SW = img.width; SH = img.height; img.close?.();
     });
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const loadRings = fetch(RINGS).then((r) => { if (!r.ok) throw new Error(`${RINGS}: ${r.status}`); return r.blob(); })
+    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
+    .then((img) => {
+      gl.bindTexture(gl.TEXTURE_2D, ringT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(ringT); img.close?.();
+    }, (e) => console.warn("orbit: the rings are drawn, not photographed", e));
+  let moonT = null;
+  const loadMoon = fetch(MOON).then((r) => { if (!r.ok) throw new Error(`${MOON}: ${r.status}`); return r.blob(); })
+    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then((img) => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); },
+      (e) => console.warn("orbit: the moon is drawn, not photographed", e));
   const jobs = [];
   const STRIPS = 4;
   for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
@@ -452,7 +487,7 @@ export function createWorld(canvas, opts = {}) {
   /* ready when the map is in and the galaxy is baked; resolves false if the map cannot be had */
   function bake() {
     if (!baking) baking = new Promise((res) => {
-      const step = () => { bakeSome(1); if (!skyDone) requestAnimationFrame(step); else loadMap.then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
+      const step = () => { bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
       requestAnimationFrame(step);
     });
     return baking;
@@ -484,8 +519,8 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform1f(u.uFocal, v.focal); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uBg, v.bg); gl.uniform1f(u.uSunVis, v.sunVis);
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
-      gl.uniform4fv(u.uMoon, v.moon); gl.uniform2f(u.uAlbSize, SW, SH);
-      bind(0, albT, u.uAlb); bind(1, skyT, u.uSky); bind(2, ringT, u.uRing);
+      gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]); gl.uniform2f(u.uAlbSize, SW, SH);
+      bind(0, albT, u.uAlb); bind(1, skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
     let src = hdrT;

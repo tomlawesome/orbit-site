@@ -92,7 +92,8 @@ function goToWorld() {
   }
   const scene = installPlanet();
   scene.planet.classList.add("chosen");
-  document.body.classList.add("departing");
+  /* the camera finds the planet: the door racks out of focus behind it, and it swells and glows */
+  document.body.classList.add("departing", "racking");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = "install";
   try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
   pad.ring.form(scene).then(() => {
@@ -103,7 +104,7 @@ function goToWorld() {
     sceneTimer = setTimeout(() => {
       if (current !== "install") return;
       door.classList.remove("shown"); door.hidden = true;
-      document.body.classList.remove("departing", "at-door"); scene.planet.classList.remove("chosen");
+      document.body.classList.remove("departing", "racking", "at-door"); scene.planet.classList.remove("chosen");
     }, 600);
   });
 }
@@ -114,13 +115,18 @@ function leaveWorld() {
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
   const scene = installPlanet();
   scene.planet.classList.add("chosen");
-  document.body.classList.add("departing", "at-door", "lit");
+  /* the door comes back soft, and comes into focus as the camera reaches it; the dot takes the planet back */
+  scene.near = (u) => {
+    if (u < 0.3) document.body.classList.remove("racking");
+    if (u < 0.05) document.body.classList.remove("departing");
+  };
+  document.body.classList.add("departing", "racking", "at-door", "lit");
   document.body.classList.remove("instrument", "arrived");
   door.hidden = false; door.classList.add("shown");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   pad.ring.unform(scene).then(() => {
     pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
-    document.body.classList.remove("departing"); scene.planet.classList.remove("chosen");
+    document.body.classList.remove("departing", "racking"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
 }
