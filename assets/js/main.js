@@ -22,6 +22,15 @@ mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
 /* each surface's glows are drawn the first time it is shown, after its first
    frame is on screen, so the picture is up before the work behind it starts */
 const dawnRasters = mountRasters($("#door .world"), DAWN, "dawn");
+/* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
+function loadEarth() {
+  const world = $("#door .world");
+  for (const im of world.querySelectorAll(".earth image[data-href]")) {
+    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
+    im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
+  }
+}
+const startDawn = () => { loadEarth(); dawnRasters.start(); };
 const duskRasters = mountRasters($("#dusk .world"), DUSK, "dusk");
 let dawnDrawn = false, duskDrawn = false;
 const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
@@ -62,7 +71,7 @@ function hideAll() {
 function showDoor() {
   journey.reset(); hideAll(); current = "door";
   const door = $("#door");
-  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
+  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
   requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
@@ -87,7 +96,7 @@ function goToWorld() {
   /* from anywhere but the door, the dawn comes up under what is leaving */
   if (current !== "door") {
     leaveCurrent();
-    if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
+    if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
     door.hidden = false; door.classList.add("shown"); document.body.classList.add("at-door", "lit");
   }
   const scene = installPlanet();
@@ -112,7 +121,7 @@ function goToWorld() {
 function leaveWorld() {
   const pad = PADS.install, door = $("#door");
   clearTimeout(sceneTimer);
-  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
+  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
   const scene = installPlanet();
   scene.planet.classList.add("chosen");
   /* the door comes back soft, and comes into focus as the camera reaches it; the dot takes the planet back */
@@ -158,7 +167,7 @@ function backToDawn() {
   if (current === "install") { leaveWorld(); return; }
   pad.ring.stop();
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
-    surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
+    surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { const door = $("#door"); door.classList.add("shown"); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });
 }

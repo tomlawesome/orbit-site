@@ -296,6 +296,10 @@ export function createFlight(canvas, options = {}) {
   const raf = options.requestFrame ?? ((fn) => requestAnimationFrame(fn));
   const cancel = options.cancelFrame ?? ((id) => cancelAnimationFrame(id));
   const clock = options.now ?? (() => performance.now());
+  /* the Earth the door shows under its dawn (tools/dawn.py): the flight starts on that very picture and
+     lets it go into its own plainer world as the climb gets under way. The door has already asked for it. */
+  const earth = typeof Image === "undefined" ? null : new Image();
+  if (earth) setTimeout(() => { earth.src = new URL("../img/door/dawn.webp", import.meta.url).href; }, 1500);
 
   /*
    * #873: every prop pen below used to build a fresh CanvasGradient or trace
@@ -665,11 +669,15 @@ export function createFlight(canvas, options = {}) {
       ctx.arc(cx, topY + 30 * s, 620 * s * (1 - c * 0.5), 0, 6.284); ctx.fill();
     }
 
+    /* how much of the door's own Earth is still in the picture: all of it at the start, gone before the world has
+       shrunk enough to show the picture's edges */
+    const ea = pal.hasSun && earth && earth.complete && earth.naturalWidth ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
+
     /* atmospheric scattering hugging the limb, outside in */
     ctx.save();
     ctx.lineCap = "butt";
     for (const [w, col, al] of pal.bands) {
-      ctx.strokeStyle = hexa(col, al * fade);
+      ctx.strokeStyle = hexa(col, al * fade * (1 - ea));
       ctx.lineWidth = w * s * (0.35 + 0.65 * R / R0) + 2;
       ctx.filter = "blur(" + (w > 40 ? 16 : w > 15 ? 8 : 3) + "px)";
       ctx.beginPath(); ctx.arc(cx, cy, R + ctx.lineWidth * 0.35, 0, 6.284); ctx.stroke();
@@ -683,13 +691,20 @@ export function createFlight(canvas, options = {}) {
     ctx.fillStyle = pal.ground;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.284); ctx.fill();
     const rimg = ctx.createLinearGradient(0, topY - 10, 0, topY + 80);
-    rimg.addColorStop(0, hexa(pal.rim1, 0.9)); rimg.addColorStop(1, hexa(pal.rim2, 0.5));
+    rimg.addColorStop(0, hexa(pal.rim1, 0.9 * (1 - ea))); rimg.addColorStop(1, hexa(pal.rim2, 0.5 * (1 - ea)));
     ctx.strokeStyle = rimg; ctx.lineWidth = Math.max(1.4, 2.6 * s);
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.284); ctx.stroke();
-    ctx.filter = "blur(7px)"; ctx.globalAlpha = 0.55 * alpha;
+    ctx.filter = "blur(7px)"; ctx.globalAlpha = 0.55 * alpha * (1 - ea);
     ctx.lineWidth = Math.max(3, 6 * s);
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.284); ctx.stroke();
     ctx.restore();
+    /* the picture: the frame's rows 640..1000, scaled about the world's centre as the world falls away */
+    if (ea > 0.002 && earth) {
+      const u = s * (R / R0);
+      ctx.save(); ctx.globalAlpha = alpha * ea;
+      ctx.drawImage(earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
+      ctx.restore();
+    }
   }
 
   /* ── one frame, at flight time `t` with step `dt` seconds ──────────────── */

@@ -30,8 +30,8 @@
     <div class="world" aria-hidden="true">
       <svg class="wl defs" width="0" height="0" aria-hidden="true"><defs>
         <linearGradient id="rimg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffd989"/><stop offset="100%" stop-color="#e2772b"/></linearGradient>
-        <radialGradient id="sun-core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffff"/><stop offset="35%" stop-color="#ffedc2" stop-opacity=".85"/><stop offset="100%" stop-color="#ffe9c4" stop-opacity="0"/></radialGradient>
-        <radialGradient id="sun-mid" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f8c95e" stop-opacity=".55"/><stop offset="60%" stop-color="#f0b429" stop-opacity=".18"/><stop offset="100%" stop-opacity="0"/></radialGradient>
+        <radialGradient id="sun-core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffff"/><stop offset="15%" stop-color="#fff6e2" stop-opacity=".9"/><stop offset="30%" stop-color="#ffedc2" stop-opacity=".6"/><stop offset="45%" stop-color="#ffe9c4" stop-opacity=".34"/><stop offset="60%" stop-color="#ffe4b8" stop-opacity=".16"/><stop offset="75%" stop-color="#ffe0b0" stop-opacity=".06"/><stop offset="90%" stop-color="#ffe0b0" stop-opacity=".015"/><stop offset="100%" stop-color="#ffe0b0" stop-opacity="0"/></radialGradient>
+        <radialGradient id="sun-mid" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f8c95e" stop-opacity=".55"/><stop offset="30%" stop-color="#f4c048" stop-opacity=".3"/><stop offset="60%" stop-color="#f0b429" stop-opacity=".1"/><stop offset="82%" stop-color="#f0b429" stop-opacity=".025"/><stop offset="100%" stop-color="#f0b429" stop-opacity="0"/></radialGradient>
         <radialGradient id="sun-wide" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#e2772b" stop-opacity=".3"/><stop offset="55%" stop-color="#c2571f" stop-opacity=".12"/><stop offset="100%" stop-opacity="0"/></radialGradient>
         <linearGradient id="skywash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="62%" stop-color="#3d2a4d" stop-opacity=".12"/><stop offset="86%" stop-color="#a2492a" stop-opacity=".2"/><stop offset="100%" stop-color="#e2772b" stop-opacity=".26"/></linearGradient>
       </defs></svg>
@@ -46,7 +46,6 @@
         <div class="sunpt">
           <svg class="wl breath" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
             <image class="zodiacal" data-raster="zod" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
-            <image data-raster="scatter" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
             <circle cx="800" cy="922" r="520" fill="url(#sun-wide)"/>
             <circle cx="800" cy="922" r="240" fill="url(#sun-mid)"/>
             <circle cx="800" cy="920" r="86" fill="url(#sun-core)"/>
@@ -55,12 +54,14 @@
         </div>
       </div>
       <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
-        <image data-raster="sunarc" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
         <circle cx="800" cy="3920" r="3000" fill="#04060e"/>
-        <image class="rim" data-raster="rim" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
         <circle class="rim" cx="800" cy="3920" r="3000" fill="none" stroke="url(#rimg)" stroke-width="2.4" stroke-opacity=".85"/>
       </svg>
-      <svg class="wl shimmerlayer" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#fff6e6" stroke-width="3.4" stroke-linecap="round"/></svg>
+      <!-- the Earth itself, from orbit, as the sun comes up over it (tools/dawn.py): before the light, and with it -->
+      <svg class="wl earth" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+        <image class="pre" data-href="assets/img/door/dawn-pre.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
+        <image class="up" data-href="assets/img/door/dawn.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
+      </svg>
     </div>
     <div class="loginchrome">
       <div class="lockup">
@@ -80,7 +81,7 @@
         <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button></div>
       </div>
     </div>
-    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
+    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project · Earth: <a href="https://earthobservatory.nasa.gov/features/NightLights" title="Black Marble city lights, Blue Marble land and clouds: NASA Earth Observatory" target="_blank" rel="noopener">NASA</a></p>
   </div>
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->

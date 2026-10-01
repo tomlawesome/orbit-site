@@ -29,6 +29,8 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/img/install/moon.webp` | The gold moon: NASA's CGI Moon Kit (LRO colour and LOLA elevation; NASA's Scientific Visualization Studio) graded to gold by `tools/moon.py` |
 | `assets/img/install/galaxy*.webp` | The Milky Way: NASA's Deep Star Maps 2020 (NASA/Goddard SVS; Gaia DR2: ESA/Gaia/DPAC), brought down from HDR by `tools/galaxy.py` |
 | `tools/gas-giant.py` | Writes the cloud deck: regrades a real planet's map (`--base`), or simulates one of its own — jets along irregular bands, storms, eddies |
+| `assets/img/door/dawn*.webp` | The door's Earth: the night side from 800 km over the Atlantic, looking east over Europe as the sun comes up — the city lights from NASA's Black Marble (2016), the clouds and land from NASA's Blue Marble — before the light (`dawn-pre`) and with it (`dawn`), in the door's 1600×1000 frame, rows 640–1000 |
+| `tools/dawn.py` | Renders them: the air's scattering (molecules, haze, ozone) under a sun just below the horizon, the Earth's shadow included; the clouds as a slab standing up from the map; the cities through the air and under the clouds. Its docstring has the sources and the command |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |

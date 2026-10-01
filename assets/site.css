@@ -145,6 +145,12 @@ body.lit .dawnlayer{opacity:1}
 body.lit .rim{opacity:1}
 .shimmer{stroke-dasharray:3 97;animation:sweep 22s linear infinite;opacity:0;transition:opacity 2s ease 1.5s}
 body.lit .shimmer{opacity:.9}
+/* the Earth: each picture fades in when it has arrived, and the sun comes up with the first light; the drawn limb under it is the stand-in until then */
+#door .earth image{opacity:0;transition:opacity 1.2s ease}
+#door .earth image.in{opacity:1}
+#door .earth .up.in{opacity:0;transition:opacity 4.5s cubic-bezier(.4,0,.3,1) .3s}
+body.lit #door .earth .up.in{opacity:1}
+#door .world.earthy .limb .rim{opacity:0}
 @keyframes sweep{to{stroke-dashoffset:-100}}
 .sunpt{opacity:0;transition:opacity 3.2s ease .5s}
 body.lit .sunpt{opacity:1}
