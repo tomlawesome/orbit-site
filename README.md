@@ -27,6 +27,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/img/install/orbit*.webp` | The world, still: shown while it loads, and in its place where WebGL2 is not |
 | `assets/img/install/rings.png` | The rings: Cassini's natural-colour mosaic across Saturn's rings (PIA08389, NASA/JPL/Space Science Institute) read as a radial profile by `tools/rings.py` |
 | `assets/img/install/moon.webp` | The gold moon: NASA's CGI Moon Kit (LRO colour and LOLA elevation; NASA's Scientific Visualization Studio) graded to gold by `tools/moon.py` |
+| `assets/img/install/galaxy*.webp` | The Milky Way: NASA's Deep Star Maps 2020 (NASA/Goddard SVS; Gaia DR2: ESA/Gaia/DPAC), brought down from HDR by `tools/galaxy.py` |
 | `tools/gas-giant.py` | Writes the cloud deck: regrades a real planet's map (`--base`), or simulates one of its own — jets along irregular bands, storms, eddies |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |

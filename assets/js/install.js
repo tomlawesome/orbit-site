@@ -50,7 +50,11 @@ const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4
    the planet sits at rest on the screen (its centre from the screen's centre,
    y up, and its radius, in screen heights; the moon's place likewise) */
 export const TUNE = {
-  sun: [-0.95, 0.28, -0.08], tiltZ: 0.38, tiltX: -0.12, sky: [1.2, 0.6],
+  sun: [-0.95, 0.28, -0.08], tiltZ: 0.38, tiltX: -0.12,
+  /* the Milky Way: where its core sits on the screen at rest, and a point its band runs through (fractions from the top left) */
+  sky: { core: [-0.35, -0.25], along: [0.6, 0.25] },
+  /* the film: how bright the Milky Way is, how much dust, the lens's colour fringing, the grain */
+  look: { galK: 0.05, dust: 1, fringe: 0.012, grain: 0.028 },
   rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: -0.23, roll: 0.3 },
   /* the moon the camera passes on the way in: when (k), how far off the path (planet radii, right and up), how big */
   fly: { k: 0.89, side: [-1.2, -0.8], r: 0.2 },
@@ -62,7 +66,7 @@ function world0() {
   SUN = norm(TUNE.sun);
   TILT = mm(rz(TUNE.tiltZ), rx(TUNE.tiltX));      /* planet frame → world */
   TO_TILT = tr(TILT);                              /* world → ring frame */
-  SKY = tr(mm(rz(TUNE.sky[0]), rx(TUNE.sky[1])));  /* world → galaxy frame */
+  SKY = tr(mm(rz(1.2), rx(0.6)));                   /* world → galaxy frame, until the screen is measured */
   REST = TUNE.rest; FROM = TUNE.from;
 }
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
@@ -82,7 +86,7 @@ export function createInstall(pad, opts = {}) {
   /* the approach: u runs 0 → 1 going in, back to 0 going home */
   let u = 1, motion = null;
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
-  let frames = [], lastAdjust = 0, tick = 0;
+  let frames = [], lastAdjust = 0, tick = 0, prev = null;
 
   function ensure() {
     if (world || failed) return world;
@@ -106,6 +110,10 @@ export function createInstall(pad, opts = {}) {
     const b = dot(v.cam, rd), c = dot(v.cam, v.cam) - lay.moonR * lay.moonR, h = Math.sqrt(Math.max(0, b * b - c));
     moonPos = [...add(v.cam, mul(rd, -b + h > 0 ? -b + h : 12)), 0.075];
     placeFly(null);
+    /* the galaxy turned so its core and its band fall where they are wanted on this screen at rest */
+    const at = (f) => { const px = f[0] * W - W / 2, py = H / 2 - f[1] * H; return norm(add(v.fwd, add(mul(v.right, (px - v.shift[0]) / lay.focal), mul(v.up, (py - v.shift[1]) / lay.focal)))); };
+    const core = at(TUNE.sky.core), n = norm(cross(core, at(TUNE.sky.along))), x = cross(n, core);
+    SKY = [...x, ...n, ...core];
     world?.resize(W, H, scale);
   }
   /* the moon passed on the way in: beside the path where the camera is at fly.k */
@@ -123,9 +131,12 @@ export function createInstall(pad, opts = {}) {
     const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
     const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));
     const drift = reduced ? 0 : idle * 0.0018;
-    const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k);
-    const el = lerp(FROM.el, REST.el, eE) + (bare ? 0 : -pointer.sy * 0.03 * k);
-    const roll = lerp(FROM.roll, REST.roll, eT);
+    /* the camera is held, not mounted: a slow, small wander, more of it while it is moving fast */
+    const hand = reduced || bare ? 0 : 0.0007 + 0.0035 * Math.sin(Math.PI * clamp(k)) ** 2;
+    const nz = (t, a, b, c) => Math.sin(t * 0.83 + a) * 0.6 + Math.sin(t * 2.17 + b) * 0.3 + Math.sin(t * 5.3 + c) * 0.1;
+    const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k) + hand * nz(idle, 0.3, 1.7, 2.9);
+    const el = lerp(FROM.el, REST.el, eE) + (bare ? 0 : -pointer.sy * 0.03 * k) + hand * nz(idle, 2.1, 0.4, 5.2);
+    const roll = lerp(FROM.roll, REST.roll, eT) + hand * 1.6 * nz(idle, 4.4, 3.3, 0.8);
     const c = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
     const cam = mul(c, dist), fwd = mul(c, -1);
     let right = norm(cross(fwd, [0, 1, 0])), up = cross(right, fwd);
@@ -150,11 +161,20 @@ export function createInstall(pad, opts = {}) {
     const tb = dot(v.cam, SUN), pd = Math.hypot(...add(v.cam, mul(SUN, -tb)));
     const sunVis = tb > 0 ? 1 : smooth(0.995, 1.06, pd);
     const spin = mm(ry(-(0.9 + idle * 0.004)), TO_TILT);
+    /* what the camera's motion does to the exposure: motes streak by its velocity over a 1/60 s shutter,
+       and while it rushes in, the frame blurs out from where it is going */
+    const dtS = prev ? Math.max(1 / 240, (now - prev.t) / 1000) : 1;
+    let vel = prev ? mul(add(v.cam, mul(prev.cam, -1)), 1 / dtS / 60) : [0, 0, 0];
+    const vl = Math.hypot(...vel); if (vl > 0.4) vel = mul(vel, 0.4 / vl);
+    const zoom = prev ? Math.abs(Math.log(v.dist) - Math.log(prev.dist)) / dtS : 0;
+    const blur = reduced ? 0 : Math.min(12, zoom * H * 0.012) * s;
+    prev = { t: now, cam: v.cam, dist: v.dist };
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
       sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
+      vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
     });
   }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
@@ -246,10 +266,12 @@ export function createInstall(pad, opts = {}) {
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
     },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
-    async still(k, idle = 0, dotAt = null) {
+    async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
       size(); if (!(await world.bake())) return false;
       motion = dotAt ? { dot: dotAt } : null; u = k; clock = idle;
+      /* a frame of the shot in motion: the one before it, a 60th of a second earlier */
+      if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: performance.now() - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
       draw(performance.now()); motion = null;
       return true;
     },

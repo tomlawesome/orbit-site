@@ -95,7 +95,8 @@ uniform vec3 uCam, uFwd, uRight, uUp, uSun;
 uniform mat3 uSpin, uTilt, uSkyM;
 uniform vec4 uMoon, uMoon2;
 uniform sampler2D uAlb, uSky, uRing, uMoonT;
-uniform float uHasMoon;
+uniform float uHasMoon, uGalaxy, uGalK, uDust, uFocusD;
+uniform vec3 uVel;
 uniform vec2 uAlbSize;
 ${NOISE}
 const float FLAT=0.935;                 /* polar radius over equatorial: the spin's bulge */
@@ -146,7 +147,9 @@ vec3 sky(vec3 rd){
   vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
   vec4 s=textureGrad(uSky,uv,dx,dy);
-  vec3 c=s.rgb*0.5+stars(d,s.a)*0.09;
+  /* Gaia's Milky Way, its stars denser where the band is; or the drawn galaxy if it could not be had */
+  float dens=uGalaxy>0.5?clamp(dot(s.rgb,vec3(0.3,0.5,0.2))*2.5+0.12,0.0,1.0):s.a;
+  vec3 c=s.rgb*(uGalaxy>0.5?uGalK:0.5)+stars(d,dens)*0.09;
   float a=acos(clamp(dot(rd,uSun),-1.0,1.0));
   c+=vec3(1.0,0.97,0.9)*4000.0*smoothstep(0.0052,0.0046,a);
   return c;
@@ -256,6 +259,50 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   return c;
 }
 
+/* THE DUST: ice and dust drifting near the planet, thickest by the rings. Walked cell by cell along the
+   ray; each mote is a point of sunlight, soft and large when near the lens (out of focus), streaked by
+   the camera's own motion during the exposure */
+vec3 dust(vec3 ro,vec3 rd,float tMax){
+  if(uDust<=0.0)return vec3(0.0);
+  const float CS=0.07;
+  vec3 p=ro/CS, cell=floor(p), st=sign(rd), tD=abs(1.0/rd);
+  vec3 tN=(cell+max(st,0.0)-p)/rd;
+  vec3 acc=vec3(0.0);
+  float ph=dot(rd,uSun), g=0.65, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5);
+  for(int i=0;i<30;i++){
+    float t0=min(tN.x,min(tN.y,tN.z))*CS;
+    float h=hash13(cell);
+    if(h<0.06){
+      vec3 o=vec3(hash13(cell+7.1),hash13(cell+3.3),hash13(cell+9.9));
+      vec3 pp=(cell+0.2+0.6*o)*CS+(o-0.5)*uTime*0.0025;
+      float r=length(pp), y=abs((uTilt*pp).y);
+      float w=smoothstep(14.0,7.0,r)*(0.35+0.65*exp(-y/0.7))*step(1.02,r);
+      if(w>0.0){
+        /* the mote's path across the lens during the exposure: the ray's closest approach to it */
+        vec3 a=pp, b=pp-uVel;
+        vec3 ab=b-a; float L2=max(dot(ab,ab),1e-9);
+        vec3 ao=ro-a; float bd=dot(ab,rd), c1=dot(ao,rd), c2=dot(ab,ao);
+        float den=L2-bd*bd;
+        float sseg=clamp((c2-bd*c1)/max(den,1e-9),0.0,1.0);
+        vec3 qq=a+ab*sseg; float z=dot(qq-ro,rd);
+        if(z>0.015&&z<tMax){
+          float dpx=length(qq-ro-rd*z)/z*uFocal;
+          float coc=clamp(18.0*abs(1.0/z-1.0/uFocusD)/(1.0/0.12),0.8,0.42*CS/z*uFocal);
+          float streak=max(1.0,length(uVel)/z*uFocal);
+          /* a near mote gathers more light into the lens, spread over its blur */
+          float e=exp(-dpx*dpx/(coc*coc))/(coc*coc+streak*0.6)*min(0.25/(z*z),60.0);
+          float lit=smoothstep(0.985,1.03,length(qq-uSun*min(dot(qq,uSun),0.0)));
+          acc+=e*w*lit*(0.6+0.4*hash13(cell+5.0));
+        }
+      }
+    }
+    if(t0>tMax)break;
+    if(tN.x<tN.y){ if(tN.x<tN.z){cell.x+=st.x;tN.x+=tD.x;}else{cell.z+=st.z;tN.z+=tD.z;} }
+    else{ if(tN.y<tN.z){cell.y+=st.y;tN.y+=tD.y;}else{cell.z+=st.z;tN.z+=tD.z;} }
+  }
+  return acc*SUNI*vec3(1.0,0.95,0.9)*(0.35+hg*0.25)*0.35*uDust;
+}
+
 void main(){
   vec2 q=(gl_FragCoord.xy-0.5*uRes-uShift)/uFocal;
   vec3 ro=uCam, rd=normalize(uFwd+uRight*q.x+uUp*q.y);
@@ -283,6 +330,7 @@ void main(){
     col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6;
   }
   if(ringOn&&(ta.x<=0.0||tr<ta.x)){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
+  col+=dust(ro,rd,min(tOp,tr>0.0?tr:1e9));
   /* the light in the lens: a soft halo round the sun, and a thin streak */
   float sa=acos(clamp(dot(rd,uSun),-1.0,1.0));
   vec3 glare=vec3(1.0,0.86,0.68)*(1.2*exp(-sa/0.01)+0.12*exp(-sa/0.06)+0.025*exp(-sa/0.3));
@@ -321,7 +369,7 @@ void main(){
 /* THE FILM: the light and its bloom, tone-mapped (AgX), a breath of vignette and grain */
 const FILM = `#version 300 es
 precision highp float;
-uniform sampler2D uHdr, uBloom; uniform vec2 uRes; uniform float uTime, uExpo, uBloomK;
+uniform sampler2D uHdr, uBloom; uniform vec2 uRes, uBlurC; uniform float uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
 out vec4 o;
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 vec3 agxCurve(vec3 x){vec3 x2=x*x, x4=x2*x2; return 15.5*x4*x2-40.14*x4*x+31.96*x4-6.868*x2*x+0.4298*x2+0.1191*x-0.00232;}
@@ -331,9 +379,21 @@ vec3 agx(vec3 c){
   c=I*c; c=clamp((log2(max(c,1e-10))+12.47393)/16.5,0.0,1.0); c=agxCurve(c); c=O*c;
   return clamp(pow(max(c,0.0),vec3(2.2)),0.0,1.0);
 }
+/* the lens's own colour fringing, stronger out to the edges; and the dolly's blur, out from where the camera is going */
+vec3 lens(vec2 uv){
+  vec2 r=uv-0.5; float f=uFringe*dot(r,r);
+  vec3 c=vec3(texture(uHdr,uv+r*f).r,texture(uHdr,uv).g,texture(uHdr,uv-r*f).b);
+  if(uBlur>0.5){
+    vec2 dir=(uv-uBlurC/uRes); vec2 stp=dir*(uBlur/max(length(dir*uRes),1.0))/7.0;
+    vec3 acc=c; for(int i=1;i<8;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(texture(uHdr,u2+r*f).r,texture(uHdr,u2).g,texture(uHdr,u2-r*f).b); }
+    c=acc/8.0;
+  }
+  return c;
+}
 void main(){
   vec2 uv=gl_FragCoord.xy/uRes;
   vec4 h=texture(uHdr,uv);
+  h.rgb=lens(uv);
   /* sharpening, contrast-adaptive: lifts fine detail, never past its neighbours, so no halos */
   vec2 px=1.0/uRes;
   vec3 n=texture(uHdr,uv+vec2(0,px.y)).rgb, sd=texture(uHdr,uv-vec2(0,px.y)).rgb, e=texture(uHdr,uv+vec2(px.x,0)).rgb, w=texture(uHdr,uv-vec2(px.x,0)).rgb;
@@ -347,7 +407,11 @@ void main(){
   /* a touch more colour than AgX's neutral: slide film rather than negative */
   float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=max(mix(vec3(l),c,1.2),0.0);
   c=pow(c,vec3(1.0/2.2));
-  c+=(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)*(2.5/255.0);
+  /* grain, as film has it: most in the mid-tones, little in the blacks and the highlights */
+  float lum=dot(c,vec3(0.2126,0.7152,0.0722));
+  float gr=(hash13(vec3(gl_FragCoord.xy,floor(uTime*24.0)))+hash13(vec3(gl_FragCoord.yx*1.7,floor(uTime*24.0)+3.0))-1.0);
+  c+=gr*uGrain*(0.25+3.0*lum*(1.0-lum));
+  c+=(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)*(1.5/255.0);
   float a=max(h.a,clamp(max(c.r,max(c.g,c.b)),0.0,1.0)*(1.0-h.a));
   o=vec4(c,a);
 }`;
@@ -393,6 +457,7 @@ export function createWorld(canvas, opts = {}) {
   const MAP = opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href;
   const RINGS = opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href;
   const MOON = opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href;
+  const GALAXY = opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href;
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
 
   const compile = (type, src) => {
@@ -477,6 +542,11 @@ export function createWorld(canvas, opts = {}) {
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); },
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
+  let galT = null;
+  const loadGalaxy = fetch(GALAXY).then((r) => { if (!r.ok) throw new Error(`${GALAXY}: ${r.status}`); return r.blob(); })
+    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then((img) => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); },
+      (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
   const jobs = [];
   const STRIPS = 4;
   for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
@@ -492,8 +562,8 @@ export function createWorld(canvas, opts = {}) {
   /* ready when the map is in and the galaxy is baked; resolves false if the map cannot be had */
   function bake() {
     if (!baking) baking = new Promise((res) => {
-      const step = () => { bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
-      requestAnimationFrame(step);
+      const step = () => { if (galT) skyDone = true; else bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
+      loadGalaxy.then(() => requestAnimationFrame(step));
     });
     return baking;
   }
@@ -524,8 +594,9 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform1f(u.uFocal, v.focal); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uBg, v.bg); gl.uniform1f(u.uSunVis, v.sunVis);
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
-      gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]); gl.uniform2f(u.uAlbSize, SW, SH);
-      bind(0, albT, u.uAlb); bind(1, skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
+      gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
+      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH);
+      bind(0, albT, u.uAlb); bind(1, galT || skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
     let src = hdrT;
@@ -542,6 +613,7 @@ export function createWorld(canvas, opts = {}) {
     pass(P.film, null, W, H, (u) => {
       bind(0, hdrT.t, u.uHdr); bind(1, chain[0].t, u.uBloom);
       gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.2);
+      gl.uniform1f(u.uBlur, v.blur || 0); gl.uniform2fv(u.uBlurC, v.blurC || [W / 2, H / 2]); gl.uniform1f(u.uFringe, v.fringe ?? 0.012); gl.uniform1f(u.uGrain, v.grain ?? 0.028);
     });
   }
   return {
