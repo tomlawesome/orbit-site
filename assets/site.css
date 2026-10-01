@@ -1039,6 +1039,9 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad .from{margin:16px 2px 0;font:13.5px/1.6 var(--ui);color:rgba(214,210,232,.7);max-width:46ch}
 #installpad .from code{font:12.5px var(--mono);color:rgba(236,232,248,.85)}
 #installpad .doorfoot.by{z-index:3;color:rgba(214,210,232,.55)}
+#installpad .credit{position:absolute;z-index:3;right:24px;bottom:calc(18px + env(safe-area-inset-bottom,0px));margin:0;font:10.5px/1.4 var(--mono);letter-spacing:.04em;color:rgba(214,210,232,.42);max-width:calc(100% - 48px);text-align:right}
+#installpad.forming .credit{opacity:0}
+@media (max-width:560px){#installpad .credit{bottom:calc(46px + env(safe-area-inset-bottom,0px))}}
 #installpad .doorfoot.by a{color:rgba(214,210,232,.75)}
 @media (max-aspect-ratio:10/11){
   #installpad .scrim{background:linear-gradient(180deg,rgba(3,4,10,.6),rgba(3,4,10,.2) 45%,transparent 60%)}
