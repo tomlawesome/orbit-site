@@ -28,7 +28,8 @@ function bezier(x1, y1, x2, y2) {
     return Y(clamp(t));
   };
 }
-const easeDolly = bezier(0.62, 0, 0.12, 1), easeTurn = bezier(0.45, 0, 0.2, 1), easeAim = bezier(0.5, 0, 0.25, 1);
+/* the shot is slow on purpose: a long ease into the move, a long glide, a long settle */
+const easeDolly = bezier(0.72, 0, 0.18, 1), easeTurn = bezier(0.5, 0, 0.3, 1), easeAim = bezier(0.6, 0, 0.3, 1);
 
 /* vectors and 3×3 rotations (row-major; uploaded transposed) */
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -62,7 +63,7 @@ function world0() {
   SKY = tr(mm(rz(TUNE.sky[0]), rx(TUNE.sky[1])));  /* world → galaxy frame */
   REST = TUNE.rest; FROM = TUNE.from;
 }
-const APPROACH = 6.4, SETTLE = 5.2, RETURN = 2.8;
+const APPROACH = 12, SETTLE = 9.6, RETURN = 5;
 
 function layoutFor(W, H) {
   const t = H > W * 1.1 ? TUNE.port : TUNE.land;
@@ -105,11 +106,11 @@ export function createInstall(pad, opts = {}) {
   /* the camera at a point in the shot: k is how far in (0 at the dot, 1 at rest) */
   function view(k, idle, bare = false, dot0 = null) {
     const L = lay;
-    const eD = easeDolly(clamp((k - 0.04) / 0.96)), eT = easeTurn(clamp(k / 0.95)), eA = easeAim(clamp(k / 0.5));
+    const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp(k / 0.62));
     const d1 = Math.sqrt((L.focal / L.R) ** 2 + 1);
     const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
     const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));
-    const drift = reduced ? 0 : idle * 0.0035;
+    const drift = reduced ? 0 : idle * 0.0018;
     const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k);
     const el = lerp(FROM.el, REST.el, eT) + (bare ? 0 : -pointer.sy * 0.03 * k);
     const roll = lerp(FROM.roll, REST.roll, eT);
@@ -136,12 +137,12 @@ export function createInstall(pad, opts = {}) {
       : [W / 2 + dot(SUN, v.right) * W * 4, H / 2 + dot(SUN, v.up) * W * 4];
     const tb = dot(v.cam, SUN), pd = Math.hypot(...add(v.cam, mul(SUN, -tb)));
     const sunVis = tb > 0 ? 1 : smooth(0.995, 1.06, pd);
-    const spin = mm(ry(-(0.9 + idle * 0.006)), TO_TILT);
+    const spin = mm(ry(-(0.9 + idle * 0.004)), TO_TILT);
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
       sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos,
-      time: now / 1000, bg: smooth(0.02, 0.3, k), sunVis, expo: 1.0,
+      time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
     });
   }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
