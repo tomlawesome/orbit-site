@@ -49,9 +49,9 @@ const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4
    the planet sits at rest on the screen (its centre from the screen's centre,
    y up, and its radius, in screen heights; the moon's place likewise) */
 export const TUNE = {
-  sun: [-0.8, 0.4, -0.1], tiltZ: 0.32, tiltX: 0.2, sky: [2.2, -0.2],
-  rest: { az: 0.0, el: 0.22, roll: 0.12, d: 3.6 }, from: { az: -0.8, el: 0.45, roll: 0.35 },
-  land: { R: 0.72, cx: 0.17, cy: -0.5, moon: [-0.3, 0.25], moonR: 5.0 },
+  sun: [-0.85, 0.1, -0.2], tiltZ: 0.38, tiltX: -0.12, sky: [2.2, -0.2],
+  rest: { az: 0.0, el: 0.36, roll: 0.16, d: 4.4 }, from: { az: -0.8, el: 0.6, roll: 0.4 },
+  land: { R: 0.5, cx: 0.16, cy: -0.17, moon: [-0.32, 0.28], moonR: 6.0 },
   port: { R: 0.34, cx: 0.12, cy: -0.36, moon: [-0.26, 0.02], moonR: 5.0 },
 };
 let SUN, TILT, TO_TILT, SKY, REST, FROM;
@@ -70,7 +70,7 @@ function layoutFor(W, H) {
   return { focal, R, cx: t.cx * W, cy: t.cy * H, moon: [t.moon[0] * W, t.moon[1] * H], moonR: t.moonR };
 }
 
-export function createInstall(pad) {
+export function createInstall(pad, opts = {}) {
   const canvas = $(".orbitgl", pad);
   let world = null, failed = false;
   let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0];
@@ -82,7 +82,7 @@ export function createInstall(pad) {
 
   function ensure() {
     if (world || failed) return world;
-    try { world = createWorld(canvas); } catch (e) { console.warn(e); world = null; }
+    try { world = createWorld(canvas, opts.world); } catch (e) { console.warn(e); world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
     return world;
@@ -141,7 +141,7 @@ export function createInstall(pad) {
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
       sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos,
-      time: now / 1000, bg: smooth(0.02, 0.3, k), sunVis, expo: 1.0, cloudT: idle * 0.00035,
+      time: now / 1000, bg: smooth(0.02, 0.3, k), sunVis, expo: 1.0,
     });
   }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
@@ -191,15 +191,16 @@ export function createInstall(pad) {
       running = true; last = 0;
       size();
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer);
-      if (w) w.bake().then(() => pad.classList.add("lit"));
+      if (w) w.bake().then((ok) => pad.classList.add(ok ? "lit" : "flat"));
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     /* the shot in from the door's planet: resolves when the camera has all but settled */
     form(scene) {
-      return new Promise((resolve) => {
+      return new Promise(async (resolve) => {
         this.start();
-        if (!world || reduced) { u = 1; motion = null; resolve(); return; }
-        world.bake(true); pad.classList.add("lit");
+        const ok = world && (await world.bake());
+        if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
+        pad.classList.add("lit");
         const b = scene.body.getBoundingClientRect();
         const dot0 = { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, b.width / 2) };
         u = 0; clock = 0; frames = [];
@@ -220,9 +221,9 @@ export function createInstall(pad) {
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
     },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
-    still(k, idle = 0, dotAt = null) {
+    async still(k, idle = 0, dotAt = null) {
       ensure(); if (!world) return false;
-      size(); world.bake(true);
+      size(); if (!(await world.bake())) return false;
       motion = dotAt ? { dot: dotAt } : null; u = k; clock = idle;
       draw(performance.now()); motion = null;
       return true;
