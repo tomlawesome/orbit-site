@@ -10,14 +10,11 @@
  * drawn once, offscreen, with its own copy of the identical filter graph,
  * and set on a plain <image> in the same 1600×1000 frame it came from.
  */
-const F_B2L = '<filter id="b2l" filterUnits="userSpaceOnUse" x="-20" y="-20" width="1640" height="1040"><feGaussianBlur stdDeviation="2"/></filter>';
 const F_B6L = '<filter id="b6l" filterUnits="userSpaceOnUse" x="-40" y="-40" width="1680" height="1080"><feGaussianBlur stdDeviation="6"/></filter>';
-const F_B12L = '<filter id="b12l" filterUnits="userSpaceOnUse" x="-60" y="-60" width="1720" height="1120"><feGaussianBlur stdDeviation="12"/></filter>';
 const F_B20L = '<filter id="b20l" filterUnits="userSpaceOnUse" x="-100" y="-100" width="1800" height="1200"><feGaussianBlur stdDeviation="20"/></filter>';
 const F_RAYROUGH = '<filter id="rayrough" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.004 0.03" numOctaves="2" seed="9" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="22"/><feGaussianBlur stdDeviation="17"/></filter>';
 const G_ZOD = '<radialGradient id="zod" cx="50%" cy="88%" r="75%"><stop offset="0%" stop-color="#f6d489" stop-opacity=".13"/><stop offset="55%" stop-color="#e8b25e" stop-opacity=".045"/><stop offset="100%" stop-opacity="0"/></radialGradient>';
 const G_RAYG = '<linearGradient id="rayg" x1="0" y1="1" x2="0" y2="0"><stop offset="0%" stop-color="#ffe4a8" stop-opacity=".26"/><stop offset="55%" stop-color="#f4c05a" stop-opacity=".07"/><stop offset="100%" stop-opacity="0"/></linearGradient>';
-const G_RIMG = '<linearGradient id="rimg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffd989"/><stop offset="100%" stop-color="#e2772b"/></linearGradient>';
 
 export const DAWN = {
   zod: { defs: F_B20L + G_ZOD, body: '<ellipse cx="800" cy="640" rx="300" ry="480" fill="url(#zod)" filter="url(#b20l)"/>' },
@@ -32,17 +29,7 @@ export const DAWN = {
     body: '<g fill="url(#rayg)" filter="url(#rayrough)" opacity=".7">' +
       '<path d="M 800 924 L 646 404 L 680 390 Z"/><path d="M 800 924 L 962 560 L 928 544 Z"/><path d="M 800 924 L 404 610 L 448 574 Z"/><path d="M 800 924 L 1200 596 L 1156 562 Z"/></g>',
   },
-  scatter: {
-    defs: F_B2L + F_B6L + F_B12L + F_B20L,
-    body: '<circle cx="800" cy="3920" r="3122" fill="none" stroke="#7a2c18" stroke-opacity=".1" stroke-width="150" filter="url(#b20l)"/>' +
-      '<circle cx="800" cy="3920" r="3060" fill="none" stroke="#e2772b" stroke-opacity=".16" stroke-width="84" filter="url(#b20l)"/>' +
-      '<circle cx="800" cy="3920" r="3026" fill="none" stroke="#f0b429" stroke-opacity=".28" stroke-width="34" filter="url(#b12l)"/>' +
-      '<circle cx="800" cy="3920" r="3010" fill="none" stroke="#ffd989" stroke-opacity=".4" stroke-width="12" filter="url(#b6l)"/>' +
-      '<circle cx="800" cy="3920" r="3003" fill="none" stroke="#fff3d6" stroke-opacity=".65" stroke-width="4" filter="url(#b2l)"/>',
-  },
   sunpt: { defs: F_B6L, body: '<circle cx="800" cy="919" r="20" fill="#fffdf6" filter="url(#b6l)"/>' },
-  sunarc: { defs: F_B2L, body: '<path d="M 560 934 A 3000 3000 0 0 1 1040 934" fill="none" stroke="#ffedc2" stroke-width="3" stroke-linecap="round" opacity=".7" filter="url(#b2l)"/>' },
-  rim: { defs: F_B6L + G_RIMG, body: '<circle cx="800" cy="3920" r="3000" fill="none" stroke="url(#rimg)" stroke-width="6" stroke-opacity=".35" filter="url(#b6l)"/>' },
 };
 
 const F_DB6 = '<filter id="d-b6" filterUnits="userSpaceOnUse" x="-40" y="-40" width="1680" height="1080"><feGaussianBlur stdDeviation="6"/></filter>';
@@ -66,8 +53,8 @@ export const DUSK = {
 
 /* The heavily blurred groups carry no edge a second device pixel could
    sharpen, so they are drawn at CSS resolution; only the thin ones (the sun's
-   core, the arc over the limb, the rim) are drawn at device resolution. */
-const SOFT = new Set(["zod", "sway1", "sway2", "scatter", "glow", "belt", "afterglow"]);
+   core, the dusk's rim) are drawn at device resolution. */
+const SOFT = new Set(["zod", "sway1", "sway2", "glow", "belt", "afterglow"]);
 /* and the softest of them — nothing in them narrower than a 12-unit blur —
    at half of that, which a blur that wide cannot tell apart */
 const SOFTEST = new Set(["zod", "sway1", "sway2", "glow", "belt"]);
