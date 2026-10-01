@@ -66,8 +66,9 @@ function showDoor() {
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
   requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
-  /* the docs' chart is read early, so the flight there can carry it */
+  /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
   setTimeout(() => PADS.docs.ring.ready?.(), 2500);
+  setTimeout(() => { if (current === "door") PADS.install.ring.prepare?.(); }, 3200);
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
@@ -76,22 +77,10 @@ function leaveCurrent() {
   else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); setTimeout(() => { h.hidden = true; }, 800); }
 }
 /* a section: the flight there, and the landing */
-/* the door as a scene the install can move: where its sun rises, the layers
-   that carry the light, the ground and the stars, and the planet that was clicked */
-function doorScene() {
-  const door = $("#door"), w = $(".world", door), r = w.getBoundingClientRect();
-  const ox = parseFloat(w.style.getPropertyValue("--ox")), oy = parseFloat(w.style.getPropertyValue("--oy"));
-  const planet = $('.planet[data-section="install"]', door);
-  return {
-    ox: Number.isFinite(ox) ? r.left + ox : innerWidth / 2, oy: Number.isFinite(oy) ? r.top + oy : innerHeight * 0.92,
-    glow: $(".sunpt", w), rays: $(".rays", w), ground: [$(".limb", w), $(".shimmerlayer", w), $(".wash", w), $(".sunpt", w), $(".rays", w)],
-    stars: $(".dsky", door), dawn: $(".dawnlayer", w), rims: [...w.querySelectorAll(".rim")],
-    planet, body: $(".body", planet),
-  };
-}
-/* the install forms rather than flies: the door's own sunrise climbs, and the planet crosses it */
+/* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
 let sceneTimer = 0;
-function formEclipse() {
+const installPlanet = () => { const planet = $('.planet[data-section="install"]', $("#door")); return { planet, body: $(".body", planet) }; };
+function goToWorld() {
   const pad = PADS.install, door = $("#door");
   planets.hide(); player.stop(true); home.closeDrawers();
   clearTimeout(sceneTimer);
@@ -101,42 +90,42 @@ function formEclipse() {
     if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
     door.hidden = false; door.classList.add("shown"); document.body.classList.add("at-door", "lit");
   }
-  const scene = doorScene();
+  const scene = installPlanet();
   scene.planet.classList.add("chosen");
-  document.body.classList.add("eclipsing");
-  pad.el.classList.add("forming"); pad.el.hidden = false; current = "install";
+  document.body.classList.add("departing");
+  pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = "install";
   try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
   pad.ring.form(scene).then(() => {
+    if (current !== "install") return;
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
     document.body.classList.add("instrument", "arrived");
-    /* the door goes once the install's own sky is in over it */
+    /* the door goes once the sky is all the world's */
     sceneTimer = setTimeout(() => {
       if (current !== "install") return;
       door.classList.remove("shown"); door.hidden = true;
-      document.body.classList.remove("eclipsing", "at-door"); scene.planet.classList.remove("chosen");
-      pad.ring.release(scene);
-    }, 1700);
+      document.body.classList.remove("departing", "at-door"); scene.planet.classList.remove("chosen");
+    }, 600);
   });
 }
-function unformEclipse() {
+/* back to the dawn: the same shot out, the planet set down on its orbit wherever it has got to */
+function leaveWorld() {
   const pad = PADS.install, door = $("#door");
   clearTimeout(sceneTimer);
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); }
-  const scene = doorScene();
+  const scene = installPlanet();
   scene.planet.classList.add("chosen");
-  document.body.classList.add("eclipsing", "at-door", "lit");
+  document.body.classList.add("departing", "at-door", "lit");
+  document.body.classList.remove("instrument", "arrived");
+  door.hidden = false; door.classList.add("shown");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   pad.ring.unform(scene).then(() => {
-    door.hidden = false; door.classList.add("shown");
     pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
-    document.body.classList.remove("eclipsing", "arrived", "instrument"); scene.planet.classList.remove("chosen");
+    document.body.classList.remove("departing"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
-  /* the door is shown once the scene is set, so it comes up already in the eclipse's night */
-  requestAnimationFrame(() => { door.hidden = false; door.classList.add("shown"); });
 }
 function flyToPad(id) {
-  if (id === "install") { formEclipse(); return; }
+  if (id === "install") { goToWorld(); return; }
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
   /* the docs' flight carries the chart when the chart is ready; otherwise the plain climb */
@@ -160,7 +149,7 @@ function arrivePad(id) {
 /* back to the dawn: the descent, setting down on the door */
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
-  if (current === "install") { unformEclipse(); return; }
+  if (current === "install") { leaveWorld(); return; }
   pad.ring.stop();
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(dawnRasters.start); } door.hidden = false; document.body.classList.add("at-door", "lit"); },

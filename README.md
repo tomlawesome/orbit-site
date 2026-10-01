@@ -21,7 +21,9 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
-| `assets/js/install.js` | The install: an eclipse. The command is the corona, written round the rim and turning slowly; copy is the one word on the disc |
+| `assets/js/install.js` | The install: into orbit. The camera goes from the purple planet on the door to the world it is, and settles in orbit over it; the one line waits in the dark above |
+| `assets/js/world.js` | The world, drawn in WebGL2: a ray-traced planet (oceans, continents, weather, the lights of the homes), its atmosphere, rings and gold moon, and the galaxy; surface and galaxy baked once on the GPU |
+| `assets/img/install/` | The world, still: shown while it is baked, and in its place where WebGL2 is not |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |

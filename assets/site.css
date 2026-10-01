@@ -824,13 +824,6 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 @media (max-width:700px){.pad.info .three{grid-template-columns:1fr}.pad.info .facts{grid-template-columns:1fr}.pad.docs .index{padding-top:84px}.pad.docs .entry .where{display:none}}
 @media (prefers-reduced-motion:reduce){.pad.info .chapter{transition:none;opacity:1;transform:none}.pad.info .sun,.pad.info .system .o1,.pad.info .system .o2{animation:none}}
 
-/* ══ THE INSTALL: the ring on the left, the words beside it, the six in a
-   rail under them; on a phone the words sit inside the ring instead ══ */
-@media (max-width:899px){
-  body.instrument #installpad .side{animation:none}
-}
-@media (max-width:560px){#installpad .side .stage{width:calc(var(--RI) * .72)}#installpad .stage .line{font-size:13.5px}}
-
 /* the information's screens */
 .pad.info .shot{margin:28px 0 0;display:grid;gap:12px}
 .pad.info .shot img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--line);background:#060b1c;box-shadow:0 30px 80px rgba(0,0,0,.45)}
@@ -1015,31 +1008,53 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 .pad.docs .chart.drawn.settled .star{animation:none;opacity:1}
 .pad.docs .chart.drawn.settled .star .dot{animation:none}
 
-/* ══ THE INSTALL: an eclipse ══════════════════════════════════════════════ */
-#installpad .eclipse{position:absolute;inset:0;z-index:2;pointer-events:none}
-#installpad{user-select:none;-webkit-user-select:none}
-/* the line is written round the ring on the canvas; here it is for the reader and the clipboard */
-#installpad .theline{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
-#installpad .copy.core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;font:500 10.5px var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--ink-mid);background:none;border:0;padding:14px 18px;cursor:pointer;transition:color .3s}
-#installpad .copy.core:hover{color:var(--accent-text)}
-#installpad .copy.core[data-done]{color:var(--accent-text)}
-#installpad .dark{position:absolute;left:50%;top:calc(47% + min(24vw,24svh) + 58px);transform:translateX(-50%);margin:0;z-index:3;text-align:center;font:600 clamp(17px,1.7vw,24px)/1.35 var(--display);letter-spacing:-.01em;color:var(--ink);text-wrap:balance;width:max-content;max-width:calc(100% - 40px)}
-@media (max-width:700px){#installpad .dark{top:calc(44% + 30vw + 54px);font-size:17px}}
-/* forming: the install sits over the door with no floor of its own, so the door's sun is what climbs;
-   its own sky and chrome arrive at totality */
+/* ══ THE INSTALL: into orbit ════════════════════════════════════════════
+   The scene is always space, whatever the pack: the words are set for the dark */
+#installpad{background:#03040a;color:#ecebf6;user-select:none;-webkit-user-select:none;overflow:hidden}
+#installpad .poster,#installpad .orbitgl{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none}
+#installpad .poster{background:#03040a url(img/install/orbit.webp) center/cover no-repeat;transition:opacity 1s ease}
+@media (max-aspect-ratio:10/11){#installpad .poster{background-image:url(img/install/orbit-tall.webp)}}
+#installpad .orbitgl{opacity:0;transition:opacity 1s ease}
+#installpad.lit .orbitgl{opacity:1}
+#installpad.lit .poster,#installpad .sky,#installpad .vignette{opacity:0}
+#installpad.flat .poster{opacity:1}
+/* a shade in the corner the words stand in, so they read over any part of the sky */
+#installpad .scrim{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(90% 75% at 0% 0%,rgba(3,4,10,.62),rgba(3,4,10,.25) 55%,transparent 80%)}
+#installpad .back,#installpad .home{color:rgba(214,210,232,.7)}
+#installpad .back:hover,#installpad .home:hover{color:#d8b45a}
+#installpad .words{position:absolute;z-index:3;left:clamp(24px,7vw,128px);top:clamp(88px,17vh,220px);width:min(640px,calc(100% - 48px));user-select:text;-webkit-user-select:text}
+#installpad .words .corner{display:block;margin-bottom:18px;color:rgba(214,210,232,.62)}
+#installpad .words h1{font:600 clamp(30px,3.9vw,58px)/1.04 var(--display);letter-spacing:-.022em;white-space:nowrap;color:#f4f2fb;margin:0 0 30px;text-shadow:0 2px 32px rgba(0,0,0,.55)}
+#installpad .theline{display:flex;align-items:center;gap:10px;margin:0;padding:6px 6px 6px 18px;border-radius:14px;
+  background:rgba(12,9,28,.52);border:1px solid rgba(183,154,224,.24);-webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 18px 50px -20px rgba(0,0,0,.8)}
+#installpad .theline code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:none;font:13px/2.4 var(--mono);color:#e7e2f6;cursor:copy;
+  -webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
+#installpad .theline code::-webkit-scrollbar{display:none}
+#installpad .theline code[data-done]{color:#d8b45a}
+#installpad .theline .prompt{color:#b79ae0;margin-right:.7em}
+#installpad .theline .copy{flex:none;font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#1b1206;background:#d8b45a;border:0;border-radius:9px;padding:11px 15px;cursor:pointer;transition:filter .2s,transform .2s}
+#installpad .theline .copy:hover{filter:brightness(1.12)}
+#installpad .theline .copy:active{transform:scale(.97)}
+#installpad .from{margin:16px 2px 0;font:13.5px/1.6 var(--ui);color:rgba(214,210,232,.7);max-width:46ch}
+#installpad .from code{font:12.5px var(--mono);color:rgba(236,232,248,.85)}
+#installpad .doorfoot.by{z-index:3;color:rgba(214,210,232,.55)}
+#installpad .doorfoot.by a{color:rgba(214,210,232,.75)}
+@media (max-aspect-ratio:10/11){
+  #installpad .scrim{background:linear-gradient(180deg,rgba(3,4,10,.6),rgba(3,4,10,.2) 45%,transparent 60%)}
+  #installpad .words{top:clamp(76px,12svh,140px)}
+  #installpad .words h1{font-size:clamp(28px,8.2vw,44px);margin-bottom:22px}
+}
+/* the words arrive once the camera has all but settled */
+body.instrument #installpad .words{animation:chromein 1.4s ease .2s both}
+body.withdrawing #installpad .words{animation:chromeout .45s ease both}
+/* forming: the install is over the door with no floor of its own; the shot starts from the planet that was clicked */
 #installpad.forming{background:transparent;z-index:37}
-#installpad.forming .sky,#installpad.forming .vignette,#installpad.forming .back,#installpad.forming .home,#installpad.forming .doorfoot{opacity:0;transition:opacity 1.2s ease}
-#installpad.forming .copy.core,#installpad.forming .dark{opacity:0;transition:opacity 1.2s ease;pointer-events:none}
-#installpad.formed .sky,#installpad.formed .vignette,#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot{opacity:1;transition:opacity 1.6s ease}
-#installpad.formed .copy.core,#installpad.formed .dark,#installpad.formed .eclipse{animation:none;opacity:1;transition:opacity 1.2s ease}
-/* while the eclipse forms, the door keeps only its sky, its sunrise and the planet that was clicked */
-body.eclipsing #door .lockup>:not(.planets),body.eclipsing #door .doorfoot,body.eclipsing #door .trdot,body.eclipsing #door .planet:not(.chosen),
-body.eclipsing #door .planet.chosen .tag,body.eclipsing #door .planet.chosen .halo,body.eclipsing #door .planet.chosen .lead{opacity:0;transition:opacity .9s ease}
-body.eclipsing #door .loginchrome{pointer-events:none}
-body.eclipsing #door .planet.chosen .body{transform:translate(-50%,-50%);box-shadow:none}
-body.bare #installpad .eclipse,body.bare #installpad .copy.core,body.bare #installpad .dark{opacity:0}
-body.instrument #installpad .eclipse,body.instrument #installpad .copy.core{animation:chromein 1.6s ease .3s both}
-body.instrument #installpad .dark{animation:chromein 1.6s ease 1.1s both}
-body.withdrawing #installpad .eclipse,body.withdrawing #installpad .copy.core,body.withdrawing #installpad .dark{animation:chromeout .45s ease both}
-/* while forming or unforming, the pad has no chrome of its own: the shot is the door's */
-body #installpad.forming .sky,body #installpad.forming .vignette,body #installpad.forming .back,body #installpad.forming .home,body #installpad.forming .doorfoot,body #installpad.forming .copy.core,body #installpad.forming .dark,body #installpad.forming .eclipse{animation:none}
+#installpad.forming .back,#installpad.forming .home,#installpad.forming .doorfoot,#installpad.forming .words,#installpad.forming .scrim,#installpad.forming .poster{opacity:0;transition:opacity .6s ease;pointer-events:none;animation:none}
+#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot,#installpad.formed .scrim{opacity:1;transition:opacity 1.4s ease}
+#installpad.forming .orbitgl{transition:none}
+/* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
+body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),
+body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity .7s ease}
+body.departing #door .planet.chosen .body{opacity:0;transition:opacity .25s ease .1s}
+body.departing #door .loginchrome{pointer-events:none}

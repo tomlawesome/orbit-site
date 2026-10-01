@@ -1,296 +1,231 @@
 /*
- * THE INSTALL: an eclipse.
+ * THE INSTALL: into orbit.
  *
- * A thin gold ring in the dark — the corona of a sun whose disc is the
- * sky's own black — turning slowly, the command written once round it.
- * Copy is the one word on the disc. Nothing else moves.
+ * The purple planet on the door is a world, and clicking it goes there. The
+ * dot is where the shot starts: the camera turns to it, the dawn falls away
+ * behind, and the dot opens into a ringed planet — oceans and continents
+ * under turning weather, a gold moon beyond the rings — until the camera is
+ * in orbit over its day side, the terminator running down into a night lit
+ * by the homes on it, and the sun breaking over its shoulder. The one line
+ * waits in the dark above it.
  *
- * Drawn on a 2D canvas; the corona is drawn once and turned each frame.
+ * Drawn by world.js; this is the camera, the clock and the line.
  */
 import { reduced } from "./sky.js";
+import { createWorld } from "./world.js";
+
 const $ = (s, r = document) => r.querySelector(s);
-const CMD = "$ curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash";
-const GOLD = "#d8b45a", CORE = "#fff6e6", SUN = "#ffe9c4", RIM = "#e2772b";
-const hexa = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+/* cubic-bezier easing, as CSS has it */
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t, dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    x = clamp(x); let t = x;
+    for (let i = 0; i < 6; i++) { const d = dX(t); if (Math.abs(d) < 1e-6) break; t -= (X(t) - x) / d; }
+    return Y(clamp(t));
+  };
+}
+const easeDolly = bezier(0.62, 0, 0.12, 1), easeTurn = bezier(0.45, 0, 0.2, 1), easeAim = bezier(0.5, 0, 0.25, 1);
+
+/* vectors and 3×3 rotations (row-major; uploaded transposed) */
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a) => mul(a, 1 / Math.hypot(...a));
+const rx = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+const ry = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0, 1, 0, -s, 0, c]; };
+const rz = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, s, c, 0, 0, 0, 1]; };
+const mm = (A, B) => { const r = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) r.push(A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j]); return r; };
+const tr = (A) => [A[0], A[3], A[6], A[1], A[4], A[7], A[2], A[5], A[8]];
+const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4] * v[1] + A[5] * v[2], A[6] * v[0] + A[7] * v[1] + A[8] * v[2]];
+
+/* the world, fixed: where the sun is, how the planet leans, where the galaxy
+   runs; and the shot: the camera's place at rest (azimuth and elevation round
+   the planet, its distance in planet radii), where it starts from, and where
+   the planet sits at rest on the screen (its centre from the screen's centre,
+   y up, and its radius, in screen heights; the moon's place likewise) */
+export const TUNE = {
+  sun: [-0.8, 0.4, -0.1], tiltZ: 0.32, tiltX: 0.2, sky: [2.2, -0.2],
+  rest: { az: 0.0, el: 0.22, roll: 0.12, d: 3.6 }, from: { az: -0.8, el: 0.45, roll: 0.35 },
+  land: { R: 0.72, cx: 0.17, cy: -0.5, moon: [-0.3, 0.25], moonR: 5.0 },
+  port: { R: 0.34, cx: 0.12, cy: -0.36, moon: [-0.26, 0.02], moonR: 5.0 },
+};
+let SUN, TILT, TO_TILT, SKY, REST, FROM;
+function world0() {
+  SUN = norm(TUNE.sun);
+  TILT = mm(rz(TUNE.tiltZ), rx(TUNE.tiltX));      /* planet frame → world */
+  TO_TILT = tr(TILT);                              /* world → ring frame */
+  SKY = tr(mm(rz(TUNE.sky[0]), rx(TUNE.sky[1])));  /* world → galaxy frame */
+  REST = TUNE.rest; FROM = TUNE.from;
+}
+const APPROACH = 6.4, SETTLE = 5.2, RETURN = 2.8;
+
+function layoutFor(W, H) {
+  const t = H > W * 1.1 ? TUNE.port : TUNE.land;
+  const R = t.R * H, focal = R * Math.sqrt(REST.d * REST.d - 1);
+  return { focal, R, cx: t.cx * W, cy: t.cy * H, moon: [t.moon[0] * W, t.moon[1] * H], moonR: t.moonR };
+}
 
 export function createInstall(pad) {
-  const canvas = $(".eclipse", pad), ctx = canvas.getContext("2d");
-  const copy = $(".copy.core", pad);
-  let W = 0, H = 0, dpr = 1, R = 0, cx = 0, cy = 0;
-  let running = false, raf = 0, t0 = 0;
-  let corona = null, rim = null, coronaSize = 0, textA0 = 0, textSpan = 0, textR = 0;
-  /* the forming: null when still; otherwise the shot's clock and the door's scene */
-  let forming = null;
+  const canvas = $(".orbitgl", pad);
+  let world = null, failed = false;
+  let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0];
+  let running = false, raf = 0, last = 0, clock = 0;
+  /* the approach: u runs 0 → 1 going in, back to 0 going home */
+  let u = 1, motion = null;
+  const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
+  let frames = [], lastAdjust = 0, tick = 0;
 
+  function ensure() {
+    if (world || failed) return world;
+    try { world = createWorld(canvas); } catch (e) { console.warn(e); world = null; }
+    if (!world) { failed = true; pad.classList.add("flat"); return null; }
+    canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
+    return world;
+  }
   function size() {
-    dpr = Math.min(devicePixelRatio || 1, 2);
-    W = pad.clientWidth; H = pad.clientHeight;
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
-    R = Math.min(W, H) * (W < 700 ? 0.3 : 0.24);
-    cx = W / 2; cy = H * (W < 700 ? 0.44 : 0.47);
-    copy.style.left = `${cx}px`; copy.style.top = `${cy}px`;
-    bake();
+    world0();
+    W = pad.clientWidth || innerWidth; H = pad.clientHeight || innerHeight;
+    const dpr = devicePixelRatio || 1;
+    maxScale = Math.min(dpr, matchMedia("(pointer: coarse)").matches ? 1.25 : 1.5);
+    if (!frames.length) scale = Math.min(maxScale, 1);
+    lay = layoutFor(W, H);
+    /* the moon: on the line through its place on the screen, out beyond the rings */
+    const v = view(1, 0, true);
+    const q = [(lay.moon[0] - lay.cx) / lay.focal, (lay.moon[1] - lay.cy) / lay.focal];
+    const rd = norm(add(v.fwd, add(mul(v.right, q[0]), mul(v.up, q[1]))));
+    const b = dot(v.cam, rd), c = dot(v.cam, v.cam) - lay.moonR * lay.moonR, h = Math.sqrt(Math.max(0, b * b - c));
+    moonPos = [...add(v.cam, mul(rd, -b + h > 0 ? -b + h : 12)), 0.075];
+    world?.resize(W, H, scale);
   }
-  /* the layers drawn once: the corona (with the command written round it) and the sun's glow */
-  function bake() {
-    coronaSize = Math.ceil(R * 5.4);
-    corona = document.createElement("canvas"); corona.width = corona.height = Math.round(coronaSize * dpr);
-    let c = corona.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const o = coronaSize / 2;
-    /* the corona: a soft base, then streamers — many thin rays of uneven
-       length, denser at the poles the way a real one is — then the
-       chromosphere, a hair of rose at the limb, and a few prominences */
-    const rnd = (() => { let x = 20260930; return () => (x = (x * 48271) % 2147483647) / 2147483647; })();
-    /* the far haze, wide and dim, then the base glow, then the inner corona: a
-       tight band of near-white, so the light has a near and a far */
-    for (const [rad, col, al] of [[2.5, RIM, 0.07], [1.9, RIM, 0.13], [1.45, GOLD, 0.26], [1.18, SUN, 0.42]]) {
-      const g = c.createRadialGradient(o, o, R * 0.98, o, o, R * rad);
-      g.addColorStop(0, hexa(col, al)); g.addColorStop(0.5, hexa(col, al * 0.35)); g.addColorStop(1, hexa(col, 0));
-      c.fillStyle = g; c.beginPath(); c.arc(o, o, R * rad, 0, 6.284); c.fill();
-    }
-    c.save(); c.translate(o, o); c.globalCompositeOperation = "lighter";
-    for (let i = 0; i < 320; i++) {
-      const a = rnd() * 6.283, polar = Math.pow(Math.abs(Math.sin(a * 2)), 0.6);
-      const long = rnd() < 0.3;
-      const len = R * (long ? 0.6 + rnd() * 1.5 * (0.5 + polar) : 0.12 + rnd() * rnd() * 0.5), w = long ? 0.8 + rnd() * 2.6 : 0.4 + rnd() * 1.2, al = long ? 0.05 + rnd() * 0.14 : 0.12 + rnd() * 0.3;
-      const g = c.createLinearGradient(0, R, 0, R + len); g.addColorStop(0, hexa(long ? SUN : "#ffe1a0", al * (long ? 1 : 0.8))); g.addColorStop(0.35, hexa(GOLD, al * 0.5)); g.addColorStop(1, hexa(RIM, 0));
-      c.save(); c.rotate(a); c.fillStyle = g; c.beginPath(); c.moveTo(-w, R * 0.99); c.lineTo(w, R * 0.99); c.lineTo(w * 0.3, R + len); c.lineTo(-w * 0.3, R + len); c.closePath(); c.fill(); c.restore();
-    }
-    c.restore();
-    /* the chromosphere and the prominences */
-    c.lineWidth = 2.2; c.strokeStyle = hexa("#ff8a6a", 0.55); c.beginPath(); c.arc(o, o, R * 1.002, 0, 6.284); c.stroke();
-    for (const [pa, pl, pw] of [[0.7, 0.14, 0.09], [2.3, 0.1, 0.06], [3.9, 0.17, 0.11], [5.2, 0.08, 0.05]]) {
-      const g = c.createRadialGradient(o + Math.cos(pa) * R, o + Math.sin(pa) * R, 0, o + Math.cos(pa) * R, o + Math.sin(pa) * R, R * pl);
-      g.addColorStop(0, hexa("#ff9a7a", 0.55)); g.addColorStop(0.5, hexa("#ff6a4a", 0.18)); g.addColorStop(1, hexa("#ff6a4a", 0));
-      c.fillStyle = g; c.beginPath(); c.ellipse(o + Math.cos(pa) * R, o + Math.sin(pa) * R, R * pl, R * pw, pa, 0, 6.284); c.fill();
-    }
-    /* the command, written round the rim, once, letter by letter — on a layer
-       of its own, so it can arrive after the light */
-    rim = document.createElement("canvas"); rim.width = rim.height = corona.width;
-    const c2 = rim.getContext("2d"); c2.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const c1 = c; c = c2;
-    /* as large as the ring allows: the whole line on the rim once, with a breath at the end */
-    let fs = Math.max(11.5, Math.min(16.5, R * 0.1));
-    const rr = R * 1.16;
-    const measure = () => { c.font = `600 ${fs}px 'JetBrains Mono', monospace`; const gap = fs * 0.62; return [...CMD].reduce((s, ch) => s + Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42, 0); };
-    let total = measure();
-    if (total > 2 * Math.PI * rr * 0.9) { fs = Math.max(8, fs * (2 * Math.PI * rr * 0.9) / total); total = measure(); }
-    const gap = fs * 0.62;
-    c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillStyle = "#fff4dc"; c.strokeStyle = "rgba(6,11,28,.75)"; c.lineWidth = 3.5; c.lineJoin = "round";
-    c.shadowColor = hexa(GOLD, 0.95); c.shadowBlur = 12;
-    textA0 = -Math.PI / 2 - total / rr / 2; textSpan = total / rr; textR = rr;
-    let a = textA0;
-    for (const ch of CMD) {
-      const w = Math.max(c.measureText(ch).width, gap * 0.6) + gap * 0.42;
-      a += w / rr / 2;
-      c.save(); c.translate(o + Math.cos(a) * rr, o + Math.sin(a) * rr); c.rotate(a + Math.PI / 2);
-      c.save(); c.shadowBlur = 0; c.strokeText(ch, 0, 0); c.restore(); c.fillText(ch, 0, 0); c.restore();
-      a += w / rr / 2;
-    }
-    c.shadowBlur = 0;
+  /* the camera at a point in the shot: k is how far in (0 at the dot, 1 at rest) */
+  function view(k, idle, bare = false, dot0 = null) {
+    const L = lay;
+    const eD = easeDolly(clamp((k - 0.04) / 0.96)), eT = easeTurn(clamp(k / 0.95)), eA = easeAim(clamp(k / 0.5));
+    const d1 = Math.sqrt((L.focal / L.R) ** 2 + 1);
+    const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
+    const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));
+    const drift = reduced ? 0 : idle * 0.0035;
+    const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k);
+    const el = lerp(FROM.el, REST.el, eT) + (bare ? 0 : -pointer.sy * 0.03 * k);
+    const roll = lerp(FROM.roll, REST.roll, eT);
+    const c = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+    const cam = mul(c, dist), fwd = mul(c, -1);
+    let right = norm(cross(fwd, [0, 1, 0])), up = cross(right, fwd);
+    const cr = Math.cos(roll), sr = Math.sin(roll);
+    [right, up] = [add(mul(right, cr), mul(up, sr)), add(mul(up, cr), mul(right, -sr))];
+    const from = dot0 ? [dot0.x - W / 2, H / 2 - dot0.y] : [L.cx, L.cy];
+    const shift = [lerp(from[0], L.cx, eA), lerp(from[1], L.cy, eA)];
+    return { cam, fwd, right, up, shift, dist };
   }
-  const ease = (u) => { u = Math.max(0, Math.min(1, u)); return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; };
-  const out = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 3);
-  const drawDisc = (x, y, r) => {
-    const body = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
-    body.addColorStop(0, "#0b1226"); body.addColorStop(0.7, "#070c1c"); body.addColorStop(1, "#04070f");
-    ctx.fillStyle = body; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.284); ctx.fill();
-  };
-  const drawCorona = (al, rot, w = 1) => {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
-    ctx.globalAlpha = al; ctx.drawImage(corona, -coronaSize / 2, -coronaSize / 2, coronaSize, coronaSize);
-    if (w >= 1) ctx.drawImage(rim, -coronaSize / 2, -coronaSize / 2, coronaSize, coronaSize);
-    else if (w > 0) {
-      const a = textA0 + textSpan * w;
-      ctx.save(); ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, coronaSize, textA0 - 0.01, a); ctx.closePath(); ctx.clip();
-      ctx.drawImage(rim, -coronaSize / 2, -coronaSize / 2, coronaSize, coronaSize); ctx.restore();
-      /* the pen: a point of light at the line's end */
-      const x = Math.cos(a) * textR, y = Math.sin(a) * textR;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, R * 0.12);
-      g.addColorStop(0, hexa(CORE, 0.95)); g.addColorStop(0.25, hexa(SUN, 0.5)); g.addColorStop(1, hexa(SUN, 0));
-      ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 0.12, 0, 6.284); ctx.fill();
-    }
-    ctx.restore(); ctx.globalAlpha = 1;
-  };
-  /* THE FORMING: one shot, nothing new in it. The door's own sunrise — its
-     glow, its rays, its horizon — is what climbs: the horizon sinks out of
-     the frame as the sun clears it and grows into a disc at the centre of
-     the sky. The planet that was clicked leaves its orbit and comes across
-     the sun, turning from a lit purple world to a silhouette as it passes
-     in front of the light. The day fails the way an eclipse fails it:
-     slowly, then all at once — the diamond ring at the last point of
-     light, then totality, the corona, and the line written round the rim. */
-  const F = { riseStart: 300, riseEnd: 4300, planetStart: 1300, planetEnd: 4900, textStart: 5400, textEnd: 6800, done: 6900, reverseSpeed: 1.8 };
-  const quad = (u) => { u = Math.max(0, Math.min(1, u)); return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; };
-  const smooth = (u) => { u = Math.max(0, Math.min(1, u)); return u * u * (3 - 2 * u); };
-  const TAU = Math.PI * 2;
-  /* the share of the sun's face a disc of radius b at distance d hides */
-  const coverage = (d, a, b) => {
-    if (d >= a + b) return 0;
-    if (d <= Math.abs(a - b)) return b >= a ? 1 : (b * b) / (a * a);
-    const x = (d * d + a * a - b * b) / (2 * d), y = Math.sqrt(Math.max(0, a * a - x * x));
-    const area = a * a * Math.acos(Math.max(-1, Math.min(1, x / a))) + b * b * Math.acos(Math.max(-1, Math.min(1, (d - x) / b))) - d * y;
-    return Math.max(0, Math.min(1, area / (Math.PI * a * a)));
-  };
-  /* the planet: the same body the door draws, lit from the sun's side, its
-     night side sliding across as it passes in front of the light */
-  const drawPlanet = (x, y, r, lit, tx, ty) => {
-    drawDisc(x, y, r);
-    if (lit <= 0.005) return;
-    ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.clip();
-    const g = ctx.createRadialGradient(x + tx * r * 0.45, y + ty * r * 0.45, r * 0.05, x, y, r * 1.05);
-    g.addColorStop(0, "#b993ff"); g.addColorStop(0.5, "#7c3aed"); g.addColorStop(1, "#2a1852");
-    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    /* the terminator: the dark of its own night, soft at the edge */
-    const d = 2 * r * lit, nx = x - tx * d, ny = y - ty * d;
-    const n = ctx.createRadialGradient(nx, ny, r * 0.9, nx, ny, r * 1.04);
-    n.addColorStop(0, "rgba(5,8,18,.97)"); n.addColorStop(1, "rgba(5,8,18,0)");
-    ctx.fillStyle = n; ctx.beginPath(); ctx.arc(nx, ny, r * 1.04, 0, TAU); ctx.fill();
-    ctx.restore();
-  };
-  /* the diamond ring: the last point of the sun, flaring */
-  const drawFlare = (x, y, k) => {
-    if (k <= 0.01) return;
-    ctx.save(); ctx.globalCompositeOperation = "lighter";
-    const g = ctx.createRadialGradient(x, y, 0, x, y, R * 0.9 * k);
-    g.addColorStop(0, hexa(CORE, 0.95)); g.addColorStop(0.08, hexa(SUN, 0.6 * k)); g.addColorStop(0.35, hexa(GOLD, 0.12 * k)); g.addColorStop(1, hexa(SUN, 0));
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 0.9 * k, 0, TAU); ctx.fill();
-    /* the streak across the frame, and two short spikes */
-    const len = W * 0.55 * k;
-    const s = ctx.createLinearGradient(x - len, y, x + len, y);
-    s.addColorStop(0, hexa(SUN, 0)); s.addColorStop(0.5, hexa(CORE, 0.7 * k)); s.addColorStop(1, hexa(SUN, 0));
-    ctx.fillStyle = s; ctx.fillRect(x - len, y - 1.2, len * 2, 2.4);
-    ctx.strokeStyle = hexa(CORE, 0.35 * k); ctx.lineWidth = 1;
-    for (const sa of [0.62, 2.52]) { ctx.beginPath(); ctx.moveTo(x - Math.cos(sa) * R * 0.5 * k, y - Math.sin(sa) * R * 0.5 * k); ctx.lineTo(x + Math.cos(sa) * R * 0.5 * k, y + Math.sin(sa) * R * 0.5 * k); ctx.stroke(); }
-    ctx.restore();
-  };
-  /* the door's layers, moved as one scene: the light travels with the sun,
-     the ground and the stars fall away as the eye follows it up, and the
-     day dims with the light left */
-  function setScene(sc, sx, sy, su, light, tot) {
-    const sink = H * 0.34 * su;
-    for (const el of sc.ground) el.style.transform = `translateY(${sink.toFixed(1)}px)`;
-    sc.stars.style.transform = `translateY(${(H * 0.07 * su).toFixed(1)}px)`;
-    const day = Math.pow(light, 1.6) * (1 - tot);
-    sc.dawn.style.opacity = day.toFixed(3);
-    /* the haze the sun rose out of stays on the horizon and thins as it climbs clear */
-    sc.glow.style.opacity = Math.pow(1 - su, 0.8).toFixed(3);
-    sc.rays.style.opacity = Math.pow(1 - su, 1.5).toFixed(3);
-    for (const el of sc.rims) el.style.opacity = (day * (1 - 0.7 * su)).toFixed(3);
+  function draw(now) {
+    const w = world; if (!w || !lay) return;
+    const idle = clock;
+    const k = u;
+    const dot0 = motion?.dot || null;
+    const v = view(k, idle, false, dot0);
+    const s = scale;
+    /* the sun on the lens: where it would be, and how much of it the planet leaves */
+    const sf = dot(SUN, v.fwd);
+    const sp = sf > 0.02
+      ? [(dot(SUN, v.right) / sf) * lay.focal + v.shift[0] + W / 2, (dot(SUN, v.up) / sf) * lay.focal + v.shift[1] + H / 2]
+      : [W / 2 + dot(SUN, v.right) * W * 4, H / 2 + dot(SUN, v.up) * W * 4];
+    const tb = dot(v.cam, SUN), pd = Math.hypot(...add(v.cam, mul(SUN, -tb)));
+    const sunVis = tb > 0 ? 1 : smooth(0.995, 1.06, pd);
+    const spin = mm(ry(-(0.9 + idle * 0.006)), TO_TILT);
+    w.draw({
+      cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
+      focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
+      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos,
+      time: now / 1000, bg: smooth(0.02, 0.3, k), sunVis, expo: 1.0, cloudT: idle * 0.00035,
+    });
   }
-  function prepareScene(sc) {
-    sc.k = Math.max(W / 1600, H / 1000); sc.r0 = 34 * sc.k;
-    for (const el of [...sc.ground, sc.stars]) { el.style.transition = "none"; el.style.willChange = "transform"; }
-    for (const el of [sc.dawn, sc.glow, sc.rays, ...sc.rims]) el.style.transition = "none";
-  }
-  function releaseScene(sc) {
-    for (const el of [...sc.ground, sc.stars, sc.dawn, sc.glow, sc.rays, ...sc.rims]) { el.style.transition = ""; el.style.transform = ""; el.style.opacity = ""; el.style.willChange = ""; }
-    if (sc.planet) sc.planet.style.opacity = "";
-  }
-  const planetNow = (sc) => { const b = sc.body.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(2, b.width / 2) }; };
-  function formingFrame(now) {
-    const f = forming, sc = f.scene;
-    const t = f.reverse ? Math.max(0, F.done - (now - f.t0) * F.reverseSpeed) : now - f.t0;
-    const rot = reduced ? 0 : ((now - t0) / 1000) * 0.045;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    /* the sun clears the horizon and climbs, bowing a little to the right as a sun does */
-    const su = ease((t - F.riseStart) / (F.riseEnd - F.riseStart));
-    const sx = sc.ox + (cx - sc.ox) * su + Math.sin(Math.PI * su) * Math.abs(cy - sc.oy) * 0.09;
-    const sy = sc.oy + (cy - sc.oy) * su;
-    const sr = sc.r0 + (R - sc.r0) * su;
-    /* the planet leaves its orbit: the door's own body, taken over where it is */
-    const pu = quad((t - F.planetStart) / (F.planetEnd - F.planetStart));
-    let p0 = f.p0;
-    if (pu > 0) {
-      if (f.reverse || !p0) { p0 = planetNow(sc); if (!f.reverse) f.p0 = p0; }
-      sc.planet.style.opacity = "0";
-    } else if (f.reverse) sc.planet.style.opacity = "";
-    const px = p0 ? p0.x + (cx - p0.x) * pu : cx, py = p0 ? p0.y + (cy - p0.y) * pu : cy;
-    const pr = p0 ? p0.r + (R * 1.012 - p0.r) * smooth(pu / 0.8) : R * 1.012;
-    const d = Math.hypot(px - sx, py - sy);
-    const cov = pu > 0 ? coverage(d, sr, pr) : 0, light = 1 - cov;
-    /* the last sliver of the sun on the far side of the planet; past nothing, totality */
-    const sliver = pu > 0 ? d + sr - pr : sr * 2;
-    const tot = Math.max(0, Math.min(1, -sliver / (R * 0.012)));
-    const flare = sliver > 0 && su > 0.85 ? Math.max(0, 1 - Math.abs(sliver - R * 0.012) / (R * 0.07)) : 0;
-    setScene(sc, sx, sy, su, light, tot);
-    /* the sun: born inside the door's glow, a disc by the time it is high */
-    const born = Math.min(1, 0.25 + su / 0.15);
-    if (tot < 1) {
-      ctx.save();
-      if (su < 0.7) {
-        /* behind the horizon: the door's ground, sunk as far as the eye has followed the sun */
-        const hr = 3000 * sc.k, hy = sc.oy + hr + H * 0.34 * su;
-        ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(sc.ox, hy, hr, 0, TAU, true); ctx.clip("evenodd");
-      }
-      ctx.globalAlpha = born;
-      const hal = light * (0.25 + 0.75 * su);
-      const halo = ctx.createRadialGradient(sx, sy, sr * 0.7, sx, sy, sr * 4.4);
-      halo.addColorStop(0, hexa(SUN, 0.42 * hal)); halo.addColorStop(0.3, hexa(GOLD, 0.16 * hal)); halo.addColorStop(0.7, hexa(RIM, 0.05 * hal)); halo.addColorStop(1, hexa(RIM, 0));
-      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, sr * 4.4, 0, TAU); ctx.fill();
-      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-      g.addColorStop(0, CORE); g.addColorStop(0.55, SUN); g.addColorStop(0.9, GOLD); g.addColorStop(1, hexa(RIM, 0.9));
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, TAU); ctx.fill();
-      ctx.restore(); ctx.globalAlpha = 1;
-    }
-    /* totality: the corona, and the line written round it by a point of light */
-    if (tot > 0) {
-      const w = Math.max(0, Math.min(1, (t - F.textStart) / (F.textEnd - F.textStart)));
-      drawCorona(tot, rot, w);
-      if (flare > 0 || tot < 1) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (1 - tot) * 0.5; ctx.translate(cx, cy); ctx.rotate(rot); ctx.drawImage(corona, -coronaSize / 2, -coronaSize / 2, coronaSize, coronaSize); ctx.restore(); ctx.globalAlpha = 1; }
-    }
-    if (p0 && pu > 0) {
-      const tx = d > 0.5 ? (sx - px) / d : 0, ty = d > 0.5 ? (sy - py) / d : -1;
-      drawPlanet(px, py, pr, 1 - smooth((pu - 0.08) / 0.84), tx, ty);
-    }
-    if (flare > 0) {
-      const ax = Math.atan2(sy - py, sx - px);
-      drawFlare(sx + Math.cos(ax) * sr * 0.985, sy + Math.sin(ax) * sr * 0.985, flare);
-      ctx.fillStyle = hexa(SUN, 0.09 * flare * flare); ctx.fillRect(0, 0, W, H);
-    }
-    const end = f.reverse ? t <= 0 : t >= F.done;
-    if (end) { const done = f.resolve; forming = null; if (f.reverse) releaseScene(sc); done(); }
+  /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
+  function govern(dt) {
+    frames.push(dt); if (frames.length < 24) return;
+    const avg = frames.reduce((a, b) => a + b, 0) / frames.length; frames = [];
+    const now = performance.now(); if (now - lastAdjust < 900) return;
+    let next = scale;
+    if (avg > 24) next = Math.max(0.45, scale * 0.82);
+    else if (avg < 13 && !motion) next = Math.min(maxScale, scale * 1.1);
+    if (Math.abs(next - scale) > 0.01) { scale = next; lastAdjust = now; world?.resize(W, H, scale); }
   }
   function frame(now) {
     if (!running) return;
     raf = requestAnimationFrame(frame);
-    if (pad.hidden || document.hidden || !corona) return;
-    if (forming) { formingFrame(now); return; }
-    const rot = reduced ? 0 : ((now - t0) / 1000) * 0.045;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    drawCorona(1, rot, 1);
-    drawDisc(cx, cy, R * 1.012);
+    const dt = last ? Math.min(100, now - last) : 16; last = now;
+    if (pad.hidden || document.hidden || !world || !world.baked) return;
+    clock += dt / 1000;
+    pointer.sx += (pointer.x - pointer.sx) * Math.min(1, dt / 900);
+    pointer.sy += (pointer.y - pointer.sy) * Math.min(1, dt / 900);
+    if (motion) {
+      const t = (now - motion.t0) / 1000;
+      if (motion.reverse) {
+        u = clamp(motion.from * (1 - t / RETURN));
+        if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
+      } else {
+        u = clamp(t / APPROACH);
+        if (!motion.settled && t >= SETTLE) { motion.settled = true; motion.resolve(); }
+        if (u >= 1) motion = null;
+      }
+    }
+    if (reduced && !motion && frames.length > 2) return;
+    /* at rest the orbit is slow: every other frame is enough */
+    if (!motion && (tick++ & 1)) return;
+    draw(now);
+    govern(dt);
   }
+  const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
+  const onResize = () => { frames = []; size(); };
+
   return {
+    /* the textures are baked before they are wanted, while the door is quiet */
+    prepare() { const w = ensure(); if (w) { size(); w.bake(); } },
     start() {
-      running = true; t0 = performance.now();
-      size(); addEventListener("resize", size);
+      const w = ensure();
+      if (running) return;
+      running = true; last = 0;
+      size();
+      addEventListener("resize", onResize); addEventListener("pointermove", onPointer);
+      if (w) w.bake().then(() => pad.classList.add("lit"));
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
-    /* form the eclipse over the door: its sunrise climbs, its planet crosses; resolves at totality with the line on the rim */
+    /* the shot in from the door's planet: resolves when the camera has all but settled */
     form(scene) {
       return new Promise((resolve) => {
         this.start();
-        if (reduced) { resolve(); return; }
-        prepareScene(scene);
-        forming = { t0: performance.now(), scene, reverse: false, resolve };
+        if (!world || reduced) { u = 1; motion = null; resolve(); return; }
+        world.bake(true); pad.classList.add("lit");
+        const b = scene.body.getBoundingClientRect();
+        const dot0 = { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, b.width / 2) };
+        u = 0; clock = 0; frames = [];
+        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false };
       });
     },
-    /* the eclipse coming apart again: the planet moves off, the light returns, the sun sinks back to the horizon */
+    /* the shot back out to where the planet is on the door now */
     unform(scene) {
       return new Promise((resolve) => {
-        if (reduced || !running) { resolve(); return; }
-        prepareScene(scene);
-        forming = { t0: performance.now(), scene, reverse: true, resolve };
-        formingFrame(performance.now());
+        if (!world || reduced || !running) { resolve(); return; }
+        const b = scene.body.getBoundingClientRect();
+        const dot0 = { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, b.width / 2) };
+        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve };
       });
     },
-    /* the door's layers handed back once the door is gone */
-    release(scene) { releaseScene(scene); },
-    stop() { running = false; forming = null; cancelAnimationFrame(raf); removeEventListener("resize", size); },
+    stop() {
+      running = false; motion = null; u = 1; cancelAnimationFrame(raf);
+      removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
+    },
+    /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
+    still(k, idle = 0, dotAt = null) {
+      ensure(); if (!world) return false;
+      size(); world.bake(true);
+      motion = dotAt ? { dot: dotAt } : null; u = k; clock = idle;
+      draw(performance.now()); motion = null;
+      return true;
+    },
   };
 }
