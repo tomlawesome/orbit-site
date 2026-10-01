@@ -35,6 +35,8 @@ ap.add_argument("--seed", type=int, default=1729)
 ap.add_argument("--beta", type=float, default=150.0)
 ap.add_argument("--jet", type=float, default=1.0)
 ap.add_argument("--ovals", type=int, default=22)
+ap.add_argument("--stir", type=float, default=1.0)
+ap.add_argument("--base", default=None, help="a real planet's map to start from (equirectangular); its bands set the jets")
 args = ap.parse_args()
 
 W = 4
@@ -105,9 +107,52 @@ for i, c in enumerate(colours):
 soft = lambda a: inv(fwd(a) * np.exp(-(k / 300) ** 2))
 band_rgb = np.dstack([soft(band_rgb[..., j]) for j in range(3)])
 band_tone = soft(band_tone)
+# texture at every scale inside the bands: long streaks, shorter ones, puffs of cloud
 streak = noise(streaky(24, 120, 10), 1.0)
-band_rgb *= (1 + 0.07 * streak)[..., None]
+fine = noise(streaky(120, 500, 60), 1.0)
+puffs = noise(ring(150, 600), 1.0)
+band_rgb *= (1 + 0.09 * streak + 0.07 * fine + 0.05 * puffs)[..., None]
 band_tone += 0.05 * streak
+
+# OR A REAL PLANET'S MAP: its light and its warmth, regraded to violet and gold; its bands set the jets
+if args.base:
+    base = np.asarray(Image.open(args.base).convert("RGB").resize((NX, NY), Image.BICUBIC), dtype=float)[::-1] / 255.0
+    # the mosaic's seams: steps from column to column that the planet does not have
+    from scipy.ndimage import gaussian_filter1d
+    rows = np.abs(lat) < 1.2
+    cols = base[rows].mean(axis=0)
+    base = np.clip(base - (cols - gaussian_filter1d(cols, NX / 60, axis=0, mode="wrap"))[None, :, :], 0, 1)
+    lin = base ** 2.2
+    Lb = (0.2126 * lin[..., 0] + 0.7152 * lin[..., 1] + 0.0722 * lin[..., 2])
+    Lb = (Lb - np.percentile(Lb, 2)) / (np.percentile(Lb, 98) - np.percentile(Lb, 2)); Lb = np.clip(Lb, 0, 1)
+    rb = (base[..., 0] - base[..., 2]) / (base[..., 0] + base[..., 2] + 1e-3)
+    warmth = np.clip((rb - np.percentile(rb, 60)) / (np.percentile(rb, 97) - np.percentile(rb, 60)), 0, 1)   # only where it is warmer than the planet is
+    stops = [(0.0, srgb(34, 16, 52)), (0.3, srgb(88, 44, 104)), (0.55, srgb(160, 120, 184)), (0.8, srgb(222, 208, 236)), (1.0, srgb(246, 240, 250))]
+    def grade(v):
+        out = np.zeros(v.shape + (3,))
+        for (a, ca), (b, cb) in zip(stops[:-1], stops[1:]):
+            m = (v >= a) & (v <= b); t_ = ((v - a) / (b - a))[m][..., None]; out[m] = ca + (cb - ca) * t_
+        return out
+    v = Lb ** 0.85
+    band_rgb = grade(v)
+    gold = (srgb(140, 92, 48) + (srgb(244, 214, 158) - srgb(140, 92, 48)) * v[..., None])
+    band_rgb = band_rgb + (gold - band_rgb) * (warmth * 0.6)[..., None]
+    rg = base[..., 0] - base[..., 1]
+    # the great storm turns rose: the reddest oval, found where the red is broadest, and only there
+    from scipy.ndimage import gaussian_filter
+    rgs = gaussian_filter(rg, (NY / 120, NX / 120), mode="wrap")
+    cy_, cx_ = np.unravel_index(np.argmax(rgs * (np.abs(LAT) < 0.8)), rgs.shape)
+    near = np.exp(-(((X - x[cx_] + np.pi) % L - np.pi) ** 2 / 0.12 ** 2 + (LAT - lat[cy_]) ** 2 / 0.06 ** 2))
+    red = np.clip((rg - np.percentile(rg, 90)) / (np.percentile(rg, 99.5) - np.percentile(rg, 90) + 1e-6), 0, 1) * near
+    band_rgb = band_rgb + (srgb(200, 96, 128) - band_rgb) * (red * 0.8)[..., None]
+    band_rgb *= (1 + 0.05 * fine + 0.04 * puffs)[..., None]
+    band_tone = Lb
+    # the jets run along the sharpest edges of the bands
+    zm = Lb.mean(axis=1)
+    zm = np.convolve(zm, np.ones(9) / 9, mode="same")
+    grad = np.gradient(zm, lat)
+    edges = list(lat[1:-1][(np.abs(grad[1:-1]) > np.abs(grad[:-2])) & (np.abs(grad[1:-1]) >= np.abs(grad[2:])) & (np.abs(grad[1:-1]) > 0.6 * np.abs(grad).std()) & (np.abs(lat[1:-1]) < 1.3)])
+    strengths = [float(np.clip(abs(np.interp(e_, lat, grad)) / (3 * np.abs(grad).std()), 0.3, 1.4)) * (1 if np.interp(e_, lat, grad) > 0 else -1) for e_ in edges]
 
 # THE JETS: along the edges, each its own strength; a super-rotating equator
 def jets(l):
@@ -131,26 +176,31 @@ def oval(cx, cy, R, asp):
     return np.exp(-((dx / asp) ** 2 + dy ** 2) / R ** 2)
 anti = lat[(wJ_mean < -0.25 * np.abs(wJ_mean).max()) & (np.abs(lat) < 1.1)]
 cyc = lat[(wJ_mean > 0.25 * np.abs(wJ_mean).max()) & (np.abs(lat) < 1.0)]
+STORMS_ON = not args.base
 # the great storm: a rose oval with a pale collar, in the south
 UJm = UJ.mean(axis=1)
 calm = lat[(wJ_mean < 0) & (np.abs(UJm) < 0.25 * np.abs(UJm).max()) & (lat < -0.18) & (lat > -0.75)]
 SLAT = calm[np.argmin(np.abs(calm + 0.38))] if len(calm) else -0.38; SLON = np.pi - 1.7
-g = oval(SLON, SLAT, 0.1, 2.0); core = oval(SLON, SLAT, 0.07, 2.0)
+g = oval(SLON, SLAT, 0.1, 2.0) * STORMS_ON; core = oval(SLON, SLAT, 0.07, 2.0) * STORMS_ON
 w += -1.3 * WMAX * g
 collar = np.clip(g - core, 0, 1) * 1.6
 rgb = rgb * (1 - np.clip(collar, 0, 1))[..., None] + srgb(240, 228, 230) * np.clip(collar, 0, 1)[..., None]
 rgb = rgb * (1 - core)[..., None] + srgb(196, 92, 118) * core[..., None]
 tone = tone * (1 - g) + g
 # white ovals in the zones, dark barges in the belts
-for i in range(args.ovals):
+for i in range(args.ovals if STORMS_ON else 0):
     cy = rng.choice(anti); cx = rng.uniform(0, L); R = 0.012 + 0.018 * rng.random()
     g = oval(cx, cy, R, 1.3 + 0.5 * rng.random()); w += -0.8 * WMAX * g
     rgb = rgb * (1 - 0.9 * g)[..., None] + srgb(246, 242, 246) * (0.9 * g)[..., None]; tone = tone * (1 - g) + g
-for i in range(args.ovals // 3):
+for i in range(args.ovals // 3 if STORMS_ON else 0):
     cy = rng.choice(cyc); cx = rng.uniform(0, L); R = 0.008 + 0.008 * rng.random()
     g = oval(cx, cy, R, 2.2); w += 0.7 * WMAX * g
     rgb = rgb * (1 - 0.85 * g)[..., None] + srgb(58, 26, 52) * (0.85 * g)[..., None]; tone = tone * (1 - g)
 
+# where the belts boil: the strong jets' flanks
+BOIL = np.zeros_like(LAT)
+for e_, s_ in zip(edges, strengths):
+    BOIL = np.maximum(BOIL, np.clip(abs(s_) - 0.5, 0, 1) * np.exp(-((LAT - e_) / 0.06) ** 2))
 w_hat = fwd(w)
 dyes = [fwd(rgb[..., 0]), fwd(rgb[..., 1]), fwd(rgb[..., 2]), fwd(tone)]
 dyes0 = [zonal_mean_hat(fwd(band_rgb[..., j])) for j in range(3)] + [zonal_mean_hat(fwd(band_tone))]
@@ -183,6 +233,9 @@ while T < args.time:
     dw2, dd2, _ = rhs(w1, d1)
     w_hat = (w_hat + 0.5 * dt * (dw1 + dw2)) * FILTER
     dyes = [(a + 0.5 * dt * (p + q)) * FILTER for a, p, q in zip(dyes, dd1, dd2)]
+    # stirring: small kicks of spin where the belts boil, so they break into fine filaments
+    if args.stir > 0 and step % 6 == 0:
+        w_hat = w_hat + fwd(noise(ring(50, 140), 1.0) * BOIL) * (args.stir * 0.02 * WMAX)
     if step % 100 == 0:
         print(f"step {step}  t {T:.3f}/{args.time}  dt {dt:.5f}  umax {umax:.2f}  {time.time() - t0:.0f}s", flush=True)
     step += 1
@@ -198,6 +251,9 @@ c *= (0.98 + 0.04 * noise(ring(150, 400)))[..., None]
 def to8(a): return (np.clip(a, 0, 1) ** (1 / 2.2) * 255 + 0.5).astype(np.uint8)
 img = Image.fromarray(to8(c)[::-1], "RGB")
 big = img.resize((args.size, args.size // 2), Image.LANCZOS) if args.size != NX else img
+if args.base:
+    from PIL import ImageFilter
+    big = big.filter(ImageFilter.UnsharpMask(radius=2.5, percent=70, threshold=1))   # the real map is softer than the screen
 if args.preview:
     big.save(args.preview)
 if args.out:

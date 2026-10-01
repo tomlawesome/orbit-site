@@ -145,7 +145,7 @@ vec3 sky(vec3 rd){
   vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
   vec4 s=textureGrad(uSky,uv,dx,dy);
-  vec3 c=s.rgb*0.55+stars(d,s.a)*0.16;
+  vec3 c=s.rgb*0.5+stars(d,s.a)*0.09;
   float a=acos(clamp(dot(rd,uSun),-1.0,1.0));
   c+=vec3(1.0,0.97,0.9)*4000.0*smoothstep(0.0052,0.0046,a);
   return c;
@@ -170,7 +170,7 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   float sh=lightThrough(X);
   float ph=dot(rd,uSun);
   vec3 c;
-  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*SUNI*0.1*(mu0/(mu0+mu))*(0.8+0.4*(1.0-ph))*(0.55+0.45*smoothstep(0.0,0.7,rs.a));
+  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*vec3(1.0,0.93,0.84)*SUNI*0.075*(mu0/(mu0+mu))*(0.8+0.4*(1.0-ph))*(0.5+0.5*smoothstep(0.0,0.7,rs.a));
   else { float g=0.6, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5); c=rs.rgb*SUNI*0.05*(1.0-exp(-tau/mu0))*exp(-tau*0.5/mu)*hg/max(a,0.02); }
   c*=sh;
   /* the planet's own light on the ring's dark side */
@@ -201,6 +201,14 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
   vec4 a=textureGrad(uAlb,uv,dx,dy);
   vec3 alb=a.rgb;
+  /* finer than the map: streaks drawn out along the bands, fading where they would shimmer */
+  float px=length(dx)*uAlbSize.x;
+  float near=1.0-smoothstep(0.6,2.5,px);
+  if(near>0.0){
+    vec3 sp=pp*vec3(1.0,3.2,1.0);
+    float d=snoise(sp*900.0)*0.6+snoise(sp*2300.0+7.0)*0.4;
+    alb*=1.0+0.035*d*near;
+  }
   /* the deck's relief: bright cloud stands a little higher */
   float coslat=max(sqrt(1.0-pp.y*pp.y),0.05);
   vec2 ex=vec2(max(1.0/uAlbSize.x,abs(dx.x)+abs(dy.x)),0.0), ey=vec2(0.0,max(1.0/uAlbSize.y,abs(dx.y)+abs(dy.y)));
