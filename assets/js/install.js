@@ -87,6 +87,9 @@ export function createInstall(pad, opts = {}) {
   let u = 1, motion = null;
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
   let frames = [], lastAdjust = 0, tick = 0, prev = null;
+  /* how much of the canvas's resolution the scene is drawn at while the camera moves: measured before the first
+     shot (calibrate), then kept to the frame rate; motion blur, the dolly's blur and the grain hide the difference */
+  let mq = 0.6, mframes = [], cap = 2;
 
   function ensure() {
     if (world || failed) return world;
@@ -100,7 +103,8 @@ export function createInstall(pad, opts = {}) {
     W = pad.clientWidth || innerWidth; H = pad.clientHeight || innerHeight;
     const dpr = devicePixelRatio || 1;
     /* drawn at the screen's own density, as sharp as the screen is; the governor gives way if frames come slow */
-    maxScale = Math.min(dpr, 2);
+    /* … and no more than about 2560×1800 pixels in all, however dense and large the screen */
+    maxScale = Math.max(0.5, Math.min(dpr, cap, Math.sqrt(4.6e6 / Math.max(1, W * H))));
     if (!frames.length) scale = maxScale;
     lay = layoutFor(W, H);
     /* the moon: on the line through its place on the screen, out beyond the rings */
@@ -146,7 +150,7 @@ export function createInstall(pad, opts = {}) {
     const shift = [lerp(from[0], L.cx, eA), lerp(from[1], L.cy, eA)];
     return { cam, fwd, right, up, shift, dist };
   }
-  function draw(now) {
+  function draw(now, force = null) {
     const w = world; if (!w || !lay) return;
     const idle = clock;
     const k = u;
@@ -173,12 +177,42 @@ export function createInstall(pad, opts = {}) {
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
       sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
+      part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
       vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
     });
   }
+  /* the scene's resolution: the measured part while the camera rushes, rising to all of it as it slows into orbit
+     (the dive's second half is slow, and the eye has time there) */
+  function partAt() {
+    if (!motion) return 1;
+    return mq + (1 - mq) * smooth(0.45, 0.85, u);
+  }
+  /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
+     the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
+     the scene's, which goes with its area; the part chosen is the largest that keeps a frame inside 15 ms */
+  function calibrate() {
+    const w = world; if (!w || !w.baked || motion || reduced) return;
+    const keep = u; u = 0.5;
+    const time = (part) => { draw(performance.now(), { part, dustN: 18 }); w.finish(); const t0 = performance.now();
+      for (let i = 0; i < 3; i++) draw(performance.now(), { part, dustN: 18 }); w.finish(); return (performance.now() - t0) / 3; };
+    try {
+      const t1 = time(0.4), t2 = time(0.8);
+      const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16);
+      mq = clamp(Math.sqrt(Math.max(0, (15 - c) / d)), 0.3, 1);
+      /* if even the canvas's own passes are too slow, the canvas comes down too */
+      if (c > 11 && scale > 0.75) { cap = scale = Math.max(0.6, scale * Math.sqrt(11 / c)); maxScale = Math.min(maxScale, cap); w.resize(W, H, scale); }
+    } finally { u = keep; prev = null; }
+  }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
   function govern(dt) {
+    /* while moving, the scene's part answers within a few frames; the canvas is left as it is */
+    if (motion) {
+      mframes.push(dt); if (mframes.length < 10) return;
+      const avg = mframes.reduce((a, b) => a + b, 0) / mframes.length; mframes = [];
+      if (avg > 20) mq = Math.max(0.3, mq * 0.85); else if (avg < 12) mq = Math.min(1, mq * 1.05);
+      return;
+    }
     frames.push(dt); if (frames.length < 24) return;
     const avg = frames.reduce((a, b) => a + b, 0) / frames.length; frames = [];
     const now = performance.now(); if (now - lastAdjust < 900) return;
@@ -228,7 +262,7 @@ export function createInstall(pad, opts = {}) {
 
   return {
     /* the textures are baked before they are wanted, while the door is quiet */
-    prepare() { const w = ensure(); if (w) { size(); w.bake(); } },
+    prepare() { const w = ensure(); if (w) { size(); w.bake().then((ok) => { if (ok) calibrate(); }); } },
     start() {
       const w = ensure();
       if (running) return;
