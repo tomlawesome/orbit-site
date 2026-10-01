@@ -29,8 +29,7 @@ function bezier(x1, y1, x2, y2) {
   };
 }
 /* the shot is slow on purpose: a long ease into the move, a long glide, a long settle */
-/* the dolly and the aim begin already moving, at the pace the orbit part hands them, and ease to rest */
-const easeDolly = bezier(0.2, 0.4, 0.2, 1), easeTurn = bezier(0.5, 0, 0.3, 1), easeAim = bezier(0.3, 0.35, 0.25, 1);
+const easeDolly = bezier(0.5, 0, 0.2, 1), easeTurn = bezier(0.5, 0, 0.3, 1), easeAim = bezier(0.6, 0, 0.3, 1);
 
 /* vectors and 3×3 rotations (row-major; uploaded transposed) */
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -58,7 +57,7 @@ export const TUNE = {
   look: { galK: 0.05, dust: 1, fringe: 0.012, grain: 0.028 },
   rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: -0.23, roll: 0.3 },
   /* the moon the camera passes on the way in: when (k), how far off the path (planet radii, right and up), how big */
-  fly: { k: 0.91, side: [-1.2, -1.2], r: 0.2 },
+  fly: { k: 0.89, side: [-1.2, -0.8], r: 0.2 },
   land: { R: 0.47, cx: 0.22, cy: -0.12, moon: [-0.3, 0.27], moonR: 8.0 },
   port: { R: 0.26, cx: 0.1, cy: -0.2, moon: [-0.3, 0.04], moonR: 8.0 },
 };
@@ -70,15 +69,8 @@ function world0() {
   SKY = tr(mm(rz(1.2), rx(0.6)));                   /* world → galaxy frame, until the screen is measured */
   REST = TUNE.rest; FROM = TUNE.from;
 }
-/* the shot in two parts. ORBIT: the dot carries on round its orbit on the door, quickening, swelling
-   from a flat disc into a shaded sphere and then the planet itself, and comes off the path towards
-   the eye. APPROACH: the camera closes on it and settles into orbit. The words come at SETTLE (from
-   the click); RETURN is the way back */
-const ORBIT = 2.6, APPROACH = 7, SETTLE = ORBIT + APPROACH * 0.78, RETURN = 4.2;
-/* the dot: one turn of its orbit in 46 s, clockwise; the extra way round it goes as it quickens; how far
-   off the path it comes, and how big it is when the camera takes it (a share of the shorter side) */
-const SPIN = (Math.PI * 2) / 46, EXTRA = 0.55, PEEL = 0.1, PULL = 0.34, TAKE = 0.034;
-const easeIn = (x) => x * x * x;
+/* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
+const HOLD = 1.1, APPROACH = 12, SETTLE = 9.6, RETURN = 5;
 
 function layoutFor(W, H) {
   const t = H > W * 1.1 ? TUNE.port : TUNE.land;
@@ -150,30 +142,16 @@ export function createInstall(pad, opts = {}) {
     let right = norm(cross(fwd, [0, 1, 0])), up = cross(right, fwd);
     const cr = Math.cos(roll), sr = Math.sin(roll);
     [right, up] = [add(mul(right, cr), mul(up, sr)), add(mul(up, cr), mul(right, -sr))];
-    const from = dot0 ? [dot0.x - W / 2, H / 2 - dot0.y] : [L.cx, L.cy];   /* the screen, y up from the centre */
+    const from = dot0 ? [dot0.x - W / 2, H / 2 - dot0.y] : [L.cx, L.cy];
     const shift = [lerp(from[0], L.cx, eA), lerp(from[1], L.cy, eA)];
     return { cam, fwd, right, up, shift, dist };
-  }
-  /* the orbit part: where the planet is on the screen and how big, a of the way along (0 the dot, 1 off the path) */
-  function orbitAt(o, a) {
-    const th = o.base + o.sgn * (SPIN * ORBIT * a + EXTRA * easeIn(a));
-    const rho = o.rho * (1 + PEEL * smooth(0.3, 1, a) ** 1.4);
-    /* growing faster and faster, and pulled off the orbit towards where it will come to rest */
-    const r = o.r0 + (o.r1 - o.r0) * a ** 2.2;
-    const x = o.cx + Math.cos(th) * rho, y = o.cy + Math.sin(th) * rho;
-    const pull = PULL * smooth(0.35, 1, a) ** 1.3, tx = W / 2 + lay.cx, ty = H / 2 - lay.cy;
-    return { x: x + (tx - x) * pull, y: y + (ty - y) * pull, r };
   }
   function draw(now) {
     const w = world; if (!w || !lay) return;
     const idle = clock;
-    const o = motion?.orbit || null;
-    /* in the orbit part the camera holds its starting place, and the planet is wherever the orbit has it */
-    const a = motion?.a ?? 1;
-    const k = a < 1 ? 0 : u;
-    const dot0 = o ? orbitAt(o, a < 1 ? a : 1) : motion?.dot || null;
+    const k = u;
+    const dot0 = motion?.dot || null;
     const v = view(k, idle, false, dot0);
-    const morph = o ? smooth(0.06, 0.95, a) : 1;
     const s = scale;
     /* the sun on the lens: where it would be, and how much of it the planet leaves */
     const sf = dot(SUN, v.fwd);
@@ -194,8 +172,8 @@ export function createInstall(pad, opts = {}) {
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
-      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: morph < 1 ? [0, 0, 0, 0] : moonPos, moon2: k < 0.999 && morph >= 1 ? flyPos : [0, 0, 0, 0],
-      time: now / 1000, bg: smooth(0.0, 0.3, k) * (a < 1 ? 0 : 1), sunVis: sunVis * smooth(0.05, 0.4, k), expo: lerp(0.85, 1.0, smooth(0.3, 0.95, k)), morph,
+      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
+      time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
       vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
     });
   }
@@ -220,20 +198,16 @@ export function createInstall(pad, opts = {}) {
     if (motion) {
       const t = (performance.now() - motion.t0) / 1000;   /* the clock the shot was started on */
       if (motion.reverse) {
-        /* back out to where the orbit leaves off, then along it, slowing, until the planet is the dot again */
-        const tb = motion.from * RETURN;
-        u = clamp(motion.from - t / RETURN);
-        motion.a = t < tb ? 1 : clamp(1 - (t - tb) / (ORBIT * 0.85));
-        motion.near?.(motion.a < 1 ? motion.a * 0.25 : 0.25 + 0.75 * u);
-        canvas.style.opacity = smooth(0.0, 0.12, motion.a).toFixed(3);
-        if (motion.a <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
+        u = clamp(motion.from * (1 - t / RETURN));
+        motion.near?.(u);
+        /* the planet gives itself back to the dot in the last of the shot */
+        canvas.style.opacity = smooth(0.0, 0.05, u).toFixed(3);
+        if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
-        motion.a = clamp(t / ORBIT);
-        u = clamp((t - ORBIT) / APPROACH);
-        motion.near?.(motion.a < 1 ? motion.a * 0.25 : 0.25 + 0.75 * u);
-        /* the planet takes over from the dot in the first moments, where they are one size and one place */
-        canvas.style.opacity = smooth(0.0, 0.12, motion.a).toFixed(3);
-        if (!motion.settled && t >= SETTLE) { motion.settled = true; motion.resolve(); }
+        /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
+        canvas.style.opacity = smooth(0.55, HOLD, t).toFixed(3);
+        u = clamp((t - HOLD) / APPROACH);
+        if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
         if (u >= 1) { motion = null; canvas.style.opacity = ""; }
       }
     }
@@ -243,13 +217,11 @@ export function createInstall(pad, opts = {}) {
     draw(now);
     govern(dt);
   }
-  /* the dot on its orbit: the orbit's centre and radius, the dot's angle on it and its size; ahead, for the way
-     back, by the time the planet will take to come home, since the dot keeps going round meanwhile */
-  const orbitOf = (scene, reverse, ahead = 0) => {
-    const b = scene.body.getBoundingClientRect(), c = scene.ring.getBoundingClientRect();
-    const x = b.left + b.width / 2, y = b.top + b.height / 2, cx = c.left + c.width / 2, cy = c.top + c.height / 2;
-    const th = Math.atan2(y - cy, x - cx) + SPIN * ahead;
-    return { cx, cy, rho: Math.hypot(x - cx, y - cy), base: th, sgn: reverse ? -1 : 1, r0: Math.max(1.5, scene.body.offsetWidth / 2), r1: Math.min(W, H) * TAKE };
+  /* where the dot is, and how big it is once it has swelled (its layout size, not its size mid-transition) */
+  const SWELL = 1.5;
+  const dotOf = (scene) => {
+    const b = scene.body.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * SWELL) };
   };
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
@@ -270,25 +242,23 @@ export function createInstall(pad, opts = {}) {
     form(scene) {
       return new Promise(async (resolve) => {
         this.start();
-        const t0 = performance.now();
+        const dot0 = dotOf(scene);
         const ok = world && (await world.bake());
         if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
         pad.classList.add("lit");
         canvas.style.opacity = "0";
-        u = 0; clock = 0; frames = []; prev = null;
-        /* the orbit read where the dot is now, and run from when it was clicked */
-        const orbit = orbitOf(scene, false, -(performance.now() - t0) / 1000);
-        placeFly(orbitAt(orbit, 1));
-        motion = { t0, orbit, a: 0, reverse: false, resolve, settled: false, near: scene.near };
+        u = 0; clock = 0; frames = [];
+        placeFly(dot0);
+        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false };
       });
     },
     /* the shot back out to where the planet is on the door now */
     unform(scene) {
       return new Promise((resolve) => {
         if (!world || reduced || !running) { resolve(); return; }
-        const orbit = orbitOf(scene, true, u * RETURN + ORBIT * 0.85);
-        placeFly(orbitAt(orbit, 1));
-        motion = { t0: performance.now(), orbit, a: 1, reverse: true, from: u, resolve, near: scene.near };
+        const dot0 = dotOf(scene);
+        placeFly(dot0);
+        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };
       });
     },
     stop() {
@@ -296,16 +266,12 @@ export function createInstall(pad, opts = {}) {
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
     },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
-    async still(k, idle = 0, dotAt = null, moving = false, orbitA = null) {
+    async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
       size(); if (!(await world.bake())) return false;
       motion = dotAt ? { dot: dotAt } : null; u = k; clock = idle;
       /* a frame of the shot in motion: the one before it, a 60th of a second earlier */
       if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: performance.now() - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
-      if (orbitA != null && dotAt) {
-        /* a frame of the orbit part: the dot at dotAt on an orbit about ring (x, y) */
-        motion = { orbit: { cx: dotAt.cx, cy: dotAt.cy, rho: Math.hypot(dotAt.x - dotAt.cx, dotAt.y - dotAt.cy), base: Math.atan2(dotAt.y - dotAt.cy, dotAt.x - dotAt.cx), sgn: 1, r0: dotAt.r, r1: Math.min(W, H) * TAKE }, a: orbitA };
-      }
       draw(performance.now()); motion = null;
       return true;
     },
