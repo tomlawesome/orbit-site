@@ -95,7 +95,7 @@ uniform vec3 uCam, uFwd, uRight, uUp, uSun;
 uniform mat3 uSpin, uTilt, uSkyM;
 uniform vec4 uMoon, uMoon2;
 uniform sampler2D uAlb, uSky, uRing, uMoonT;
-uniform float uHasMoon, uGalaxy, uGalK, uDust, uFocusD, uMorph;
+uniform float uHasMoon, uGalaxy, uGalK, uDust, uFocusD;
 uniform vec3 uVel;
 uniform vec2 uAlbSize;
 ${NOISE}
@@ -253,13 +253,9 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   float lit=pow(wrap,1.1)*pow(max(ndv,0.02),0.12);
   vec3 tint=mix(vec3(1.0,0.62,0.42),vec3(1.0),smoothstep(-0.05,0.35,mu));
   float rsh=1.0-0.75*ringAt(P,6.0);
-  /* the morph from the door's dot: a flat violet disc, then a violet ball in the light, then the planet's own clouds */
-  float mT=smoothstep(0.45,0.95,uMorph), mS=smoothstep(0.0,0.4,uMorph);
-  alb=mix(srgb(150,92,236),alb,mT);
   vec3 c=alb*SUNI*tint*lit*rsh/PI*1.3;
   /* the rings' light on the night side */
   c+=alb*vec3(0.05,0.04,0.07)*0.08*(1.0-smoothstep(-0.1,0.2,mu));
-  c=mix(vec3(0.12,0.002,0.72),c,mS);
   return c;
 }
 
@@ -317,7 +313,7 @@ void main(){
   if(tp.x>0.0){tOp=tp.x; hit=1;}
   if(tm.x>0.0&&tm.x<tOp){tOp=tm.x; hit=2;}
   if(uMoon2.w>0.0&&tm2.x>0.0&&tm2.x<tOp){tOp=tm2.x; hit=3;}
-  float tr; vec4 rc=ring(ro,rd,tr)*smoothstep(0.6,1.0,uMorph);
+  float tr; vec4 rc=ring(ro,rd,tr);
   bool ringOn=tr>0.0&&tr<tOp;
   if(tOp<1e8){ vec3 P=ro+rd*tOp; col=hit==1?cloudDeck(P,rd):moon(P,hit==2?uMoon:uMoon2,rd); alpha=1.0; }
   if(ringOn&&ta.x>0.0&&tr>ta.y){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
@@ -331,8 +327,7 @@ void main(){
       float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
       float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od)*(1.0-0.6*ringAt(x,7.0)); }
     float mu=dot(rd,uSun), g=0.7, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*mu,1.5)*0.08;
-    float mh=smoothstep(0.3,0.8,uMorph);
-    col=col*mix(vec3(1.0),exp(-BR*od*0.25),mh)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6*mh;
+    col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6;
   }
   if(ringOn&&(ta.x<=0.0||tr<ta.x)){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
   col+=dust(ro,rd,min(tOp,tr>0.0?tr:1e9));
@@ -415,7 +410,7 @@ void main(){
   /* grain, as film has it: most in the mid-tones, little in the blacks and the highlights */
   float lum=dot(c,vec3(0.2126,0.7152,0.0722));
   float gr=(hash13(vec3(gl_FragCoord.xy,floor(uTime*24.0)))+hash13(vec3(gl_FragCoord.yx*1.7,floor(uTime*24.0)+3.0))-1.0);
-  c+=gr*uGrain*(0.25+3.0*lum*(1.0-lum))*h.a;
+  c+=gr*uGrain*(0.25+3.0*lum*(1.0-lum));
   c+=(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)*(1.5/255.0);
   float a=max(h.a,clamp(max(c.r,max(c.g,c.b)),0.0,1.0)*(1.0-h.a));
   o=vec4(c,a);
@@ -600,7 +595,7 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
-      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uMorph, v.morph ?? 1); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH);
+      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH);
       bind(0, albT, u.uAlb); bind(1, galT || skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;

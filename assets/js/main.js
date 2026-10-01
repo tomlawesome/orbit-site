@@ -79,7 +79,7 @@ function leaveCurrent() {
 /* a section: the flight there, and the landing */
 /* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
 let sceneTimer = 0;
-const installPlanet = () => { const door = $("#door"), planet = door.querySelector('.planet[data-section="install"]'); return { planet, body: planet.querySelector(".body"), ring: door.querySelector(".planets") }; };
+const installPlanet = () => { const planet = $('#door .planet[data-section="install"]'); return { planet, body: planet.querySelector(".body") }; };
 function goToWorld() {
   const pad = PADS.install, door = $("#door");
   planets.hide(); player.stop(true); home.closeDrawers();
@@ -92,9 +92,8 @@ function goToWorld() {
   }
   const scene = installPlanet();
   scene.planet.classList.add("chosen");
-  /* the planet takes the dot over on its orbit; as it comes off the path, the door racks out of focus behind it */
-  scene.near = (p) => { if (p > 0.13) document.body.classList.add("racking"); };
-  document.body.classList.add("departing");
+  /* the camera finds the planet: the door racks out of focus behind it, and it swells and glows */
+  document.body.classList.add("departing", "racking");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = "install";
   try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
   pad.ring.form(scene).then(() => {
@@ -117,9 +116,9 @@ function leaveWorld() {
   const scene = installPlanet();
   scene.planet.classList.add("chosen");
   /* the door comes back soft, and comes into focus as the camera reaches it; the dot takes the planet back */
-  scene.near = (p) => {
-    if (p < 0.2) document.body.classList.remove("racking");
-    if (p < 0.03) document.body.classList.remove("departing");
+  scene.near = (u) => {
+    if (u < 0.3) document.body.classList.remove("racking");
+    if (u < 0.05) document.body.classList.remove("departing");
   };
   document.body.classList.add("departing", "racking", "at-door", "lit");
   document.body.classList.remove("instrument", "arrived");
