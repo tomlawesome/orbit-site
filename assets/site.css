@@ -1059,5 +1059,12 @@ body.withdrawing #installpad .words{animation:chromeout .45s ease both}
 /* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
 body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),
 body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity 1.6s ease}
-body.departing #door .planet.chosen .body{opacity:0;transition:opacity .25s ease .1s}
+/* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
+body.departing #door .planet.chosen .spin{animation-play-state:paused}
+body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1.5);box-shadow:0 0 calc(5 * var(--u)) calc(1.4 * var(--u)) rgba(167,139,250,.6);opacity:0;
+  transition:transform 1.1s cubic-bezier(.3,0,.2,1),box-shadow 1.1s ease,opacity .5s ease .7s}
+/* the rack focus: the dawn goes soft and dim behind the planet */
+#door .dsky,#door .world{transition:filter 1.5s cubic-bezier(.4,0,.2,1)}
+body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}
+@media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}
