@@ -92,8 +92,9 @@ export function createInstall(pad, opts = {}) {
     world0();
     W = pad.clientWidth || innerWidth; H = pad.clientHeight || innerHeight;
     const dpr = devicePixelRatio || 1;
-    maxScale = Math.min(dpr, matchMedia("(pointer: coarse)").matches ? 1.25 : 1.5);
-    if (!frames.length) scale = Math.min(maxScale, 1);
+    /* drawn at the screen's own density, as sharp as the screen is; the governor gives way if frames come slow */
+    maxScale = Math.min(dpr, 2);
+    if (!frames.length) scale = maxScale;
     lay = layoutFor(W, H);
     /* the moon: on the line through its place on the screen, out beyond the rings */
     const v = view(1, 0, true);
