@@ -199,7 +199,7 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   vec2 uv=vec2(atan(pp.x,pp.z)/TAU+0.5,asin(clamp(pp.y,-1.0,1.0))/PI+0.5);
   vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
-  vec4 a=textureGrad(uAlb,uv,dx,dy);
+  vec4 a=textureGrad(uAlb,uv,dx*0.7,dy*0.7);
   vec3 alb=a.rgb;
   /* finer than the map: streaks drawn out along the bands, fading where they would shimmer */
   float px=length(dx)*uAlbSize.x;
@@ -274,7 +274,7 @@ const DOWN = `#version 300 es
 precision highp float;
 uniform sampler2D uSrc; uniform vec2 uTexel, uOut; uniform float uFirst;
 out vec4 o;
-vec3 s(vec2 uv){ vec3 c=texture(uSrc,uv).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-0.85,0.0)/max(l,1e-4); } return c; }
+vec3 s(vec2 uv){ vec3 c=texture(uSrc,uv).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-1.3,0.0)/max(l,1e-4); } return c; }
 void main(){
   vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 a=s(uv+t*vec2(-2,2)),b=s(uv+t*vec2(0,2)),c=s(uv+t*vec2(2,2)),d=s(uv+t*vec2(-2,0)),e=s(uv),f=s(uv+t*vec2(2,0)),g=s(uv+t*vec2(-2,-2)),h=s(uv+t*vec2(0,-2)),i=s(uv+t*vec2(2,-2)),j=s(uv+t*vec2(-1,1)),k=s(uv+t*vec2(1,1)),l=s(uv+t*vec2(-1,-1)),m=s(uv+t*vec2(1,-1));
@@ -307,7 +307,14 @@ vec3 agx(vec3 c){
 void main(){
   vec2 uv=gl_FragCoord.xy/uRes;
   vec4 h=texture(uHdr,uv);
-  vec3 c=(h.rgb+texture(uBloom,uv).rgb*uBloomK)*uExpo;
+  /* sharpening, contrast-adaptive: lifts fine detail, never past its neighbours, so no halos */
+  vec2 px=1.0/uRes;
+  vec3 n=texture(uHdr,uv+vec2(0,px.y)).rgb, sd=texture(uHdr,uv-vec2(0,px.y)).rgb, e=texture(uHdr,uv+vec2(px.x,0)).rgb, w=texture(uHdr,uv-vec2(px.x,0)).rgb;
+  vec3 mn=min(min(min(n,sd),min(e,w)),h.rgb), mx=max(max(max(n,sd),max(e,w)),h.rgb);
+  vec3 amp=sqrt(clamp(min(mn,2.0-mx)/max(mx,1e-4),0.0,1.0));
+  vec3 k=-amp*0.18;
+  vec3 sharp=clamp((h.rgb+(n+sd+e+w)*k)/(1.0+4.0*k),mn,mx);
+  vec3 c=(sharp+texture(uBloom,uv).rgb*uBloomK)*uExpo;
   vec2 v=uv-0.5; c*=1.0-0.45*dot(v,v);
   c=agx(c);
   /* a touch more colour than AgX's neutral: slide film rather than negative */
@@ -494,7 +501,7 @@ export function createWorld(canvas, opts = {}) {
     gl.disable(gl.BLEND);
     pass(P.film, null, W, H, (u) => {
       bind(0, hdrT.t, u.uHdr); bind(1, chain[0].t, u.uBloom);
-      gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.3);
+      gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.2);
     });
   }
   return {
