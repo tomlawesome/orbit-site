@@ -173,7 +173,12 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   float ph=dot(rd,uSun);
   vec3 c;
   /* the lit face: the photograph's colour; the dark face: light let through the thin rings, little through the thick */
-  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*SUNI*0.07*(mu0/(mu0+mu))*(0.85+0.3*(1.0-ph));
+  /* ring particles are rough ice: bright with the sun behind the eye, dimmer as they are lit from the side and
+     behind; the thin rings' fine dust instead glows when the light comes through them */
+  float pa=acos(clamp(-ph,-1.0,1.0));
+  float back=0.12+0.88*exp(-(pa-0.87)*1.4);
+  float fwd=pow(max(ph,0.0),24.0)*pow(1.0-rs.a,3.0)*0.8;
+  if(sign(lt.y)==sign(o3.y)) c=rs.rgb*SUNI*0.07*(mu0/(mu0+mu))*min(back,1.6)+rs.rgb*SUNI*0.05*fwd;
   else { float g=0.6, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5); c=rs.rgb*SUNI*0.05*(1.0-exp(-tau/mu0))*exp(-tau*0.5/mu)*hg/max(a,0.02); }
   c*=sh;
   /* the planet's own light on the ring's dark side */
@@ -241,13 +246,13 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   vec3 nb=normalize(n-bump*0.0012);
   float mu=dot(n,uSun), ndv=max(dot(n,-rd),0.0);
   /* light through a deep atmosphere: a soft terminator, warming as it goes, darkening to the limb */
-  float wrap=clamp((dot(nb,uSun)+0.08)/1.08,0.0,1.0);
-  float lit=pow(wrap,1.25)*pow(max(ndv,0.02),0.12);
+  float wrap=clamp((dot(nb,uSun)+0.025)/1.025,0.0,1.0);
+  float lit=pow(wrap,1.1)*pow(max(ndv,0.02),0.12);
   vec3 tint=mix(vec3(1.0,0.62,0.42),vec3(1.0),smoothstep(-0.05,0.35,mu));
   float rsh=1.0-0.75*ringAt(P,6.0);
   vec3 c=alb*SUNI*tint*lit*rsh/PI*1.3;
   /* the rings' light on the night side */
-  c+=alb*vec3(0.05,0.04,0.07)*0.25*(1.0-smoothstep(-0.1,0.2,mu));
+  c+=alb*vec3(0.05,0.04,0.07)*0.08*(1.0-smoothstep(-0.1,0.2,mu));
   return c;
 }
 
@@ -272,7 +277,7 @@ void main(){
     vec3 ls=normalize(squash(uSun));
     for(int i=0;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
       /* the haze is lit by how high the sun stands over it: it fades through dusk, no hard edge */
-      float up=dot(normalize(qx),ls); float lit=smoothstep(-0.18,0.3,up);
+      float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
       float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od)*(1.0-0.6*ringAt(x,7.0)); }
     float mu=dot(rd,uSun), g=0.7, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*mu,1.5)*0.08;
     col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6;

@@ -50,7 +50,7 @@ const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4
    the planet sits at rest on the screen (its centre from the screen's centre,
    y up, and its radius, in screen heights; the moon's place likewise) */
 export const TUNE = {
-  sun: [-0.72, 0.32, 0.55], tiltZ: 0.38, tiltX: -0.12, sky: [1.2, 0.6],
+  sun: [-0.95, 0.28, -0.08], tiltZ: 0.38, tiltX: -0.12, sky: [1.2, 0.6],
   rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: -0.23, roll: 0.3 },
   /* the moon the camera passes on the way in: when (k), how far off the path (planet radii, right and up), how big */
   fly: { k: 0.89, side: [-1.2, -0.8], r: 0.2 },
