@@ -96,6 +96,8 @@ uniform mat3 uSpin, uTilt, uSkyM;
 uniform vec4 uMoon, uMoon2;
 uniform sampler2D uAlb, uSky, uRing, uMoonT;
 uniform float uHasMoon, uGalaxy, uGalK, uDust, uFocusD;
+uniform int uDustN;
+uniform float uPartK;   /* the scene's resolution over the canvas's: a point of light keeps its light however coarse the drawing */
 uniform vec3 uVel;
 uniform vec2 uAlbSize;
 ${NOISE}
@@ -139,7 +141,7 @@ vec3 stars(vec3 d,float dens){
     vec3 col=tint<0.25?vec3(0.66,0.76,1.0):tint<0.6?vec3(1.0,0.97,0.94):tint<0.85?vec3(1.0,0.87,0.7):vec3(1.0,0.7,0.52);
     c+=col*m*exp(-px*px*1.8);
   }
-  return c;
+  return c*uPartK*uPartK;
 }
 vec3 sky(vec3 rd){
   vec3 d=uSkyM*rd;
@@ -270,6 +272,7 @@ vec3 dust(vec3 ro,vec3 rd,float tMax){
   vec3 acc=vec3(0.0);
   float ph=dot(rd,uSun), g=0.65, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5);
   for(int i=0;i<30;i++){
+    if(i>=uDustN)break;
     float t0=min(tN.x,min(tN.y,tN.z))*CS;
     float h=hash13(cell);
     if(h<0.06){
@@ -300,13 +303,13 @@ vec3 dust(vec3 ro,vec3 rd,float tMax){
     if(tN.x<tN.y){ if(tN.x<tN.z){cell.x+=st.x;tN.x+=tD.x;}else{cell.z+=st.z;tN.z+=tD.z;} }
     else{ if(tN.y<tN.z){cell.y+=st.y;tN.y+=tD.y;}else{cell.z+=st.z;tN.z+=tD.z;} }
   }
-  return acc*SUNI*vec3(1.0,0.95,0.9)*(0.35+hg*0.25)*0.35*uDust;
+  return acc*SUNI*vec3(1.0,0.95,0.9)*(0.35+hg*0.25)*0.35*uDust*uPartK*uPartK;
 }
 
 void main(){
   vec2 q=(gl_FragCoord.xy-0.5*uRes-uShift)/uFocal;
   vec3 ro=uCam, rd=normalize(uFwd+uRight*q.x+uUp*q.y);
-  vec3 col=sky(rd)*uBg; float alpha=uBg;
+  vec3 col=uBg>0.001?sky(rd)*uBg:vec3(0.0); float alpha=uBg;
   vec2 tp=planetHit(ro,rd,1.0), ta=planetHit(ro,rd,RA);
   vec2 tm=sph(ro-uMoon.xyz,rd,uMoon.w), tm2=sph(ro-uMoon2.xyz,rd,uMoon2.w);
   float tOp=1e9; int hit=0;
@@ -322,21 +325,25 @@ void main(){
     float t0=max(ta.x,0.0), t1=min(ta.y,tOp); const int N=8; float ds=(t1-t0)/float(N);
     vec3 s=vec3(0.0); float od=0.0;
     vec3 ls=normalize(squash(uSun));
+    float rsh=1.0-0.6*ringAt(ro+rd*(0.5*(t0+t1)),7.0);
     for(int i=0;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
       /* the haze is lit by how high the sun stands over it: it fades through dusk, no hard edge */
       float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
-      float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od)*(1.0-0.6*ringAt(x,7.0)); }
+      float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od); }
+    s*=rsh;
     float mu=dot(rd,uSun), g=0.7, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*mu,1.5)*0.08;
     col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6;
   }
   if(ringOn&&(ta.x<=0.0||tr<ta.x)){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
   col+=dust(ro,rd,min(tOp,tr>0.0?tr:1e9));
   /* the light in the lens: a soft halo round the sun, and a thin streak */
-  float sa=acos(clamp(dot(rd,uSun),-1.0,1.0));
-  vec3 glare=vec3(1.0,0.86,0.68)*(1.2*exp(-sa/0.01)+0.12*exp(-sa/0.06)+0.025*exp(-sa/0.3));
-  vec2 dp=gl_FragCoord.xy-uSunPx;
-  glare+=vec3(0.72,0.62,1.0)*0.2*exp(-abs(dp.y)/(uRes.y*0.003))*exp(-abs(dp.x)/(uRes.x*0.3));
-  col+=glare*uSunVis;
+  if(uSunVis>0.001){
+    float sa=acos(clamp(dot(rd,uSun),-1.0,1.0));
+    vec3 glare=vec3(1.0,0.86,0.68)*(1.2*exp(-sa/0.01)+0.12*exp(-sa/0.06)+0.025*exp(-sa/0.3));
+    vec2 dp=gl_FragCoord.xy-uSunPx;
+    glare+=vec3(0.72,0.62,1.0)*0.2*exp(-abs(dp.y)/(uRes.y*0.003))*exp(-abs(dp.x)/(uRes.x*0.3));
+    col+=glare*uSunVis;
+  }
 #ifdef DIRECT
   col=clamp(col*(2.51*col+0.03)/(col*(2.43*col+0.59)+0.14),0.0,1.0);
   col=pow(col,vec3(1.0/2.2))+(hash13(vec3(gl_FragCoord.xy,uTime))-0.5)/255.0;
@@ -347,9 +354,9 @@ void main(){
 /* BLOOM: down a chain of halves (13 taps; the first keeps only the bright), and back up (a tent) */
 const DOWN = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uTexel, uOut; uniform float uFirst;
+uniform sampler2D uSrc; uniform vec2 uTexel, uOut, uPart; uniform float uFirst;
 out vec4 o;
-vec3 s(vec2 uv){ vec3 c=texture(uSrc,uv).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-1.3,0.0)/max(l,1e-4); } return c; }
+vec3 s(vec2 uv){ vec3 c=texture(uSrc,min(uv*uPart,uPart-uTexel*0.5)).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-1.3,0.0)/max(l,1e-4); } return c; }
 void main(){
   vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 a=s(uv+t*vec2(-2,2)),b=s(uv+t*vec2(0,2)),c=s(uv+t*vec2(2,2)),d=s(uv+t*vec2(-2,0)),e=s(uv),f=s(uv+t*vec2(2,0)),g=s(uv+t*vec2(-2,-2)),h=s(uv+t*vec2(0,-2)),i=s(uv+t*vec2(2,-2)),j=s(uv+t*vec2(-1,1)),k=s(uv+t*vec2(1,1)),l=s(uv+t*vec2(-1,-1)),m=s(uv+t*vec2(1,-1));
@@ -369,8 +376,10 @@ void main(){
 /* THE FILM: the light and its bloom, tone-mapped (AgX), a breath of vignette and grain */
 const FILM = `#version 300 es
 precision highp float;
-uniform sampler2D uHdr, uBloom; uniform vec2 uRes, uBlurC; uniform float uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
+uniform sampler2D uHdr, uBloom; uniform vec2 uRes, uBlurC, uPart, uTexel; uniform float uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
 out vec4 o;
+/* the scene is drawn into the corner of its target it is given (uPart of it): read in that, clamped inside it */
+vec4 H(vec2 uv){ return texture(uHdr,min(clamp(uv,vec2(0.0),vec2(1.0))*uPart,uPart-uTexel*0.5)); }
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 vec3 agxCurve(vec3 x){vec3 x2=x*x, x4=x2*x2; return 15.5*x4*x2-40.14*x4*x+31.96*x4-6.868*x2*x+0.4298*x2+0.1191*x-0.00232;}
 vec3 agx(vec3 c){
@@ -382,24 +391,24 @@ vec3 agx(vec3 c){
 /* the lens's own colour fringing, stronger out to the edges; and the dolly's blur, out from where the camera is going */
 vec3 lens(vec2 uv){
   vec2 r=uv-0.5; float f=uFringe*dot(r,r);
-  vec3 c=vec3(texture(uHdr,uv+r*f).r,texture(uHdr,uv).g,texture(uHdr,uv-r*f).b);
+  vec3 c=vec3(H(uv+r*f).r,H(uv).g,H(uv-r*f).b);
   if(uBlur>0.5){
     vec2 dir=(uv-uBlurC/uRes); vec2 stp=dir*(uBlur/max(length(dir*uRes),1.0))/7.0;
-    vec3 acc=c; for(int i=1;i<8;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(texture(uHdr,u2+r*f).r,texture(uHdr,u2).g,texture(uHdr,u2-r*f).b); }
+    vec3 acc=c; for(int i=1;i<8;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(H(u2+r*f).r,H(u2).g,H(u2-r*f).b); }
     c=acc/8.0;
   }
   return c;
 }
 void main(){
   vec2 uv=gl_FragCoord.xy/uRes;
-  vec4 h=texture(uHdr,uv);
+  vec4 h=H(uv);
   h.rgb=lens(uv);
   /* sharpening, contrast-adaptive: lifts fine detail, never past its neighbours, so no halos */
-  vec2 px=1.0/uRes;
-  vec3 n=texture(uHdr,uv+vec2(0,px.y)).rgb, sd=texture(uHdr,uv-vec2(0,px.y)).rgb, e=texture(uHdr,uv+vec2(px.x,0)).rgb, w=texture(uHdr,uv-vec2(px.x,0)).rgb;
+  vec2 px=uTexel/uPart;
+  vec3 n=H(uv+vec2(0,px.y)).rgb, sd=H(uv-vec2(0,px.y)).rgb, e=H(uv+vec2(px.x,0)).rgb, w=H(uv-vec2(px.x,0)).rgb;
   vec3 mn=min(min(min(n,sd),min(e,w)),h.rgb), mx=max(max(max(n,sd),max(e,w)),h.rgb);
   vec3 amp=sqrt(clamp(min(mn,2.0-mx)/max(mx,1e-4),0.0,1.0));
-  vec3 k=-amp*0.18;
+  vec3 k=-amp*0.18*smoothstep(0.55,0.95,uPart.x);
   vec3 sharp=clamp((h.rgb+(n+sd+e+w)*k)/(1.0+4.0*k),mn,mx);
   vec3 c=(sharp+texture(uBloom,uv).rgb*uBloomK)*uExpo;
   vec2 v=uv-0.5; c*=1.0-0.45*dot(v,v);
@@ -589,9 +598,13 @@ export function createWorld(canvas, opts = {}) {
   function draw(v) {
     if (!baked) return;
     gl.disable(gl.BLEND);
-    pass(P.render, hdr ? hdrT.f : null, W, H, (u) => {
-      gl.uniform2f(u.uRes, W, H); gl.uniform2f(u.uShift, v.shift[0], v.shift[1]); gl.uniform2f(u.uSunPx, v.sunPx[0], v.sunPx[1]);
-      gl.uniform1f(u.uFocal, v.focal); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uBg, v.bg); gl.uniform1f(u.uSunVis, v.sunVis);
+    /* the scene may be drawn at a part of the canvas's resolution (v.part), into that corner of its target, and
+       brought up to the canvas by the film; everything given in canvas pixels is brought down with it */
+    const k = hdr ? Math.min(1, Math.max(0.2, v.part ?? 1)) : 1;
+    const RW = Math.max(1, Math.round(W * k)), RH = Math.max(1, Math.round(H * k)), kx = RW / W, ky = RH / H;
+    pass(P.render, hdr ? hdrT.f : null, RW, RH, (u) => {
+      gl.uniform2f(u.uRes, RW, RH); gl.uniform2f(u.uShift, v.shift[0] * kx, v.shift[1] * ky); gl.uniform2f(u.uSunPx, v.sunPx[0] * kx, v.sunPx[1] * ky);
+      gl.uniform1f(u.uFocal, v.focal * kx); gl.uniform1i(u.uDustN, v.dustN ?? 30); gl.uniform1f(u.uPartK, kx); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uBg, v.bg); gl.uniform1f(u.uSunVis, v.sunVis);
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
@@ -601,7 +614,7 @@ export function createWorld(canvas, opts = {}) {
     if (!hdr) return;
     let src = hdrT;
     chain.forEach((c, i) => {
-      pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); });
+      pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); gl.uniform2f(u.uPart, i === 0 ? kx : 1, i === 0 ? ky : 1); });
       src = c;
     });
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
@@ -612,12 +625,15 @@ export function createWorld(canvas, opts = {}) {
     gl.disable(gl.BLEND);
     pass(P.film, null, W, H, (u) => {
       bind(0, hdrT.t, u.uHdr); bind(1, chain[0].t, u.uBloom);
-      gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.2);
+      gl.uniform2f(u.uRes, W, H); gl.uniform2f(u.uPart, kx, ky); gl.uniform2f(u.uTexel, 1 / W, 1 / H);
+      gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.2);
       gl.uniform1f(u.uBlur, v.blur || 0); gl.uniform2fv(u.uBlurC, v.blurC || [W / 2, H / 2]); gl.uniform1f(u.uFringe, v.fringe ?? 0.012); gl.uniform1f(u.uGrain, v.grain ?? 0.028);
     });
   }
+  /* waits for everything asked of the GPU so far to be done: for timing frames */
+  const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
   return {
-    gl, bake, draw, resize,
+    gl, bake, draw, resize, finish,
     get baked() { return baked; },
     lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };
