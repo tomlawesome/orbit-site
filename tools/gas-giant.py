@@ -19,6 +19,10 @@ The result is written as the planet's map, equirectangular, north at the top:
 
   pip install numpy scipy pillow
   python3 tools/gas-giant.py [--n 2048] [--time 0.3] [--out assets/img/install/planet.webp] [--preview p.png]
+
+The map on the site is Cassini's map of Jupiter, regraded (credit NASA/JPL/Space Science Institute):
+  curl -O https://images-assets.nasa.gov/image/PIA07782/PIA07782~orig.jpg
+  python3 tools/gas-giant.py --n 4096 --size 4096 --base 'PIA07782~orig.jpg' --time 0.00001 --stir 0
 """
 import argparse, time
 import numpy as np
@@ -124,7 +128,7 @@ if args.base:
     base = np.clip(base - (cols - gaussian_filter1d(cols, NX / 60, axis=0, mode="wrap"))[None, :, :], 0, 1)
     lin = base ** 2.2
     Lb = (0.2126 * lin[..., 0] + 0.7152 * lin[..., 1] + 0.0722 * lin[..., 2])
-    Lb = (Lb - np.percentile(Lb, 2)) / (np.percentile(Lb, 98) - np.percentile(Lb, 2)); Lb = np.clip(Lb, 0, 1)
+    Lb = (Lb - np.percentile(Lb, 1)) / (np.percentile(Lb, 99.8) - np.percentile(Lb, 1)); Lb = np.clip(Lb, 0, 1)
     rb = (base[..., 0] - base[..., 2]) / (base[..., 0] + base[..., 2] + 1e-3)
     warmth = np.clip((rb - np.percentile(rb, 60)) / (np.percentile(rb, 97) - np.percentile(rb, 60)), 0, 1)   # only where it is warmer than the planet is
     stops = [(0.0, srgb(34, 16, 52)), (0.3, srgb(88, 44, 104)), (0.55, srgb(160, 120, 184)), (0.8, srgb(222, 208, 236)), (1.0, srgb(246, 240, 250))]
@@ -133,10 +137,10 @@ if args.base:
         for (a, ca), (b, cb) in zip(stops[:-1], stops[1:]):
             m = (v >= a) & (v <= b); t_ = ((v - a) / (b - a))[m][..., None]; out[m] = ca + (cb - ca) * t_
         return out
-    v = Lb ** 0.85
+    v = Lb ** 0.92
     band_rgb = grade(v)
-    gold = (srgb(140, 92, 48) + (srgb(244, 214, 158) - srgb(140, 92, 48)) * v[..., None])
-    band_rgb = band_rgb + (gold - band_rgb) * (warmth * 0.6)[..., None]
+    gold = (srgb(148, 80, 74) + (srgb(242, 200, 160) - srgb(148, 80, 74)) * v[..., None])   # copper-rose: warm without going olive against violet
+    band_rgb = band_rgb + (gold - band_rgb) * (warmth * 0.42)[..., None]
     rg = base[..., 0] - base[..., 1]
     # the great storm turns rose: the reddest oval, found where the red is broadest, and only there
     from scipy.ndimage import gaussian_filter
@@ -145,7 +149,6 @@ if args.base:
     near = np.exp(-(((X - x[cx_] + np.pi) % L - np.pi) ** 2 / 0.12 ** 2 + (LAT - lat[cy_]) ** 2 / 0.06 ** 2))
     red = np.clip((rg - np.percentile(rg, 90)) / (np.percentile(rg, 99.5) - np.percentile(rg, 90) + 1e-6), 0, 1) * near
     band_rgb = band_rgb + (srgb(200, 96, 128) - band_rgb) * (red * 0.8)[..., None]
-    band_rgb *= (1 + 0.05 * fine + 0.04 * puffs)[..., None]
     band_tone = Lb
     # the jets run along the sharpest edges of the bands
     zm = Lb.mean(axis=1)
@@ -243,17 +246,17 @@ while T < args.time:
 c = np.dstack([inv(d) for d in dyes[:3]])
 t = np.clip(inv(dyes[3]), 0, 1)
 # the poles: a blue-grey hood, its edge broken
-pol = smooth(1.08, 1.32, np.abs(LAT) + 0.06 * noise(ring(4, 24)))
-hood = (srgb(56, 56, 98) + (srgb(128, 128, 166) - srgb(56, 56, 98)) * t[..., None]) * (0.9 + 0.1 * noise(ring(10, 60)))[..., None]
+pol = smooth(1.25, 1.42, np.abs(LAT) + 0.04 * noise(ring(4, 24))) if args.base else smooth(1.08, 1.32, np.abs(LAT) + 0.06 * noise(ring(4, 24)))
+hood = (srgb(56, 56, 98) + (srgb(128, 128, 166) - srgb(56, 56, 98)) * t[..., None]) * ((0.9 + 0.1 * noise(ring(10, 60))) if not args.base else 1.0)[..., None] if not args.base else (srgb(64, 52, 104) + (srgb(150, 138, 188) - srgb(64, 52, 104)) * smooth(0, 1, t)[..., None])
 c = c * (1 - pol)[..., None] + hood * pol[..., None]
-c *= (0.98 + 0.04 * noise(ring(150, 400)))[..., None]
+if not args.base: c *= (0.98 + 0.04 * noise(ring(150, 400)))[..., None]
 
 def to8(a): return (np.clip(a, 0, 1) ** (1 / 2.2) * 255 + 0.5).astype(np.uint8)
 img = Image.fromarray(to8(c)[::-1], "RGB")
 big = img.resize((args.size, args.size // 2), Image.LANCZOS) if args.size != NX else img
 if args.base:
     from PIL import ImageFilter
-    big = big.filter(ImageFilter.UnsharpMask(radius=2.5, percent=70, threshold=1))   # the real map is softer than the screen
+    big = big.filter(ImageFilter.UnsharpMask(radius=1.6, percent=45, threshold=1))   # a touch of crispness for the screen
 if args.preview:
     big.save(args.preview)
 if args.out:

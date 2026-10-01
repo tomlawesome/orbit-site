@@ -51,9 +51,9 @@ const mv = (A, v) => [A[0] * v[0] + A[1] * v[1] + A[2] * v[2], A[3] * v[0] + A[4
    y up, and its radius, in screen heights; the moon's place likewise) */
 export const TUNE = {
   sun: [-0.72, 0.32, 0.55], tiltZ: 0.38, tiltX: -0.12, sky: [1.2, 0.6],
-  rest: { az: 0.0, el: 0.3, roll: 0.18, d: 6.5 }, from: { az: -0.8, el: 0.55, roll: 0.4 },
-  land: { R: 0.34, cx: 0.19, cy: -0.04, moon: [-0.3, 0.26], moonR: 8.0 },
-  port: { R: 0.2, cx: 0.1, cy: -0.2, moon: [-0.3, 0.02], moonR: 8.0 },
+  rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: 0.55, roll: 0.4 },
+  land: { R: 0.47, cx: 0.22, cy: -0.12, moon: [-0.3, 0.27], moonR: 8.0 },
+  port: { R: 0.26, cx: 0.1, cy: -0.2, moon: [-0.3, 0.04], moonR: 8.0 },
 };
 let SUN, TILT, TO_TILT, SKY, REST, FROM;
 function world0() {

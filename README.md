@@ -23,9 +23,9 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
 | `assets/js/install.js` | The install: into orbit. The camera goes from the purple planet on the door to the world it is, and settles in orbit over it; the one line waits in the dark above |
 | `assets/js/world.js` | The world, drawn in WebGL2: a ray-traced gas giant, flattened by its spin, under a thin haze, with rings that shade it and are shaded by it, a gold moon, and the galaxy (baked on the GPU); drawn in light, bloomed and tone-mapped |
-| `assets/img/install/planet*.webp` | The gas giant's cloud deck: a fluid simulation, written by `tools/gas-giant.py` (`pip install numpy scipy pillow`) |
+| `assets/img/install/planet*.webp` | The gas giant's cloud deck: Cassini's map of Jupiter (PIA07782, NASA/JPL/Space Science Institute), regraded to violet by `tools/gas-giant.py --base` (`pip install numpy scipy pillow`) |
 | `assets/img/install/orbit*.webp` | The world, still: shown while it loads, and in its place where WebGL2 is not |
-| `tools/gas-giant.py` | Simulates the cloud deck: jets along irregular bands, storms, eddies, the bands' colours carried by the flow |
+| `tools/gas-giant.py` | Writes the cloud deck: regrades a real planet's map (`--base`), or simulates one of its own — jets along irregular bands, storms, eddies |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
