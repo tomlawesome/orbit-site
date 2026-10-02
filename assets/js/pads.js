@@ -394,11 +394,83 @@ export function createDocs(pad) {
 
 /* the information: a page to read, each chapter arriving as it is reached */
 export function createInfo(pad) {
-  const scroll = $(".scroll", pad), chapters = [...pad.querySelectorAll(".chapter")];
-  const io = new IntersectionObserver((es) => { for (const x of es) if (x.isIntersecting) x.target.classList.add("in"); }, { root: scroll, threshold: 0.18 });
+  const scroll = $(".scroll", pad), scenes = [...pad.querySelectorAll(".scene")];
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent?.appendChild(e); return e; };
+  const seen = new Set();
+  const io = new IntersectionObserver((es) => {
+    for (const x of es) { if (x.isIntersecting) { x.target.classList.add("in"); seen.add(x.target.dataset.scene); } else seen.delete(x.target.dataset.scene); }
+  }, { root: scroll, threshold: 0.2 });
+
+  /* the orbit: the household's year, a month a second. Each item draws in as it comes due, is done at the dashed ring,
+     and swings back out to its next date */
+  const svg = pad.querySelector(".yearring svg"), rings = svg.querySelector(".rings"), bodiesG = svg.querySelector(".bodies"), today = svg.querySelector(".date");
+  const R = (days) => 46 + Math.min(1, days / 365) * 128;
+  for (const [d, label] of [[30, "a month"], [91, "three months"], [182, "six months"], [365, "a year"]]) {
+    el("circle", { cx: 200, cy: 200, r: R(d), class: d === 365 ? "month" : "" }, rings);
+    el("text", { x: 200 + R(d) * Math.cos(-0.95) + 4, y: 200 + R(d) * Math.sin(-0.95) - 3 }, rings).textContent = label;
+  }
+  const ITEMS = [["Boiler service", 365, 40, "#f0b429", 30], ["Car MOT", 365, 128, "#8fb8ff", 112], ["Home insurance", 365, 205, "#a78bfa", 196],
+    ["Broadband", 540, 300, "#4ade80", 282], ["Smoke alarms", 182, 16, "#f87171", 330], ["Chimney sweep", 365, 262, "#f0b429", 158], ["Laptop warranty", 730, 340, "#8fb8ff", 244]]
+    .map(([name, period, days, c, deg]) => {
+      const g = el("g", {}, bodiesG);
+      const halo = el("circle", { r: 11, fill: c, opacity: 0.18 }, g), dot = el("circle", { r: 4.6, fill: c }, g);
+      const text = el("text", {}, g); text.textContent = name;
+      return { name, period, days, c, a: (deg * Math.PI) / 180, rr: R(days), g, halo, dot, text, flash: 0 };
+    });
+  let day0 = new Date(2026, 9, 2).getTime(), elapsed = 0, last = 0, raf = 0;
+  function orbit(now) {
+    raf = requestAnimationFrame(orbit);
+    const dt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+    if (!seen.has("orbit") || dt === 0) return;
+    const step = dt * 30; elapsed += step;
+    today.textContent = new Date(day0 + elapsed * 864e5).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    for (const b of ITEMS) {
+      b.days -= step; b.a += dt * 0.07;
+      if (b.days <= 0) { b.days += b.period; b.flash = 1; }
+      b.flash = Math.max(0, b.flash - dt * 0.9);
+      b.rr += (R(b.days) - b.rr) * Math.min(1, dt * 3.2);
+      const x = 200 + Math.cos(b.a) * b.rr, y = 200 + Math.sin(b.a) * b.rr, out = x > 200 ? 1 : -1;
+      b.g.setAttribute("transform", `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+      const near = 1 - Math.min(1, b.days / 60), col = b.flash > 0 ? "#4ade80" : b.c;
+      b.dot.setAttribute("fill", col); b.halo.setAttribute("fill", col);
+      b.halo.setAttribute("r", (9 + near * 6 + b.flash * 14).toFixed(1)); b.halo.setAttribute("opacity", (0.14 + near * 0.2 + b.flash * 0.3).toFixed(2));
+      b.text.setAttribute("x", out * 12); b.text.setAttribute("y", 3.5); b.text.setAttribute("text-anchor", out > 0 ? "start" : "end");
+      b.text.textContent = b.flash > 0.25 ? `✓ ${b.name}` : b.name;
+    }
+  }
+
+  /* the item: completed, and its next date worked out; then again */
+  const card = pad.querySelector(".card.unit");
+  /* the relay: forwarded, read, asked */
+  const steps = [...pad.querySelectorAll(".relay .step")];
+  let timers = [];
+  const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+  function itemLoop() {
+    if (seen.has("item")) {
+      card.classList.add("press"); later(260, () => card.classList.remove("press"));
+      later(320, () => card.classList.add("done"));
+      later(3600, () => card.classList.remove("done"));
+    }
+    later(5200, itemLoop);
+  }
+  function relayLoop() {
+    if (seen.has("relay")) {
+      steps.forEach((x, i) => later(250 + i * 1100, () => x.classList.add("on")));
+      later(5600, () => steps.forEach((x) => x.classList.remove("on")));
+    }
+    later(6400, relayLoop);
+  }
   return {
-    start() { scroll.scrollTop = 0; chapters.forEach((c) => { c.classList.remove("in"); io.observe(c); }); },
-    stop() { chapters.forEach((c) => io.unobserve(c)); },
+    start() {
+      scroll.scrollTop = 0; seen.clear();
+      scenes.forEach((c) => { c.classList.remove("in"); io.observe(c); });
+      if (reduced) { card.classList.add("done"); steps.forEach((x) => x.classList.add("on")); return; }
+      last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(orbit);
+      timers.forEach(clearTimeout); timers = []; itemLoop(); relayLoop();
+    },
+    stop() { scenes.forEach((c) => io.unobserve(c)); cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers = []; },
   };
 }
 
