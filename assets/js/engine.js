@@ -21,6 +21,7 @@
  * climbing into is not yet yours to have chosen. If it is ever asked to wear
  * the reader's pack, PACK is the only object that changes.
  */
+import { createVoyage } from "./voyage.js";
 import { seededRng } from "./sky.js";
 
 /**
@@ -300,6 +301,25 @@ export function createFlight(canvas, options = {}) {
      lets it go into its own plainer world as the climb gets under way. The door has already asked for it. */
   const earth = typeof Image === "undefined" ? null : new Image();
   if (earth) setTimeout(() => { earth.src = new URL("../img/door/dawn.webp", import.meta.url).href; }, 1500);
+  /* … and a copy of it whose left and right edges fade, so that as the world shrinks the picture's sides never show */
+  /** @type {HTMLCanvasElement | null} */
+  let earthF = null;
+  if (earth) earth.addEventListener("load", () => {
+    try {
+      const c = document.createElement("canvas"); c.width = earth.naturalWidth; c.height = earth.naturalHeight;
+      const x = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
+      x.drawImage(earth, 0, 0); x.globalCompositeOperation = "destination-in";
+      const g = x.createLinearGradient(0, 0, c.width, 0);
+      g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.025, "#000"); g.addColorStop(0.975, "#000"); g.addColorStop(1, "rgba(0,0,0,0)");
+      x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); earthF = c;
+    } catch { /* the plain picture, then */ }
+  }, { once: true });
+  /* the flight's world in WebGL beneath this canvas where it can be had (voyage.js): the Earth as a globe, the
+     Milky Way, the streaks as light. Without it, this canvas draws all of it, as it always has. */
+  let voyage = null;
+  try { voyage = options.plain ? null : createVoyage(canvas); } catch (e) { voyage = null; }
+  /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
+  let worldGL = null;
 
   /*
    * #873: every prop pen below used to build a fresh CanvasGradient or trace
@@ -392,6 +412,7 @@ export function createFlight(canvas, options = {}) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    voyage?.resize(W, H);
     return dpr;
   }
 
@@ -673,6 +694,19 @@ export function createFlight(canvas, options = {}) {
        shrunk enough to show the picture's edges */
     const ea = pal.hasSun && earth && earth.complete && earth.naturalWidth ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
 
+    /* with the voyage, the Earth, its air and its limb are drawn there, on this same circle; only the door's
+       picture is laid over it here, while it lasts */
+    if (voyage && pal.hasSun) {
+      worldGL = { cx, cy, R, alpha, c };
+      if (ea > 0.002 && earth) {
+        const u = s * (R / R0);
+        ctx.save(); ctx.globalAlpha = alpha * ea;
+        ctx.drawImage(earthF || earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
+        ctx.restore();
+      }
+      return;
+    }
+
     /* atmospheric scattering hugging the limb, outside in */
     ctx.save();
     ctx.lineCap = "butt";
@@ -702,7 +736,7 @@ export function createFlight(canvas, options = {}) {
     if (ea > 0.002 && earth) {
       const u = s * (R / R0);
       ctx.save(); ctx.globalAlpha = alpha * ea;
-      ctx.drawImage(earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
+      ctx.drawImage(earthF || earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
       ctx.restore();
     }
   }
@@ -712,7 +746,7 @@ export function createFlight(canvas, options = {}) {
    * @param {number} t
    * @param {number} dt
    */
-  function step(t, dt) {
+  function step(t, dt, show = true) {
     /* Only ever invoked from frame() (guarded by `if (!flight) return`) or
        from start()'s pinned loop, which runs right after prime() has set it. */
     const active = /** @type {FlightState} */ (flight);
@@ -724,10 +758,11 @@ export function createFlight(canvas, options = {}) {
 
     ctx.setTransform(active.dpr, 0, 0, active.dpr, 0, 0);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = PACK.bg;
-    ctx.fillRect(0, 0, W, H);
+    worldGL = null;
+    if (voyage) ctx.clearRect(0, 0, W, H);
+    else { ctx.fillStyle = PACK.bg; ctx.fillRect(0, 0, W, H); }
 
-    for (const n of NEB) {
+    if (!voyage) for (const n of NEB) {
       n.p += v * dt * 0.085;
       if (n.p > 1.25) n.p -= 1.45;
       else if (n.p < -0.20) n.p += 1.45;   /* dust falls the other way, reversed */
@@ -752,7 +787,7 @@ export function createFlight(canvas, options = {}) {
     }
     /* the way ahead: a faint bloom on the vanishing point, brighter the faster
        you go — the only thing on this canvas that says "forward" by itself */
-    if (av > 0.05) {
+    if (av > 0.05 && !voyage) {
       const g = ctx.createRadialGradient(VPX, VPY, 0, VPX, VPY, DIAG * 1.05);
       g.addColorStop(0, hexa("#7f93c8", 0.16 * av));
       g.addColorStop(0.34, hexa("#3d4f86", 0.07 * av));
@@ -787,7 +822,8 @@ export function createFlight(canvas, options = {}) {
     /* stars — additive, so the dense lanes bloom where they cross */
     ctx.lineCap = "round";
     ctx.globalCompositeOperation = "lighter";
-    for (const st of STARS) {
+    if (voyage) voyage.advance(v, dt, P.K);
+    else for (const st of STARS) {
       st.r *= (1 + v * dt * P.K * st.z);
       if (st.r > RMAX || st.r < 1) { respawn(st, active.rev); continue; }
       const x1 = VPX + Math.cos(st.a) * st.r, y1 = VPY + Math.sin(st.a) * st.r;
@@ -815,7 +851,7 @@ export function createFlight(canvas, options = {}) {
     /* site: the doppler wash — the sky ahead shifts cool and the edges warm,
        rising with the square of the speed so it lives only at the fastest
        point and is gone before the landing */
-    if (av > 0.55) {
+    if (av > 0.55 && !voyage) {
       const d = Math.pow((av - 0.55) / 0.45, 2) * 0.16;
       const g = ctx.createRadialGradient(VPX, VPY, 0, VPX, VPY, DIAG * 0.9);
       g.addColorStop(0, hexa("#8fb8ff", d));
@@ -862,6 +898,17 @@ export function createFlight(canvas, options = {}) {
        site: a profile may name another ending; the app's own is the bloom. */
     const q = bloomAt(active.rev ? mirror(tc) : tc);
     if (!P.ending || P.ending === "bloom") drawBloom(q); else drawEnding(P.ending, q, P);
+
+    /* and the world beneath, in the same frame */
+    if (voyage && show) {
+      const n = parseInt(TINT.slice(1), 16), lin = (x) => Math.pow(x / 255, 2.2) * 2.5;
+      const bloom = !P.ending || P.ending === "bloom" ? q : P.ending === "halo" ? q * 0.6 : 0;
+      voyage.draw({
+        t, v, K: P.K, vp: [VPX, VPY], rmax: RMAX, tint: [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)],
+        progress: active.rev ? 1 - tc / P.dur : tc / P.dur, world: worldGL, bloom,
+        bloomPt: [W / 2, P.ending === "halo" ? H * 0.24 : H * 0.5], dt: active.pinned ? 0 : dt * 1000,
+      });
+    }
   }
 
   /* site: the other endings — each landing arrives its own way.
@@ -982,6 +1029,7 @@ export function createFlight(canvas, options = {}) {
       n.p = n.p0;                      /* every run starts from the same dust */
     }
     flight = { P, rev: !!P.rev, start: clock(), last: clock(), props: P.props, dpr };
+    voyage?.reset();
   }
 
   return {
@@ -997,7 +1045,8 @@ export function createFlight(canvas, options = {}) {
       this.stop();
       prime(P);
       if (typeof at === "number") {
-        for (let t = 0; t <= at; t += PINNED_STEP) step(t, PINNED_STEP / 1000);
+        if (flight) flight.pinned = true;
+        for (let t = 0; t <= at; t += PINNED_STEP) step(t, PINNED_STEP / 1000, t + PINNED_STEP > at);
         flight = null;
         return;
       }
@@ -1011,6 +1060,7 @@ export function createFlight(canvas, options = {}) {
       this.stop();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      voyage?.clear();
     },
     /* a resize mid-flight re-seeds the field, as the mockup does */
     resize() {
