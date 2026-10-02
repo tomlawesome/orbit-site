@@ -238,7 +238,8 @@ function createContext(clock) {
     await clock.hold(o.hold ?? holdFor(text));
   }
   function dropCallout() { if (!live) return; const b = live; live = null; b.style.transition = "opacity .18s ease"; b.style.opacity = "0"; setTimeout(() => b.remove(), T.calloutOut + 240); }
-  function veil(on) { veilEl().classList.toggle("on", on); if (on) { drawVeil(); if (!veilRaf) veilLoop(); } }
+  /* the veil is redrawn every frame only while it is up */
+  function veil(on) { veilEl().classList.toggle("on", on); if (on) { drawVeil(); if (!veilRaf) veilLoop(); } else { cancelAnimationFrame(veilRaf); veilRaf = 0; drawVeil(); } }
   async function scrollTo(el, block = "center") {
     if (!el) return;
     el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block });
@@ -253,8 +254,14 @@ function createContext(clock) {
     if (dotAnchor && !travelling && dot.style.opacity === "1" && dotAnchor.els.length) {
       const b = boxOf(dotAnchor.els, dotAnchor.pad); at = [b.cx, b.cy]; placeDot(at);
     }
-    syncRaf = requestAnimationFrame(follow);
+    /* paused, and nothing scrolled or resized for a moment: nothing moves to follow, so look again a little later
+       rather than every frame (a paused tour on a phone left alone) */
+    const still = !clock.playing() && performance.now() - stirred > 1500;
+    syncRaf = still ? setTimeout(() => { syncRaf = requestAnimationFrame(follow); }, 250) : requestAnimationFrame(follow);
   }
+  let stirred = performance.now();
+  const stir = () => { stirred = performance.now(); };
+  addEventListener("scroll", stir, { capture: true, passive: true }); addEventListener("resize", stir);
   syncRaf = requestAnimationFrame(follow);
   function clear() {
     $("#dial")?.classList.remove("warn");
@@ -265,10 +272,10 @@ function createContext(clock) {
     dropTyped();
     if (worn !== undefined) { applyTheme(worn, false); worn = undefined; }
     dot.style.opacity = "0"; at = [innerWidth / 2, innerHeight / 2]; placeDot(at);
-    veilEl().classList.remove("on"); drawVeil();
+    veilEl().classList.remove("on"); cancelAnimationFrame(veilRaf); veilRaf = 0; drawVeil();
     $$("#dial .tourfilm-body").forEach((b) => b.remove());
   }
-  function destroy() { clear(); cancelAnimationFrame(veilRaf); veilRaf = 0; cancelAnimationFrame(syncRaf); layer.replaceChildren(); }
+  function destroy() { clear(); cancelAnimationFrame(veilRaf); veilRaf = 0; cancelAnimationFrame(syncRaf); clearTimeout(syncRaf); removeEventListener("scroll", stir, { capture: true }); removeEventListener("resize", stir); layer.replaceChildren(); }
   return { clock, w: clock.w, hold: clock.hold, tween: clock.tween.bind(clock), ctl, light, unlight, quiet, goto, press, tap, typeInto, wear, travel, callout, dropCallout, veil, scrollTo, clear, destroy, setPlaying, boxOf, bringIn, anchor: () => (live && live.tourAnchor) || dotAnchor };
 }
 
@@ -471,7 +478,7 @@ export function createPlayer() {
     running = true; jump = null;
     snap = home.snapshot();
     home.mute(true); home.restorePristine();
-    transport.classList.add("on", "playing"); transport.classList.remove("ended");
+    transport.classList.add("on", "playing"); transport.classList.remove("ended"); transport.inert = false;
     clock = makeClock(); ctx = createContext(clock); playIcon(true);
     try {
       for (let i = from; i < n; i++) {
@@ -525,7 +532,7 @@ export function createPlayer() {
     if (e.key === "Escape" && running) stop(false);
   });
   playIcon(false); setCurrent(-1);
-  return { start, stop, show: () => { transport.classList.add("on", "ended"); name.textContent = "take the walk"; },
+  return { start, stop, show: () => { transport.classList.add("on", "ended"); transport.inert = false; name.textContent = "take the walk"; },
     /* the walk belongs to the sky: gone when the sky is left */
-    hide: () => { transport.classList.remove("on", "playing", "ended"); }, running: () => running };
+    hide: () => { transport.classList.remove("on", "playing", "ended"); transport.inert = true; }, running: () => running };
 }

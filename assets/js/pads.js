@@ -394,7 +394,8 @@ export function createDocs(pad) {
     if (h.startsWith("#docs")) { e.preventDefault(); go(h); }
   });
   $(".readhead .todocs", reader).addEventListener("click", () => close());
-  addEventListener("popstate", () => { if (!pad.hidden) go(location.hash.startsWith("#docs") ? location.hash : "#docs", false); });
+  /* back and forward within the docs; leaving them (no #docs) is main.js's */
+  addEventListener("popstate", () => { if (!pad.hidden && location.hash.startsWith("#docs")) go(location.hash, false); });
   /* where the chart will sit on screen, measured with the landing still unseen */
   function chartRect() {
     const was = pad.hidden;
@@ -747,5 +748,9 @@ export function wirePlanets(door, onGo) {
     requestAnimationFrame(place);
   }
   wake();
-  return { hide() {} };
+  return {
+    hide() {},
+    /* the orbits laid out at once (a shot about to aim at a planet, on a door just shown) */
+    layout() { if (rich && !built && !door.hidden) { measure(); if (size) { built = true; build3d(); } } else if (stale && !door.hidden) { stale = false; build3d(); } },
+  };
 }
