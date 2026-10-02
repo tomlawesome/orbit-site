@@ -149,18 +149,11 @@ export function demoFlight(homes) {
   const props = homes.map((h, i) => ({ kind: "home", name: h.name, bodies: h.bodies, t0: 760 + i * 380, dur: 2000 + (i % 3) * 350, ang: BEAR[i % BEAR.length], z: ZED[i % ZED.length], spin: 0 }));
   return { ...UP, props };
 }
-/* the flight to the docs, carrying the chart: its constellations pass on the
-   way — each set about its own centre in a ~300-unit box, in its colour, with
-   its name — and on arrival the streaks settle into the chart itself */
+/* the flight to the docs, carrying the chart: out of the dawn into the galaxy, from outside it down into an arm, to
+   rest among its stars with the band across the sky (voyage.js, engine.js: milkyWay), where the chart's
+   constellations light; nothing else passes on the way */
 export function docsFlight({ rect, geometry }) {
-  const props = geometry.cons.map((con, i) => {
-    const xs = con.pts.map((p) => p[0]), ys = con.pts.map((p) => p[1]);
-    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-    const span = Math.max(40, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), k = 300 / span;
-    return { kind: "chart", name: con.name, c: con.c, pts: con.pts.map((p) => [(p[0] - cx) * k, (p[1] - cy) * k]),
-      t0: 640 + i * 190, dur: 1500 + (i % 3) * 380, ang: 128 + ((i * 47) % 100), z: 0.42 + ((i * 3) % 5) * 0.09, spin: (i % 2 ? -1 : 1) * (0.06 + (i % 3) * 0.04) };
-  });
-  return { ...RIGHT, vpX: 0.74, vpY: 0.46, props, ending: "chart", chart: { rect, geometry } };
+  return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart: { rect, geometry } };
 }
 export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";

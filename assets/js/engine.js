@@ -916,30 +916,39 @@ export function createFlight(canvas, options = {}) {
       voyage.draw({
         t, v, K: P.K, vp: [VPX, VPY], rmax: RMAX, tint: [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)],
         progress: active.rev ? 1 - tc / P.dur : tc / P.dur, world: worldGL, bloom,
-        galaxy: deep?.galaxy, cstars: deep?.stars,
+        galaxy3d: deep?.galaxy3d, cstars: deep?.stars,
         tu, star: !P.ending || P.ending === "bloom",
         bloomPt: [W / 2, P.ending === "halo" ? H * 0.24 : H * 0.5], dt: active.pinned ? 0 : dt * 1000,
       });
     }
   }
 
-  /* the docs' flight, into the Milky Way (voyage.js draws it). Off the dawn the sky turns until the galaxy's core
-     lies ahead and the band swells about it as the climb gathers pace; through the cruise its star clouds and dust
-     lanes stream past (the passage, in the Milky Way's colours); braking, the camera pulls back and round until the
-     whole band lies across the sky as the docs page shows it, and the constellations light, one by one, each star
-     flaring as it catches and settling to the page's own, where the page will draw them */
+  /* the docs' flight, into the galaxy (voyage.js draws it, in three dimensions). Off the dawn, at the height of the
+     climb's rush, the sky gives way to the galaxy seen from outside, a spiral ahead; the camera flies at it at the
+     climb's own pace, always looking to the core, comes down through the disc into an arm, the stars streaming past
+     with their true parallax, and as it brakes comes to rest inside, the core ahead: the band across the sky, turned
+     to lie as the docs page shows it, dimmer down the middle where the words go. Then the docs' constellations
+     light on it, one by one, each star flaring as it catches and settling, where the page will draw them. */
   const smoothq = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
   const hexLin = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.pow(x / 255, 2.2)); };
+  const v3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+    norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
+  /* the way in: from out beyond the disc, down into it, to rest among the stars of an arm (voyage.js: REST) */
+  const PATH = [[0.7, 2.35, 1.85], [0.95, 0.95, 1.35], [0.82, 0.1, 0.42], [0.56, 0.006, 0]];
+  const bez = (s) => { const u = 1 - s; return [0, 1, 2].map((k) => u * u * u * PATH[0][k] + 3 * u * u * s * PATH[1][k] + 3 * u * s * s * PATH[2][k] + s * s * s * PATH[3][k]); };
+  /* how far along: the climb's own speed, summed, so the camera goes as fast as the flight feels */
+  const ALONG = (() => { const out = [], t0 = 1000, t1 = 3500; let acc = 0; for (let t = t0; t <= t1; t += 10) { out.push(acc); acc += UP.speed(t) * 10; } return { t0, t1, out, total: acc }; })();
+  const along = (tu) => { if (tu <= ALONG.t0) return 0; if (tu >= ALONG.t1) return 1; const i = (tu - ALONG.t0) / 10, k = Math.floor(i); return (ALONG.out[k] + (ALONG.out[Math.min(k + 1, ALONG.out.length - 1)] - ALONG.out[k]) * (i - k)) / ALONG.total; };
+  function camAt(tu) {
+    const P = bez(along(tu)), f = v3.norm(v3.sub([0, 0, 0], P));
+    let r = v3.norm(v3.cross([0, 1, 0], f)), u = v3.cross(f, r);
+    const roll = 0.34 * smoothq(2600, 3700, tu), cr = Math.cos(roll), sr = Math.sin(roll);
+    [r, u] = [[r[0] * cr + u[0] * sr, r[1] * cr + u[1] * sr, r[2] * cr + u[2] * sr], [u[0] * cr - r[0] * sr, u[1] * cr - r[1] * sr, u[2] * cr - r[2] * sr]];
+    return { P, R: [...r, ...u, ...f] };
+  }
   function milkyWay(tu, b, chart) {
-    const near = smoothq(500, 2500, tu), back = smoothq(2500, 3900, tu);
-    const Zin = 1 + 1.5 * near, gin = 0.055 + 0.3 * smoothq(300, 1500, tu);
-    const galaxy = {
-      w: smoothq(250, 1000, tu),
-      Z: Zin + (0.42 - Zin) * back,
-      gain: gin + (0.55 - gin) * back, page: back,
-      roll: -0.12 + (0.297 + 0.12) * back,
-      cx: VPX + (W / 2 - VPX) * back, cy: VPY + (H * 0.54 - VPY) * back,
-    };
+    const now = camAt(tu), prev = camAt(tu - 21), back = smoothq(2600, 3900, tu);
+    const galaxy3d = { w: smoothq(950, 1450, tu), P: now.P, R: now.R, prevP: prev.P, prevR: prev.R, gain: 5.5, starK: 0.09, page: back };
     const stars = [];
     if (b > 0) {
       const { rect, geometry: g } = chart, s = rect.w / g.W, ease = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 2.2);
@@ -952,7 +961,7 @@ export function createFlight(canvas, options = {}) {
         });
       });
     }
-    return { galaxy, stars };
+    return { galaxy3d, stars };
   }
 
   /* site: the other endings — each landing arrives its own way.
