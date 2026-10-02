@@ -208,7 +208,8 @@ export function flyTo(id, done) {
     hero.classList.add("arriving");
     const dial = $("#dial");
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
-    $("#back").textContent = id === "willow" ? "— your sky" : `— ${households[id].name}`;
+    /* the corner says where it goes: from your own sky, down to the dawn; from another's, back to yours */
+    $("#back").textContent = id === "willow" ? "— the dawn" : "— your sky";
     setTimeout(() => { hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); }, reduced ? 50 : 900);
   };
   setTimeout(land, reduced ? 50 : 1250);
