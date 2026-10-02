@@ -65,7 +65,7 @@ export const TUNE = {
 const BASE = TUNE;
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
 /* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
-const HOLD = 0.3, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
+const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
 
 
 export function createInstall(pad, opts = {}) {
@@ -173,6 +173,14 @@ export function createInstall(pad, opts = {}) {
     const tb = dot(v.cam, SUN), pd = Math.hypot(...add(v.cam, mul(SUN, -tb)));
     const sunVis = tb > 0 ? 1 : smooth(0.995, 1.06, pd);
     const spin = mm(ry(-(0.9 + idle * 0.004)), TO_TILT);
+    /* the light on the planet: at the door's planet, the door's light, turning to the world's own sun over the first
+       half of the shot (and back again as the camera returns to the door) */
+    let sunNow = SUN;
+    if (dot0?.light) {
+      const [lx, ly, lz] = dot0.light, door = norm(add(add(mul(v.right, lx), mul(v.up, -ly)), mul(v.fwd, -lz)));
+      const b = smooth(0.0, 0.55, k);
+      sunNow = norm(add(mul(door, 1 - b), mul(SUN, b)));
+    }
     /* what the camera's motion does to the exposure: motes streak by its velocity over a 1/60 s shutter,
        and while it rushes in, the frame blurs out from where it is going */
     const dtS = prev ? Math.max(1 / 240, (now - prev.t) / 1000) : 1;
@@ -184,11 +192,17 @@ export function createInstall(pad, opts = {}) {
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
-      sun: SUN, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
+      sun: sunNow, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
-      time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)),
+      time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
       vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
     });
+  }
+  /* going in, the world starts as bright as the door's planet is as it flares, and settles as the camera moves:
+     the flare is where the one becomes the other */
+  function flare() {
+    if (!motion || motion.reverse || reduced) return 1;
+    return 1 + 0.55 * (1 - smooth(0.08, 0.8, motion.el || 0));
   }
   /* the scene's resolution: the measured part while the camera rushes, rising to all of it as it slows into orbit
      (the dive's second half is slow, and the eye has time there) */
@@ -250,7 +264,9 @@ export function createInstall(pad, opts = {}) {
         if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
-        canvas.style.opacity = smooth(0.08, HOLD, t).toFixed(3);
+        /* the world comes up through the door's planet as it flares (site.css: departing), over a little longer than
+           the hold, so the camera is already moving as the one gives way to the other */
+        canvas.style.opacity = smooth(0.04, 0.42, t).toFixed(3);
         u = clamp((t - HOLD) / APPROACH);
         motion.near?.(u);
         if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
@@ -272,7 +288,18 @@ export function createInstall(pad, opts = {}) {
     const b = scene.body.getBoundingClientRect(), spin = scene.body.closest(".spin");
     const m = spin ? new DOMMatrixReadOnly(getComputedStyle(spin).transform === "none" ? undefined : getComputedStyle(spin).transform) : null;
     const k = m ? Math.hypot(m.a, m.b) || 1 : 1;
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell) };
+    /* the light the door's picture of the planet is lit by (the sunrise, below and a little behind it: its picture is
+       baked lit straight down and turned towards the sun, tools/planets.py, pads.js), on the screen: x right, y down,
+       z towards the eye. The dive starts in that light and turns to its own sun as the camera comes round */
+    let light = null;
+    try {
+      const rot = getComputedStyle(scene.body, "::before").rotate;
+      if (rot && rot !== "none") {
+        const v = parseFloat(rot), th = /rad/.test(rot) ? v : /turn/.test(rot) ? v * Math.PI * 2 : (v * Math.PI) / 180;
+        light = norm([-Math.sin(th) * 0.94, Math.cos(th) * 0.94, -0.1]);
+      }
+    } catch { /* lit by its own sun from the first */ }
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light };
   };
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
