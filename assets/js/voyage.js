@@ -8,9 +8,9 @@
  * as the flight's world does while its shading stays true: the cities on the
  * night side, the air lit along the limb, the sunlit crescent opening as the
  * camera climbs. Behind it, the Milky Way as Gaia saw it and the fine stars
- * (on the docs' flight, the Milky Way is where it goes: the core swelling
- * ahead, its star clouds streaming past, then the whole band across the sky
- * as the docs page shows it, the constellations lighting on it);
+ * (on the docs' flight, a galaxy in three dimensions is where it goes: seen
+ * from outside, dived into, and rested in, its band across the sky as the
+ * docs page shows it, the constellations lighting on it);
  * in front, the streaks of the climb, light in depth layers about the way
  * ahead; at the end, the star the flight arrives at. Then the film: bloom,
  * the door's own tone curve, grain.
@@ -41,8 +41,9 @@ uniform mat3 uSkyM; uniform float uStarA, uDens;
 uniform float uBloom, uPre; uniform vec2 uBloomPt;
 uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
 uniform float uNeb, uNebOff;
-/* the docs' flight into the Milky Way: x its share of the sky, y the zoom, z the gain, w the roll; the centre it is seen about */
-uniform vec4 uGal; uniform vec2 uGalC; uniform float uGalPage;
+/* the docs' flight: the 3D galaxy, drawn beforehand at half size (GAL), its share of the sky, and how far it has come
+   to the docs page's own view (dimmer down the middle, where the words go) */
+uniform sampler2D uGalTex; uniform float uG3, uGalPage;
 /* the docs' constellations igniting at the end: x, y, size, intensity; and their colours */
 uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;
 out vec4 o;
@@ -83,27 +84,6 @@ vec3 sky(vec2 css){
   vec3 c=vec3(0.0011,0.0010,0.0010);
   if(uHas.w>0.5) c+=pow(texture(uSky,uv).rgb,vec3(2.2))*0.055;
   c+=stars(s,f*uPx)*0.16*uStarA;
-  return c;
-}
-/* the Milky Way the docs' flight goes into: the band about a centre on the screen, turned to lie as the docs page
-   shows it, drawn close (zoomed in, the core swelling ahead) or far (zoomed out past the frame, the whole band across
-   the sky, as the page has it). Seen the way the page shows it, too: the glow off the plane taken down to black */
-vec3 skyGal(vec2 css){
-  float f=uRes.y/uPx*0.95;
-  vec2 v=vec2(css.x-uGalC.x,uGalC.y-css.y)/f;
-  float cr=cos(uGal.w), sr=sin(uGal.w); v=vec2(cr*v.x-sr*v.y,sr*v.x+cr*v.y);
-  float lv=length(v), th=lv/uGal.y; vec2 dv=lv>1e-5?v/lv:vec2(0.0);
-  vec3 s=vec3(sin(th)*dv.x,sin(th)*dv.y,cos(th));
-  vec2 uv=vec2(atan(s.x,s.z)/TAU+0.5,0.5-asin(clamp(s.y,-1.0,1.0))/PI);
-  vec3 g=pow(textureLod(uSky,uv,max(0.0,1.2-log2(uGal.y+0.25))).rgb,vec3(2.2));
-  float l=dot(g,vec3(0.2126,0.7152,0.0722));
-  g*=smoothstep(0.035,0.2,l)*(0.6+0.8*smoothstep(0.1,0.5,l));
-  g*=vec3(1.05,0.98,0.9);
-  /* as it comes to the page's view, it takes the page's light too: dimmer down the middle, where the words go */
-  float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
-  vec3 c=vec3(0.0011,0.0010,0.0010)+g*uGal.z*(1.0-0.55*mid*uGalPage);
-  /* the stars: fewer and fainter as the view widens, so the wide sky is not crowded */
-  c+=stars(normalize(s),f*uPx*uGal.y)*0.1*uStarA*clamp(uGal.y,0.35,1.0)*(1.0-0.45*uGalPage);
   return c;
 }
 /* the docs' constellations, lit one by one: each star a hot white core in its figure's colour, a glow round it,
@@ -259,16 +239,8 @@ vec3 nebula(vec2 css,out float dust){
     float lane=smoothstep(0.5,0.75,vnoise(q*vec3(1.8,1.8,0.9)+11.0))*smoothstep(0.35,0.6,f);
     float hue=vnoise(q*0.45+5.0);
     vec3 col=mix(mix(vec3(0.42,0.16,1.0),vec3(1.0,0.22,0.52),smoothstep(0.3,0.68,hue)),vec3(0.16,0.58,0.86),smoothstep(0.66,0.9,hue));
-    vec3 kc=vec3(1.0,0.86,0.9);
     float near=smoothstep(40.0,uRmax*0.45,r);
-    if(uGal.x>0.5){
-      /* the Milky Way's own: star clouds warm white to cream, bluer where they are young, a rare red knot of
-         hydrogen, and dust lanes brown at their edges */
-      col=mix(mix(vec3(1.0,0.86,0.68),vec3(0.98,0.95,0.9),smoothstep(0.25,0.6,hue)),vec3(0.72,0.8,1.0),smoothstep(0.75,0.95,hue));
-      kc=mix(vec3(1.0,0.82,0.62),vec3(1.0,0.36,0.32),step(0.86,vnoise(q*0.7+21.0)));
-      acc-=vec3(0.0,0.03,0.06)*lane*near;
-    }
-    acc+=(col*d*1.2+kc*knot*1.6)*(0.3+0.9*near)*(i==0?1.0:0.55)*(1.0-lane*0.8);
+    acc+=(col*d*1.2+vec3(1.0,0.86,0.9)*knot*1.6)*(0.3+0.9*near)*(i==0?1.0:0.55)*(1.0-lane*0.8);
     dust+=(d*0.25+lane*0.55)*near;
   }
   dust=clamp(dust*uNeb,0.0,0.7); return acc*uNeb*1.1;
@@ -374,14 +346,18 @@ vec2 shockBend(vec2 css,out float ring){
 void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; vec2 bent=shockBend(css,ring);
-  vec3 c=uGal.x<0.999?sky(bent):vec3(0.0);
-  if(uGal.x>0.001) c=mix(c,skyGal(bent),uGal.x);
+  vec3 c=uG3<0.999?sky(bent):vec3(0.0);
+  if(uG3>0.001){
+    vec3 gv=texture(uGalTex,gl_FragCoord.xy/uRes).rgb;
+    float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
+    c=mix(c,vec3(0.0011,0.001,0.001)+gv*(1.0-0.55*mid*uGalPage),uG3);
+  }
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
   c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
   float dust; vec3 neb=nebula(css,dust);
-  c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)+neb;
+  c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*(1.0-0.75*uG3)+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
@@ -434,6 +410,136 @@ void main(){
   o=vec4(c,1.0);
 }`;
 
+/* ── THE GALAXY, for the docs' flight: a spiral of stars, gas and dust in three dimensions, seen by a camera that
+   flies at it from outside, dives into an arm and comes to rest inside the disc looking at the core, where it is the
+   Milky Way's band across the sky. Galaxy space: the disc in x–z, y up, its radius about 1. Drawn at half the
+   frame's size by marching each ray through the disc's slab: light given off by the stars (gold in the bulge,
+   blue-white along the arms, pink where hydrogen glows) and taken away by the dust (in lanes on the arms' inner
+   edges, in filaments) — front to back, jittered so the steps never band. The stars themselves are points
+   (STARV below), so they pass with their true parallax. ── */
+const GAL = `#version 300 es
+precision highp float;
+uniform vec2 uRes; uniform vec3 uCamP; uniform mat3 uCamR; uniform float uF, uTime, uGain;
+out vec4 o;
+float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash13(i),hash13(i+vec3(1,0,0)),f.x),mix(hash13(i+vec3(0,1,0)),hash13(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash13(i+vec3(0,0,1)),hash13(i+vec3(1,0,1)),f.x),mix(hash13(i+vec3(0,1,1)),hash13(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+/* two arms, a logarithmic spiral about 18 degrees open, with a phase to shift along them */
+float arm(vec3 p,float off,float k){
+  float r=length(p.xz), th=atan(p.z,p.x), ph=th-log(max(r,0.03))*3.1+off;
+  return pow(0.5+0.5*cos(2.0*ph),k);
+}
+vec4 field(vec3 p){
+  float r=length(p.xz), y=p.y;
+  float n=vnoise(p*6.0), n2=vnoise(p*vec3(24.0,48.0,24.0)+3.0), n3=vnoise(p*vec3(64.0,90.0,64.0)+9.0);
+  /* the arms, their line worried by the noise, so they break into spurs and feathers */
+  vec3 q=p+vec3(n-0.5,0.0,n2-0.5)*0.07;
+  float a=arm(q,0.0,4.0), a4=arm(q*1.0,1.2,6.0)*0.35;
+  float vert=exp(-abs(y)/0.028);
+  float disc=exp(-r/0.36)*vert*smoothstep(1.3,0.8,r);
+  float bul=exp(-(r*r+y*y*3.2)/0.012);
+  /* the light: a faint old disc, the arms bright with young stars in clumps, the bulge gold */
+  float clump=0.35+1.5*n2*n3+0.4*n3*n3;
+  float young=disc*(a+a4)*clump;
+  vec3 em=vec3(1.0,0.84,0.64)*disc*(0.16+0.18*n)+vec3(0.72,0.84,1.0)*young*2.4+vec3(1.0,0.78,0.5)*bul*5.0;
+  /* hydrogen: pink knots strung along the arms */
+  em+=vec3(1.0,0.3,0.42)*smoothstep(0.66,0.9,n2*0.55+n3*0.55)*young*5.0;
+  /* dust: a thin layer, dark lanes on the arms' inner edges, torn into filaments */
+  float ad=arm(q,-0.55,3.0);
+  float fil=1.0-abs(2.0*n3-1.0);
+  float dust=exp(-r/0.55)*exp(-abs(y)/0.009)*smoothstep(1.2,0.55,r)*(0.1+2.4*ad)*smoothstep(0.3,0.75,n*0.4+n2*0.3+fil*0.3+ad*0.2);
+  return vec4(em,dust*65.0);
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy;
+  vec3 ro=uCamP, rd=normalize(uCamR*vec3((uv.x-uRes.x*0.5)/uF,(uv.y-uRes.y*0.5)/uF,1.0));
+  /* only the slab of the disc is marched: where the ray is in it */
+  const float SL=0.16;
+  float t0=0.0, t1=6.0;
+  if(abs(rd.y)>1e-4){ float ta=(-SL-ro.y)/rd.y, tb=(SL-ro.y)/rd.y; t0=max(0.0,min(ta,tb)); t1=min(t1,max(ta,tb)); }
+  else if(abs(ro.y)>SL){ o=vec4(0.0); return; }
+  /* and inside the disc's reach */
+  float b=dot(ro.xz,rd.xz), aa=dot(rd.xz,rd.xz), c=dot(ro.xz,ro.xz)-1.45*1.45, d=b*b-aa*c;
+  if(d<0.0){ o=vec4(0.0); return; }
+  d=sqrt(d); t0=max(t0,(-b-d)/aa); t1=min(t1,(-b+d)/aa);
+  if(t1<=t0){ o=vec4(0.0); return; }
+  float span=t1-t0, jit=hash13(vec3(uv,fract(uTime)*97.0));
+  vec3 col=vec3(0.0); float T=1.0, t=t0;
+  for(int i=0;i<52;i++){
+    float dt=clamp(t*0.085,0.006,span/34.0+0.004);
+    float ts=t+dt*jit;
+    if(ts>t1||T<0.015) break;
+    vec4 f=field(ro+rd*ts);
+    /* close by, the disc is its stars (the points), not a glow: the light fades in with distance, so the camera
+       inside the disc sees the band, not a fog */
+    f.rgb*=smoothstep(0.04,0.45,ts); f.a*=smoothstep(0.005,0.08,ts);
+    col+=T*f.rgb*dt; T*=exp(-f.a*dt);
+    t+=dt;
+  }
+  o=vec4(col*uGain,1.0-T);
+}`;
+/* the galaxy's stars: each a point in galaxy space, drawn as the short streak it makes between the last frame's
+   camera and this one (its light shared along it), or as a soft point; brighter as it is nearer */
+const STARV = `#version 300 es
+layout(location=0) in vec4 aP; layout(location=1) in vec3 aC;
+uniform vec3 uCamP, uPrevP; uniform mat3 uCamR, uPrevR; uniform vec2 uRes; uniform float uF, uK, uPts;
+out vec3 vC;
+void main(){
+  bool odd=(gl_VertexID&1)==1;
+  vec3 qc=transpose(uCamR)*(aP.xyz-uCamP), qp=transpose(uPrevR)*(aP.xyz-uPrevP);
+  if(qc.z<0.003||qp.z<0.003||(odd&&uPts>0.5)){ gl_Position=vec4(2.0,2.0,2.0,1.0); vC=vec3(0.0); gl_PointSize=1.0; return; }
+  vec2 sc=qc.xy/qc.z*uF, sp=qp.xy/qp.z*uF;
+  vec2 s=odd?sp:sc;
+  gl_Position=vec4(s/(uRes*0.5),0.0,1.0);
+  float br=aP.w*uK/(qc.z*qc.z+0.0006);
+  /* a star deep in the disc and far off is seen through the dust, as the glow is: dimmed with its distance */
+  br*=exp(-length(aP.xyz-uCamP)*3.2*exp(-abs(aP.y)/0.02)*smoothstep(1.25,0.6,length(aP.xz)));
+  float len=length(sc-sp);
+  vC=aC*min(br,24.0)/(1.0+len*0.8);
+  gl_PointSize=uPts>0.5?clamp(1.0+sqrt(min(br,24.0))*0.45,1.0,3.6):1.0;
+}`;
+const STARF = `#version 300 es
+precision highp float;
+uniform float uPts; in vec3 vC; out vec4 o;
+void main(){ vec2 d=gl_PointCoord-0.5; float a=uPts>0.5?exp(-dot(d,d)*14.0):1.0; o=vec4(vC*a,1.0); }`;
+/* the galaxy's stars, made once: most in the disc and thickest along the arms, some in the bulge, and a cloud of
+   them about the place the flight comes to rest, so there are stars close by to pass */
+const REST = [0.56, 0, 0];
+function galaxyStars(n) {
+  let sd = 4242; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(6.2832 * rnd());
+  const P = new Float32Array(n * 2 * 4), C = new Float32Array(n * 2 * 3);
+  for (let i = 0; i < n; i++) {
+    let x, y, z, col, w;
+    const kind = rnd();
+    if (kind < 0.8) {
+      /* the disc, along the arms */
+      let r, th, tries = 0;
+      do { r = Math.min(1.25, -Math.log(rnd() + 1e-9) * 0.33 + 0.04); th = rnd() * 6.2832; tries++; }
+      while (tries < 8 && rnd() > Math.pow(0.5 + 0.5 * Math.cos(2 * (th - Math.log(Math.max(r, 0.03)) * 3.1)), 2) * 0.85 + 0.15);
+      x = r * Math.cos(th); z = r * Math.sin(th); y = gauss() * 0.04;
+      const yb = rnd(); col = yb < 0.35 ? [0.7, 0.8, 1] : yb < 0.8 ? [1, 0.97, 0.92] : [1, 0.82, 0.62];
+      w = 0.25 + Math.pow(rnd(), 6) * 3;
+    } else if (kind < 0.93) {
+      /* the bulge */
+      x = gauss() * 0.09; z = gauss() * 0.09; y = gauss() * 0.055;
+      col = rnd() < 0.7 ? [1, 0.85, 0.62] : [1, 0.72, 0.5]; w = 0.3 + Math.pow(rnd(), 5) * 2;
+    } else {
+      /* the neighbourhood the flight comes to */
+      const rr = Math.pow(rnd(), 0.5) * 0.22;
+      const u = rnd() * 2 - 1, ph = rnd() * 6.2832, sq = Math.sqrt(1 - u * u);
+      x = REST[0] + rr * sq * Math.cos(ph); z = REST[2] + rr * sq * Math.sin(ph); y = REST[1] + rr * u * 0.35;
+      const yb = rnd(); col = yb < 0.25 ? [0.72, 0.8, 1] : yb < 0.7 ? [1, 0.97, 0.93] : yb < 0.92 ? [1, 0.86, 0.68] : [1, 0.62, 0.45];
+      w = 0.04 + Math.pow(rnd(), 9) * 0.6;
+    }
+    for (let k = 0; k < 2; k++) { P.set([x, y, z, w], (i * 2 + k) * 4); C.set(col, (i * 2 + k) * 3); }
+  }
+  return { P, C };
+}
+
 /* the door's camera (tools/dawn.py): over the Atlantic, facing the sunrise over Europe */
 const RE = 6371, ALT = 800, LAT = 46, LON = -27, HEAD = 72, SUN_UNDER = 0.15;
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -474,7 +580,14 @@ export function createVoyage(under) {
     return { p, u };
   };
   let P;
-  try { P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM) }; }
+  const programVF = (vsrc, fsrc) => {
+    const p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vsrc)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fsrc)); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
+    return { p, u };
+  };
+  try { P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: program(GAL), stars: programVF(STARV, STARF) }; }
   catch (e) { console.warn(e); canvas.remove(); return null; }
   const vao = gl.createVertexArray();
 
@@ -504,6 +617,7 @@ export function createVoyage(under) {
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null;
   function warm() {
+    try { makeStars(); } catch { /* drawn without them */ }
     if (!warming) warming = Promise.all(["sky", "lights", "euro", "clouds", "day", "moon"].map(load))
       .then(() => new Promise((r) => setTimeout(r, 50))).then(() => calibrate());
     return warming;
@@ -529,7 +643,19 @@ export function createVoyage(under) {
   const blank = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const cam = doorCamera();
-  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0;
+  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0, galT = null;
+  /* the galaxy's stars, put on the GPU once (warm) */
+  let starVao = null, starN = 0;
+  function makeStars() {
+    if (starVao) return;
+    const { P: pos, C: col } = galaxyStars(48000);
+    starVao = gl.createVertexArray(); gl.bindVertexArray(starVao);
+    const b1 = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b1); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+    const b2 = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b2); gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null); starN = pos.length / 4;
+  }
   /* the streaks' travel, per depth: log radius, integrated from the flight's own speed */
   const off = [0, 0.3, 0.7, 0.15];
 
@@ -543,7 +669,8 @@ export function createVoyage(under) {
     if (cw === CW && ch === CH) return;
     CW = cw; CH = ch; canvas.width = cw; canvas.height = ch;
     for (const c of [hdr, ...chain]) if (c) { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); }
-    hdr = target(cw, ch); chain = [];
+    if (galT) { gl.deleteTexture(galT.t); gl.deleteFramebuffer(galT.f); }
+    hdr = target(cw, ch); chain = []; galT = target(Math.max(1, cw >> 1), Math.max(1, ch >> 1));
     let a = cw, b = ch;
     for (let i = 0; i < 5; i++) { a = Math.max(1, a >> 1); b = Math.max(1, b >> 1); chain.push(target(a, b)); }
   }
@@ -586,6 +713,11 @@ export function createVoyage(under) {
     const mm = (a, b) => { const o = []; for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) o.push(a[r] * b[c * 3] + a[3 + r] * b[c * 3 + 1] + a[6 + r] * b[c * 3 + 2]); return o; };
     const SK = mm(Ry, mm(Rx, Rz));
     gl.disable(gl.BLEND);
+    const g3 = s.galaxy3d && s.galaxy3d.w > 0.001 ? s.galaxy3d : null;
+    if (g3) pass(P.gal, galT.f, galT.w, galT.h, (u) => {
+      gl.uniform2f(u.uRes, galT.w, galT.h); gl.uniform3fv(u.uCamP, g3.P); gl.uniformMatrix3fv(u.uCamR, false, new Float32Array(g3.R));
+      gl.uniform1f(u.uF, galT.h * 0.95); gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uGain, g3.gain);
+    });
     pass(P.scene, hdr.f, CW, CH, (u) => {
       gl.uniform2f(u.uRes, CW, CH); gl.uniform1f(u.uPx, px); gl.uniform1f(u.uTime, (s.t / 1000) % 1000);
       gl.uniform2f(u.uVP, s.vp[0], s.vp[1]); gl.uniform1f(u.uSpeed, s.v); gl.uniform1f(u.uRmax, s.rmax);
@@ -599,13 +731,13 @@ export function createVoyage(under) {
       { const q = Math.min(1, Math.max(0, (Math.abs(s.v) - 0.03) / 0.6)); gl.uniform1f(u.uDens, q * q * (3 - 2 * q)); }
       const tu = s.tu ?? s.t, sm = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
       /* the nebula, through the cruise */
-      gl.uniform1f(u.uNeb, sm(1200, 1750, tu) * (1 - sm(2350, 2950, tu))); gl.uniform1f(u.uNebOff, nebOff);
+      gl.uniform1f(u.uNeb, s.galaxy3d ? 0 : sm(1200, 1750, tu) * (1 - sm(2350, 2950, tu))); gl.uniform1f(u.uNebOff, nebOff);
       /* the moon, through the acceleration: from near the way ahead, out past the lower right, growing */
       const mAt = (m) => { const tx = W * 0.8, ty = H * 0.68, dx = tx - s.vp[0], dy = ty - s.vp[1], dl = Math.hypot(dx, dy) || 1;
         const r0 = Math.min(dl * 0.35, H * 0.3), r1 = dl + H * 0.75, e = Math.pow(m, 2.3);
         return [s.vp[0] + (dx / dl) * (r0 + (r1 - r0) * e), s.vp[1] + (dy / dl) * (r0 + (r1 - r0) * e), H * (0.003 + 0.6 * Math.pow(m, 3.2))]; };
       const mt = (tu - 700) / 800;
-      if (maps.moon && mt > 0 && mt < 1 && s.moon !== false && !s.galaxy) {
+      if (maps.moon && mt > 0 && mt < 1 && s.moon !== false && !s.galaxy3d) {
         const a = mAt(mt), b = mAt(Math.max(0, mt - (1 / 60) / 0.8));
         /* it comes out of the distance: tiny, and faint until it is a third of the way */
         gl.uniform4f(u.uMoonS, a[0], a[1], a[2], sm(0, 0.35, mt)); gl.uniform2f(u.uMoonV, (a[0] - b[0]) * 0.5, (a[1] - b[1]) * 0.5);
@@ -617,8 +749,6 @@ export function createVoyage(under) {
       bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
       /* the docs' flight: the Milky Way, and the constellations lighting */
-      const g = s.galaxy;
-      gl.uniform4f(u.uGal, g ? g.w : 0, g ? g.Z : 1, g ? g.gain : 0, g ? g.roll : 0); gl.uniform2f(u.uGalC, g ? g.cx : 0, g ? g.cy : 0); gl.uniform1f(u.uGalPage, g ? g.page : 0);
       const cs = s.cstars || [], n = Math.min(64, cs.length);
       if (n) {
         const a = new Float32Array(64 * 4), c = new Float32Array(64 * 3);
@@ -626,7 +756,22 @@ export function createVoyage(under) {
         gl.uniform4fv(u.uCS, a); gl.uniform3fv(u.uCC, c);
       }
       gl.uniform1i(u.uCN, n);
+      gl.uniform1f(u.uG3, g3 ? g3.w : 0); bind(6, g3 ? galT.t : blank, u.uGalTex);
+      gl.uniform1f(u.uGalPage, g3 ? g3.page || 0 : 0);
     });
+    /* the galaxy's stars, added into the same light before the bloom: streaks, then their points */
+    if (g3 && starVao) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.f); gl.viewport(0, 0, CW, CH);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      gl.useProgram(P.stars.p); gl.bindVertexArray(starVao);
+      const u = P.stars.u;
+      gl.uniform3fv(u.uCamP, g3.P); gl.uniform3fv(u.uPrevP, g3.prevP || g3.P);
+      gl.uniformMatrix3fv(u.uCamR, false, new Float32Array(g3.R)); gl.uniformMatrix3fv(u.uPrevR, false, new Float32Array(g3.prevR || g3.R));
+      gl.uniform2f(u.uRes, CW, CH); gl.uniform1f(u.uF, CH * 0.95); gl.uniform1f(u.uK, (g3.starK ?? 0.0006) * g3.w);
+      gl.uniform1f(u.uPts, 0); gl.drawArrays(gl.LINES, 0, starN);
+      gl.uniform1f(u.uPts, 1); gl.drawArrays(gl.POINTS, 0, starN);
+      gl.bindVertexArray(null); gl.disable(gl.BLEND);
+    }
     let src = hdr;
     chain.forEach((c, i) => { pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); }); src = c; });
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
