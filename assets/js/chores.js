@@ -14,7 +14,11 @@
  */
 const queue = [];
 let open = false, running = false, want = null, until = 0, wake = 0;
-const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 60));
+/* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
+const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 250 }) : setTimeout(fn, 30));
+/* the order the rest are done in, when no journey has been chosen: the likeliest first, the measures last */
+const ORDER = ["install", "flight", "docs", "info", "", "measure"];
+const rank = (tag) => { const i = ORDER.indexOf(tag); return i < 0 ? ORDER.length : i; };
 
 function pump() {
   if (running || !queue.length) return;
@@ -27,6 +31,7 @@ function pump() {
     /* the rest waits until the journey has had its opening */
     if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     i = 0;
+    for (let k = 1; k < queue.length; k++) if (rank(queue[k].tag) < rank(queue[i].tag)) i = k;
   }
   running = true;
   const run = () => {
@@ -36,7 +41,7 @@ function pump() {
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
       running = false;
       /* a rest between chores: a couple of frames, so whatever is moving keeps moving; hurried, still a frame */
-      if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(pump, job.rest)));
+      if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.rest));
     });
   };
   if (hurried) setTimeout(run, 0); else idle(run);
