@@ -214,6 +214,16 @@ function leaveCurrent() {
   else if (was && PADS[was]) { const pad = PADS[was]; pad.ring.stop(); pad.world?.stop(); setTimeout(() => { if (current !== was) pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
   else if (was === "home") { const h = $("#home"); h.classList.remove("shown"); player.hide(); setTimeout(() => { if (current !== "home") h.hidden = true; }, 800); }
 }
+/* where the keyboard is after a journey: on the page's heading when arriving, on the planet (or the way in) when
+   back at the door, so the next Tab goes on from there rather than from the top; nothing scrolls, and no focus ring
+   shows for a visitor using a pointer */
+function focusOn(el) {
+  if (!el) return;
+  if (!el.matches("a[href],button,input,[tabindex]")) el.setAttribute("tabindex", "-1");
+  try { el.focus({ preventScroll: true }); } catch { /* fine */ }
+}
+const arriveFocus = (root) => focusOn(root.querySelector("h1, h2") || root);
+const doorFocus = (id) => focusOn(id === "home" ? $("#gate") : $(`#door .planet[data-section="${id}"]`));
 /* one journey at a time: a second press (a key held down, a planet tabbed to mid-flight, the browser's back button
    mid-dive) waits for the first to land. It lets go by itself if a journey never reports landing */
 let moving = 0;
@@ -250,6 +260,7 @@ function goToWorld(id = "install") {
     if (current !== id) return;
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
     document.body.classList.add("instrument", "arrived");
+    arriveFocus(pad.el);
     if (pad.world) pad.ring.start();   /* the information's scenes, over its world */
     /* the door goes once the sky is all the world's */
     sceneTimer = setTimeout(() => {
@@ -282,7 +293,7 @@ function leaveWorld() {
   planets.layout();
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   shot.unform(scene).then(() => {
-    done(); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
+    done(); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door"; doorFocus(id);
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
@@ -296,21 +307,26 @@ function flyToPad(id, push = true) {
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
   flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]));
 }
+/* the docs' chart, as the flights carry it: where it sits on the screen, measured when first wanted, and again
+   if the window is resized on the way */
+let chartMemo = null;
+addEventListener("resize", () => { chartMemo = null; });
+const docsChart = () => chartMemo || (chartMemo = PADS.docs.ring.flight?.() || null);
 function flyNow(id, ready = null) {
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
   /* the docs' flight carries the chart, asked for when it is first wanted (the flight may start before the chart
      has been read; it is wanted only at the end) */
-  let carried = null;
-  const carry = () => carried || (carried = pad.ring.flight?.() || null);
+  chartMemo = null;
+  const carry = docsChart;
   pad.flown = id === "docs" ? docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } }) : pad.profile;
   journey.fly(pad.flown, {
     title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph, ready,
     on: {
       release: leaveCurrent,
       /* the docs are ready to read as the sky lands; the others wait for their instrument */
-      land() { pad.el.hidden = false; current = id; if (carry()) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
-      settled() { done(); document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); },
+      land() { pad.el.hidden = false; current = id; if (id === "docs" && carry()) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
+      settled() { done(); document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); arriveFocus(pad.el); },
     },
   });
 }
@@ -330,13 +346,13 @@ function backToDawn() {
   hurryChores(["flight", "docs"]);
   /* the docs go back out through their galaxy, even if they were come to straight (a link), not flown to */
   if (current === "docs" && !pad.flown) {
-    let carried = null; const carry = () => carried || (carried = pad.ring.flight?.() || null);
+    chartMemo = null; const carry = docsChart;
     pad.flown = docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } });
   }
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { done(); const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
+    farewell() { done(); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });
 }
 
@@ -362,7 +378,7 @@ function launchNow(ready = null) {
   journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { if (!history.state?.orbit) history.replaceState(null, "", " "); } catch { /* fine */ } },
-    settled() { done(); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); wantsDrawer = null; player.show(); },
+    settled() { done(); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
   } });
 }
 
@@ -396,7 +412,7 @@ function homeToDawn() {
     farewell() {
       done();
       const h = $("#home"); h.classList.remove("shown"); h.hidden = true; player.hide();
-      $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door";
+      $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door"; doorFocus("home");
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
       try { history.replaceState(null, "", " "); } catch { /* fine */ }
       warmJourneys();
