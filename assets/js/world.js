@@ -13,6 +13,7 @@
  * createWorld(canvas) → null when WebGL2 is not there; otherwise
  *   { bake(sync), baked, draw(view), resize(w, h, scale), lose() }
  */
+import { chore } from "./chores.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -537,9 +538,8 @@ export function createWorld(canvas, opts = {}) {
     const poll = () => (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
     poll();
   });
-  /* each picture is put on the GPU on its own, in a pause between frames, one after another */
-  let uploads = Promise.resolve();
-  const inTurn = (fn) => (uploads = uploads.then(() => new Promise((r) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => r(fn()), { timeout: 400 }) : setTimeout(() => r(fn()), 16)))));
+  /* each picture is put on the GPU as a chore of its own (chores.js), one after another, never while the door comes up */
+  const inTurn = (fn) => chore(fn);
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);

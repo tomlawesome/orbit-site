@@ -1264,7 +1264,7 @@ body.showwarp #door .dsky svg,body.showwarp #door .rays svg,body.showwarp #door 
 @media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}
 
-/* ══ THE RICH DOOR (?rich): the same lockup, lit. The planets are small worlds of their own (tools/planets.py),
+/* ══ THE RICH DOOR (the default; ?classic shows the earlier, plainer door): the same lockup, lit. The planets are small worlds of their own (tools/planets.py),
    backlit by the sunrise and turned as they travel so the light always comes from it (pads.js); the ring and
    the orbits catch the dawn from below; the gold world on the ring draws a trail of light behind it; the name
    is lit from beneath; the way in is a dark glass pill ringed like the logo ══ */
