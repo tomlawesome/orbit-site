@@ -310,8 +310,9 @@ export function createInstall(pad, opts = {}) {
       }
     }
     if (reduced && !motion && frames.length > 2) return;
-    /* at rest the orbit is slow: every other frame is enough */
-    if (!motion && (tick++ & 1)) return;
+    /* at rest the orbit is slow: every other frame is enough, unless the camera is following the pointer */
+    const following = Math.abs(pointer.x - pointer.sx) + Math.abs(pointer.y - pointer.sy) > 0.002;
+    if (!motion && !following && (tick++ & 1)) return;
     draw(now);
     govern(dt);
   }
