@@ -61,26 +61,30 @@ export const TUNE = {
   land: { R: 0.47, cx: 0.22, cy: -0.12, moon: [-0.3, 0.27], moonR: 8.0 },
   port: { R: 0.26, cx: 0.1, cy: -0.2, moon: [-0.3, 0.04], moonR: 8.0 },
 };
-let SUN, TILT, TO_TILT, SKY, REST, FROM;
-function world0() {
-  SUN = norm(TUNE.sun);
-  TILT = mm(rz(TUNE.tiltZ), rx(TUNE.tiltX));      /* planet frame → world */
-  TO_TILT = tr(TILT);                              /* world → ring frame */
-  SKY = tr(mm(rz(1.2), rx(0.6)));                   /* world → galaxy frame, until the screen is measured */
-  REST = TUNE.rest; FROM = TUNE.from;
-}
+const BASE = TUNE;
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
 /* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
 const HOLD = 0.3, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
 
-function layoutFor(W, H) {
-  const t = H > W * 1.1 ? TUNE.port : TUNE.land;
-  const R = t.R * H, focal = R * Math.sqrt(REST.d * REST.d - 1);
-  return { focal, R, cx: t.cx * W, cy: t.cy * H, moon: [t.moon[0] * W, t.moon[1] * H], moonR: t.moonR };
-}
 
 export function createInstall(pad, opts = {}) {
   const canvas = $(".orbitgl", pad);
+  /* this world's own tuning: the install's, with whatever opts.tune changes (each part replaced or merged one level) */
+  const TUNE = { ...opts.tune, ...Object.fromEntries(Object.entries(BASE).map(([k, v]) => [k, opts.tune?.[k] === undefined ? v
+    : Array.isArray(v) || typeof v !== "object" ? opts.tune[k] : { ...v, ...opts.tune[k] }])) };
+  let SUN, TILT, TO_TILT, SKY, REST, FROM;
+  function world0() {
+    SUN = norm(TUNE.sun);
+    TILT = mm(rz(TUNE.tiltZ), rx(TUNE.tiltX));      /* planet frame → world */
+    TO_TILT = tr(TILT);                              /* world → ring frame */
+    SKY = tr(mm(rz(1.2), rx(0.6)));                   /* world → galaxy frame, until the screen is measured */
+    REST = TUNE.rest; FROM = TUNE.from;
+  }
+  function layoutFor(W, H) {
+    const t = H > W * 1.1 ? TUNE.port : TUNE.land;
+    const R = t.R * H, focal = R * Math.sqrt(REST.d * REST.d - 1);
+    return { focal, R, cx: t.cx * W, cy: t.cy * H, moon: [t.moon[0] * W, t.moon[1] * H], moonR: t.moonR };
+  }
   let world = null, failed = false;
   let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0], flyPos = [0, 0, 0, 0];
   let running = false, raf = 0, last = 0, clock = 0;
@@ -131,7 +135,9 @@ export function createInstall(pad, opts = {}) {
      late in the shot, when the rings turn to the sun and open */
   function view(k, idle, bare = false, dot0 = null) {
     const L = lay;
-    const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp(k / 0.62)), eE = easeTurn(clamp((k - 0.4) / 0.6));
+    /* the aim: from the dot to where the planet rests; a world may aim late (TUNE.aim: when it starts, how long it takes) */
+    const AIM = TUNE.aim || [0, 0.62];
+    const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp((k - AIM[0]) / AIM[1])), eE = easeTurn(clamp((k - 0.4) / 0.6));
     const d1 = Math.sqrt((L.focal / L.R) ** 2 + 1);
     const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
     const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));

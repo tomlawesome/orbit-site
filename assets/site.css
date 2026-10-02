@@ -801,6 +801,17 @@ body.dispersing .pad.docs .search{animation:slideout .7s cubic-bezier(.5,0,.9,.4
 /* ══ THE INFORMATION: the product, told in scenes ══════════════════════
    Each scene a statement and a piece of the product drawn live beside it —
    no screenshots, nothing to pop in. Scenes ease in as they are reached. */
+/* the information's world: the dive from the door's coral planet lands here, the planet a great crescent under
+   the title; it dims (and stops drawing) as the scenes are read, the page's own stars taking its place */
+#infopad .orbitgl{position:absolute;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;opacity:0;transition:opacity 1s ease}
+#infopad.lit .orbitgl{opacity:var(--worldA,1);transition:opacity .35s linear}
+#infopad.lit .sky{opacity:calc(1 - var(--worldA,1))}
+#infopad.lit .vignette,#infopad.lit .hero .sun{opacity:0;animation:none}
+#infopad.forming{background:transparent;z-index:37}
+body.departing #infopad.formed{z-index:37}
+#infopad.forming .scroll,#infopad.forming .back,#infopad.forming .home,#infopad.forming .topfade{opacity:0;transition:opacity .6s ease;pointer-events:none}
+#infopad.formed .scroll,#infopad.formed .topfade{opacity:1;transition:opacity .9s ease}
+#infopad.forming .orbitgl{transition:none}
 /* the information is told at night, whatever the theme: its own palette, gold for the sun at its centre */
 #infopad{color-scheme:dark;background:#04060c;--bg:#04060c;--line:#1c2434;--line-soft:#151b28;--ink:#ecebf6;--ink-mid:#a3a9bd;--ink-faint:#737b92;--ink-quiet:#8b92a8;
   --accent:#d8b45a;--accent-text:#d8b45a;--sun:#ffe9c4;--sun-core:#fff6e6;--stars:1;--star-far:#e9edf8;--star-near:#f4f0ff}

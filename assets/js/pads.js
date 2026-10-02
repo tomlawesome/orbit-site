@@ -393,7 +393,7 @@ export function createDocs(pad) {
 }
 
 /* the information: a page to read, each chapter arriving as it is reached */
-export function createInfo(pad) {
+export function createInfo(pad, world = null) {
   const scroll = $(".scroll", pad), scenes = [...pad.querySelectorAll(".scene")];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const NS = "http://www.w3.org/2000/svg";
@@ -462,15 +462,26 @@ export function createInfo(pad) {
     }
     later(6400, relayLoop);
   }
+  /* the world under the title gives way as the scenes are read: dimmed by the first screen of scrolling, and, once
+     all but gone, not drawn at all until it is scrolled back to */
+  let worldOn = true;
+  const onScroll = () => {
+    const a = 1 - 0.85 * Math.min(1, Math.max(0, scroll.scrollTop / (scroll.clientHeight * 0.75)));
+    pad.style.setProperty("--worldA", a.toFixed(3));
+    if (!world) return;
+    if (a < 0.2 && worldOn) { worldOn = false; world.stop(); }
+    else if (a >= 0.2 && !worldOn) { worldOn = true; world.start(); }
+  };
   return {
     start() {
       scroll.scrollTop = 0; seen.clear();
+      pad.style.setProperty("--worldA", "1"); worldOn = true; scroll.addEventListener("scroll", onScroll, { passive: true });
       scenes.forEach((c) => { c.classList.remove("in"); io.observe(c); });
       if (reduced) { card.classList.add("done"); steps.forEach((x) => x.classList.add("on")); return; }
       last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(orbit);
       timers.forEach(clearTimeout); timers = []; itemLoop(); relayLoop();
     },
-    stop() { scenes.forEach((c) => io.unobserve(c)); cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers = []; },
+    stop() { scenes.forEach((c) => io.unobserve(c)); scroll.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers = []; },
   };
 }
 

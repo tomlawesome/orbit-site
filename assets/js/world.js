@@ -100,6 +100,10 @@ uniform int uDustN;
 uniform float uPartK;   /* the scene's resolution over the canvas's: a point of light keeps its light however coarse the drawing */
 uniform vec3 uVel;
 uniform vec2 uAlbSize;
+/* this world's own look: the map's colour turned (a hue matrix), whether it has rings, the haze's tint */
+uniform mat3 uHue; uniform float uRingK; uniform vec3 uHazeT;
+/* or a grade: the map's light and shade recoloured along three colours (dark, middle, light), uGradeK of it */
+uniform vec3 uG0, uG1, uG2; uniform float uGradeK;
 ${NOISE}
 const float FLAT=0.935;                 /* polar radius over equatorial: the spin's bulge */
 const float RA=1.018, HR=0.0045;        /* a thin haze over the cloud tops */
@@ -235,7 +239,8 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
   vec4 a=textureGrad(uAlb,uv,dx*0.7,dy*0.7);
-  vec3 alb=a.rgb;
+  vec3 alb=clamp(uHue*a.rgb,0.0,1.0);
+  if(uGradeK>0.0){ float gl=pow(clamp(dot(a.rgb,vec3(0.2126,0.7152,0.0722))*1.6,0.0,1.0),0.9); vec3 gr=gl<0.5?mix(uG0,uG1,gl*2.0):mix(uG1,uG2,gl*2.0-1.0); alb=mix(alb,gr,uGradeK); }
   /* finer than the map: streaks drawn out along the bands, fading where they would shimmer */
   float px=length(dx)*uAlbSize.x;
   float near=1.0-smoothstep(0.6,2.5,px);
@@ -258,7 +263,7 @@ vec3 cloudDeck(vec3 P,vec3 rd){
   float wrap=clamp((dot(nb,uSun)+0.025)/1.025,0.0,1.0);
   float lit=pow(wrap,1.1)*pow(max(ndv,0.02),0.12);
   vec3 tint=mix(vec3(1.0,0.62,0.42),vec3(1.0),smoothstep(-0.05,0.35,mu));
-  float rsh=1.0-0.75*ringAt(P,6.0);
+  float rsh=1.0-0.75*ringAt(P,6.0)*uRingK;
   vec3 c=alb*SUNI*tint*lit*rsh/PI*1.3;
   /* the rings' light on the night side */
   c+=alb*vec3(0.05,0.04,0.07)*0.08*(1.0-smoothstep(-0.1,0.2,mu));
@@ -320,7 +325,7 @@ void main(){
   if(tp.x>0.0){tOp=tp.x; hit=1;}
   if(tm.x>0.0&&tm.x<tOp){tOp=tm.x; hit=2;}
   if(uMoon2.w>0.0&&tm2.x>0.0&&tm2.x<tOp){tOp=tm2.x; hit=3;}
-  float tr; vec4 rc=ring(ro,rd,tr);
+  float tr; vec4 rc=ring(ro,rd,tr); if(uRingK<0.5) tr=-1.0;
   bool ringOn=tr>0.0&&tr<tOp;
   if(tOp<1e8){ vec3 P=ro+rd*tOp; col=hit==1?cloudDeck(P,rd):moon(P,hit==2?uMoon:uMoon2,rd); alpha=1.0; }
   if(ringOn&&ta.x>0.0&&tr>ta.y){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
@@ -329,14 +334,14 @@ void main(){
     float t0=max(ta.x,0.0), t1=min(ta.y,tOp); const int N=8; float ds=(t1-t0)/float(N);
     vec3 s=vec3(0.0); float od=0.0;
     vec3 ls=normalize(squash(uSun));
-    float rsh=1.0-0.6*ringAt(ro+rd*(0.5*(t0+t1)),7.0);
+    float rsh=1.0-0.6*ringAt(ro+rd*(0.5*(t0+t1)),7.0)*uRingK;
     for(int i=0;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
       /* the haze is lit by how high the sun stands over it: it fades through dusk, no hard edge */
       float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
       float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od); }
     s*=rsh;
     float mu=dot(rd,uSun), g=0.7, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*mu,1.5)*0.08;
-    col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*vec3(0.85,0.82,1.0)*0.6;
+    col=col*exp(-BR*od*0.25)+SUNI*s*BR*(0.0597*(1.0+mu*mu)+hg*0.5)*uHazeT*0.6;
   }
   if(ringOn&&(ta.x<=0.0||tr<ta.x)){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
   col+=dust(ro,rd,min(tOp,tr>0.0?tr:1e9));
@@ -486,6 +491,18 @@ export function createWorld(canvas, opts = {}) {
   const MOON = opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href;
   const GALAXY = opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href;
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
+  /* this world's look: the map's hue turned by opts.hue degrees (about the grey axis, in linear light), a little
+     richer by opts.sat; rings unless opts.ringsOn is false; the haze tinted opts.haze */
+  const HUE = (() => {
+    const a = ((opts.hue || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / 3, q = Math.sqrt(k);
+    const m = [c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k + q * sn, (1 - c) * k + q * sn, c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k - q * sn, (1 - c) * k + q * sn, c + (1 - c) * k];
+    const sat = opts.sat ?? 1, L = [0.2126, 0.7152, 0.0722];
+    const S = [0, 1, 2].flatMap((r) => [0, 1, 2].map((cc) => L[cc] * (1 - sat) + (r === cc ? sat : 0)));
+    const o = []; for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) o.push(S[r * 3] * m[cc] + S[r * 3 + 1] * m[3 + cc] + S[r * 3 + 2] * m[6 + cc]);
+    return new Float32Array([o[0], o[3], o[6], o[1], o[4], o[7], o[2], o[5], o[8]]);   /* column-major */
+  })();
+  const RING_K = opts.ringsOn === false ? 0 : 1, HAZE = opts.haze || [0.85, 0.82, 1.0];
+  const GRADE = opts.grade || null;   /* [[dark], [middle], [light], how much] in linear light */
 
   const compile = (type, src) => {
     const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -626,7 +643,8 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
-      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH);
+      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, HUE); gl.uniform1f(u.uRingK, RING_K); gl.uniform3fv(u.uHazeT, HAZE);
+      gl.uniform1f(u.uGradeK, GRADE ? GRADE[3] : 0); if (GRADE) { gl.uniform3fv(u.uG0, GRADE[0]); gl.uniform3fv(u.uG1, GRADE[1]); gl.uniform3fv(u.uG2, GRADE[2]); }
       bind(0, albT, u.uAlb); bind(1, galT || skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
