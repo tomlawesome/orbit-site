@@ -16,6 +16,9 @@ const $ = (s) => document.querySelector(s);
 /* launching soon (index.html: data-soon): the door alone, opening nothing, and nothing readied for journeys */
 const SOON = document.documentElement.hasAttribute("data-soon");
 if (SOON) {
+  /* the line's own words, if the attribute gives any (data-soon="Back shortly" for maintenance) */
+  const words = document.documentElement.getAttribute("data-soon")?.trim();
+  if (words) { const t = document.querySelector("#door .soon .t"); if (t) t.textContent = words; }
   try { if (location.hash) history.replaceState(null, "", location.pathname + location.search); } catch { /* fine */ }
   const p = document.querySelector("#door .planets");
   p?.setAttribute("aria-hidden", "true");
