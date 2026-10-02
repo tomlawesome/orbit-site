@@ -14,6 +14,7 @@
 import { chore, note } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
+import { onTilt } from "./tilt.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -368,7 +369,10 @@ export function createInstall(pad, opts = {}) {
     } catch { /* lit by its own sun from the first */ }
     return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light, rot };
   };
-  const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
+  /* the camera leans with the pointer; on a phone, with the phone's tilt (tilt.js), which then has it alone */
+  let tilting = false, untilt = () => {};
+  const onPointer = (e) => { if (tilting && e.pointerType !== "mouse") return; pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
+  const onTilted = (x, y) => { tilting = true; pointer.x = x; pointer.y = y; };
   const onResize = () => { frames = []; size(); };
 
   const api = {
@@ -401,7 +405,7 @@ export function createInstall(pad, opts = {}) {
       if (running) return;
       running = true; last = 0;
       size();
-      addEventListener("resize", onResize); addEventListener("pointermove", onPointer);
+      addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
       if (w) w.bake().then((ok) => pad.classList.add(ok ? "lit" : "flat"));
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
@@ -432,7 +436,7 @@ export function createInstall(pad, opts = {}) {
     },
     stop() {
       running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
-      removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer);
+      removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer); untilt(); untilt = () => {};
     },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
     async still(k, idle = 0, dotAt = null, moving = false) {
