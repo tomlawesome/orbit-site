@@ -2,7 +2,8 @@
  * The site's own cache, kept in the visitor's browser.
  *
  * Pictures (the Earth, the planet, the moon, the galaxy, the maps) are kept
- * for a day and served from here without asking again, so a journey taken
+ * for 36 hours (a visit, and a return a day or so later) and served from
+ * here without asking again, so a journey taken
  * twice, or a page opened again, pulls nothing. Everything else (the page,
  * its code, its styles, the docs) is always asked for fresh — a cheap "not
  * modified" when nothing has changed — so a new version of the site is
@@ -10,7 +11,7 @@
  *
  * MEDIA changes name when the pictures are replaced, which clears them.
  */
-const MEDIA = "orbit-media-1", CODE = "orbit-code-1", KEEP = 24 * 3600 * 1000;
+const MEDIA = "orbit-media-1", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
 const isMedia = (u) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(u.pathname);
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -25,7 +26,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(isMedia(url) ? kept(req) : fresh(req));
 });
 
-/* a picture: from the cache while it is less than a day old; otherwise fetched, and kept */
+/* a picture: from the cache while it is less than 36 hours old; otherwise fetched, and kept */
 async function kept(req) {
   const cache = await caches.open(MEDIA);
   const hit = await cache.match(req, { ignoreSearch: true });
