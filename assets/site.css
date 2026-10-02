@@ -262,7 +262,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .back{position:fixed;top:30px;left:26px;z-index:6;background:none;border:0;cursor:pointer;padding:0}
 .back:hover{color:var(--accent-text)}
 .orb{position:fixed;top:22px;right:26px;z-index:6;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
-  background:var(--panel);backdrop-filter:blur(10px);cursor:pointer;display:grid;place-items:center;
+  background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);cursor:pointer;display:grid;place-items:center;
   font:12px var(--mono);color:var(--ink-mid)}
 .orb:hover{border-color:var(--accent)}
 .inbox-orb{right:76px;color:var(--ink-mid);text-decoration:none}
@@ -272,7 +272,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
   font:600 9.5px var(--mono);font-style:normal;display:grid;place-items:center}
 .inbox-orb:not(.waiting) .count{display:none}
 @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
-.account{position:fixed;top:70px;right:26px;z-index:12;width:250px;background:var(--panel-raised);backdrop-filter:blur(14px);
+.account{position:fixed;top:70px;right:26px;z-index:12;width:250px;background:var(--panel-raised);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
   border:1px solid var(--line);border-radius:16px;padding:18px 20px;opacity:0;transform:translateY(-6px);pointer-events:none;
   visibility:hidden;transition:opacity .25s,transform .25s,visibility 0s .25s}
 .account.open{opacity:1;transform:none;pointer-events:auto;visibility:visible;transition-delay:0s}
@@ -292,7 +292,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .signout:hover{color:var(--overdue-text)}
 
 /* the create drawer, from the top; the north star is its handle (CON-12) */
-.drawer-top{position:fixed;top:0;left:0;right:0;z-index:11;background:var(--panel-raised);backdrop-filter:blur(16px);
+.drawer-top{position:fixed;top:0;left:0;right:0;z-index:11;background:var(--panel-raised);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
   border-bottom:1px solid var(--line);transform:translateY(-102%);transition:transform .4s cubic-bezier(.3,.7,.3,1)}
 .drawer-top.open{transform:none}
 .drawer-top .inner{max-width:760px;margin:0 auto;padding:28px 24px 24px;display:flex;flex-direction:column;gap:16px;align-items:center}
@@ -337,7 +337,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 [data-theme=dawn] .scrim,[data-theme=clouds] .scrim{background:rgba(24,32,47,.22)}
 
 /* the edge drawers: the word IS the handle (CON-7) */
-.drawer{position:fixed;top:0;bottom:0;z-index:10;width:min(330px,92vw);background:var(--panel-raised);backdrop-filter:blur(16px);
+.drawer{position:fixed;top:0;bottom:0;z-index:10;width:min(330px,92vw);background:var(--panel-raised);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
   padding:26px 26px 110px;transition:transform .35s cubic-bezier(.3,.7,.3,1);overflow-y:auto}
 .drawer h4{margin:18px 0 10px}
 .drawer h4:first-of-type{margin-top:0}
@@ -436,7 +436,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 [data-theme=dawn] .dial .body-link :is(circle,path),[data-theme=clouds] .dial .body-link :is(circle,path){filter:drop-shadow(0 0 3px rgba(255,240,220,.85))}
 [data-theme=retrograde] .dial .now-month,[data-theme=retrograde] .dial [style*="--accent"]{filter:drop-shadow(0 0 2.5px var(--bloom))}
 /* POL-6: the chart callout — legible, quadrant-aware */
-.chart-callout{position:fixed;z-index:8;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--panel-raised);backdrop-filter:blur(12px);
+.chart-callout{position:fixed;z-index:8;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--panel-raised);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
   border:1px solid var(--line);border-radius:10px;padding:9px 13px;font:13.5px var(--ui);color:var(--ink);white-space:nowrap}
 .chart-callout.show{opacity:1}
 .chart-callout .line{position:absolute;top:50%;width:26px;height:1px;background:var(--accent);opacity:.85}
@@ -457,7 +457,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .splash-search input::placeholder{color:var(--ink-faint)}
 .splash-search input:focus{border-color:var(--accent)}
 .palette{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:10px;width:100%;background:var(--panel-raised);
-  backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:8px;display:none;text-align:left;z-index:5}
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:8px;display:none;text-align:left;z-index:5}
 .palette.open{display:block}
 .palette button{display:block;width:100%;text-align:left;font:12.5px var(--mono);color:var(--ink-mid);padding:8px 10px;border-radius:8px;background:none;border:0;cursor:pointer}
 .palette button b{color:var(--ink);font-weight:500}
@@ -490,7 +490,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .month .rule{flex:1;height:1px;background:var(--chart-line-soft)}
 .month small{font:10.5px var(--mono);color:var(--ink-faint)}
 .item{position:relative;display:flex;align-items:center;gap:15px;border-radius:14px;padding:14px 18px;margin-bottom:6px;
-  border:1px solid var(--line-soft);background:var(--panel);backdrop-filter:blur(8px);scroll-margin-top:90px}
+  border:1px solid var(--line-soft);background:var(--panel);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);scroll-margin-top:90px}
 .item:not(.suggest){cursor:pointer}
 .item:hover{background:var(--panel-raised);border-color:var(--line)}
 .item.lit{border-color:var(--accent)}
@@ -515,7 +515,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .item.suggest button{font:12px var(--mono);border-radius:9px;padding:6px 12px;cursor:pointer;border:1px solid var(--line);background:none;color:var(--ink-mid)}
 .item.suggest button.yes{border-color:var(--accent);color:var(--accent-text)}
 .item.suggest button.armed{background:var(--accent);color:var(--bg)}
-.itemview{border:1px solid var(--accent);border-top:0;background:var(--panel-raised);backdrop-filter:blur(8px);border-radius:0 0 14px 14px;
+.itemview{border:1px solid var(--accent);border-top:0;background:var(--panel-raised);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-radius:0 0 14px 14px;
   padding:2px 18px 16px;margin-bottom:6px;animation:ivopen .3s cubic-bezier(.2,.7,.2,1) 1}
 @keyframes ivopen{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .itemview h4{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:18px 0 8px}
@@ -533,9 +533,9 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 [data-theme=retrograde] :is(.inbox-orb.waiting,.suggest button.yes){box-shadow:0 0 12px -2px var(--bloom)}
 [data-theme=retrograde] .today .rule{box-shadow:0 0 8px var(--bloom)}
 [data-theme=dawn] :is(.item,.ctype,.orb,.palette),[data-theme=clouds] :is(.item,.ctype,.orb,.palette){
-  backdrop-filter:blur(14px) saturate(1.06);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 8px 20px rgba(48,66,98,.07)}
+  -webkit-backdrop-filter:blur(14px) saturate(1.06);backdrop-filter:blur(14px) saturate(1.06);box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 8px 20px rgba(48,66,98,.07)}
 [data-theme=dawn] :is(.account,.drawer,.drawer-top,.itemview),[data-theme=clouds] :is(.account,.drawer,.drawer-top,.itemview){
-  backdrop-filter:blur(20px) saturate(1.06);box-shadow:inset 0 1px 0 rgba(255,255,255,.78),0 16px 36px rgba(48,66,98,.10)}
+  -webkit-backdrop-filter:blur(20px) saturate(1.06);backdrop-filter:blur(20px) saturate(1.06);box-shadow:inset 0 1px 0 rgba(255,255,255,.78),0 16px 36px rgba(48,66,98,.10)}
 
 /* ══ THE FILM ═══════════════════════════════════════════════════════════ */
 #veil{position:fixed;inset:0;z-index:30;pointer-events:none;opacity:0;transition:opacity .45s ease}
@@ -549,7 +549,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .tourfilm-dot{position:fixed;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:var(--accent);
   box-shadow:0 0 10px color-mix(in srgb,var(--accent) 25%,transparent);opacity:0;transition:opacity .2s ease}
 .tourfilm-callout{position:fixed;max-width:260px;width:max-content;text-wrap:balance;box-sizing:border-box;background:var(--panel-raised);
-  backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font:13.5px/1.45 var(--ui);color:var(--ink);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font:13.5px/1.45 var(--ui);color:var(--ink);
   opacity:0;pointer-events:none;transition:opacity .24s ease-out,transform .24s ease-out}
 .tourfilm-callout.label{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-mid)}
 .tourfilm-callout i{position:absolute;width:14px;height:14px;background:var(--panel-raised);border:1px solid var(--line);transform:rotate(45deg);z-index:-1}
@@ -557,7 +557,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .tourfilm-typed{position:fixed;display:flex;align-items:center;box-sizing:border-box;overflow:hidden;white-space:pre;pointer-events:none;z-index:2}
 .tourfilm-typed i{display:inline-block;width:1.5px;height:1.05em;margin-left:1px;background:var(--accent);vertical-align:text-bottom}
 .transport{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:32;width:min(470px,calc(100% - 24px));height:44px;border-radius:99px;
-  background:var(--panel-raised);backdrop-filter:blur(16px);border:1px solid var(--line);display:grid;grid-template-columns:auto auto 1fr auto;
+  background:var(--panel-raised);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid var(--line);display:grid;grid-template-columns:auto auto 1fr auto;
   align-items:center;gap:2px;padding:0 16px 0 6px;opacity:0;pointer-events:none;transition:opacity .4s}
 .transport.on{opacity:1;pointer-events:auto}
 .transport.on.playing{opacity:.38}
@@ -621,12 +621,12 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .toc a{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-quiet)}
 .toc a:hover{color:var(--accent-text)}
 .menu{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:14px 0 22px}
-.menu div{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel);backdrop-filter:blur(10px)}
+.menu div{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .menu b{display:block;font:500 14px var(--display);color:var(--ink);margin-bottom:4px}
 .menu b::before{content:"\25B8\00a0";color:var(--accent-text)}
 .menu p{font-size:13.5px;color:var(--ink-mid);margin:0;max-width:none}
 dialog.reader{border:0;background:transparent;padding:0;max-width:min(96vw,1400px);max-height:96vh}
-dialog.reader::backdrop{background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(6px)}
+dialog.reader::backdrop{background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 dialog.reader img{display:block;max-width:100%;max-height:90vh;border-radius:14px;border:1px solid var(--line)}
 dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;color:var(--ink-mid);margin:12px 0 0}
 .foot{position:relative;z-index:2;padding:40px 16px 90px;text-align:center;font:10.5px var(--mono);color:var(--ink-faint);letter-spacing:.1em}
@@ -747,7 +747,6 @@ body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
 .pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
 .pad .gate{opacity:1;transform:none;transition:filter .35s ease}
 .pad .gate[data-done]{background:var(--ink)}
-  opacity:0;transition:opacity .5s ease}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching .pad{visibility:hidden;pointer-events:none}
 body.bare .pad .back,body.bare .pad .home,body.bare .pad .word{opacity:0;pointer-events:none}
@@ -757,8 +756,6 @@ body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .home
 body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .home{animation:chromeout .45s ease both}
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
-/* the install's own line, back with the instrument */
-  opacity:0;transition:opacity 1.3s ease .9s}
 @media (max-width:560px){
   .pad .loginchrome{padding-bottom:16svh}
   .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
