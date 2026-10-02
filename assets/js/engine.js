@@ -232,6 +232,14 @@ export function deepDistance(tu, H) {
    sit at rest (the climb's arrival, braked to nothing, played backwards), is passed over (this much of the climb's
    time); the chart's lights keep their own time, so they still go out one by one, from the first */
 export const DEEP_SKIP = 1000;
+/* the galaxy is first seen face on, a round disc as the mark's ring is round, and the camera swings down to look
+   across it as it rushes in, to the angle the way in starts from: the ring turns with it, so it is seen to tilt in
+   depth as it opens, rather than to change its plane on the page first. deepTilt: how far it has turned (radians) */
+const A_TILT = Math.acos(PATH[0][1] / A_LEN);
+export function deepTilt(tu) {
+  const q = Math.min(1, Math.max(0, (tu - FAR_T0) / (FAR_T1 - FAR_T0)));
+  return A_TILT * q * q * (3 - 2 * q);
+}
 /** how much larger the galaxy looks than the mark's ring, at tu */
 export const deepGrowth = (tu, H) => deepDistance(FAR_T0, H) / deepDistance(tu, H);
 
@@ -960,16 +968,20 @@ export function createFlight(canvas, options = {}) {
   const ALONG = (() => { const out = [], t0 = FAR_T1, t1 = 3500; let acc = 0; for (let t = t0; t <= t1; t += 10) { out.push(acc); acc += UP.speed(t) * 10; } return { t0, t1, out, total: acc }; })();
   const along = (tu) => { if (tu <= ALONG.t0) return 0; if (tu >= ALONG.t1) return 1; const i = (tu - ALONG.t0) / 10, k = Math.floor(i); return (ALONG.out[k] + (ALONG.out[Math.min(k + 1, ALONG.out.length - 1)] - ALONG.out[k]) * (i - k)) / ALONG.total; };
   /* before that, the galaxy is first seen exactly where and as large as the mark's ring at the centre of the screen,
-     tilted as the mark is, so the ring becomes it; then the camera rushes in from there, faster and faster, to the
-     start of the way in */
-  const A_DIR = PATH[0].map((x) => x / A_LEN);
+     face on as the ring is, so the ring becomes it; then the camera rushes in from there, faster and faster, swinging
+     down as it goes (deepTilt) to the start of the way in */
+  const A_H = v3.norm([PATH[0][0], 0, PATH[0][2]]);
+  /* where the camera is, seen from the core, at a tilt (0: straight above the disc), and which way is up for it */
+  const swung = (th) => ({ dir: [A_H[0] * Math.sin(th), Math.cos(th), A_H[2] * Math.sin(th)], up: [-A_H[0] * Math.cos(th), Math.sin(th), -A_H[2] * Math.cos(th)] });
   function camPos(tu) {
     if (tu >= FAR_T1) return bez(along(tu));
-    return A_DIR.map((x) => x * deepDistance(tu, H));
+    return swung(deepTilt(tu)).dir.map((x) => x * deepDistance(tu, H));
   }
   function camAt(tu) {
     const P = camPos(tu), f = v3.norm(v3.sub([0, 0, 0], P));
-    let r = v3.norm(v3.cross([0, 1, 0], f)), u = v3.cross(f, r);
+    let r, u;
+    if (tu < FAR_T1) { u = swung(deepTilt(tu)).up; r = v3.cross(u, f); }
+    else { r = v3.norm(v3.cross([0, 1, 0], f)); u = v3.cross(f, r); }
     const roll = 0.34 * smoothq(2600, 3700, tu), cr = Math.cos(roll), sr = Math.sin(roll);
     [r, u] = [[r[0] * cr + u[0] * sr, r[1] * cr + u[1] * sr, r[2] * cr + u[2] * sr], [u[0] * cr - r[0] * sr, u[1] * cr - r[1] * sr, u[2] * cr - r[2] * sr]];
     return { P, R: [...r, ...u, ...f] };
