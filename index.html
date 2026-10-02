@@ -346,6 +346,8 @@
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
   <div class="pad docs" id="docspad" hidden>
+    <!-- the Milky Way behind the stars and the chart (tools/docsky.py) -->
+    <div class="milky" aria-hidden="true"></div>
     <div class="sky" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
     <button class="corner back dawn" type="button">— the dawn</button>
@@ -355,16 +357,16 @@
       <div class="index">
         <span class="corner">— the docs</span>
         <h1>What do you need to know?</h1>
-        <div class="skymap" aria-label="The chart of the docs: each source a constellation, each entry a star">
-          <svg class="chart" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet"></svg>
-        </div>
-        <p class="stamp"></p>
         <label class="search">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
           <input type="search" placeholder="search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
           <kbd>/</kbd>
         </label>
         <div class="keys" aria-label="Start here"></div>
+        <div class="skymap" aria-label="The chart of the docs: each source a constellation, each entry a star">
+          <svg class="chart" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
+        <p class="stamp"></p>
         <div class="results" aria-live="polite"></div>
         <p class="hint"><kbd>/</kbd> search <span class="sep">·</span> <kbd>↑</kbd><kbd>↓</kbd> move <span class="sep">·</span> <kbd>↵</kbd> open</p>
       </div>
