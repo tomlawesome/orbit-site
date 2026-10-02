@@ -242,31 +242,86 @@ vec4 moon(vec2 css){
   return acc/12.0*uMoonS.w;
 }
 
-/* ── the star at the end: seen ahead as the flight brakes, then blooming ── */
+/* ── the star at the end: seen ahead as the flight brakes, then blooming ──
+   Built as a star is seen through a lens: a limb-darkened photosphere with its granulation and a red chromosphere at
+   the rim; a corona of streamers drifting outwards; the ciliary glare, hundreds of hair-fine rays fringed with colour;
+   six diffraction spikes, banded along their length, the red reaching furthest; a level anamorphic streak; a faint
+   rainbow halo. All of it HDR, so the film's bloom carries it. */
 vec3 arrival(vec2 css){
-  float lum=pow(uBloom,1.2)+uPre*0.3;
+  float e=pow(uBloom,1.2), lum=e+uPre*0.3;
   if(lum<=0.001) return vec3(0.0);
   vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, Wd=uRes.x/uPx, a=atan(p.y,p.x);
-  float e=pow(uBloom,1.2);
-  vec3 c=vec3(1.0,0.92,0.78)*lum*(4.0*exp(-r/(H*(0.004+0.045*e)))+0.3*exp(-r/(H*0.25)));
-  /* the corona: filaments, turning slowly */
-  float fil=0.55+0.45*vnoise(vec3(a*6.0,r/(H*0.06)-uTime*0.35,3.0))*vnoise(vec3(a*13.0+4.0,r/(H*0.03),uTime*0.2));
-  c+=vec3(1.0,0.8,0.55)*fil*lum*0.9*exp(-r/(H*(0.035+0.2*e)));
-  /* the lens: a long level streak, and four spikes */
-  c+=vec3(0.55,0.7,1.0)*lum*1.1*exp(-abs(p.y)/1.4)*exp(-abs(p.x)/(Wd*(0.05+0.4*e)));
+  vec2 dir=r>0.0?p/r:vec2(1.0,0.0);
+  float Rd=H*(0.004+0.065*e);                        /* the star's disc */
+  vec3 c=vec3(0.0);
+  /* the photosphere: limb-darkened, granulated, white-gold at the centre, deeper gold at the limb */
+  if(r<Rd){
+    float x=r/Rd, mu=sqrt(1.0-x*x);
+    /* granules: bright cells parted by darker lanes, the cells foreshortened towards the limb */
+    vec2 q=p/(Rd*0.075); q+=(p/max(r,1e-3))*dot(p/max(r,1e-3),q)*(1.0/max(mu,0.25)-1.0)*0.5;
+    float g1=1.0-abs(vnoise(vec3(q,uTime*0.5))*2.0-1.0), g2=1.0-abs(vnoise(vec3(q*2.7+7.0,uTime*0.9))*2.0-1.0);
+    float gran=smoothstep(0.25,0.95,g1*0.7+g2*0.3);
+    float I=(1.0-0.66*(1.0-mu)-0.1*(1.0-mu*mu))*(0.84+0.28*gran);
+    /* bright, but held within the film's range, so its surface reads: the cells, the darkening to the limb */
+    c+=mix(vec3(1.0,0.46,0.14),vec3(1.0,0.89,0.7),pow(mu,0.6))*I*mix(16.0,4.2,smoothstep(0.0,0.35,e))*lum;
+  }
+  /* the chromosphere: a thin red rim */
+  c+=vec3(1.0,0.4,0.18)*exp(-pow((r-Rd)/(Rd*0.025+0.5),2.0))*mix(3.0,1.2,smoothstep(0.0,0.4,e))*lum;
+  /* the corona: streamers in two scales, drifting outwards and turning slowly, white-gold to amber to a faint violet */
+  float lr=log(max(r,Rd)/Rd);
+  float n1=vnoise(vec3(cos(a)*5.0,sin(a)*5.0,lr*1.4-uTime*0.12)), n2=vnoise(vec3(cos(a)*17.0,sin(a)*17.0,lr*2.6-uTime*0.2+3.0));
+  float stream=0.35+1.1*n1*n1+0.55*n2*n2*n2;
+  vec3 ccol=mix(mix(vec3(1.0,0.93,0.8),vec3(1.0,0.66,0.32),smoothstep(0.0,1.6,lr)),vec3(0.62,0.42,0.9),smoothstep(1.8,3.6,lr));
+  c+=ccol*stream*pow(Rd/max(r,Rd),1.7)*2.6*lum*smoothstep(Rd*0.98,Rd*1.05,r);
+  /* the ciliary glare: hair-fine rays of every length about the core, two sets, fringed with colour at their tips */
   for(int k=0;k<2;k++){
-    float an=0.35+float(k)*PI*0.5;
+    float N=k==0?211.0:137.0, sa=a/TAU*N+float(k)*0.37, id=floor(sa);
+    float h1=hash12(vec2(id,float(k)*7.0)), h2=hash12(vec2(id+3.0,float(k)*13.0));
+    float perp=abs(fract(sa)-0.5)*(TAU/N)*r;
+    float L=H*(0.03+0.32*h1*h1*h1)*(0.35+0.85*e);
+    float t=r/L;
+    vec3 tip=mix(vec3(0.85,0.92,1.0),vec3(1.0,0.75,0.55),smoothstep(0.3,1.2,t));
+    c+=tip*exp(-perp*perp/0.45)*exp(-t*2.2)*smoothstep(Rd*0.6,Rd*1.4,r)*(0.25+h2*1.4)*1.6*lum;
+  }
+  /* the diffraction spikes: six, banded, dispersed (each colour reaching its own length, the red the furthest) */
+  for(int k=0;k<3;k++){
+    float an=0.52+float(k)*PI/3.0;
     vec2 ax=vec2(cos(an),sin(an));
     float al=abs(dot(p,ax)), pe=abs(dot(p,vec2(-ax.y,ax.x)));
-    float len=H*(0.04+0.3*e);
-    c+=mix(vec3(0.7,0.8,1.0),vec3(1.0,0.85,0.6),clamp(al/len,0.0,1.0))*lum*1.1*exp(-pe/0.8)*exp(-al/len)*(1.0-exp(-al/12.0));
+    float len=H*(0.05+0.24*e), w=0.7+al*0.003;
+    vec3 L3=len*vec3(1.0,0.86,0.72);
+    vec3 spike=exp(-pow(vec3(al)/L3,vec3(1.6)))*exp(-pe*pe/(w*w));
+    float band=0.7+0.3*pow(sin(al/(H*0.012)),2.0);
+    c+=spike*band*(1.0-exp(-al/(Rd*2.0+4.0)))*2.4*lum;
   }
+  /* and two faint secondary spikes, the support's, square to the rest */
+  { vec2 ax=vec2(cos(0.52+PI*0.5/3.0),sin(0.52+PI*0.5/3.0)); float al=abs(dot(p,ax)), pe=abs(dot(p,vec2(-ax.y,ax.x)));
+    c+=vec3(0.9,0.92,1.0)*exp(-pow(al/(H*(0.03+0.12*e)),1.6))*exp(-pe*pe/0.5)*0.5*lum; }
+  /* the anamorphic streak: a thin hot core and a wide cool veil */
+  c+=vec3(0.5,0.68,1.0)*exp(-abs(p.y)/1.2)*exp(-abs(p.x)/(Wd*(0.05+0.42*e)))*1.3*lum;
+  c+=vec3(0.32,0.45,1.0)*exp(-abs(p.y)/(H*0.012))*exp(-abs(p.x)/(Wd*(0.08+0.3*e)))*0.22*lum;
+  /* a lens halo: a faint ring, each colour at its own radius */
+  float rh=H*(0.11+0.12*e);
+  c+=vec3(exp(-pow((r-rh*0.965)/(H*0.005),2.0)),exp(-pow((r-rh)/(H*0.005),2.0)),exp(-pow((r-rh*1.035)/(H*0.005),2.0)))*0.14*lum;
+  /* the sky takes the light: a wide warm scatter */
+  c+=vec3(1.0,0.8,0.52)*exp(-r/(H*0.45))*0.16*lum+vec3(1.0,0.82,0.6)*exp(-max(r-Rd,0.0)/(H*0.05))*0.7*lum*smoothstep(Rd*0.9,Rd*1.1,r);
   return c;
+}
+
+/* the shockwave of the arrival: a ring running outwards that bends the starlight it crosses */
+vec2 shockBend(vec2 css,out float ring){
+  ring=0.0; if(uBloom<=0.0||uBloom>=1.0) return css;
+  vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx;
+  float rs=uBloom*H*1.25, w=H*0.03, fade=1.0-uBloom;
+  float g=exp(-pow((r-rs)/w,2.0));
+  ring=g*fade;
+  return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
 
 void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
-  vec3 c=sky(css);
+  float ring; vec2 bent=shockBend(css,ring);
+  vec3 c=sky(bent);
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
@@ -282,6 +337,12 @@ void main(){
   }
   vec4 mo=moon(css); c=c*(1.0-mo.a)+mo.rgb;
   c+=arrival(css);
+  /* the shock's own light: a bright edge, red outside and blue in */
+  if(ring>0.001){
+    vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, rs=uBloom*H*1.25, w=H*0.006;
+    vec3 band=vec3(exp(-pow((r-rs-w*0.5)/w,2.0)),exp(-pow((r-rs)/w,2.0)),exp(-pow((r-rs+w*0.5)/w,2.0)));
+    c+=mix(vec3(dot(band,vec3(0.34))),band,0.35)*vec3(1.0,0.86,0.66)*0.32*(1.0-uBloom)*(1.0-uBloom);
+  }
   o=vec4(c,1.0);
 }`;
 

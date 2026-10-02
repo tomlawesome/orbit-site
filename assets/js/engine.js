@@ -628,7 +628,8 @@ export function createFlight(canvas, options = {}) {
     g.addColorStop(0.70, hexa(PACK.accent, peak * 0.15));
     g.addColorStop(1, hexa(PACK.accent, 0));
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    /* two hairline shockwaves, and no more than two */
+    /* two hairline shockwaves, and no more than two (the voyage draws its own, bending the light it crosses) */
+    if (voyage) return;
     ctx.lineWidth = 1.3;
     for (const [off, mul] of [[0, 0.48], [0.26, 0.22]]) {
       const q = Math.max(0, b - off);
