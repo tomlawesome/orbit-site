@@ -26,10 +26,8 @@ mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
 /* the glows are pictures now (tools/glows.cjs): mountRasters only keeps the rays turning about the sunrise point */
 const dawnRasters = mountRasters($("#door .world"), {}, "dawn");
 /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
-let earthIn = Promise.resolve();
 function loadEarth() {
-  const world = $("#door .world"), pre = world.querySelector(".earth image.pre[data-href]");
-  if (pre) earthIn = new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
+  const world = $("#door .world");
   for (const im of world.querySelectorAll(".earth image[data-href]")) {
     im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
     im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
@@ -58,14 +56,6 @@ function warmJourneys() {
 }
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
-let starting = false;
-/* a journey waits until what it draws is ready (on a first visit it may still be on its way), up to a few seconds;
-   meanwhile the door answers the click: the way chosen pulses, so the wait reads as the journey gathering itself */
-const startWhen = (p, go, el = null) => {
-  if (starting) return; starting = true;
-  const t = setTimeout(() => { document.body.classList.add("readying"); el?.classList.add("readying"); }, 120);
-  within(p, 6000).then(() => { clearTimeout(t); document.body.classList.remove("readying"); el?.classList.remove("readying"); starting = false; go(); });
-};
 const duskRasters = mountRasters($("#dusk .world"), {}, "dusk");
 let dawnDrawn = false, duskDrawn = false;
 const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
@@ -128,19 +118,46 @@ function hideAll() {
   for (const pad of Object.values(PADS)) { pad.ring.stop(); pad.world?.stop(); pad.el.hidden = true; }
   document.body.classList.remove("arrived");
 }
+/* a first visit: nothing of the site's kept in this browser yet (sw.js keeps the pictures for 36 hours) */
+const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-seen"); localStorage.setItem("orbit-site-seen", String(Date.now())); return !seen || Date.now() - +seen > 36 * 3600e3; } catch { return true; } })();
+let doorLitOnce = false;
 function showDoor() {
   journey.reset(); hideAll(); current = "door";
   const door = $("#door");
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
-  /* first light waits for what it shows (the type, and the Earth's first picture), never more than 1.2 s; the
-     journeys are readied only once it has come up, so nothing competes with it */
-  const earthAsked = new Promise((r) => afterFirstFrame(() => earthIn.then(r)));   /* asked for by startDawn, just above */
-  within(Promise.all([document.fonts?.ready, earthAsked]), 1200).then(() => requestAnimationFrame(() => {
-    document.body.classList.add("lit");
-    setTimeout(warmJourneys, 3000);
-  }));
+  /* first light. The ring is a light running its circle (body.loading) while the dawn's first pieces come (the type,
+     the Earth's first picture), a lap at a time, each lap ending in a breath; when they have come it finishes the lap
+     it is on and goes straight into its own drawing, and the rest comes up after it. On a first visit it always runs
+     at least a lap, and keeps on (three at most) until the first journey is ready too: the journeys start coming the
+     moment the dawn's pieces are in, so the laps, and then the reveal, and then the time spent taking the door in,
+     are when they come. On a later visit, with everything kept (sw.js), it comes straight up. */
+  const world = $("#door .world"), pre = world.querySelector(".earth image.pre");
+  const earthHere = world.classList.contains("earthy") || !pre ? Promise.resolve()
+    : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
+  const critical = Promise.all([document.fonts?.ready, earthHere]);
+  const firstLight = !doorLitOnce; doorLitOnce = true;
+  const minLaps = firstLight && firstVisit ? 1 : 0;
+  let here = false, journeyIn = false;
+  critical.then(() => { here = true; journey.warm().then(() => { journeyIn = true; }); warmJourneys(); });
+  let lit = false;
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); }); };
+  within(critical, 250).then(() => {
+    if (here && !minLaps) { light(); return; }
+    document.body.classList.add("loading");
+    const ring = $("#door .lockup .ring:not(.lux)");
+    let laps = 0;
+    const lap = () => {
+      laps++;
+      const enough = here && laps >= minLaps && (journeyIn || laps >= 3 || !minLaps);
+      if (enough || laps >= 6) { ring?.removeEventListener("animationiteration", lap); light(); }
+    };
+    ring?.addEventListener("animationiteration", lap);
+    /* without the animation (reduced motion), just the pieces */
+    if (!ring || getComputedStyle(ring).animationName === "none") within(critical, 8000).then(light);
+    setTimeout(light, 11000);
+  });
   /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
@@ -209,22 +226,25 @@ function leaveWorld() {
   });
 }
 function flyToPad(id) {
-  const planet = $(`#door .planet[data-section="${id}"]`);
-  if (id === "install" || id === "info") { startWhen(shotOf(PADS[id]).prepare?.(), () => goToWorld(id), planet); return; }
-  startWhen(Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]), () => flyNow(id), planet);
+  /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
+     world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
+  if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
+  flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]));
 }
-function flyNow(id) {
+function flyNow(id, ready = null) {
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
-  /* the docs' flight carries the chart when the chart is ready; otherwise the plain climb */
-  const carried = id === "docs" ? pad.ring.flight() : null;
-  pad.flown = carried ? docsFlight(carried) : pad.profile;
+  /* the docs' flight carries the chart, asked for when it is first wanted (the flight may start before the chart
+     has been read; it is wanted only at the end) */
+  let carried = null;
+  const carry = () => carried || (carried = pad.ring.flight?.() || null);
+  pad.flown = id === "docs" ? docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } }) : pad.profile;
   journey.fly(pad.flown, {
-    title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph,
+    title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph, ready,
     on: {
       release: leaveCurrent,
       /* the docs are ready to read as the sky lands; the others wait for their instrument */
-      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
+      land() { pad.el.hidden = false; current = id; if (carry()) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
       settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); },
     },
   });
@@ -250,9 +270,9 @@ function backToDawn() {
    instrument two seconds after it (the app's own beats, to the millisecond) */
 function launch() {
   if (current === "door") $("#gate").classList.add("flash");
-  startWhen(journey.warm(), launchNow, $("#gate"));
+  launchNow(journey.warm());
 }
-function launchNow() {
+function launchNow(ready = null) {
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }
   planets.hide();
   const h = home.household();
@@ -262,7 +282,7 @@ function launchNow() {
     name: o.name,
     bodies: o.items.filter((it) => it.status === "active").map((it) => { const p = law.dialPlacement(law.daysBetween(new Date(new Date().setHours(0, 0, 0, 0)), it.dueDate)); const r = 22 + Math.min(1, Math.max(0, (p.radius - 40) / 140)) * 58; return [Math.cos(p.angle) * r, Math.sin(p.angle) * r, SEC[o.sections.find((sc) => sc.id === it.section)?.accent] || "#8fb8ff", 3.2]; }),
   }));
-  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, on: {
+  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { history.replaceState(null, "", " "); } catch { /* fine */ } },
     settled() { document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); player.show(); },

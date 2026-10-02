@@ -504,30 +504,42 @@ export function createWorld(canvas, opts = {}) {
   const RING_K = opts.ringsOn === false ? 0 : 1, HAZE = opts.haze || [0.85, 0.82, 1.0];
   const GRADE = opts.grade || null;   /* [[dark], [middle], [light], how much] in linear light */
 
-  const compile = (type, src) => {
-    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-    return s;
-  };
+  /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile), and looked at only
+     once they are done (made), so making them never holds the door up; bake() waits for them */
+  const par = gl.getExtension("KHR_parallel_shader_compile");
+  const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const vs = compile(gl.VERTEX_SHADER, VERT);
   const program = (src) => {
-    const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, src));
+    const p = gl.createProgram(), fs = compile(gl.FRAGMENT_SHADER, src); gl.attachShader(p, vs); gl.attachShader(p, fs);
     gl.bindAttribLocation(p, 0, "p"); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
-    return { p, u };
+    return { p, fs, u: {} };
   };
   /* in light where the GPU can draw in floats; straight to the screen where it cannot */
   const hdr = floatOK;
-  let P;
-  try {
-    P = {
-      sky: program(SKY),
-      render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
-      down: hdr ? program(DOWN) : null, up: hdr ? program(UP) : null, film: hdr ? program(FILM) : null,
+  const P = {
+    sky: program(SKY),
+    render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
+    down: hdr ? program(DOWN) : null, up: hdr ? program(UP) : null, film: hdr ? program(FILM) : null,
+  };
+  const made = new Promise((resolve) => {
+    const all = Object.values(P).filter(Boolean);
+    const done = () => {
+      try {
+        for (const pr of all) {
+          if (!gl.getProgramParameter(pr.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr.p) || gl.getShaderInfoLog(pr.fs) || gl.getShaderInfoLog(vs));
+          const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
+          for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name] = gl.getUniformLocation(pr.p, a.name); }
+        }
+        resolve(true);
+      } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
-  } catch (e) { console.warn("orbit: the world could not be drawn", e); return null; }
+    if (!par) { done(); return; }
+    const poll = () => (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
+    poll();
+  });
+  /* each picture is put on the GPU on its own, in a pause between frames, one after another */
+  let uploads = Promise.resolve();
+  const inTurn = (fn) => (uploads = uploads.then(() => new Promise((r) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => r(fn()), { timeout: 400 }) : setTimeout(() => r(fn()), 16)))));
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -571,25 +583,25 @@ export function createWorld(canvas, opts = {}) {
   /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
   const loadMap = fetch(MAP).then((r) => { if (!r.ok) throw new Error(`${MAP}: ${r.status}`); return r.blob(); })
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => {
+    .then((img) => inTurn(() => {
       albT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(albT);
       SW = img.width; SH = img.height; img.close?.();
-    });
+    }));
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const loadRings = fetch(RINGS).then((r) => { if (!r.ok) throw new Error(`${RINGS}: ${r.status}`); return r.blob(); })
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
-    .then((img) => {
+    .then((img) => inTurn(() => {
       gl.bindTexture(gl.TEXTURE_2D, ringT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(ringT); img.close?.();
-    }, (e) => console.warn("orbit: the rings are drawn, not photographed", e));
+    }), (e) => console.warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
   const loadMoon = fetch(MOON).then((r) => { if (!r.ok) throw new Error(`${MOON}: ${r.status}`); return r.blob(); })
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); },
+    .then((img) => inTurn(() => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); }),
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
   let galT = null;
   const loadGalaxy = fetch(GALAXY).then((r) => { if (!r.ok) throw new Error(`${GALAXY}: ${r.status}`); return r.blob(); })
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); },
+    .then((img) => inTurn(() => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
       (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
   const jobs = [];
   const STRIPS = 4;
@@ -607,7 +619,7 @@ export function createWorld(canvas, opts = {}) {
   function bake() {
     if (!baking) baking = new Promise((res) => {
       const step = () => { if (galT) skyDone = true; else bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
-      loadGalaxy.then(() => requestAnimationFrame(step));
+      Promise.all([made, loadGalaxy]).then(([ok]) => (ok ? requestAnimationFrame(step) : res(false)));
     });
     return baking;
   }

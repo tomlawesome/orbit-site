@@ -152,8 +152,8 @@ export function demoFlight(homes) {
 /* the flight to the docs, carrying the chart: out of the dawn into the galaxy, from outside it down into an arm, to
    rest among its stars with the band across the sky (voyage.js, engine.js: milkyWay), where the chart's
    constellations light; nothing else passes on the way */
-export function docsFlight({ rect, geometry }) {
-  return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart: { rect, geometry } };
+export function docsFlight(chart) {
+  return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart };
 }
 export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
@@ -167,9 +167,15 @@ const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ 
    ready) is counted as no more than a frame or so. The flight and its beats both keep this time, so a stall pauses
    the journey where it is rather than skipping it ahead to the landing */
 function journeyClock() {
-  let t = 0, last = performance.now(), raf = 0;
+  let t = 0, last = performance.now(), raf = 0, hold = null;
   const pending = new Map(); let ids = 0;
-  const now = () => { const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p; return t; };
+  /* a hold: the clock stops at a point in the journey until something it needs has come (main.js gives it what the
+     flight draws), so a journey can start the moment it is chosen and still never draw before it is ready */
+  const now = () => {
+    const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p;
+    if (hold && !hold.done && t > hold.at) t = hold.at;
+    return t;
+  };
   const poll = () => {
     raf = 0; const at = now();
     for (const [id, b] of pending) if (b.at <= at) { pending.delete(id); b.fn(); }
@@ -178,6 +184,7 @@ function journeyClock() {
   return {
     now,
     schedule(fn, ms) { const id = ++ids; pending.set(id, { at: now() + ms, fn }); if (!raf) raf = requestAnimationFrame(poll); return id; },
+    holdAt(ms, until) { const h = { at: now() + ms, done: false }; hold = h; const free = () => { h.done = true; }; until.then(free, free); setTimeout(free, 8000); return h; },
     cancel(id) { pending.delete(id); },
   };
 }
@@ -269,15 +276,24 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
   }
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
   /* fly: any profile, from any surface's glyph, to whichever landing `on` describes */
-  function fly(profile, { title = "", subtitle = "", glyph = dawnGlyph, on: hooks = {} } = {}) {
+  function fly(profile, { title = "", subtitle = "", glyph = dawnGlyph, on: hooks = {}, ready = null } = {}) {
     cancelTimeline();
-    body.classList.remove(...CLASSES);
+    body.classList.remove(...CLASSES, "holding");
     flight = { profile, glyph, on: hooks };
     /* which way the flight goes, for the mark's tilt into it */
     mark.dataset.way = (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
-    cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1), ascentStep, clock);
+    let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1);
+    /* not yet ready: the journey still starts at once, but its opening is the mark lifting to the centre (which needs
+       nothing drawn), and the clock holds just before the flight's canvas comes up until what it draws is ready */
+    if (ready && !reduced) {
+      const warp = beats.find((b) => b.act === "warp")?.at ?? 0;
+      beats = beats.map((b) => (b.act === "mark" ? { ...b, at: Math.min(b.at, Math.max(0, warp - 80)) } : b));
+      body.classList.add("holding");
+      clock.holdAt(Math.max(0, warp - 10), ready.finally(() => body.classList.remove("holding")));
+    }
+    cancelTimeline = runTimeline(beats, ascentStep, clock);
   }
   const ascend = (o = {}) => fly(UP, o);
   function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {} } = {}) {
