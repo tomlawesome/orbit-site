@@ -7,7 +7,7 @@ import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
 import * as law from "./law.js";
-import { DAWN, DUSK, mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
+import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 
@@ -21,12 +21,15 @@ mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
 mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
 /* each surface's glows are drawn the first time it is shown, after its first
    frame is on screen, so the picture is up before the work behind it starts */
-const dawnRasters = mountRasters($("#door .world"), DAWN, "dawn");
+/* the glows are pictures now (tools/glows.cjs): mountRasters only keeps the rays turning about the sunrise point */
+const dawnRasters = mountRasters($("#door .world"), {}, "dawn");
 /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
+let earthIn = Promise.resolve();
 function loadEarth() {
-  const world = $("#door .world");
+  const world = $("#door .world"), pre = world.querySelector(".earth image.pre[data-href]");
+  if (pre) earthIn = new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
   for (const im of world.querySelectorAll(".earth image[data-href]")) {
-    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) { world.classList.add("earthy"); setTimeout(warmJourneys, 300); } }, { once: true });
+    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
     im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
   }
 }
@@ -56,7 +59,7 @@ function warmJourneys() {
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 let starting = false;
 const startWhen = (p, go) => { if (starting) return; starting = true; within(p, 1800).then(() => { starting = false; go(); }); };
-const duskRasters = mountRasters($("#dusk .world"), DUSK, "dusk");
+const duskRasters = mountRasters($("#dusk .world"), {}, "dusk");
 let dawnDrawn = false, duskDrawn = false;
 const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
 recall();
@@ -99,9 +102,14 @@ function showDoor() {
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
-  requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
+  /* first light waits for what it shows (the type, and the Earth's first picture), never more than 1.2 s; the
+     journeys are readied only once it has come up, so nothing competes with it */
+  const earthAsked = new Promise((r) => afterFirstFrame(() => earthIn.then(r)));   /* asked for by startDawn, just above */
+  within(Promise.all([document.fonts?.ready, earthAsked]), 1200).then(() => requestAnimationFrame(() => {
+    document.body.classList.add("lit");
+    setTimeout(warmJourneys, 3000);
+  }));
   /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
-  setTimeout(warmJourneys, 2500);
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
@@ -281,7 +289,7 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
 
 if (wantsPad) arrivePad(wantsPad); else if (arrived || wantsDrawer) arrive(); else showDoor();
 /* arriving anywhere but the door, the journeys are readied all the same, a little later */
-setTimeout(warmJourneys, 4000);
+if (current !== "door") setTimeout(warmJourneys, 4000);
 /* the site's own cache (sw.js): pictures kept a day, the code always fresh */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
   addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => { /* fine without it */ }); });
