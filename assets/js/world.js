@@ -517,18 +517,19 @@ export function createWorld(canvas, opts = {}) {
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const { small, MAP, RINGS, MOON, GALAXY } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
-  /* this world's look: the map's hue turned by opts.hue degrees (about the grey axis, in linear light), a little
-     richer by opts.sat; rings unless opts.ringsOn is false; the haze tinted opts.haze */
-  const HUE = (() => {
+  /* a world's look: the map's hue turned by o.hue degrees (about the grey axis, in linear light), a little richer by
+     o.sat; rings unless o.ringsOn is false; the haze tinted o.haze; graded by o.grade. One world can wear several
+     (the install's and the information's are the same world, compiled and loaded once: draw's v.look) */
+  const lookOf = (o) => ({ HUE: hueOf(o), RING_K: o.ringsOn === false ? 0 : 1, HAZE: o.haze || [0.85, 0.82, 1.0], GRADE: o.grade || null });
+  const hueOf = (opts) => {
     const a = ((opts.hue || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / 3, q = Math.sqrt(k);
     const m = [c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k + q * sn, (1 - c) * k + q * sn, c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k - q * sn, (1 - c) * k + q * sn, c + (1 - c) * k];
     const sat = opts.sat ?? 1, L = [0.2126, 0.7152, 0.0722];
     const S = [0, 1, 2].flatMap((r) => [0, 1, 2].map((cc) => L[cc] * (1 - sat) + (r === cc ? sat : 0)));
     const o = []; for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) o.push(S[r * 3] * m[cc] + S[r * 3 + 1] * m[3 + cc] + S[r * 3 + 2] * m[6 + cc]);
     return new Float32Array([o[0], o[3], o[6], o[1], o[4], o[7], o[2], o[5], o[8]]);   /* column-major */
-  })();
-  const RING_K = opts.ringsOn === false ? 0 : 1, HAZE = opts.haze || [0.85, 0.82, 1.0];
-  const GRADE = opts.grade || null;   /* [[dark], [middle], [light], how much] in linear light */
+  };
+  const LOOK = lookOf(opts);
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile), and looked at only
      once they are done (made), so making them never holds the door up; bake() waits for them */
@@ -678,6 +679,7 @@ export function createWorld(canvas, opts = {}) {
      moon [x,y,z,r], time, bg, sunVis, sunPx [x,y], expo } */
   function draw(v) {
     if (!baked) return;
+    const L = v.look || LOOK;
     gl.disable(gl.BLEND);
     /* the scene may be drawn at a part of the canvas's resolution (v.part), into that corner of its target, and
        brought up to the canvas by the film; everything given in canvas pixels is brought down with it */
@@ -689,8 +691,8 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
-      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, HUE); gl.uniform1f(u.uRingK, RING_K); gl.uniform3fv(u.uHazeT, HAZE);
-      gl.uniform1f(u.uGradeK, GRADE ? GRADE[3] : 0); if (GRADE) { gl.uniform3fv(u.uG0, GRADE[0]); gl.uniform3fv(u.uG1, GRADE[1]); gl.uniform3fv(u.uG2, GRADE[2]); }
+      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, L.HUE); gl.uniform1f(u.uRingK, L.RING_K); gl.uniform3fv(u.uHazeT, L.HAZE);
+      const G = L.GRADE; gl.uniform1f(u.uGradeK, G ? G[3] : 0); if (G) { gl.uniform3fv(u.uG0, G[0]); gl.uniform3fv(u.uG1, G[1]); gl.uniform3fv(u.uG2, G[2]); }
       bind(0, albT, u.uAlb); bind(1, galT || skyT || ringT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
@@ -715,7 +717,7 @@ export function createWorld(canvas, opts = {}) {
   /* waits for everything asked of the GPU so far to be done: for timing frames */
   const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
   return {
-    gl, bake, draw, resize, finish, made,
+    gl, bake, draw, resize, finish, made, lookOf,
     get baked() { return baked; },
     lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };
