@@ -135,12 +135,13 @@ body.showdawn #door{pointer-events:none}
 .world .defs{width:0;height:0;position:absolute}
 .world .dawnlayer,.world .rays,.world .sunpt{position:absolute;inset:0}
 #door .dsky .far{animation:driftf 360s linear infinite}
+#door .dsky .tws{animation:driftf 360s linear infinite,skytwinkle 4.5s ease-in-out var(--tw,0s) infinite alternate}
 #door .dsky .near{animation:driftn 180s linear infinite}
 #dusk .dsky .far{animation:recede 360s linear infinite}
+#dusk .dsky .tws{animation:recede 360s linear infinite,skytwinkle 4.5s ease-in-out var(--tw,0s) infinite alternate}
 #dusk .dsky .near{animation:recede 180s linear infinite}
 @keyframes recede{from{transform:translateX(calc(-1 * var(--tile,1600px)))}to{transform:translateX(0)}}
-.tw{animation:twinkle 4.5s ease-in-out infinite alternate}
-@keyframes twinkle{from{opacity:.15}to{opacity:.8}}
+@keyframes skytwinkle{from{opacity:1}to{opacity:.55}}
 /* first light: dawn breaks once on load, exactly as the login does it */
 .dawnlayer{opacity:0;transition:opacity 3s ease}
 body.lit .dawnlayer{opacity:1}
@@ -642,7 +643,7 @@ dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;colo
 @media (max-width:480px){.edge .swatches{display:none}}
 
 @media (prefers-reduced-motion:reduce){
-  .sky .far,.sky .near,#door .dsky .far,#door .dsky .near,#dusk .dsky .far,#dusk .dsky .near,.tw,.rays .sway1,.rays .sway2,
+  .sky .far,.sky .near,#door .dsky .far,#door .dsky .near,#dusk .dsky .far,#dusk .dsky .near,#door .dsky .tws,#dusk .dsky .tws,.rays .sway1,.rays .sway2,
   .world .breath,.shimmer,.dial.arrive,.dial.bloom,.dial .ping,.dial .breathe,.inbox-orb.waiting svg,
   .nstar .glint,.mark-row .tr,.loginchrome .lockup .glyph .tr,#dusk .afterglow,#dusk .belt{animation:none}
   .dial .ping{display:none}

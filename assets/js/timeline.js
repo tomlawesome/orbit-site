@@ -192,7 +192,9 @@ export function descentBeats() {
  * after it.
  */
 export function ascentBeatsReduced() {
+  /* the release lets the surface it left go (the door, under the landing), as the full flight's does */
   return [
+    { at: 0, act: "release" },
     { at: 0, act: "land" },
     { at: 700 + T.dwell, act: "instrument" },
   ];
@@ -206,6 +208,7 @@ export function ascentBeatsReduced() {
 export function newcomerAscentBeatsReduced() {
   const landed = 700 + T.newDwell;
   return [
+    { at: 0, act: "release" },
     { at: 0, act: "land" },
     { at: landed, act: "instrument" },
     { at: landed, act: "countOn" },
@@ -223,6 +226,7 @@ export function descentBeatsReduced() {
   return [
     { at: 0, act: "withdraw" },
     { at: 0, act: "disperse" },
+    { at: 0, act: "release" },
     { at: 0, act: "dusk" },
     { at: 0, act: "farewell" },
   ];
