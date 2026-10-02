@@ -34,7 +34,7 @@ uniform vec2 uRes; uniform float uPx, uTime;
 uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;
 uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
-uniform mat3 uSkyM; uniform float uStarA;
+uniform mat3 uSkyM; uniform float uStarA, uDens;
 uniform float uBloom, uPre; uniform vec2 uBloomPt;
 uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
 uniform float uNeb, uNebOff;
@@ -58,7 +58,8 @@ vec3 stars(vec3 d,float f){
     float h1=hash13(id+fi*31.0), h2=hash13(id.yzx+fi*17.0+5.0), h3=hash13(id.zxy+fi*13.0+11.0);
     vec3 sp=normalize((id+0.3+0.4*vec3(h1,h2,hash13(id+7.0+fi)))/sc);
     float px=acos(clamp(dot(d,sp),-1.0,1.0))/pxA;
-    float keep=step(i==0?0.6:i==1?0.55:0.45,h3);
+    float base=i==0?0.6:i==1?0.55:0.45;
+    float keep=step(mix(i==0?0.82:0.97,base,uDens),h3);
     float m=(i==0?0.6+pow(h1,3.0)*6.0:i==1?0.25+pow(h2,3.0)*1.5:0.08+0.3*h2)*keep;
     float tint=fract(h1*13.7+h2*7.1);
     vec3 col=tint<0.25?vec3(0.66,0.76,1.0):tint<0.6?vec3(1.0,0.97,0.94):tint<0.85?vec3(1.0,0.87,0.7):vec3(1.0,0.7,0.52);
@@ -101,7 +102,7 @@ vec3 streaks(vec2 css){
       for(int j=0;j<2;j++){
         float cj=cell+float(j);
         float hc=hash13(vec3(s,cj,float(i)));
-        if(hc>0.15) continue;
+        if(hc>0.15*mix(0.12,1.0,uDens)) continue;
         float head=off+hs*du+(cj+hash13(vec3(cj,s,9.0+float(i))))*du;
         float L=max(len,w*1.2/r);
         float along=(u-(head-L))/L;
@@ -271,7 +272,7 @@ void main(){
   float sp=abs(uSpeed);
   c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
   float dust; vec3 neb=nebula(css,dust);
-  c=c*(1.0-dust)+streaks(css)*mix(0.35,1.0,smoothstep(0.0,0.4,sp))*(1.0-dust*0.6)+neb;
+  c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
@@ -446,6 +447,8 @@ export function createVoyage(under) {
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
       gl.uniform4f(u.uEuroBox, ...EURO);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
+      /* how thick the field is: the door's sparse sky at rest, filling in as the flight gathers speed */
+      { const q = Math.min(1, Math.max(0, (Math.abs(s.v) - 0.03) / 0.6)); gl.uniform1f(u.uDens, q * q * (3 - 2 * q)); }
       const tu = s.tu ?? s.t, sm = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
       /* the nebula, through the cruise */
       gl.uniform1f(u.uNeb, sm(1200, 1750, tu) * (1 - sm(2350, 2950, tu))); gl.uniform1f(u.uNebOff, nebOff);

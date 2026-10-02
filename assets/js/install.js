@@ -90,7 +90,7 @@ export function createInstall(pad, opts = {}) {
   let frames = [], lastAdjust = 0, tick = 0, prev = null;
   /* how much of the canvas's resolution the scene is drawn at while the camera moves: measured before the first
      shot (calibrate), then kept to the frame rate; motion blur, the dolly's blur and the grain hide the difference */
-  let mq = 0.6, mframes = [], cap = 2;
+  let mq = 0.6, mframes = [];
 
   function ensure() {
     if (world || failed) return world;
@@ -105,7 +105,7 @@ export function createInstall(pad, opts = {}) {
     const dpr = devicePixelRatio || 1;
     /* drawn at the screen's own density, as sharp as the screen is; the governor gives way if frames come slow */
     /* … and no more than about 2560×1800 pixels in all, however dense and large the screen */
-    maxScale = Math.max(0.5, Math.min(dpr, cap, Math.sqrt(4.6e6 / Math.max(1, W * H))));
+    maxScale = Math.max(0.5, Math.min(dpr, 2, Math.sqrt(4.6e6 / Math.max(1, W * H))));
     if (!frames.length) scale = maxScale;
     lay = layoutFor(W, H);
     /* the moon: on the line through its place on the screen, out beyond the rings */
@@ -187,7 +187,7 @@ export function createInstall(pad, opts = {}) {
      (the dive's second half is slow, and the eye has time there) */
   function partAt() {
     if (!motion) return 1;
-    return mq + (1 - mq) * smooth(0.45, 0.85, u);
+    return mq + (1 - mq) * smooth(0.25, 0.7, u);
   }
   /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
      the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
@@ -200,9 +200,7 @@ export function createInstall(pad, opts = {}) {
     try {
       const t1 = time(0.4), t2 = time(0.8);
       const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16);
-      mq = clamp(Math.sqrt(Math.max(0, (15 - c) / d)), 0.3, 1);
-      /* if even the canvas's own passes are too slow, the canvas comes down too */
-      if (c > 11 && scale > 0.75) { cap = scale = Math.max(0.6, scale * Math.sqrt(11 / c)); maxScale = Math.min(maxScale, cap); w.resize(W, H, scale); }
+      mq = clamp(Math.sqrt(Math.max(0, (18 - c) / d)), 0.55, 1);
     } finally { u = keep; prev = null; }
   }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
@@ -211,14 +209,15 @@ export function createInstall(pad, opts = {}) {
     if (motion) {
       mframes.push(dt); if (mframes.length < 10) return;
       const avg = mframes.reduce((a, b) => a + b, 0) / mframes.length; mframes = [];
-      if (avg > 20) mq = Math.max(0.3, mq * 0.85); else if (avg < 12) mq = Math.min(1, mq * 1.05);
+      if (avg > 22) mq = Math.max(0.55, mq * 0.9); else if (avg < 13) mq = Math.min(1, mq * 1.05);
       return;
     }
     frames.push(dt); if (frames.length < 24) return;
     const avg = frames.reduce((a, b) => a + b, 0) / frames.length; frames = [];
     const now = performance.now(); if (now - lastAdjust < 900) return;
     let next = scale;
-    if (avg > 24) next = Math.max(0.45, scale * 0.82);
+    /* at rest the camera barely drifts: a slower frame shows far less than a softer picture, so it gives way late and not far */
+    if (avg > 40) next = Math.max(Math.max(0.6, maxScale * 0.7), scale * 0.85);
     else if (avg < 13 && !motion) next = Math.min(maxScale, scale * 1.1);
     if (Math.abs(next - scale) > 0.01) { scale = next; lastAdjust = now; world?.resize(W, H, scale); }
   }
