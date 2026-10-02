@@ -330,9 +330,9 @@ export function createInstall(pad, opts = {}) {
        z towards the eye. The dive starts in that light and turns to its own sun as the camera comes round */
     let light = null, rot = null;
     try {
-      const rot = getComputedStyle(scene.body, "::before").rotate;
-      if (rot && rot !== "none") {
-        const v = parseFloat(rot), th = /rad/.test(rot) ? v : /turn/.test(rot) ? v * Math.PI * 2 : (v * Math.PI) / 180;
+      const css = getComputedStyle(scene.body, "::before").rotate;
+      if (css && css !== "none") {
+        const v = parseFloat(css), th = /rad/.test(css) ? v : /turn/.test(css) ? v * Math.PI * 2 : (v * Math.PI) / 180;
         light = norm([-Math.sin(th) * 0.94, Math.cos(th) * 0.94, -0.1]); rot = th;
       }
     } catch { /* lit by its own sun from the first */ }

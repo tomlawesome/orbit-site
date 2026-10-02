@@ -122,7 +122,7 @@ export function mountRasters(world, groups, prefix) {
    and rides to the centre of the screen, and the name written once on the
    void. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, DEEP_SKIP, deepGrowth } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, DEEP_SKIP, deepGrowth, deepTilt } from "./engine.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -219,9 +219,11 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.style.left = `${left}px`; mark.style.top = `${top}px`; mark.style.width = `${size}px`; mark.style.height = `${size}px`;
     flip(r, left, top, size, size, ms);
   }
-  /* the docs' flight: the mark is not gathered up, it becomes the galaxy. Tilted by now just as the galaxy is seen,
-     its ring grows with the galaxy, exactly (engine.js: deepGrowth), its rim as the camera rushes in, and thins away
-     as it goes past the frame; its gold planet glides to the centre and gives itself to the galaxy's core */
+  /* the docs' flight: the mark is not gathered up, it becomes the galaxy. Face on, as the galaxy is first seen, its
+     ring grows with the galaxy, exactly (engine.js: deepGrowth), and tilts with it as the camera swings down across
+     the disc (deepTilt), its rim as the camera rushes in, and thins away as it goes past the frame; its gold planet
+     glides to the centre and gives itself to the galaxy's core */
+  const tiltAt = (tu) => `rotateX(${((deepTilt(tu) * 180) / Math.PI).toFixed(2)}deg)`;
   function dissolveMark() {
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
     const svg = mark.querySelector("svg"), [ring, , gold] = svg ? svg.querySelectorAll("circle") : [];
@@ -237,6 +239,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     const box = { transformOrigin: "100px 100px", transformBox: "view-box" };
     Object.assign(ring.style, box); Object.assign(gold.style, { transformBox: "view-box", transformOrigin: "163px 63.5px" });
     const a1 = ring.animate(frames, { duration: dur, easing: "linear", fill: "forwards" });
+    svg.animate(frames.map((fr, i) => ({ offset: fr.offset, transform: tiltAt(tu0 + (span * i) / 12) })), { duration: dur, easing: "linear", fill: "forwards" });
     gold.animate([
       { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
       { transform: "translate(-63px, 36.5px) scale(.9)", opacity: 1, offset: 0.55 },
@@ -245,7 +248,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     /* gone at its last frame (no fade back through its first look), and set straight only once it is out of sight */
     a1.finished.then(() => {
       mark.style.transition = "none"; mark.classList.remove("on");
-      setTimeout(() => { for (const el of [ring, gold]) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; } mark.style.transition = ""; }, 120);
+      setTimeout(() => { for (const el of [ring, gold, svg]) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; } mark.style.transition = ""; }, 120);
     }).catch(() => {});
   }
   /* coming back out of the docs' galaxy, the same thing backwards: as the galaxy shrinks to the size of the mark's ring
@@ -258,7 +261,6 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.style.transition = "none";
     Object.assign(mark.style, { left: `${left}px`, top: `${top}px`, width: `${size}px`, height: `${size}px` });
     mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
-    svg.style.transform = "rotateX(40deg)";
     ring.style.vectorEffect = "non-scaling-stroke";
     Object.assign(ring.style, { transformOrigin: "100px 100px", transformBox: "view-box" });
     Object.assign(gold.style, { transformBox: "view-box", transformOrigin: "163px 63.5px" });
@@ -270,6 +272,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
       frames.push({ offset: i / 12, transform: `scale(${k.toFixed(4)})`, opacity: Math.max(0, Math.min(1, 1 - (k - 1.15) / 1.6)) * 0.85 });
     }
     ring.animate(frames, { duration: dur, easing: "linear", fill: "forwards" });
+    svg.animate(frames.map((fr, i) => ({ offset: fr.offset, transform: tiltAt(tuA - (span * i) / 12) })), { duration: dur, easing: "linear", fill: "forwards" });
     gold.animate([
       { transform: "translate(-63px, 36.5px) scale(1.6)", opacity: 0 },
       { transform: "translate(-63px, 36.5px) scale(.9)", opacity: 1, offset: 0.45 },
@@ -281,6 +284,26 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     for (const el of svg.querySelectorAll("circle")) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; }
     svg.style.transform = "";
   }
+  /* the other flights: the mark is flown through. As the climb comes up to speed the ring opens past the edges of the
+     screen, a thin hoop the camera goes through, tipping a little as the climb steepens, and the gold planet sweeps
+     by close and is gone; the dawn's mark is set back behind it, unseen */
+  function flyThroughMark() {
+    for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
+    const svg = mark.querySelector("svg"), circles = svg ? [...svg.querySelectorAll("circle")] : [];
+    if (!circles.length || reduced) { dropMark(); return; }
+    const rate = flight.profile.rate || 1, dur = 760 / rate, timing = { duration: dur, easing: "cubic-bezier(.5,0,.9,.5)", fill: "forwards" };
+    circles[0].style.vectorEffect = "non-scaling-stroke";
+    const lean = flight.profile.vpX > 0.6 ? "rotateY(14deg)" : flight.profile.vpX < 0.4 ? "rotateY(-14deg)" : "rotateX(-16deg)";
+    const anims = circles.map((c) => {
+      Object.assign(c.style, { transformOrigin: "100px 100px", transformBox: "view-box" });
+      return c.animate([{ transform: "scale(1)", opacity: 1 }, { transform: "scale(2.4)", opacity: 1, offset: 0.5 }, { transform: "scale(9)", opacity: 0 }], timing);
+    });
+    anims.push(svg.animate([{ transform: "none" }, { transform: lean }], timing));
+    anims[0].finished.then(() => {
+      mark.style.transition = "none"; mark.classList.remove("on");
+      setTimeout(() => { anims.forEach((x) => x.cancel()); circles[0].style.vectorEffect = ""; mark.style.transition = ""; }, 120);
+    }).catch(() => {});
+  }
   function dropMark() {
     mark.classList.remove("on"); mark.classList.add("collapse");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
@@ -291,7 +314,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     const from = condensed ? mark.getBoundingClientRect() : { left: innerWidth / 2 - 18, top: innerHeight / 2 - 18, width: 36, height: 36 };
     if (condensed) {
       const svg = mark.querySelector("svg");
-      svg?.animate([{ transform: "rotateX(40deg)" }, { transform: "rotateX(0deg)" }], { duration: MARK_RIDE_DOWN / (descent.rate || 1), easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" })
+      svg?.animate([{ transform: tiltAt(T.markOut - T.warp) }, { transform: "rotateX(0deg)" }], { duration: MARK_RIDE_DOWN / (descent.rate || 1), easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" })
         .finished.then(() => { svg.getAnimations().forEach((x) => x.cancel()); settleMark(); }).catch(() => {});
     } else {
       mark.style.transition = "none";
@@ -312,7 +335,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
       case "mark": body.classList.remove("arming"); liftMark(flight.glyph(), innerHeight * 0.5, MARK_ARRIVE, MARK_RIDE_UP / (flight.profile.rate || 1)); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
       /* on the docs' flight the mark is not gathered up: its ring becomes the galaxy, so it dissolves into it */
-      case "markOut": if (flight.profile.ending === "chart") dissolveMark(); else dropMark(); break;
+      case "markOut": if (flight.profile.ending === "chart") dissolveMark(); else flyThroughMark(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
       case "land": body.classList.remove("showwarp", "launching"); body.classList.add("bare"); (flight.on.land ?? on.land)?.(); break;
