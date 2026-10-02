@@ -103,7 +103,10 @@ p{margin:0}
 
 /* the sky: two tiled layers, drifting (POL-11), never sitting still */
 .sky{position:fixed;inset:-4%;z-index:0;pointer-events:none;opacity:var(--stars);transition:opacity .4s;overflow:hidden}
-.sky svg{position:absolute;inset:0;width:100%;height:100%;will-change:transform}
+/* each layer is a tile of stars and its copy just past the right edge (sky.js); the layer is the screen's size, so
+   it must draw past its own edge for the copy to be there as the tile drifts off: a seamless loop, drawn once and
+   only moved (the compositor's), never redrawn */
+.sky svg{position:absolute;inset:0;width:100%;height:100%;will-change:transform;overflow:visible}
 .sky .far{animation:driftf 400s linear infinite}
 .sky .near{animation:driftn 195s linear infinite}
 /* the tile is 1600 units; --tile is that in pixels at this size (sky.js measures it) */
@@ -127,7 +130,7 @@ body.at-door .grain{opacity:.26}
 body.showdawn #door{pointer-events:none}
 #door .dsky,#dusk .dsky{position:absolute;inset:-4%;overflow:hidden}
 #door .dsky svg,#dusk .dsky svg,#door .world .wl,#dusk .world .wl{position:absolute;inset:0;width:100%;height:100%}
-#door .dsky svg,#dusk .dsky svg{will-change:transform}
+#door .dsky svg,#dusk .dsky svg{will-change:transform;overflow:visible}
 #door .world,#dusk .world{position:absolute;inset:0}
 .world .defs{width:0;height:0;position:absolute}
 .world .dawnlayer,.world .rays,.world .sunpt{position:absolute;inset:0}
@@ -135,7 +138,7 @@ body.showdawn #door{pointer-events:none}
 #door .dsky .near{animation:driftn 180s linear infinite}
 #dusk .dsky .far{animation:recede 360s linear infinite}
 #dusk .dsky .near{animation:recede 180s linear infinite}
-@keyframes recede{from{transform:translateX(-1600px)}to{transform:translateX(0)}}
+@keyframes recede{from{transform:translateX(calc(-1 * var(--tile,1600px)))}to{transform:translateX(0)}}
 .tw{animation:twinkle 4.5s ease-in-out infinite alternate}
 @keyframes twinkle{from{opacity:.15}to{opacity:.8}}
 /* first light: dawn breaks once on load, exactly as the login does it */
