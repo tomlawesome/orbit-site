@@ -120,7 +120,11 @@ export function createInstall(pad, opts = {}) {
     world = shared.world;
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     look = world.lookOf(opts.world || {});
-    shared.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
+    /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
+    shared.canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault(); world = null; failed = true; pad.classList.add("flat");
+      if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
+    });
     return world;
   }
   /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
@@ -434,7 +438,8 @@ export function createInstall(pad, opts = {}) {
     /* the shot back out to where the planet is on the door now */
     unform(scene) {
       return new Promise((resolve) => {
-        if (!world || reduced || !running) { resolve(); return; }
+        /* no shot without a world drawn and ready (still loading, or lost): the page simply goes */
+        if (!world || !world.baked || reduced || !running) { resolve(); return; }
         const dot0 = dotOf(scene, 1); dot0.from = fromFor(dot0.rot);
         placeFly(dot0);
         motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };

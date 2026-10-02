@@ -86,7 +86,7 @@ const player = createPlayer();
 let arrived = false;
 try { arrived = sessionStorage.getItem("orbit-site-arrived") === "1"; } catch { /* this visit only */ }
 if (MAINTENANCE) arrived = false;
-const wantsDrawer = MAINTENANCE ? null : location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
+let wantsDrawer = MAINTENANCE ? null : location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
 const wantsPad = MAINTENANCE ? null : ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash.split("/")[0]] ?? null;
 /* the landings: each a pad, a ring, and a way to fly there */
 const PADS = {
@@ -151,7 +151,8 @@ const compilesAside = MAINTENANCE || (() => {
   try { const gl = document.createElement("canvas").getContext("webgl2"); return !gl || !!gl.getExtension("KHR_parallel_shader_compile"); } catch { return true; }
 })();
 function showDoor() {
-  journey.reset(); hideAll(); current = "door";
+  journey.reset(); hideAll(); current = "door"; done();
+  $("#gate").classList.remove("flash");
   const door = $("#door");
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
   door.hidden = false; door.classList.add("shown");
@@ -203,10 +204,21 @@ function showDoor() {
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
-  if (current === "door") { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); }
-  else if (current && PADS[current]) { const pad = PADS[current]; pad.ring.stop(); pad.world?.stop(); setTimeout(() => { pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
-  else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); player.hide(); setTimeout(() => { h.hidden = true; }, 800); }
+  /* each let go a moment later, unless it has been come back to by then */
+  const was = current;
+  if (was === "door") { $("#door").classList.remove("shown"); setTimeout(() => { if (current !== "door") $("#door").hidden = true; }, 800); }
+  else if (was && PADS[was]) { const pad = PADS[was]; pad.ring.stop(); pad.world?.stop(); setTimeout(() => { if (current !== was) pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
+  else if (was === "home") { const h = $("#home"); h.classList.remove("shown"); player.hide(); setTimeout(() => { if (current !== "home") h.hidden = true; }, 800); }
 }
+/* one journey at a time: a second press (a key held down, a planet tabbed to mid-flight, the browser's back button
+   mid-dive) waits for the first to land. It lets go by itself if a journey never reports landing */
+let moving = 0;
+const begin = () => { if (moving) return false; moving = setTimeout(() => { moving = 0; }, 15000); return true; };
+const done = () => { clearTimeout(moving); moving = 0; };
+/* the browser's own back and forward: a journey from the door is a step in the history, so Back goes home the way
+   it came, and Forward goes out again. The back links use it too, when the step is there to go back along */
+const step = (hash) => { try { history.pushState({ orbit: 1 }, "", hash); } catch { /* fine */ } };
+const goBack = (fn) => () => { if (history.state?.orbit) history.back(); else fn(); };
 /* a section: the flight there, and the landing */
 /* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
 let sceneTimer = 0;
@@ -230,6 +242,7 @@ function goToWorld(id = "install") {
   pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = id;
   try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ }
   shot.form(scene).then(() => {
+    done();
     if (current !== id) return;
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
     document.body.classList.add("instrument", "arrived");
@@ -244,6 +257,7 @@ function goToWorld(id = "install") {
 }
 /* back to the dawn: the same shot out, the planet set down on its orbit wherever it has got to */
 function leaveWorld() {
+  if (!begin()) return;
   const id = current, pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   clearTimeout(sceneTimer);
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
@@ -259,14 +273,19 @@ function leaveWorld() {
   document.body.classList.add("departing", "racking", "covered", "at-door", "lit");
   document.body.classList.remove("instrument", "arrived");
   door.hidden = false; door.classList.add("shown");
+  /* the orbits laid out now (the door may not have been shown since a link brought the visitor straight here), so
+     the shot goes back to where the planet is */
+  planets.layout();
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   shot.unform(scene).then(() => {
-    shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
+    done(); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
 }
-function flyToPad(id) {
+function flyToPad(id, push = true) {
+  if (current !== "door" || !begin()) return;
+  if (push) step(`#${id}`);
   /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
   hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
@@ -287,7 +306,7 @@ function flyNow(id, ready = null) {
       release: leaveCurrent,
       /* the docs are ready to read as the sky lands; the others wait for their instrument */
       land() { pad.el.hidden = false; current = id; if (carry()) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
-      settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); },
+      settled() { done(); document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); },
     },
   });
 }
@@ -303,6 +322,7 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   if (current === "install" || current === "info") { leaveWorld(); return; }
+  if (!begin()) return;
   hurryChores(["flight", "docs"]);
   /* the docs go back out through their galaxy, even if they were come to straight (a link), not flown to */
   if (current === "docs" && !pad.flown) {
@@ -312,14 +332,16 @@ function backToDawn() {
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
+    farewell() { done(); const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });
 }
 
 /* the gate: the flight, whole — 4.8 seconds of climb, the bare sky, the
    instrument as the dial settles (timeline.js: the site's own amendment) */
-function launch() {
-  if (current === "door") $("#gate").classList.add("flash");
+function launch(push = true) {
+  if (current !== "door" || !begin()) return;
+  if (push) step("#home");
+  $("#gate").classList.add("flash");
   hurryChores("flight");
   launchNow(journey.warm());
 }
@@ -335,8 +357,8 @@ function launchNow(ready = null) {
   }));
   journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, ready, on: {
     release: leaveCurrent,
-    land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { history.replaceState(null, "", " "); } catch { /* fine */ } },
-    settled() { document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); player.show(); },
+    land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { if (!history.state?.orbit) history.replaceState(null, "", " "); } catch { /* fine */ } },
+    settled() { done(); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); wantsDrawer = null; player.show(); },
   } });
 }
 
@@ -346,7 +368,7 @@ function arrive() {
   $("#door").hidden = true; document.body.classList.remove("at-door"); current = "home";
   homeEl.hidden = false; home.renderGalaxy();
   requestAnimationFrame(() => homeEl.classList.add("shown"));
-  if (wantsDrawer) setTimeout(() => home.openDrawer(wantsDrawer, true), 900);
+  if (wantsDrawer) { const d = wantsDrawer; wantsDrawer = null; setTimeout(() => home.openDrawer(d, true), 900); }
   player.show();
 }
 
@@ -355,18 +377,20 @@ function signOut() {
   player.stop(false);
   home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
+  if (!begin()) return;
   const h = home.household();
-  journey.descend({ title: h.name, on: { farewell() { current = "dusk"; player.hide(); } } });
+  journey.descend({ title: h.name, on: { farewell() { done(); current = "dusk"; player.hide(); } } });
 }
 
 /* from the sky back to the dawn: the climb run backwards, landing on the door as the landings' "— the dawn" does */
 function homeToDawn() {
-  if (current !== "home") return;
+  if (current !== "home" || !begin()) return;
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
+      done();
       const h = $("#home"); h.classList.remove("shown"); h.hidden = true; player.hide();
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door";
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
@@ -375,13 +399,22 @@ function homeToDawn() {
     },
   } });
 }
-home.onBackHome(homeToDawn);
+home.onBackHome(goBack(homeToDawn));
+/* back and forward in the browser: the hash says where the visitor is to be */
+addEventListener("popstate", () => {
+  if (MAINTENANCE) return;
+  const h = location.hash.split("/")[0];
+  if (!h || h === "#") { if (PADS[current]) backToDawn(); else if (current === "home") homeToDawn(); return; }
+  if (current !== "door") return;
+  if (h === "#home") launch(false);
+  else { const id = { "#install": "install", "#docs": "docs", "#info": "info" }[h]; if (id) flyToPad(id, false); }
+});
 if (!MAINTENANCE) $("#gate").addEventListener("click", launch);
 $("#signout").addEventListener("click", signOut);
 $("#gate-back").addEventListener("click", showDoor);
 const planets = wirePlanets($("#door"), MAINTENANCE ? () => {} : flyToPad);
 for (const pad of Object.values(PADS)) {
-  pad.el.querySelector(".back.dawn").addEventListener("click", backToDawn);
+  pad.el.querySelector(".back.dawn").addEventListener("click", goBack(backToDawn));
 }
 /* the one line, copied wherever it is written */
 document.querySelectorAll("[data-copy]").forEach((el) => {
