@@ -617,8 +617,8 @@ dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;colo
 }
 
 /* ══ THE FLIGHT (the app's flight.css, verbatim where the site has the part) ══ */
-#warp{position:fixed;inset:0;z-index:38;opacity:0;pointer-events:none;transition:opacity 1.7s cubic-bezier(.45,.05,.55,.95)}
-body.showwarp #warp{opacity:1;transition:opacity .45s ease}
+#warp,#warpgl{position:fixed;inset:0;z-index:38;opacity:0;pointer-events:none;transition:opacity 1.7s cubic-bezier(.45,.05,.55,.95)}
+body.showwarp #warp,body.showwarp #warpgl{opacity:1;transition:opacity .45s ease}
 #flightmark{position:fixed;z-index:39;opacity:0;pointer-events:none;transition:opacity .35s ease}
 #flightmark.on{opacity:1}
 #flightmark.collapse{opacity:0;transform:scale(.05);transition:opacity .55s ease .1s,transform .7s cubic-bezier(.6,0,.9,.4)}
@@ -665,7 +665,7 @@ body.dispersing #home .dial,body.dispersing #home .minisys{animation:disperse .8
 @keyframes disperse{from{transform:scale(1);opacity:1;filter:blur(0)}to{transform:scale(1.68);opacity:0;filter:blur(10px)}}
 body.dispersing .transport{opacity:0}
 @media (prefers-reduced-motion:reduce){
-  #flightmark,#launchname,#warp{display:none!important}
+  #flightmark,#launchname,#warp,#warpgl{display:none!important}
   #flightmark svg{animation:none!important}
   body.bare #home .dial,body.bare #home .minisys,body.instrument #home .dial .chrome,body.instrument #home .orb,body.instrument #home .nstar,
   body.instrument #home .hero-foot,body.instrument #home .chips,body.instrument #home #manifest,body.instrument #home .back,body.instrument #home .drawer,
