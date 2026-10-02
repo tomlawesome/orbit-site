@@ -1261,7 +1261,7 @@ body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1
 /* the lit door: its world flares as the camera finds it, bright in its own colour, and the dive comes up out of the
    flare (install.js: flare), so the small picture never meets the world side by side */
 html.rich body.departing #door .planet.chosen .body{box-shadow:none;filter:brightness(1.5) drop-shadow(0 0 calc(4 * var(--u)) var(--c));opacity:0;
-  transition:transform .4s cubic-bezier(.3,0,.2,1),filter .26s ease,opacity .36s ease .22s}
+  transition:transform .24s cubic-bezier(.3,0,.2,1),filter .18s ease,opacity .2s ease .1s}
 /* the rack focus: the dawn goes soft and dim behind the planet */
 #door .dsky,#door .world{transition:filter .9s cubic-bezier(.4,0,.2,1)}
 body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}

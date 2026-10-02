@@ -65,7 +65,7 @@ export const TUNE = {
 const BASE = TUNE;
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
 /* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
-const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4, WAIT = 6000;
+const HOLD = 0.34, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4, WAIT = 6000;
 /* the door's picture of the install's planet (tools/planets.py): how its pole leans in the picture, so the shot can
    start (and end) looking at the rings exactly as the picture shows them */
 const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
@@ -281,6 +281,14 @@ export function createInstall(pad, opts = {}) {
       mq = clamp(Math.sqrt(Math.max(0, (18 - c) / d)), 0.55, 1);
     } finally { u = keep; prev = null; }
   }
+  /* the world drawn once, unseen, as soon as it is ready: a driver finishes a shader on its first draw, and that
+     first draw would otherwise be the dive's first frame, stalling it just as the door's planet gives way to it */
+  function touch() {
+    const w = world; if (!w || !w.baked || motion || reduced || shared?.touched || shared?.owner?.busy) return;
+    shared.touched = true;
+    const keep = u; u = 0.4;
+    try { draw(performance.now(), { part: mq, dustN: 18 }); draw(performance.now(), { part: 1, dustN: 30 }); w.finish(); } finally { u = keep; prev = null; }
+  }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
   function govern(dt) {
     /* while moving, the scene's part answers within a few frames; the canvas is left as it is */
@@ -321,9 +329,10 @@ export function createInstall(pad, opts = {}) {
         if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
-        /* the world comes up through the door's planet as it flares (site.css: departing), over a little longer than
-           the hold, so the camera is already moving as the one gives way to the other */
-        canvas.style.opacity = smooth(0.04, 0.42, t).toFixed(3);
+        /* the world comes up through the door's planet as it flares (site.css: departing), the two the same picture
+           (the same rings, the same light, the same size), and the camera holds still until the door's has gone, so
+           nothing differs while both are seen: then it moves */
+        canvas.style.opacity = smooth(0.02, 0.26, t).toFixed(3);
         u = clamp((t - HOLD) / APPROACH);
         motion.near?.(u);
         if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
@@ -378,7 +387,11 @@ export function createInstall(pad, opts = {}) {
         w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`));
         this.compiled = w ? w.made : Promise.resolve(false);
         this.prepared = (w ? w.bake() : Promise.resolve(false))
-          .then((ok) => { note(`${TAG}: ready`); return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false; });
+          .then((ok) => {
+            note(`${TAG}: ready`);
+            if (ok) chore(touch, 60, TAG);
+            return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
+          });
       }
       return this.prepared;
     },
