@@ -135,7 +135,7 @@ let doorLitOnce = false;
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not, the page
    stands still while the journeys' shaders compile, so that is done behind the running ring, never on the door */
 const compilesAside = (() => {
-  try { const gl = document.createElement("canvas").getContext("webgl2"); const ok = !!gl?.getExtension("KHR_parallel_shader_compile"); gl?.getExtension("WEBGL_lose_context")?.loseContext(); return ok || !gl; } catch { return true; }
+  try { const gl = document.createElement("canvas").getContext("webgl2"); return !gl || !!gl.getExtension("KHR_parallel_shader_compile"); } catch { return true; }
 })();
 function showDoor() {
   journey.reset(); hideAll(); current = "door";
