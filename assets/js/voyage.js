@@ -63,8 +63,8 @@ vec3 sky(vec2 css){
   vec3 d=normalize(vec3((css.x-uRes.x/uPx*0.5)/f,(uRes.y/uPx*0.5-css.y)/f,1.0));
   vec3 s=uSkyM*d;
   vec2 uv=vec2(atan(s.x,s.z)/TAU+0.5,0.5-asin(clamp(s.y,-1.0,1.0))/PI);
-  /* the night itself: the door's navy, where nothing else is */
-  vec3 c=vec3(0.0052,0.0095,0.0333);
+  /* the night itself: black, with only the faintest warmth of the galaxy's own light */
+  vec3 c=vec3(0.0011,0.0010,0.0010);
   if(uHas.w>0.5) c+=pow(texture(uSky,uv).rgb,vec3(2.2))*0.055;
   c+=stars(s,f*uPx)*0.16*uStarA;
   return c;
@@ -211,11 +211,11 @@ void main(){
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
-  c+=vec3(0.16,0.21,0.36)*sp*0.12*exp(-rv/(dg*0.45));
+  c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
   c+=streaks(css)*mix(0.35,1.0,smoothstep(0.0,0.4,sp));
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
-  c*=mix(vec3(1.0),mix(vec3(0.85,0.95,1.25),vec3(1.2,0.95,0.8),smoothstep(0.2,0.9,rv/dg)),dp*0.6);
+  c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
   if(uEarthA>0.0){
     float cov; vec3 e=earth(css,cov);
     c=mix(c,vec3(0.0),cov*uEarthA)+e*uEarthA;
@@ -398,6 +398,6 @@ export function createVoyage(under) {
     pass(P.film, null, CW, CH, (u) => { bind(0, hdr.t, u.uHdr); bind(1, chain[0].t, u.uBloom); gl.uniform2f(u.uRes, CW, CH);
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
-  function clear() { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.024, 0.043, 0.11, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+  function clear() { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
   return { canvas, resize, draw, advance, clear, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); frames = []; } };
 }

@@ -1060,18 +1060,20 @@ body.instrument #installpad .words{animation:chromein 2.4s ease .3s both}
 body.withdrawing #installpad .words{animation:chromeout .45s ease both}
 /* forming: the install is over the door with no floor of its own; the shot starts from the planet that was clicked */
 #installpad.forming{background:transparent;z-index:37}
+/* and above the door until the door has gone, so the dawn never shows through on arrival */
+body.departing #installpad.formed{z-index:37}
 #installpad.forming .back,#installpad.forming .home,#installpad.forming .doorfoot,#installpad.forming .words,#installpad.forming .scrim,#installpad.forming .poster{opacity:0;transition:opacity .6s ease;pointer-events:none;animation:none}
 #installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot,#installpad.formed .scrim{opacity:1;transition:opacity 2.4s ease}
 #installpad.forming .orbitgl{transition:none}
 /* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
 body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),
-body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity 1.6s ease}
+body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity .7s ease}
 /* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
 body.departing #door .planet.chosen .spin{animation-play-state:paused}
 body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1.5);box-shadow:0 0 calc(5 * var(--u)) calc(1.4 * var(--u)) rgba(167,139,250,.6);opacity:0;
-  transition:transform 1.1s cubic-bezier(.3,0,.2,1),box-shadow 1.1s ease,opacity .5s ease .7s}
+  transition:transform .35s cubic-bezier(.3,0,.2,1),box-shadow .35s ease,opacity .25s ease .2s}
 /* the rack focus: the dawn goes soft and dim behind the planet */
-#door .dsky,#door .world{transition:filter 1.5s cubic-bezier(.4,0,.2,1)}
+#door .dsky,#door .world{transition:filter .9s cubic-bezier(.4,0,.2,1)}
 body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}
 @media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}

@@ -70,7 +70,7 @@ function world0() {
   REST = TUNE.rest; FROM = TUNE.from;
 }
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
-const HOLD = 1.1, APPROACH = 12, SETTLE = 9.6, RETURN = 5;
+const HOLD = 0.3, APPROACH = 2.7, SETTLE = 2.5, RETURN = 2.4;
 
 function layoutFor(W, H) {
   const t = H > W * 1.1 ? TUNE.port : TUNE.land;
@@ -171,7 +171,7 @@ export function createInstall(pad, opts = {}) {
     let vel = prev ? mul(add(v.cam, mul(prev.cam, -1)), 1 / dtS / 60) : [0, 0, 0];
     const vl = Math.hypot(...vel); if (vl > 0.4) vel = mul(vel, 0.4 / vl);
     const zoom = prev ? Math.abs(Math.log(v.dist) - Math.log(prev.dist)) / dtS : 0;
-    const blur = reduced ? 0 : Math.min(12, zoom * H * 0.012) * s;
+    const blur = reduced ? 0 : Math.min(10, zoom * H * 0.006) * s;
     prev = { t: now, cam: v.cam, dist: v.dist };
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
@@ -239,7 +239,7 @@ export function createInstall(pad, opts = {}) {
         if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
-        canvas.style.opacity = smooth(0.55, HOLD, t).toFixed(3);
+        canvas.style.opacity = smooth(0.08, HOLD, t).toFixed(3);
         u = clamp((t - HOLD) / APPROACH);
         if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
         if (u >= 1) { motion = null; canvas.style.opacity = ""; }
