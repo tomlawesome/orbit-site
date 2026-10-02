@@ -151,7 +151,10 @@ export function createInstall(pad, opts = {}) {
     const rd = norm(add(v.fwd, add(mul(v.right, q[0]), mul(v.up, q[1]))));
     const b = dot(v.cam, rd), c = dot(v.cam, v.cam) - lay.moonR * lay.moonR, h = Math.sqrt(Math.max(0, b * b - c));
     moonPos = [...add(v.cam, mul(rd, -b + h > 0 ? -b + h : 12)), 0.075];
-    placeFly(null);
+    /* resized mid-shot: where the door's planet is now (the door lays its orbits out again), so the shot still
+       starts from it, or still comes back to it */
+    if (motion?.scene) { const d = dotOf(motion.scene, motion.reverse ? 1 : SWELL); d.from = fromFor(d.rot); motion.dot = d; }
+    placeFly(motion?.dot || null);
     /* the galaxy turned so its core and its band fall where they are wanted on this screen at rest */
     const at = (f) => { const px = f[0] * W - W / 2, py = H / 2 - f[1] * H; return norm(add(v.fwd, add(mul(v.right, (px - v.shift[0]) / lay.focal), mul(v.up, (py - v.shift[1]) / lay.focal)))); };
     const core = at(TUNE.sky.core), n = norm(cross(core, at(TUNE.sky.along))), x = cross(n, core);
@@ -432,7 +435,7 @@ export function createInstall(pad, opts = {}) {
         canvas.style.opacity = "0";
         u = 0; clock = 0; frames = [];
         placeFly(dot0);
-        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false, near: scene.near };
+        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false, near: scene.near, scene };
       });
     },
     /* the shot back out to where the planet is on the door now */
@@ -442,7 +445,7 @@ export function createInstall(pad, opts = {}) {
         if (!world || !world.baked || reduced || !running) { resolve(); return; }
         const dot0 = dotOf(scene, 1); dot0.from = fromFor(dot0.rot);
         placeFly(dot0);
-        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };
+        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near, scene };
       });
     },
     stop() {
