@@ -303,7 +303,7 @@ function backToDawn() {
 }
 
 /* the gate: the flight, whole — 4.8 seconds of climb, the bare sky, the
-   instrument two seconds after it (the app's own beats, to the millisecond) */
+   instrument as the dial settles (timeline.js: the site's own amendment) */
 function launch() {
   if (current === "door") $("#gate").classList.add("flash");
   hurryChores("flight");

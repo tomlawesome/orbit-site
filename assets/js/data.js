@@ -113,7 +113,7 @@ export function recall() {
   try { const raw = localStorage.getItem(STATE_KEY); return raw ? hydrate(JSON.parse(raw)) : false; } catch { return false; }
 }
 export function forget() {
-  try { localStorage.removeItem(STATE_KEY); localStorage.removeItem("orbit-theme"); sessionStorage.removeItem("orbit-site-arrived"); } catch { /* nothing kept */ }
+  try { localStorage.removeItem(STATE_KEY); localStorage.removeItem("orbit-pack"); sessionStorage.removeItem("orbit-site-arrived"); } catch { /* nothing kept */ }
 }
 
 /** The account: a fictional member, and their relay. */

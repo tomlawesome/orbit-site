@@ -124,16 +124,20 @@ export function mountGrain(host) {
 }
 
 /* the packs, as the account menu offers them */
+/* the pack chosen in the account menu is kept under this name. After dark has long been the default; a pack kept
+   under the old name may be left over from when the star chart was, so it is let go, and only a choice made since
+   is kept */
+const THEME_KEY = "orbit-pack";
 export function initTheme() {
   let t = null;
-  try { t = localStorage.getItem("orbit-theme"); } catch { /* private mode */ }
+  try { localStorage.removeItem("orbit-theme"); t = localStorage.getItem(THEME_KEY); } catch { /* private mode */ }
   document.documentElement.dataset.theme = PACKS.includes(t) ? t : "afterdark";
   syncSwatches();
 }
 export function applyTheme(id, remember = true) {
   if (!PACKS.includes(id)) return;
   document.documentElement.dataset.theme = id;
-  if (remember) { try { localStorage.setItem("orbit-theme", id); } catch { /* this page only */ } }
+  if (remember) { try { localStorage.setItem(THEME_KEY, id); } catch { /* this page only */ } }
   syncSwatches();
 }
 export function currentTheme() { return document.documentElement.dataset.theme; }
