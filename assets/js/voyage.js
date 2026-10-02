@@ -611,9 +611,13 @@ export function createVoyage(under) {
 
   /* the maps: asked for a little after the page is up, each used as soon as it has come */
   const maps = {};
+  /* each picture is put on the GPU on its own, in a pause between frames, one after another: never all at once */
+  let uploads = Promise.resolve();
+  const idle = (fn) => new Promise((r) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => r(fn()), { timeout: 400 }) : setTimeout(() => r(fn()), 16)));
+  const inTurn = (fn) => (uploads = uploads.then(() => idle(fn)));
   const load = (key) => fetch(TEX[key]).then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((bm) => {
+    .then((bm) => inTurn(() => {
       const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
       gl.generateMipmap(gl.TEXTURE_2D);
@@ -621,7 +625,7 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "euro" ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
-    }).catch(() => { /* drawn without it */ });
+    })).catch(() => { /* drawn without it */ });
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null;
   function warm() {

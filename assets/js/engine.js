@@ -963,7 +963,7 @@ export function createFlight(canvas, options = {}) {
     const now = camAt(tu), prev = camAt(tu - 21), back = smoothq(2600, 3900, tu);
     const galaxy3d = { w: smoothq(880, 1240, tu), P: now.P, R: now.R, prevP: prev.P, prevR: prev.R, gain: 5.5, starK: 0.09, page: back };
     const stars = [];
-    if (b > 0) {
+    if (b > 0 && chart.geometry) {
       const { rect, geometry: g } = chart, s = rect.w / g.W, ease = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 2.2);
       g.cons.forEach((con, gi) => {
         const u = (b - (0.12 + gi * 0.055)) / 0.55, c = hexLin(con.c);
@@ -984,7 +984,7 @@ export function createFlight(canvas, options = {}) {
   function drawEnding(kind, b, P) {
     if (b <= 0) return;
     const cx = W / 2, cy = H / 2;
-    if (kind === "chart" && P.chart) { drawChart(b, P.chart); return; }
+    if (kind === "chart" && P.chart) { if (P.chart.geometry) drawChart(b, P.chart); return; }
     if (kind === "ring") {
       ctx.lineWidth = 1.2;
       for (const [off, mul, spd] of [[0, 0.7, 0.42], [0.18, 0.35, 0.34], [0.36, 0.18, 0.28]]) {

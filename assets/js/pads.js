@@ -554,15 +554,30 @@ export function wirePlanets(door, onGo) {
     const s = Math.max(innerWidth / 1600, innerHeight / 1000), sx = innerWidth / 2, sy = innerHeight - 70 * s;
     return Math.atan2(-(sx - x), sy - y);
   };
-  /* in the rich look the orbits are three dimensional: each planet's orbit is a plane of its own, tilted back
-     from the face of the ring and turned a little about the line of sight, seen in perspective. The planets
+  /* in the rich look the orbits are three dimensional: each planet's orbit an ellipse in a plane of its own, tilted
+     back from the face of the ring and turned a little about the line of sight, seen in perspective. The planets
      go behind the ring and the name on the far side and in front of them on the near, a little larger and
      brighter as they come towards you. Drawn here each frame: the orbits' paths once, into the ring's own
      picture; each planet's place, size, depth and light; and its name beside it */
-  const ORBITS = { docs: { tilt: 61, node: -15, phase: 0.1 }, install: { tilt: 67, node: 10, phase: 0.433 }, info: { tilt: 64, node: -4, phase: 0.767 } }, DEPTH = 430, SHARED_DUR = 64000;
+  /* each orbit as a planet's is: an ellipse (a, its size in the ring's units; e, how far from round; w, where its
+     nearest point lies), in a plane of its own (tilt back from the face, turned by node about the line of sight),
+     gone round at Kepler's pace (the period growing as a^1.5, so the outer planets are slower) and faster near its
+     nearest point (the equal areas): their spacing changes, as real planets' does, and they meet only now and then */
+  const ORBITS = {
+    docs: { a: 86, e: 0.15, w: 35, tilt: 61, node: -15, M0: 0.1 },
+    install: { a: 102, e: 0.1, w: 160, tilt: 67, node: 10, M0: 0.45 },
+    info: { a: 116, e: 0.18, w: 285, tilt: 64, node: -4, M0: 0.78 },
+  }, DEPTH = 430, P0 = 46000;
   const rad = (d) => (d * Math.PI) / 180;
-  const project = (r, a, T, N) => {
-    const x = r * Math.sin(a), y = -r * Math.cos(a), yp = y * Math.cos(T), z = y * Math.sin(T);
+  /* the place on the ellipse at an eccentric anomaly E, in the orbit's plane */
+  const onEllipse = (o, E) => {
+    const xo = o.a * (Math.cos(E) - o.e), yo = o.a * Math.sqrt(1 - o.e * o.e) * Math.sin(E), w = rad(o.w);
+    return [xo * Math.cos(w) - yo * Math.sin(w), xo * Math.sin(w) + yo * Math.cos(w)];
+  };
+  /* Kepler's equation, M = E − e sin E, solved for E */
+  const anomaly = (o, M) => { let E = M; for (let i = 0; i < 6; i++) E -= (E - o.e * Math.sin(E) - M) / (1 - o.e * Math.cos(E)); return E; };
+  const project = ([x, y], T, N) => {
+    const yp = y * Math.cos(T), z = y * Math.sin(T);
     const X = x * Math.cos(N) - yp * Math.sin(N), Y = x * Math.sin(N) + yp * Math.cos(N), k = DEPTH / (DEPTH - z);
     return [X * k, Y * k, z, k];
   };
@@ -570,10 +585,10 @@ export function wirePlanets(door, onGo) {
   function setup3d() {
     const svg = door.querySelector("#login-glyph svg"), ring = svg?.querySelector(".ring:not(.lux)");
     orbits3d = planets.map(({ p, spin }) => {
-      const o = ORBITS[p.dataset.section] || { tilt: 70, node: 0, phase: 0 };
+      const o = ORBITS[p.dataset.section] || { a: +p.dataset.r, e: 0, w: 0, tilt: 65, node: 0, M0: 0 };
       const bs = parseFloat(getComputedStyle(p.querySelector(".body")).getPropertyValue("--bs")) || 15;
-      /* in three dimensions they share one pace, a third of an orbit apart, so they never gather in a bunch */
-      const rec = { T: rad(o.tilt), N: rad(o.node), dur: SHARED_DUR, t0: o.phase * SHARED_DUR, spin, bs, anims: [], hover: false };
+      const dur = P0 * Math.pow(o.a / ORBITS.docs.a, 1.5);
+      const rec = { o, T: rad(o.tilt), N: rad(o.node), dur, t0: o.M0 * dur, spin, bs, anims: [], hover: false };
       /* the system stops while a planet is under the pointer (all of it, so they keep their spacing), and a planet
          stays stopped while the camera goes to it */
       const sync = () => { const stop = orbits3d.some((r) => r.hover) || p.classList.contains("chosen") || reduced; rec.anims.forEach((x) => (stop ? x.pause() : x.play())); };
@@ -589,10 +604,10 @@ export function wirePlanets(door, onGo) {
       const NS = "http://www.w3.org/2000/svg", far = document.createElementNS(NS, "g"), near = document.createElementNS(NS, "g");
       far.setAttribute("class", "o3 far lux"); near.setAttribute("class", "o3 near lux");
       planets.forEach(({ rb }, i) => {
-        const { T, N } = orbits3d[i], runs = { far: [], near: [] };
+        const { o, T, N } = orbits3d[i], runs = { far: [], near: [] };
         let cur = null, side = null;
         for (let k = 0; k <= 180; k++) {
-          const [X, Y, z] = project(rb * 200, (k / 180) * Math.PI * 2, T, N), sd = z < 0 ? "far" : "near";
+          const [X, Y, z] = project(onEllipse(o, (k / 180) * Math.PI * 2), T, N), sd = z < 0 ? "far" : "near";
           if (sd !== side) { if (cur) cur.push([X, Y]); cur = []; runs[sd].push(cur); side = sd; }
           cur.push([X, Y]);
         }
@@ -624,7 +639,7 @@ export function wirePlanets(door, onGo) {
       const spinK = [], bodyK = [], tagK = [], zK = [];
       let prev = null, side = null;
       for (let j = 0; j <= STEPS; j++) {
-        const offset = j / STEPS, [X, Y, z, k] = project(rb * 200, offset * Math.PI * 2, o.T, o.N), zr = z / (rb * 200 * Math.sin(o.T));
+        const offset = j / STEPS, [X, Y, z, k] = project(onEllipse(o.o, anomaly(o.o, offset * Math.PI * 2)), o.T, o.N), zr = z / (o.o.a * (1 + o.o.e) * Math.sin(o.T));
         const x = X * u, y = Y * u;
         spinK.push({ offset, transform: `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${k.toFixed(4)})`, opacity: +(0.66 + (0.34 * (zr + 1)) / 2).toFixed(3) });
         /* the light: the sun's angle, unwound so the picture never spins the long way round between steps */
