@@ -571,12 +571,16 @@ export function wirePlanets(door, onGo) {
     orbits3d = planets.map(({ p, spin }) => {
       const o = ORBITS[p.dataset.section] || { tilt: 70, node: 0 }, cs = getComputedStyle(p);
       const dur = parseFloat(cs.getPropertyValue("--dur")) || 60, delay = parseFloat(cs.getPropertyValue("--delay")) || 0;
-      let paused = false;
-      const hold = (v) => () => { paused = v; };
+      const bs = parseFloat(getComputedStyle(p.querySelector(".body")).getPropertyValue("--bs")) || 15;
+      const rec = { T: rad(o.tilt), N: rad(o.node), dur: dur * 1000, t0: ((((-delay * 1000) % (dur * 1000)) + dur * 1000) % (dur * 1000)), spin, bs, anims: [], hover: false };
+      /* a planet stops under the pointer, and while the camera goes to it */
+      const sync = () => { const stop = rec.hover || p.classList.contains("chosen") || reduced; rec.anims.forEach((x) => (stop ? x.pause() : x.play())); };
+      const hold = (v) => () => { rec.hover = v; sync(); };
       p.addEventListener("pointerenter", hold(true)); p.addEventListener("pointerleave", hold(false));
       p.addEventListener("focus", hold(true)); p.addEventListener("blur", hold(false));
-      const bs = parseFloat(getComputedStyle(p.querySelector(".body")).getPropertyValue("--bs")) || 15;
-      return { T: rad(o.tilt), N: rad(o.node), w: (Math.PI * 2) / dur, a: (-delay / dur) * Math.PI * 2, paused: () => paused || p.classList.contains("chosen"), spin, bs };
+      new MutationObserver(sync).observe(p, { attributes: true, attributeFilter: ["class"] });
+      rec.sync = sync;
+      return rec;
     });
     /* the paths: the far half under the ring, the near half over it */
     if (svg && ring) {
@@ -601,40 +605,64 @@ export function wirePlanets(door, onGo) {
       ring.after(near);
     }
   }
-  let then = 0;
-  function place3d(now) {
+  /* the motion is given to the compositor, so it carries on whatever the page is busy with (the journeys load
+     in the background a moment after the dawn comes up): each planet's whole orbit is worked out once, here,
+     into keyframes (its place, size and depth; the turn of its picture towards the sun; its name's place), and
+     played on a loop at its own pace. Only the change of side, behind the ring or in front, is left to the
+     page, and that falls at the two ends of the orbit, out past the ring, where nothing is crossed */
+  const STEPS = 144;
+  function build3d() {
     if (!orbits3d) setup3d();
-    const dt = Math.min(0.25, then ? (now - then) / 1000 : 0); then = now;
-    if (door.hidden || !size) return;
+    measure();
+    if (!size) return;
     const u = size / 200;
     planets.forEach(({ body, tag, rb }, i) => {
-      const o = orbits3d[i];
-      if (!reduced && !o.paused()) o.a += o.w * dt;
-      const [X, Y, z, k] = project(rb * 200, o.a, o.T, o.N), zr = z / (rb * 200 * Math.sin(o.T));
-      const x = X * u, y = Y * u;
-      o.spin.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${k.toFixed(3)})`;
-      o.spin.style.zIndex = z < 0 ? "1" : "5";
-      body.style.opacity = (0.66 + 0.34 * (zr + 1) / 2).toFixed(3);
-      body.style.setProperty("--lr", `${lightAt(cx + x, cy + y).toFixed(3)}rad`);
-      /* the name: out from the centre, just past the world, upright; beside it when the world is low */
-      const d = Math.hypot(x, y) || 1, ux = x / d, uy = y / d, off = (o.bs / 2) * k * u + 7 * u;
-      const below = smooth(0.6, 0.9, uy), sideX = ux >= 0 ? 1 : -1;
-      let tx = x + ux * off, ty = y + uy * off, ax = -50 + 50 * clamp(ux / 0.5), ay = -50 + 50 * clamp(uy / 0.6);
-      tx += (x + sideX * off - tx) * below; ty += (y - ty) * below;
-      ax += ((sideX > 0 ? 0 : -100) - ax) * below; ay += (-50 - ay) * below;
-      const w = widths[i] || 0, left = cx + tx + (ax / 100) * w, right = left + w;
-      if (left < 8) tx += 8 - left; else if (right > innerWidth - 8) tx -= right - (innerWidth - 8);
-      tag.style.transform = `translate(calc(${tx.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${ty.toFixed(1)}px + ${ay.toFixed(1)}%))`;
-      tag.style.opacity = (0.7 + 0.3 * (zr + 1) / 2).toFixed(3);
+      const o = orbits3d[i], at = o.anims[0] ? o.anims[0].currentTime : o.t0;
+      o.anims.forEach((x) => x.cancel());
+      const spinK = [], bodyK = [], tagK = [], zK = [];
+      let prev = null, side = null;
+      for (let j = 0; j <= STEPS; j++) {
+        const offset = j / STEPS, [X, Y, z, k] = project(rb * 200, offset * Math.PI * 2, o.T, o.N), zr = z / (rb * 200 * Math.sin(o.T));
+        const x = X * u, y = Y * u;
+        spinK.push({ offset, transform: `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${k.toFixed(4)})`, opacity: +(0.66 + (0.34 * (zr + 1)) / 2).toFixed(3) });
+        /* the light: the sun's angle, unwound so the picture never spins the long way round between steps */
+        let th = lightAt(cx + x, cy + y);
+        if (prev !== null) th = prev + (((th - prev + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        prev = th; bodyK.push({ offset, rotate: `${th.toFixed(4)}rad` });
+        /* the name: out from the centre, just past the world, upright; beside it when the world is low */
+        const d = Math.hypot(x, y) || 1, ux = x / d, uy = y / d, off = (o.bs / 2) * k * u + 7 * u;
+        const below = smooth(0.6, 0.9, uy), sx = ux >= 0 ? 1 : -1;
+        let tx = x + ux * off, ty = y + uy * off, ax = -50 + 50 * clamp(ux / 0.5), ay = -50 + 50 * clamp(uy / 0.6);
+        tx += (x + sx * off - tx) * below; ty += (y - ty) * below;
+        ax += ((sx > 0 ? 0 : -100) - ax) * below; ay += (-50 - ay) * below;
+        const w = widths[i] || 0, left = cx + tx + (ax / 100) * w, right = left + w;
+        if (left < 8) tx += 8 - left; else if (right > innerWidth - 8) tx -= right - (innerWidth - 8);
+        tagK.push({ offset, transform: `translate(calc(${tx.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${ty.toFixed(1)}px + ${ay.toFixed(1)}%))` });
+        const sd = z < 0 ? 1 : 5;
+        if (sd !== side) { zK.push({ offset, zIndex: sd }); side = sd; }
+      }
+      /* the side held flat between its changes */
+      const zSteps = [];
+      zK.forEach((kf, n) => { zSteps.push(kf); const next = zK[n + 1]; zSteps.push({ offset: next ? next.offset : 1, zIndex: kf.zIndex }); });
+      const timing = { duration: o.dur, iterations: Infinity, easing: "linear" };
+      o.anims = [o.spin.animate(spinK, timing), body.animate(bodyK, { ...timing, pseudoElement: "::before" }), tag.animate(tagK, timing), o.spin.animate(zSteps.map((k, n) => ({ ...k, offset: Math.min(1, k.offset + (n % 2 ? -1e-6 : 0)) })), timing)];
+      o.anims.forEach((x) => { x.currentTime = at; });
+      o.sync();
     });
-    if (goldBody) {
-      const a = angleOf(gold);
-      if (a !== null) { const g = a + GOLD_AT; goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`); }
-    }
   }
+  let built = false;
+  addEventListener("resize", () => { if (rich && built) build3d(); });
   function place(now) {
     if (!size) measure();
-    if (rich) { place3d(now); requestAnimationFrame(place); return; }
+    if (rich) {
+      if (!built && size && !door.hidden) { built = true; build3d(); }
+      /* only the gold world's light is turned here, a little at a time: it rides the ring on its own */
+      if (built && goldBody && now - last > 48) {
+        last = now; const a = angleOf(gold);
+        if (a !== null) { const g = a + GOLD_AT; goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`); }
+      }
+      requestAnimationFrame(place); return;
+    }
     if (!door.hidden && now - last > 48 && size) {
       last = now;
       planets.forEach(({ spin, body, tag, r, rb }, i) => {
