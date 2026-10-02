@@ -13,7 +13,7 @@
  * createWorld(canvas) → null when WebGL2 is not there; otherwise
  *   { bake(sync), baked, draw(view), resize(w, h, scale), lose() }
  */
-import { chore } from "./chores.js";
+import { chore, fetchOnce } from "./chores.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -481,16 +481,29 @@ function ringProfile(n) {
   return px;
 }
 
+/* a world's pictures: the planet's map, its rings, the moon, the galaxy (smaller on a small screen) */
+function picturesOf(opts) {
+  const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
+  return {
+    small,
+    MAP: opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
+    RINGS: opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href,
+    MOON: opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href,
+    GALAXY: opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href,
+  };
+}
+/** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */
+export function fetchWorld(opts = {}) {
+  const p = picturesOf(opts);
+  for (const url of [p.MAP, p.RINGS, p.MOON, p.GALAXY]) fetchOnce(url).catch(() => {});
+}
+
 export function createWorld(canvas, opts = {}) {
   const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "high-performance" });
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
-  const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
-  const MAP = opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href;
-  const RINGS = opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href;
-  const MOON = opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href;
-  const GALAXY = opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href;
+  const { small, MAP, RINGS, MOON, GALAXY } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
   /* this world's look: the map's hue turned by opts.hue degrees (about the grey axis, in linear light), a little
      richer by opts.sat; rings unless opts.ringsOn is false; the haze tinted opts.haze */
@@ -539,7 +552,7 @@ export function createWorld(canvas, opts = {}) {
     poll();
   });
   /* each picture is put on the GPU as a chore of its own (chores.js), one after another, never while the door comes up */
-  const inTurn = (fn) => chore(fn);
+  const inTurn = (fn) => chore(fn, 60, opts.tag);
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -581,25 +594,25 @@ export function createWorld(canvas, opts = {}) {
   const bind = (unit, t, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); };
 
   /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
-  const loadMap = fetch(MAP).then((r) => { if (!r.ok) throw new Error(`${MAP}: ${r.status}`); return r.blob(); })
+  const loadMap = fetchOnce(MAP)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => inTurn(() => {
       albT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(albT);
       SW = img.width; SH = img.height; img.close?.();
     }));
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const loadRings = fetch(RINGS).then((r) => { if (!r.ok) throw new Error(`${RINGS}: ${r.status}`); return r.blob(); })
+  const loadRings = fetchOnce(RINGS)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
     .then((img) => inTurn(() => {
       gl.bindTexture(gl.TEXTURE_2D, ringT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(ringT); img.close?.();
     }), (e) => console.warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
-  const loadMoon = fetch(MOON).then((r) => { if (!r.ok) throw new Error(`${MOON}: ${r.status}`); return r.blob(); })
+  const loadMoon = fetchOnce(MOON)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => inTurn(() => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); }),
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
   let galT = null;
-  const loadGalaxy = fetch(GALAXY).then((r) => { if (!r.ok) throw new Error(`${GALAXY}: ${r.status}`); return r.blob(); })
+  const loadGalaxy = fetchOnce(GALAXY)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => inTurn(() => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
       (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));

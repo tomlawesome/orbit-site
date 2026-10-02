@@ -20,13 +20,15 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
-import { chore } from "./chores.js";
+import { chore, fetchOnce } from "./chores.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
   euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"), moon: IMG("install/moon.webp"),
 };
+/** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
+export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 const EURO = [2, 24, 38, 55];
 
@@ -620,8 +622,8 @@ export function createVoyage(under) {
   const maps = {};
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
      chore of its own (chores.js): never all at once, and never while the door is still coming up */
-  const inTurn = (fn) => chore(fn);
-  const load = (key) => fetch(TEX[key]).then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
+  const inTurn = (fn) => chore(fn, 60, "flight");
+  const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => inTurn(() => {
       const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -639,13 +641,14 @@ export function createVoyage(under) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
       warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon"].map(load)])
-        .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }))
+        .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
-        .then(() => chore(() => touch(ST())))
-        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 })))
-        .then(() => chore(() => touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] })))
-        .then(() => chore(calibrate, 200));
+        .then(() => chore(() => touch(ST()), 60, "flight"))
+        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"))
+        .then(() => chore(() => touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }), 60, "flight"));
+      /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
+      warming.then(() => chore(calibrate, 200, "measure"));
     }
     return warming;
   }

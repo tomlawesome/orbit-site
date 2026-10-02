@@ -688,7 +688,7 @@ body.withdrawing #home .dial .chrome{animation:withdraw .6s cubic-bezier(.55,0,.
 body.withdrawing #home .orb,body.withdrawing #home .nstar,body.withdrawing #home .drawer,body.withdrawing #home .hero-foot,
 body.withdrawing #home .chips,body.withdrawing #home #manifest,body.withdrawing #home .back,body.withdrawing .transport{animation:chromeout .45s ease both}
 @keyframes withdraw{from{transform:scale(1);opacity:1}45%{opacity:.6}to{transform:scale(.16);opacity:0}}
-@keyframes chromeout{from{opacity:1}to{opacity:0}}
+@keyframes chromeout{to{opacity:0}}
 body.dispersing #home{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
 body.dispersing #home .dial,body.dispersing #home .minisys{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
 @keyframes disperse{from{transform:scale(1);opacity:1;filter:blur(0)}to{transform:scale(1.68);opacity:0;filter:blur(10px)}}

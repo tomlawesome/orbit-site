@@ -17,6 +17,8 @@ const page = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;bac
 <canvas id="c"></canvas><script type="module">
 import { createFlight } from "./assets/js/engine.js";
 import { docsFlight } from "./assets/js/flight.js";
+import { openChores } from "./assets/js/chores.js";
+openChores();
 const e = createFlight(document.getElementById("c"));
 await e.warm();
 const P = docsFlight({ rect: { x: 0, y: 0, w: innerWidth, h: innerHeight }, geometry: { W: 1600, H: 900, field: { dots: [], arcs: [] }, cons: [] } });

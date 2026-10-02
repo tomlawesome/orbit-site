@@ -7,34 +7,57 @@
  * the door has finished coming up (open). The network is not a chore: pictures are fetched (and decoded) as soon
  * as they are asked for, off the page's own thread; only what touches the page or the GPU waits its turn.
  *
- * When a journey is chosen, what is left is done straight away (hurry), a frame between each piece, hidden in the
- * journey's opening.
+ * When a journey is chosen, what that journey still needs is done straight away (hurry), a frame between each piece,
+ * hidden in the journey's opening; everything else is put off until the journey is under way (the chores are
+ * tagged by what they ready: "flight", "docs", "install", "info"), so nothing it does not need stalls it. The
+ * measures (frames timed to fit the drawing to the machine: "measure") are never hurried.
  */
 const queue = [];
-let open = false, hurrying = false, running = false;
+let open = false, running = false, want = null, until = 0, wake = 0;
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 60));
 
 function pump() {
-  if (running || !queue.length || (!open && !hurrying)) return;
+  if (running || !queue.length) return;
+  const now = performance.now();
+  /* what the chosen journey needs, first */
+  let i = want ? queue.findIndex((j) => want.includes(j.tag)) : -1;
+  const hurried = i >= 0;
+  if (!hurried) {
+    if (!open) return;
+    /* the rest waits until the journey has had its opening */
+    if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
+    i = 0;
+  }
   running = true;
   const run = () => {
-    const job = queue.shift();
+    const [job] = queue.splice(Math.min(i, queue.length - 1), 1);
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
       running = false;
       /* a rest between chores: a couple of frames, so whatever is moving keeps moving; hurried, still a frame */
-      if (hurrying) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(pump, job.rest)));
+      if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(pump, job.rest)));
     });
   };
-  if (hurrying) setTimeout(run, 0); else idle(run);
+  if (hurried) setTimeout(run, 0); else idle(run);
 }
 
-/** queue a piece of work; resolves with what it returns (or what its promise resolves to) */
-export function chore(fn, rest = 60) {
-  return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest }); pump(); });
+/** queue a piece of work for a journey (tag); resolves with what it returns (or what its promise resolves to) */
+export function chore(fn, rest = 60, tag = "") {
+  return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
 /** the door is up: the chores may begin */
 export function openChores() { open = true; pump(); }
-/** a journey is chosen: what is left is done now */
-export function hurryChores() { hurrying = true; pump(); }
+/** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms) */
+export function hurryChores(tags, opening = 6000) {
+  want = [].concat(tags || []);
+  until = Math.max(until, performance.now() + opening);
+  open = true; pump();
+}
+
+/* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
+const fetched = new Map();
+export function fetchOnce(url) {
+  if (!fetched.has(url)) fetched.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); }));
+  return fetched.get(url);
+}

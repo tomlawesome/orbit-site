@@ -21,7 +21,7 @@
  * climbing into is not yet yours to have chosen. If it is ever asked to wear
  * the reader's pack, PACK is the only object that changes.
  */
-import { createVoyage } from "./voyage.js";
+import { createVoyage, fetchVoyage } from "./voyage.js";
 import { chore } from "./chores.js";
 import { seededRng } from "./sky.js";
 
@@ -228,6 +228,10 @@ export function deepDistance(tu, H) {
   const e = Math.pow(Math.min(1, Math.max(0, (tu - FAR_T0) / (FAR_T1 - FAR_T0))), 1.7);
   return d0 * Math.pow(A_LEN / d0, e);
 }
+/* the way back out of the docs' galaxy is under way at once: the first of the descent, where the camera would only
+   sit at rest (the climb's arrival, braked to nothing, played backwards), is passed over (this much of the climb's
+   time); the chart's lights keep their own time, so they still go out one by one, from the first */
+export const DEEP_SKIP = 1000;
 /** how much larger the galaxy looks than the mark's ring, at tu */
 export const deepGrowth = (tu, H) => deepDistance(FAR_T0, H) / deepDistance(tu, H);
 
@@ -921,7 +925,7 @@ export function createFlight(canvas, options = {}) {
     /* THE REVEAL, read forwards on the climb and backwards on the descent —
        so the arrival's slow bloom is also the departure's slow contraction.
        site: a profile may name another ending; the app's own is the bloom. */
-    const q = bloomAt(active.rev ? mirror(tc) : tc);
+    const q = bloomAt(active.rev ? mirror(tc) + (P.skipTu || 0) : tc);
     /* with the voyage, its star carries the first of the bloom; this canvas's own takes over only for the
        last of it, so the landing is handed the same full light as ever */
     if (!P.ending || P.ending === "bloom") drawBloom(voyage ? Math.max(0, (q - 0.45) / 0.55) : q); else drawEnding(P.ending, q, P);
@@ -1111,7 +1115,8 @@ export function createFlight(canvas, options = {}) {
       if (n.p0 === undefined) n.p0 = n.p;
       n.p = n.p0;                      /* every run starts from the same dust */
     }
-    flight = { P, rev: !!P.rev, start: clock(), last: clock(), props: P.props, dpr };
+    /* a flight may start a little way into itself (P.skip, in its own time) */
+    flight = { P, rev: !!P.rev, start: clock() - (P.skip || 0) / (P.rate || 1), last: clock(), props: P.props, dpr };
     voyage?.reset();
   }
 
@@ -1121,10 +1126,11 @@ export function createFlight(canvas, options = {}) {
     warm() {
       if (!warmed) {
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
-        /* the flight's world is made as a chore (chores.js): not while the door is still coming up */
+        /* its pictures asked for now; the flight's world is made as a chore (chores.js): not while the door is still coming up */
+        if (!options.plain) fetchVoyage();
         const made = options.plain ? Promise.resolve() : chore(() => {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
-        });
+        }, 60, "flight");
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; });
       }
