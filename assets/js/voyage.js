@@ -237,9 +237,9 @@ vec4 moonAt(vec2 css){
 vec4 moon(vec2 css){
   if(uMoonS.w<=0.0||length(css-uMoonS.xy)>uMoonS.z+length(uMoonV)+2.0) return vec4(0.0);
   vec4 acc=vec4(0.0);
-  float j=hash13(vec3(gl_FragCoord.xy,uTime));
-  for(int i=0;i<10;i++) acc+=moonAt(css+uMoonV*((float(i)+j)/10.0-0.5));
-  return acc/10.0*uMoonS.w;
+  /* its blur over the exposure: twelve fixed steps, so the edges are steady frame to frame */
+  for(int i=0;i<12;i++) acc+=moonAt(css+uMoonV*((float(i)+0.5)/12.0-0.5));
+  return acc/12.0*uMoonS.w;
 }
 
 /* ── the star at the end: seen ahead as the flight brakes, then blooming ── */
@@ -487,11 +487,12 @@ export function createVoyage(under) {
       /* the moon, through the acceleration: from near the way ahead, out past the lower right, growing */
       const mAt = (m) => { const tx = W * 0.8, ty = H * 0.68, dx = tx - s.vp[0], dy = ty - s.vp[1], dl = Math.hypot(dx, dy) || 1;
         const r0 = Math.min(dl * 0.35, H * 0.3), r1 = dl + H * 0.75, e = Math.pow(m, 2.3);
-        return [s.vp[0] + (dx / dl) * (r0 + (r1 - r0) * e), s.vp[1] + (dy / dl) * (r0 + (r1 - r0) * e), H * (0.01 + 0.6 * Math.pow(m, 3.2))]; };
+        return [s.vp[0] + (dx / dl) * (r0 + (r1 - r0) * e), s.vp[1] + (dy / dl) * (r0 + (r1 - r0) * e), H * (0.003 + 0.6 * Math.pow(m, 3.2))]; };
       const mt = (tu - 700) / 800;
       if (maps.moon && mt > 0 && mt < 1 && s.moon !== false) {
         const a = mAt(mt), b = mAt(Math.max(0, mt - (1 / 60) / 0.8));
-        gl.uniform4f(u.uMoonS, a[0], a[1], a[2], sm(0, 0.12, mt)); gl.uniform2f(u.uMoonV, (a[0] - b[0]) * 0.5, (a[1] - b[1]) * 0.5);
+        /* it comes out of the distance: tiny, and faint until it is a third of the way */
+        gl.uniform4f(u.uMoonS, a[0], a[1], a[2], sm(0, 0.35, mt)); gl.uniform2f(u.uMoonV, (a[0] - b[0]) * 0.5, (a[1] - b[1]) * 0.5);
       } else gl.uniform4f(u.uMoonS, 0, 0, 1, 0);
       gl.uniform1f(u.uMoonSpin, 0.6 + tu * 0.00025);
       bind(5, maps.moon || blank, u.uMoonT);
