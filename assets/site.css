@@ -1075,5 +1075,9 @@ body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1
 /* the rack focus: the dawn goes soft and dim behind the planet */
 #door .dsky,#door .world{transition:filter .9s cubic-bezier(.4,0,.2,1)}
 body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}
+/* covered by the world's own sky: not drawn at all */
+body.covered #door{visibility:hidden}
+/* under the flight, the door's slow loops wait */
+body.showwarp #door .dsky svg,body.showwarp #door .rays svg,body.showwarp #door .world .breath{animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}

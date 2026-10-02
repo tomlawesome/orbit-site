@@ -241,6 +241,7 @@ export function createInstall(pad, opts = {}) {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
         canvas.style.opacity = smooth(0.08, HOLD, t).toFixed(3);
         u = clamp((t - HOLD) / APPROACH);
+        motion.near?.(u);
         if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
         if (u >= 1) { motion = null; canvas.style.opacity = ""; }
       }
@@ -283,7 +284,7 @@ export function createInstall(pad, opts = {}) {
         canvas.style.opacity = "0";
         u = 0; clock = 0; frames = [];
         placeFly(dot0);
-        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false };
+        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false, near: scene.near };
       });
     },
     /* the shot back out to where the planet is on the door now */

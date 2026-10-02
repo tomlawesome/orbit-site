@@ -37,14 +37,14 @@
       </defs></svg>
       <!-- each thing that moves or breathes is a layer of its own, so the compositor carries it -->
       <div class="dawnlayer">
-        <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#skywash)"/></svg>
+        <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#skywash)"/></svg>
         <div class="rays">
-          <svg class="wl sway1" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><image data-raster="sway1" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-          <svg class="wl sway2" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><image data-raster="sway2" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+          <svg class="wl sway1" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway1" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+          <svg class="wl sway2" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway2" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
         </div>
         <!-- the glows that breathe, breathing together as one layer -->
         <div class="sunpt">
-          <svg class="wl breath" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+          <svg class="wl breath" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
             <image class="zodiacal" data-raster="zod" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
             <circle cx="800" cy="922" r="520" fill="url(#sun-wide)"/>
             <circle cx="800" cy="922" r="240" fill="url(#sun-mid)"/>
@@ -53,12 +53,12 @@
           </svg>
         </div>
       </div>
-      <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+      <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
         <circle cx="800" cy="3920" r="3000" fill="#04060e"/>
         <circle class="rim" cx="800" cy="3920" r="3000" fill="none" stroke="url(#rimg)" stroke-width="2.4" stroke-opacity=".85"/>
       </svg>
       <!-- the Earth itself, from orbit, as the sun comes up over it (tools/dawn.py): before the light, and with it -->
-      <svg class="wl earth" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+      <svg class="wl earth" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
         <image class="pre" data-href="assets/img/door/dawn-pre.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
         <image class="up" data-href="assets/img/door/dawn.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
       </svg>
@@ -266,15 +266,15 @@
         <linearGradient id="d-rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f0a35a"/><stop offset="100%" stop-color="#7a2c18"/></linearGradient>
         <linearGradient id="d-wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="40%" stop-color="#1e1838" stop-opacity=".30"/><stop offset="62%" stop-color="#3b2450" stop-opacity=".34"/><stop offset="78%" stop-color="#83354f" stop-opacity=".26"/><stop offset="91%" stop-color="#a2492a" stop-opacity=".22"/><stop offset="100%" stop-color="#c2571f" stop-opacity=".22"/></linearGradient>
       </defs></svg>
-      <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#d-wash)"/><image data-raster="glow" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-      <svg class="wl belt" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><image data-raster="belt" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-      <svg class="wl afterglow" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><image data-raster="afterglow" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-      <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+      <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#d-wash)"/><image data-raster="glow" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl belt" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="belt" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl afterglow" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="afterglow" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
         <circle cx="800" cy="3920" r="3000" fill="#03050b"/>
         <image data-raster="rim" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
         <circle cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="1.8" stroke-opacity=".6"/>
       </svg>
-      <svg class="wl shimmerlayer" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/></svg>
+      <svg class="wl shimmerlayer" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/></svg>
     </div>
     <div class="loginchrome">
       <div class="lockup">

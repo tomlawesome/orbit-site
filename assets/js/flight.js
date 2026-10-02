@@ -93,7 +93,7 @@ export function mountRasters(world, groups, prefix) {
   const origin = () => {
     const W = world.clientWidth || innerWidth, H = world.clientHeight || innerHeight, s = Math.max(W / 1600, H / 1000);
     world.style.setProperty("--ox", `${((W - 1600 * s) / 2 + 800 * s).toFixed(1)}px`);
-    world.style.setProperty("--oy", `${((H - 1000 * s) / 2 + 920 * s).toFixed(1)}px`);
+    world.style.setProperty("--oy", `${(H - 1000 * s + 920 * s).toFixed(1)}px`);
   };
   async function build() {
     const id = ++run;

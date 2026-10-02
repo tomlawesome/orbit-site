@@ -647,7 +647,8 @@ export function createFlight(canvas, options = {}) {
     if (alpha <= 0.002) return;
     const s = Math.max(W / 1600, H / 1000);
     /** @param {number} y */
-    const my = (y) => H / 2 + (y - 500) * s;
+    /* the frame is laid bottom-up, as the door lays it (xMidYMax): on a wide screen the crop comes off the top, never the Earth */
+    const my = (y) => H - (1000 - y) * s;
     const R0 = 3000 * s, top0 = my(920);
     /* the camera holds the world in frame for a beat (it rises), then lets go */
     const topY = top0 - Math.sin(Math.min(c, 1) * Math.PI) * 0.17 * H

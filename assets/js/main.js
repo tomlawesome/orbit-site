@@ -63,7 +63,7 @@ const journey = createJourney({
 });
 
 function hideAll() {
-  $("#home").classList.remove("shown"); $("#home").hidden = true;
+  $("#home").classList.remove("shown"); $("#home").hidden = true; player.hide();
   $("#dusk").hidden = true;
   for (const pad of Object.values(PADS)) { pad.ring.stop(); pad.el.hidden = true; }
   document.body.classList.remove("arrived");
@@ -83,7 +83,7 @@ function showDoor() {
 function leaveCurrent() {
   if (current === "door") { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); }
   else if (current && PADS[current]) { const pad = PADS[current]; pad.ring.stop(); setTimeout(() => { pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
-  else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); setTimeout(() => { h.hidden = true; }, 800); }
+  else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); player.hide(); setTimeout(() => { h.hidden = true; }, 800); }
 }
 /* a section: the flight there, and the landing */
 /* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
@@ -103,6 +103,8 @@ function goToWorld() {
   scene.planet.classList.add("chosen");
   /* the camera finds the planet: the door racks out of focus behind it, and it swells and glows */
   document.body.classList.add("departing", "racking");
+  /* once the world's own sky has filled the frame, the door behind it is let go, so it is not drawn (blurred) for nothing */
+  scene.near = (u) => { if (u > 0.32) document.body.classList.add("covered"); };
   pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = "install";
   try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
   pad.ring.form(scene).then(() => {
@@ -113,7 +115,7 @@ function goToWorld() {
     sceneTimer = setTimeout(() => {
       if (current !== "install") return;
       door.classList.remove("shown"); door.hidden = true;
-      document.body.classList.remove("departing", "racking", "at-door"); scene.planet.classList.remove("chosen");
+      document.body.classList.remove("departing", "racking", "covered", "at-door"); scene.planet.classList.remove("chosen");
     }, 600);
   });
 }
@@ -126,16 +128,17 @@ function leaveWorld() {
   scene.planet.classList.add("chosen");
   /* the door comes back soft, and comes into focus as the camera reaches it; the dot takes the planet back */
   scene.near = (u) => {
+    if (u < 0.32) document.body.classList.remove("covered");
     if (u < 0.3) document.body.classList.remove("racking");
     if (u < 0.05) document.body.classList.remove("departing");
   };
-  document.body.classList.add("departing", "racking", "at-door", "lit");
+  document.body.classList.add("departing", "racking", "covered", "at-door", "lit");
   document.body.classList.remove("instrument", "arrived");
   door.hidden = false; door.classList.add("shown");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   pad.ring.unform(scene).then(() => {
     pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
-    document.body.classList.remove("departing", "racking"); scene.planet.classList.remove("chosen");
+    document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
 }
@@ -208,7 +211,7 @@ function signOut() {
   home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   const h = home.household();
-  journey.descend({ title: h.name, on: { farewell() { current = "dusk"; } } });
+  journey.descend({ title: h.name, on: { farewell() { current = "dusk"; player.hide(); } } });
 }
 
 /* from the sky back to the dawn: the climb run backwards, landing on the door as the landings' "— the dawn" does */
@@ -219,7 +222,7 @@ function homeToDawn() {
   journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
-      const h = $("#home"); h.classList.remove("shown"); h.hidden = true;
+      const h = $("#home"); h.classList.remove("shown"); h.hidden = true; player.hide();
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door";
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
       try { history.replaceState(null, "", " "); } catch { /* fine */ }

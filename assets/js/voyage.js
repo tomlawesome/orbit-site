@@ -385,11 +385,31 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
     }).catch(() => { /* drawn without it */ });
-  setTimeout(() => { for (const k of ["sky", "lights", "euro", "clouds", "day", "moon"]) load(k); }, 2500);
+  setTimeout(() => {
+    Promise.all(["sky", "lights", "euro", "clouds", "day", "moon"].map(load)).then(() => setTimeout(calibrate, 400));
+  }, 2500);
+  /* once everything has come, a few frames drawn unseen at the heaviest point of the flight (the nebula, the streaks
+     at full speed): the shaders compiled and the maps on the GPU before the first flight, rather than during it,
+     and the drawing's size chosen so a frame takes about 11 ms here */
+  function calibrate() {
+    if (document.hidden || performance.now() - lastDraw < 5000) return;
+    if (W < 2) resize(innerWidth, innerHeight);
+    const st = { t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
+      progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 };
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    try {
+      draw(st); draw({ ...st, world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }); sync();
+      const t0 = performance.now(); for (let i = 0; i < 3; i++) draw(st); sync();
+      const ms = (performance.now() - t0) / 3;
+      const next = Math.min(0.9, Math.max(0.4, part * Math.sqrt(11 / Math.max(ms, 1))));
+      if (Math.abs(next - part) > 0.02) { part = next; resize(W, H); }
+    } catch { /* drawn as it is */ }
+    lastDraw = 0;
+  }
   const blank = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const cam = doorCamera();
-  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0;
+  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0;
   /* the streaks' travel, per depth: log radius, integrated from the flight's own speed */
   const off = [0, 0.3, 0.7, 0.15];
 
@@ -421,9 +441,17 @@ export function createVoyage(under) {
           world: { cx, cy, R, alpha, c } | null, bloom (0..1), bloomPt [x,y], dt (ms) } */
   function draw(s) {
     if (!hdr) resize(W, H);
-    if (s.dt) { frames.push(s.dt); if (frames.length >= 8) { const avg = frames.reduce((a, b) => a + b, 0) / frames.length; frames = [];
-      const next = avg > 24 ? Math.max(0.4, part * 0.85) : avg < 14 ? Math.min(0.9, part * 1.05) : part;
-      if (Math.abs(next - part) > 0.02) { part = next; resize(W, H); } } }
+    /* the size is never changed mid-flight (a change reallocates every target, and that is a hitch): a slow flight
+       is noted, and the next one is drawn smaller, the change made while nothing is flying */
+    lastDraw = performance.now();
+    if (s.dt) { frames.push(s.dt); if (frames.length === 40) {
+      const avg = frames.slice(5).reduce((a, b) => a + b, 0) / 35;
+      const next = avg > 26 ? Math.max(0.4, part * 0.82) : avg < 13 ? Math.min(0.9, part * 1.08) : part;
+      if (Math.abs(next - part) > 0.02) setTimeout(function later() {
+        if (performance.now() - lastDraw < 400) { setTimeout(later, 1000); return; }
+        part = next; resize(W, H);
+      }, 1000);
+    } }
     const px = CW / W;
     const sp = Math.abs(s.v), shutter = 0.016 * (1 + 0.9 * sp * sp);
     const len = [0, 1, 2, 3].map((i) => Math.abs(s.v) * s.K * (0.35 + 0.22 * i) * shutter * 0.55 * 2.0);
