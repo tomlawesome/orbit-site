@@ -300,7 +300,8 @@ export function createFlight(canvas, options = {}) {
   /* the Earth the door shows under its dawn (tools/dawn.py): the flight starts on that very picture and
      lets it go into its own plainer world as the climb gets under way. The door has already asked for it. */
   const earth = typeof Image === "undefined" ? null : new Image();
-  if (earth) setTimeout(() => { earth.src = new URL("../img/door/dawn.webp", import.meta.url).href; }, 1500);
+  /* asked for by warm(), below, with the rest of what the flight draws */
+  const earthReady = earth ? new Promise((r) => { earth.addEventListener("load", r, { once: true }); earth.addEventListener("error", r, { once: true }); }) : Promise.resolve();
   /* … and a copy of it whose left and right edges fade, so that as the world shrinks the picture's sides never show */
   /** @type {HTMLCanvasElement | null} */
   let earthF = null;
@@ -1039,7 +1040,16 @@ export function createFlight(canvas, options = {}) {
     voyage?.reset();
   }
 
+  let warmed = null;
   return {
+    /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
+    warm() {
+      if (!warmed) {
+        if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
+        warmed = Promise.all([earthReady, voyage ? voyage.warm() : null]).catch(() => {});
+      }
+      return warmed;
+    },
     /**
      * Fly. `at` pins the flight to one beat instead of running it: the
      * simulation is stepped at a fixed 60fps up to that millisecond and the

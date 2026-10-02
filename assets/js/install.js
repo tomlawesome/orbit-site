@@ -263,7 +263,12 @@ export function createInstall(pad, opts = {}) {
 
   return {
     /* the textures are baked before they are wanted, while the door is quiet */
-    prepare() { const w = ensure(); if (w) { size(); w.bake().then((ok) => { if (ok) calibrate(); }); } },
+    /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
+    prepare() {
+      const w = ensure(); if (!w) return Promise.resolve(false);
+      if (!this.prepared) { size(); this.prepared = w.bake().then((ok) => { if (ok) calibrate(); return ok; }); }
+      return this.prepared;
+    },
     start() {
       const w = ensure();
       if (running) return;

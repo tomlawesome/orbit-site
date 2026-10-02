@@ -26,11 +26,31 @@ const dawnRasters = mountRasters($("#door .world"), DAWN, "dawn");
 function loadEarth() {
   const world = $("#door .world");
   for (const im of world.querySelectorAll(".earth image[data-href]")) {
-    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
+    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) { world.classList.add("earthy"); setTimeout(warmJourneys, 300); } }, { once: true });
     im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
   }
 }
 const startDawn = () => { loadEarth(); dawnRasters.start(); };
+
+/* ── every journey ready before it is asked for ─────────────────────────────
+   Once the door's first picture is in, each journey is fetched and made ready
+   in the background, the likeliest first (the flight up, then the install's
+   world, then the docs), each begun when the browser is idle so the door never
+   drops a frame for it. On a connection that asks to save data, nothing is
+   fetched until it is wanted. The pictures are kept by the site's cache (sw.js). */
+const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
+let warmingAll = null;
+function warmJourneys() {
+  if (warmingAll) return warmingAll;
+  if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
+  const step = (fn) => new Promise((r) => idle(() => Promise.resolve().then(fn).catch(() => {}).then(r)));
+  warmingAll = step(() => journey.warm()).then(() => step(() => PADS.install.ring.prepare?.())).then(() => step(() => PADS.docs.ring.ready?.()));
+  return warmingAll;
+}
+/* a journey waits for what it needs, but never long: past the cap it goes with what it has */
+const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
+let starting = false;
+const startWhen = (p, go) => { if (starting) return; starting = true; within(p, 1800).then(() => { starting = false; go(); }); };
 const duskRasters = mountRasters($("#dusk .world"), DUSK, "dusk");
 let dawnDrawn = false, duskDrawn = false;
 const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
@@ -76,8 +96,7 @@ function showDoor() {
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
   requestAnimationFrame(() => setTimeout(() => document.body.classList.add("lit"), 120));
   /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
-  setTimeout(() => PADS.docs.ring.ready?.(), 2500);
-  setTimeout(() => { if (current === "door") PADS.install.ring.prepare?.(); }, 3200);
+  setTimeout(warmJourneys, 2500);
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
@@ -143,7 +162,10 @@ function leaveWorld() {
   });
 }
 function flyToPad(id) {
-  if (id === "install") { goToWorld(); return; }
+  if (id === "install") { startWhen(PADS.install.ring.prepare?.(), goToWorld); return; }
+  startWhen(Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]), () => flyNow(id));
+}
+function flyNow(id) {
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
   /* the docs' flight carries the chart when the chart is ready; otherwise the plain climb */
@@ -178,9 +200,12 @@ function backToDawn() {
 /* the gate: the flight, whole — 4.8 seconds of climb, the bare sky, the
    instrument two seconds after it (the app's own beats, to the millisecond) */
 function launch() {
+  if (current === "door") $("#gate").classList.add("flash");
+  startWhen(journey.warm(), launchNow);
+}
+function launchNow() {
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }
   planets.hide();
-  if (current === "door") $("#gate").classList.add("flash");
   const h = home.household();
   /* the other households pass on the way, each as its own dial would draw it */
   const SEC = { sage: "#8fbf9f", blue: "#8fb8ff", sand: "#d8b45a", plum: "#b79ae0" };
@@ -226,7 +251,7 @@ function homeToDawn() {
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door";
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
       try { history.replaceState(null, "", " "); } catch { /* fine */ }
-      setTimeout(() => { if (current === "door") PADS.install.ring.prepare?.(); }, 3200);
+      warmJourneys();
     },
   } });
 }
@@ -250,3 +275,9 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
 });
 
 if (wantsPad) arrivePad(wantsPad); else if (arrived || wantsDrawer) arrive(); else showDoor();
+/* arriving anywhere but the door, the journeys are readied all the same, a little later */
+setTimeout(warmJourneys, 4000);
+/* the site's own cache (sw.js): pictures kept a day, the code always fresh */
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => { /* fine without it */ }); });
+}

@@ -264,5 +264,5 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     write(title, subtitle);
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : descentBeats(), descentStep);
   }
-  return { fly, ascend, descend, reset, reduced };
+  return { fly, ascend, descend, reset, reduced, warm: () => engine.warm() };
 }
