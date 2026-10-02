@@ -670,7 +670,10 @@ export function wirePlanets(door, onGo) {
       const zSteps = [];
       zK.forEach((kf, n) => { zSteps.push(kf); const next = zK[n + 1]; zSteps.push({ offset: next ? next.offset : 1, zIndex: kf.zIndex }); });
       const timing = { duration: o.dur, iterations: Infinity, easing: "linear" };
-      o.anims = [o.spin.animate(spinK, timing), body.animate(bodyK, { ...timing, pseudoElement: "::before" }), tag.animate(tagK, timing), o.spin.animate(zSteps.map((k, n) => ({ ...k, offset: Math.min(1, k.offset + (n % 2 ? -1e-6 : 0)) })), timing)];
+      /* the picture's turn to the sun is on its ::before; where a browser cannot animate that, the planets still orbit */
+      let light = null;
+      try { light = body.animate(bodyK, { ...timing, pseudoElement: "::before" }); } catch { /* lit as drawn */ }
+      o.anims = [o.spin.animate(spinK, timing), light, tag.animate(tagK, timing), o.spin.animate(zSteps.map((k, n) => ({ ...k, offset: Math.min(1, k.offset + (n % 2 ? -1e-6 : 0)) })), timing)].filter(Boolean);
       o.anims.forEach((x) => { x.currentTime = at; });
       o.sync();
     });
@@ -692,7 +695,7 @@ export function wirePlanets(door, onGo) {
       prev = th; k.push({ offset: j / N, rotate: `${th.toFixed(4)}rad` });
     }
     const t = ride.effect.getTiming();
-    goldLight = goldBody.animate(k, { duration: t.duration, iterations: Infinity, easing: "linear", pseudoElement: "::before" });
+    try { goldLight = goldBody.animate(k, { duration: t.duration, iterations: Infinity, easing: "linear", pseudoElement: "::before" }); } catch { return; }
     syncGold();
   }
   /* the ring's turn starts again whenever the door is shown (a CSS animation does): the light starts with it */

@@ -595,7 +595,8 @@ export function createWorld(canvas, opts = {}) {
   /* the textures: the planet's map (loaded), the galaxy (baked), the rings (loaded; drawn until they come) */
   let albT = null, SW = 1, SH = 1;
   let skyT = null, skyF = null;
-  const RN = 8192;
+  /* the drawn rings, no wider than this GPU's textures can be */
+  const RN = Math.min(8192, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   const ringT = tex(RN, 1, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, ringProfile(RN), gl.CLAMP_TO_EDGE);
   mip(ringT);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
