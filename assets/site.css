@@ -193,8 +193,6 @@ body.loading #door .lockup .glyph .runner{opacity:1;animation:runner 1.8s cubic-
 @keyframes runner{to{transform:rotate(1turn)}}
 @media (prefers-reduced-motion:reduce){body.loading #door .lockup .glyph .runner{animation:none}}
 @keyframes draw-ring{from{stroke-dasharray:100 100;stroke-dashoffset:100;animation-timing-function:cubic-bezier(.45,0,.2,1)}99.9%{stroke-dasharray:100 100;stroke-dashoffset:0}to{stroke-dasharray:none;stroke-dashoffset:0}}
-#door .lockup .orbits{opacity:0;transition:opacity 1.4s ease 1s}
-body.lit #door .lockup .orbits{opacity:1}
 #door .lockup .name{opacity:0;transform:translateY(8px);filter:blur(6px);transition:opacity 1.1s ease .7s,transform 1.3s cubic-bezier(.2,.7,.2,1) .7s,filter 1.1s ease .7s}
 body.lit #door .lockup .name{opacity:1;transform:none;filter:none}
 #door .lockup .planets{opacity:0;transition:opacity 1.3s ease 1.6s}
@@ -519,7 +517,7 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
   padding:2px 18px 16px;margin-bottom:6px;animation:ivopen .3s cubic-bezier(.2,.7,.2,1) 1}
 @keyframes ivopen{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .itemview h4{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:18px 0 8px}
-.itemview .doc{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:9px;border:1px solid var(--line-soft);margin-bottom:7px;font-size:13px}
+.itemview .doc{position:relative;z-index:2;display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:9px;border:1px solid var(--line-soft);margin-bottom:7px;font-size:13px}
 .itemview .doc small{display:block;font:10.5px var(--mono);color:var(--ink-mid)}
 .itemview .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
 .itemview .acts button{font:12px var(--mono);color:var(--ink-mid);background:none;border:1px solid var(--line);border-radius:99px;padding:6px 13px;cursor:pointer}
@@ -579,68 +577,12 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 .transport .count{font:10.5px var(--mono);letter-spacing:.08em;color:var(--ink-quiet);font-variant-numeric:tabular-nums}
 @media (max-width:560px){.transport .name{display:none}}
 
-/* ══ THE DOCS PAGES ═════════════════════════════════════════════════════ */
-.chrome{position:sticky;top:0;z-index:6;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px}
-.chrome::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 85%,transparent),transparent)}
+/* ══ THE MARK AND ITS LINE (the home link on each landing; the install drawer's source line) ══ */
 .mark-row{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font:600 17px var(--display);letter-spacing:.02em}
 .mark-row .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
-.edge{display:flex;align-items:center;gap:4px 20px}
-.edge a{font:11px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-quiet);padding:6px 2px}
-.edge a:hover,.edge a[aria-current=page]{color:var(--accent-text)}
-.edge .swatches{margin:0 0 0 8px;padding-left:16px;border-left:1px solid var(--line);gap:8px}
-.edge .swatches button{width:14px;height:14px}
-.narrow{width:min(720px,100% - 32px);margin-inline:auto}
 .from{font:12px/1.6 var(--mono);color:var(--ink-mid);margin:0 0 22px;max-width:none}
 .from code{font-size:inherit;background:none;border:0;padding:0;color:var(--ink)}
 .drawer .from{margin:12px 0 10px}
-.doc{position:relative;z-index:2;padding:clamp(28px,5vw,64px) 0 120px}
-.doc>header{margin-bottom:44px}
-.doc>header .corner{display:block;margin-bottom:14px;text-shadow:none}
-.doc>header h1{font-size:clamp(2rem,4.6vw,3.2rem);max-width:18ch;text-wrap:balance}
-.doc .lede{margin-top:16px;max-width:54ch;color:var(--ink-mid);font-size:1.1rem}
-.doc h2{font:600 clamp(1.25rem,2vw,1.5rem)/1.2 var(--display);margin:56px 0 14px;scroll-margin-top:80px}
-.doc h3{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:28px 0 10px;font-weight:500}
-.doc p{color:var(--ink);margin:0 0 12px;max-width:62ch}
-.doc p.q{color:var(--ink-mid)}
-.doc ul,.doc ol{margin:0 0 14px;padding-left:1.2em;max-width:62ch}
-.doc li{margin:0 0 6px}
-.doc li::marker{color:var(--accent-text);font-family:var(--mono);font-size:.9em}
-.doc code{font:.88em var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:.08em .38em}
-.doc pre{font:12.5px/1.6 var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow-x:auto;margin:14px 0 18px}
-.doc pre code{background:none;border:0;padding:0;font-size:inherit}
-.doc .cmd{margin:14px 0 18px}
-.doc figure{margin:26px 0 30px}
-.doc figcaption{margin-top:10px;font:11px var(--mono);letter-spacing:.08em;color:var(--ink-mid)}
-.doc .screen{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--bg)}
-.doc .screen img{display:block;width:100%;height:auto}
-.doc .screen button{all:unset;display:block;width:100%;cursor:zoom-in}
-.doc .kvs{margin:10px 0 22px}
-.doc .note{border-left:2px solid var(--accent);padding:10px 16px;margin:18px 0 22px;color:var(--ink-mid);background:var(--panel);border-radius:0 12px 12px 0;max-width:62ch}
-.doc .note b{color:var(--ink);font-weight:500}
-.toc{display:flex;flex-wrap:wrap;gap:8px 22px;list-style:none;padding:0;margin:26px 0 0}
-.toc a{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-quiet)}
-.toc a:hover{color:var(--accent-text)}
-.menu{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin:14px 0 22px}
-.menu div{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-.menu b{display:block;font:500 14px var(--display);color:var(--ink);margin-bottom:4px}
-.menu b::before{content:"\25B8\00a0";color:var(--accent-text)}
-.menu p{font-size:13.5px;color:var(--ink-mid);margin:0;max-width:none}
-dialog.reader{border:0;background:transparent;padding:0;max-width:min(96vw,1400px);max-height:96vh}
-dialog.reader::backdrop{background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-dialog.reader img{display:block;max-width:100%;max-height:90vh;border-radius:14px;border:1px solid var(--line)}
-dialog.reader p{text-align:center;font:11px var(--mono);letter-spacing:.1em;color:var(--ink-mid);margin:12px 0 0}
-.foot{position:relative;z-index:2;padding:40px 16px 90px;text-align:center;font:10.5px var(--mono);color:var(--ink-faint);letter-spacing:.1em}
-.foot a{color:var(--ink-quiet)}
-.foot a:hover{color:var(--accent-text)}
-.foot .row{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 22px}
-.foot .row+.row{margin-top:12px;letter-spacing:.06em;text-transform:none}
-@media (max-width:640px){
-  .chrome{padding:14px 16px}
-  .edge{gap:0 12px}
-  .edge a{font-size:10px;letter-spacing:.12em}
-  .edge a.gh{display:none}
-}
-@media (max-width:480px){.edge .swatches{display:none}}
 
 @media (prefers-reduced-motion:reduce){
   .sky .far,.sky .near,#door .dsky .far,#door .dsky .near,#dusk .dsky .far,#dusk .dsky .near,#door .dsky .tws,#dusk .dsky .tws,.rays .sway1,.rays .sway2,
@@ -710,7 +652,6 @@ body.dispersing .transport{opacity:0}
 /* ══ THE DOORS ON THE RING: three more bodies, each a section, each named
    the way the app names the systems in its sky — a hairline leader and a
    small word, upright however far round the ring the body has travelled ══ */
-.orbits circle{fill:none;stroke:#8791b3;stroke-opacity:.16;stroke-width:.5;stroke-dasharray:1 3}
 /* the bodies: html over the ring's svg, each turned by the compositor; the
    ring is 200 units across, so a unit is var(--R) / 200 */
 .planets{grid-area:1/1;position:relative;width:var(--R);aspect-ratio:1;--u:calc(var(--R) / 200)}
@@ -722,13 +663,11 @@ body.dispersing .transport{opacity:0}
 .planet .spin i{position:absolute;left:0;top:calc(-1 * var(--r) * var(--u));transform:translate(-50%,-50%);border-radius:50%;box-sizing:border-box}
 .planet .hit{width:calc(30 * var(--u));height:calc(30 * var(--u));cursor:pointer}
 .planet .halo{width:calc(15.2 * var(--u));height:calc(15.2 * var(--u));border:max(1px,calc(.6 * var(--u))) solid #4a5468;transition:border-color .25s;pointer-events:none}
-.planet .lead{width:max(1px,calc(.6 * var(--u)));height:calc(9.4 * var(--u));border-radius:0;background:#4a5468;transform:translate(-50%,calc(-50% - 12.3 * var(--u)));transition:background .25s;pointer-events:none}
 .planet .body{width:calc(8.4 * var(--u));height:calc(8.4 * var(--u));background:var(--c);transition:transform .25s,box-shadow .25s;pointer-events:none}
 .planet .tag{position:absolute;left:0;top:0;white-space:nowrap;font:500 max(9.5px,calc(4.6 * var(--u))) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:#8791b3;
   text-shadow:0 0 2px #04060e,0 0 4px #04060e,0 0 8px #04060e;transition:color .25s;will-change:transform;pointer-events:none}
 .planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
 .planet:hover .body,.planet:focus-visible .body{transform:translate(-50%,-50%) scale(1.24);box-shadow:0 0 6px var(--c)}
-.planet:hover .lead,.planet:focus-visible .lead{background:var(--c)}
 .planet:hover .halo,.planet:focus-visible .halo{border-color:var(--c)}
 .planet:hover .tag,.planet:focus-visible .tag{color:var(--c)}
 body.launching #door .planets,body.showwarp #door .planets{opacity:0;transition:opacity .3s}
@@ -740,26 +679,13 @@ body.launching #door .planets,body.showwarp #door .planets{opacity:0;transition:
 .pad .mark-row.home{position:absolute;top:16px;right:24px;z-index:4;font-size:15px;color:var(--ink-mid);text-decoration:none}
 .pad .mark-row.home:hover{color:var(--ink)}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
-.pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,48svh);overflow:visible}
-.pad .glyph .orbit{stroke:var(--ink-faint);stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 2.2s cubic-bezier(.2,.7,.2,1) .2s}
-body.instrument .pad .glyph .orbit{stroke-dashoffset:0}
-.pad .word{grid-area:1/1;display:grid;place-items:center;gap:14px;text-align:center}
-.pad .word h1{font:600 clamp(22px,6vw,32px)/1.05 var(--display);letter-spacing:.005em;color:var(--ink);max-width:9ch;text-wrap:balance}
-.pad .gate{opacity:1;transform:none;transition:filter .35s ease}
-.pad .gate[data-done]{background:var(--ink)}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
 body.launching .pad{visibility:hidden;pointer-events:none}
 body.bare .pad .back,body.bare .pad .home,body.bare .pad .word{opacity:0;pointer-events:none}
-body.bare .pad .lockup .glyph{animation:condense 1.3s cubic-bezier(.2,.75,.25,1) both}
 body.instrument .pad .word,body.instrument .pad .back,body.instrument .pad .home{animation:chromein 1.3s ease .45s both}
 /* and leaves the way the sky does */
 body.withdrawing .pad .word,body.withdrawing .pad .back,body.withdrawing .pad .home{animation:chromeout .45s ease both}
 body.dispersing .pad{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .7s ease .15s,visibility 0s linear .85s}
-body.dispersing .pad .lockup .glyph{animation:disperse .8s cubic-bezier(.5,0,.9,.45) both}
-@media (max-width:560px){
-  .pad .loginchrome{padding-bottom:16svh}
-  .pad .loginchrome .lockup .glyph svg{width:min(420px,84vw,42svh)}
-}
 @media (prefers-reduced-motion:reduce){.planet .spin{animation:none}body.bare .pad .lockup .glyph,body.instrument .pad .word,body.instrument .pad .back,body.withdrawing .pad *,body.dispersing .pad .lockup .glyph{animation:none!important}}
 /* the one line at the foot */
 .doorfoot.by{bottom:18px;text-transform:none;letter-spacing:.08em;font-size:11px;color:#7c8699}
@@ -1256,7 +1182,7 @@ body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.
 /* holding: a journey started before what it draws was ready waits on its opening, the mark at the centre breathing (flight.js) */
 body.holding #flightmark.on circle:first-child{animation:holding 1.1s ease-in-out infinite alternate}
 @keyframes holding{from{opacity:.85}to{opacity:.4}}
-body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity .7s ease}
+body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo{opacity:0;transition:opacity .7s ease}
 /* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
 body.departing #door .planet.chosen .spin{animation-play-state:paused}
 body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1.5);box-shadow:0 0 calc(5 * var(--u)) calc(1.4 * var(--u)) color-mix(in srgb,var(--c) 60%,transparent);opacity:0;
@@ -1282,14 +1208,12 @@ body.departing #door .loginchrome{pointer-events:none}
 #door .lux{display:none}
 html.rich #door .lux{display:inline}
 html.rich #door .ring:not(.lux){stroke:url(#ringlit);stroke-width:1.6}
-html.rich #door .orbits circle{stroke:url(#orblit);stroke-opacity:1;stroke-width:.55;stroke-dasharray:.4 2.2;stroke-linecap:round}
 /* the bodies: each picture is 2.57 times its body, for the haze and the rings round it */
 /* each world at its own size: the ringed giant largest, the moon smallest */
 html.rich .planet .body{--bs:15;width:calc(var(--bs) * var(--u));height:calc(var(--bs) * var(--u));background:none}
 html.rich .planet[data-section=install] .body{--bs:17.5}
 html.rich .planet[data-section=docs] .body{--bs:12}
-/* each picture turns back against its orbit, on the compositor, so its light stays put whatever the page is busy with;
-   pads.js adds only the small turn towards the sun, which barely changes */
+/* each picture is turned to the sun as its planet travels (pads.js: keyframes for the lap, on the compositor) */
 html.rich .planet .body::before,html.rich .planets .trdot i::before{content:"";position:absolute;inset:-78.6%;background:center/100% no-repeat;rotate:var(--lr,0rad);will-change:transform}
 html.rich .planet .body::before{animation:spinback var(--dur) linear infinite reverse;animation-delay:var(--delay)}
 html.rich .planets .trdot i::before{animation:spinback 40s linear infinite reverse}
@@ -1304,13 +1228,11 @@ html.rich .planets .trdot i::before{background-image:url(img/door/planet-gold.we
 html.rich .planet .halo{width:calc((var(--bs,15) + 9) * var(--u));height:calc((var(--bs,15) + 9) * var(--u));border-color:color-mix(in srgb,var(--c) 60%,transparent);opacity:0;transition:opacity .25s,border-color .25s}
 html.rich .planet[data-section=install] .halo{--bs:17.5}html.rich .planet[data-section=docs] .halo{--bs:12}
 html.rich .planet:hover .halo,html.rich .planet:focus-visible .halo{opacity:1}
-html.rich .planet .lead{display:none}
 html.rich .planet:hover .body,html.rich .planet:focus-visible .body{box-shadow:none;filter:drop-shadow(0 0 calc(3 * var(--u)) color-mix(in srgb,var(--c) 70%,transparent))}
 html.rich .planet .tag{color:color-mix(in srgb,var(--c) 35%,#e4e7f2);letter-spacing:calc(1 * var(--u))}
 /* the orbits in three dimensions (pads.js draws them): the flat circles give way to the tilted paths, the far half
    under the ring and the near half over it; each planet is placed by the page, every frame, at its depth: behind
    the ring and the name, or in front of them. The way in comes up closer, as the orbits no longer reach below */
-html.rich #door .lockup .orbits{display:none}
 html.rich #door .o3 path{fill:none;stroke:url(#orblit);stroke-width:.75;stroke-dasharray:.5 2;stroke-linecap:round}
 html.rich #door .o3.far path{stroke-opacity:.5}
 html.rich #door .lockup .orbits3d,html.rich #door .lockup .o3{opacity:0;transition:opacity 1.4s ease 1s}
@@ -1356,7 +1278,7 @@ html.rich body.lit #door .lockup .name{filter:blur(0) drop-shadow(0 0 calc(var(-
    a hairline either side, its last three points lighting in turn: still to come, not missing */
 .notice{display:none}
 html[data-maintenance] #door .gate{display:none}
-html[data-maintenance] #door .planet .tag,html[data-maintenance] #door .planet .halo,html[data-maintenance] #door .planet .lead{display:none}
+html[data-maintenance] #door .planet .tag,html[data-maintenance] #door .planet .halo{display:none}
 html[data-maintenance] #door .planet,html[data-maintenance] #door .planet *{pointer-events:none!important;cursor:default}
 html[data-maintenance] #door .notice{display:inline-flex;align-items:center;margin:0;white-space:nowrap;
   font:500 clamp(10.5px,calc(var(--R) * .029),13px) var(--mono);letter-spacing:.42em;text-transform:uppercase;color:#e2cd9c;

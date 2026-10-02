@@ -536,13 +536,8 @@ export function wirePlanets(door, onGo) {
     p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
     p.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGo(p.dataset.section); } });
   });
-  /* the name rides just past the leader, on the side away from the body, and
-     stays upright; the spin's own clock says where the body is, so nothing
-     is read back from the layout, and a name moves every third frame,
-     which at these speeds no eye can tell from every frame. Its anchor turns
-     with the body, so it never jumps; at the bottom of the orbit, where the
-     way in sits below, it moves round beside its body instead of under it */
-  let last = 0, size = 0, cx = 0, cy = 0, widths = [];
+  /* the door's measure: the ring's size and centre, and each name's width (the names ride their planets, build3d) */
+  let size = 0, cx = 0, cy = 0, widths = [];
   const measure = () => {
     const box = door.querySelector(".planets"), r = box.getBoundingClientRect();
     size = box.clientWidth || 0; cx = r.left + r.width / 2; cy = r.top + r.height / 2;
@@ -551,11 +546,7 @@ export function wirePlanets(door, onGo) {
   measure(); addEventListener("resize", measure);
   const clamp = (x) => Math.max(-1, Math.min(1, x));
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  const angleOf = (el) => {
-    const anim = el.getAnimations()[0]; if (!anim) return null;
-    const t = anim.effect.getTiming();
-    return (((anim.currentTime || 0) - (t.delay || 0)) / (t.duration || 1)) * Math.PI * 2;
-  };
+
   /* in the rich look each world's lit side faces the sun, just under the horizon below: the picture is held upright
      against its orbit by the stylesheet, and turned here by the sun's angle from it */
   const lightAt = (x, y) => {
@@ -713,41 +704,12 @@ export function wirePlanets(door, onGo) {
     if (stale && built) { stale = false; build3d(); } else if (built) requestAnimationFrame(syncGold);
     wake();
   }).observe(door, { attributes: true, attributeFilter: ["hidden"] });
-  function place(now) {
+  function place() {
     if (door.hidden) { placing = false; return; }
     if (!size) measure();
-    if (rich) {
-      /* once laid out, everything on the door turns on the compositor: nothing is left for this loop to do */
-      if (!built && size) { built = true; build3d(); }
-      if (built) { placing = false; return; }
-      requestAnimationFrame(place); return;
-    }
-    if (!door.hidden && now - last > 48 && size) {
-      last = now;
-      planets.forEach(({ spin, body, tag, r, rb }, i) => {
-        const a = angleOf(spin); if (a === null) return;
-        const ux = Math.sin(a), uy = -Math.cos(a);           /* the body started at the top */
-        const below = smooth(0.72, 0.94, uy), side = ux >= 0 ? 1 : -1;
-        let ax = -50 + 50 * clamp(ux / 0.5), ay = -50 + 50 * clamp(uy / 0.6);
-        let x = ux * r * size, y = uy * r * size;
-        /* beside the body: just past its haze, level with it */
-        const bx = ux * rb * size + side * 0.075 * size, by = uy * rb * size;
-        x += (bx - x) * below; y += (by - y) * below;
-        ax += ((side > 0 ? 0 : -100) - ax) * below; ay += (-50 - ay) * below;
-        /* a name near the edge of a small screen slides in rather than off it */
-        const w = widths[i] || 0, left = cx + x + (ax / 100) * w, right = left + w;
-        if (left < 8) x += 8 - left; else if (right > innerWidth - 8) x -= right - (innerWidth - 8);
-        tag.style.transform = `translate(calc(${x.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${y.toFixed(1)}px + ${ay.toFixed(1)}%))`;
-        if (rich) body.style.setProperty("--lr", `${lightAt(cx + ux * rb * size, cy + uy * rb * size).toFixed(3)}rad`);
-      });
-      if (rich && goldBody) {
-        const a = angleOf(gold);
-        if (a !== null) {
-          const g = a + GOLD_AT;
-          goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`);
-        }
-      }
-    }
+    /* once laid out, everything on the door turns on the compositor: nothing is left for this loop to do */
+    if (!built && size) { built = true; build3d(); }
+    if (built) { placing = false; return; }
     requestAnimationFrame(place);
   }
   wake();
