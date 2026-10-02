@@ -1229,7 +1229,7 @@ body.departing #door .loginchrome{pointer-events:none}
 /* ══ THE RICH DOOR (?rich): the same lockup, lit. The planets are small worlds of their own (tools/planets.py),
    backlit by the sunrise and turned as they travel so the light always comes from it (pads.js); the ring and
    the orbits catch the dawn from below; the gold world on the ring draws a trail of light behind it; the name
-   is lit from beneath; the way in stays the plain gold ══ */
+   is lit from beneath; the way in is a dark glass pill ringed like the logo ══ */
 #door .lux{display:none}
 html.rich #door .lux{display:inline}
 html.rich #door .ring:not(.lux){stroke:url(#ringlit);stroke-width:1.6}
@@ -1263,6 +1263,23 @@ html.rich .planets .trdot .trail{display:block;position:absolute;left:calc(-75 *
   background:conic-gradient(from -50deg,rgba(255,214,140,0) 0deg,rgba(255,214,140,.08) 50deg,rgba(255,222,160,.75) 108deg,rgba(255,222,160,0) 109deg);
   -webkit-mask:radial-gradient(closest-side,transparent 92.4%,#000 95.4%,#000 96.6%,transparent 99.6%);mask:radial-gradient(closest-side,transparent 92.4%,#000 95.4%,#000 96.6%,transparent 99.6%)}
 /* the name, lit from below by the dawn, with a little of its light round it */
+/* the way in, in the rich look: not a slab of gold but a dark glass pill ringed like the logo, its edge cool at the top
+   and lit gold from the dawn below, a spark of the gold world running round it the way the gold world runs round the ring;
+   reached, it fills with warm light */
+@property --ga{syntax:"<angle>";inherits:false;initial-value:0deg}
+html.rich #door .gate{color:#f3e5c4;border:1.5px solid transparent;letter-spacing:.07em;
+  background:linear-gradient(180deg,#0d0d13,#19130e) padding-box,
+    conic-gradient(from var(--ga),rgba(255,214,140,0) 0deg 230deg,rgba(255,218,150,.9) 340deg,#fff4dc 356deg,rgba(255,214,140,0) 360deg) border-box,
+    linear-gradient(180deg,rgba(150,160,198,.45),rgba(240,212,160,.85)) border-box;
+  box-shadow:0 14px 34px -16px rgba(255,186,100,.6),inset 0 -12px 20px -14px rgba(255,196,120,.35);
+  animation:gate-orbit 7s linear infinite}
+html.rich #door .gate:hover,html.rich #door .gate:focus-visible{filter:none;color:#fffaf0;outline:0;
+  background:linear-gradient(180deg,#3d2d16,#6e4f22) padding-box,
+    conic-gradient(from var(--ga),rgba(255,214,140,0) 0deg 230deg,rgba(255,218,150,.9) 340deg,#fff4dc 356deg,rgba(255,214,140,0) 360deg) border-box,
+    linear-gradient(180deg,rgba(255,228,180,.7),#f3d39a) border-box;
+  box-shadow:0 16px 40px -14px rgba(255,186,100,.75),0 0 36px rgba(255,200,120,.25)}
+@keyframes gate-orbit{to{--ga:360deg}}
+@media (prefers-reduced-motion:reduce){html.rich #door .gate{animation:none}}
 html.rich #door .lockup .name{background:linear-gradient(180deg,#fdfbf7 12%,#f2e7d3 60%,#dcbd80 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:blur(6px) drop-shadow(0 0 0 rgba(255,206,140,0))}
 html.rich body.lit #door .lockup .name{filter:blur(0) drop-shadow(0 0 calc(var(--R) * .045) rgba(255,206,140,.2))}
