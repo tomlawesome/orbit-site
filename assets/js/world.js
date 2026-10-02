@@ -162,7 +162,10 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   if(abs(d.y)<1e-6)return vec4(0.0);
   float tt=-o3.y/d.y; if(tt<=0.0)return vec4(0.0);
   vec3 x=o3+d*tt; float r=length(x.xz);
-  if(r<RIN||r>ROUT)return vec4(0.0);
+  /* how much of the ring plane one pixel covers here, so the rings' inner and outer edges are smoothed over it */
+  float fw=tt/(uFocal*max(abs(d.y),0.03));
+  if(r<RIN-fw||r>ROUT+fw)return vec4(0.0);
+  float edge=smoothstep(RIN-fw,RIN+fw,r)*(1.0-smoothstep(ROUT-fw,ROUT+fw,r));
   t=tt;
   float u=(r-RIN)/(ROUT-RIN);
   vec4 rs=textureGrad(uRing,vec2(u,0.5),vec2(dFdx(u),0.0),vec2(dFdy(u),0.0));
@@ -188,6 +191,7 @@ vec4 ring(vec3 ro,vec3 rd,out float t){
   c*=sh;
   /* the planet's own light on the ring's dark side */
   c+=rs.rgb*vec3(0.05,0.035,0.07)*0.25;
+  a*=edge;
   return vec4(c*a,a);
 }
 
@@ -380,6 +384,20 @@ uniform sampler2D uHdr, uBloom; uniform vec2 uRes, uBlurC, uPart, uTexel; unifor
 out vec4 o;
 /* the scene is drawn into the corner of its target it is given (uPart of it): read in that, clamped inside it */
 vec4 H(vec2 uv){ return texture(uHdr,min(clamp(uv,vec2(0.0),vec2(1.0))*uPart,uPart-uTexel*0.5)); }
+/* … and, where the scene was drawn smaller than the canvas, read with a sharp bicubic (Catmull-Rom, nine taps) so
+   the edges of the rings and the planet's detail stay crisp as it is brought up */
+vec3 HC(vec2 uv){
+  if(uPart.x>0.999) return H(uv).rgb;
+  vec2 size=1.0/uTexel, lim=uPart-uTexel*0.5;
+  vec2 sp=clamp(uv,vec2(0.0),vec2(1.0))*uPart*size, tc=floor(sp-0.5)+0.5, f=sp-tc;
+  vec2 w0=f*(-0.5+f*(1.0-0.5*f)), w1=1.0+f*f*(-2.5+1.5*f), w2=f*(0.5+f*(2.0-1.5*f)), w3=f*f*(-0.5+0.5*f);
+  vec2 w12=w1+w2, t0=min((tc-1.0)*uTexel,lim), t3=min((tc+2.0)*uTexel,lim), t12=min((tc+w2/w12)*uTexel,lim);
+  t0=max(t0,uTexel*0.5);
+  vec3 c=(texture(uHdr,vec2(t0.x,t0.y)).rgb*w0.x+texture(uHdr,vec2(t12.x,t0.y)).rgb*w12.x+texture(uHdr,vec2(t3.x,t0.y)).rgb*w3.x)*w0.y
+        +(texture(uHdr,vec2(t0.x,t12.y)).rgb*w0.x+texture(uHdr,vec2(t12.x,t12.y)).rgb*w12.x+texture(uHdr,vec2(t3.x,t12.y)).rgb*w3.x)*w12.y
+        +(texture(uHdr,vec2(t0.x,t3.y)).rgb*w0.x+texture(uHdr,vec2(t12.x,t3.y)).rgb*w12.x+texture(uHdr,vec2(t3.x,t3.y)).rgb*w3.x)*w3.y;
+  return max(c,vec3(0.0));
+}
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 vec3 agxCurve(vec3 x){vec3 x2=x*x, x4=x2*x2; return 15.5*x4*x2-40.14*x4*x+31.96*x4-6.868*x2*x+0.4298*x2+0.1191*x-0.00232;}
 vec3 agx(vec3 c){
@@ -391,7 +409,7 @@ vec3 agx(vec3 c){
 /* the lens's own colour fringing, stronger out to the edges; and the dolly's blur, out from where the camera is going */
 vec3 lens(vec2 uv){
   vec2 r=uv-0.5; float f=uFringe*dot(r,r);
-  vec3 c=vec3(H(uv+r*f).r,H(uv).g,H(uv-r*f).b);
+  vec3 c=vec3(HC(uv+r*f).r,HC(uv).g,HC(uv-r*f).b);
   if(uBlur>0.5){
     vec2 dir=(uv-uBlurC/uRes); vec2 stp=dir*(uBlur/max(length(dir*uRes),1.0))/7.0;
     vec3 acc=c; for(int i=1;i<8;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(H(u2+r*f).r,H(u2).g,H(u2-r*f).b); }
@@ -401,14 +419,14 @@ vec3 lens(vec2 uv){
 }
 void main(){
   vec2 uv=gl_FragCoord.xy/uRes;
-  vec4 h=H(uv);
+  vec4 h=vec4(HC(uv),H(uv).a);
   h.rgb=lens(uv);
   /* sharpening, contrast-adaptive: lifts fine detail, never past its neighbours, so no halos */
   vec2 px=uTexel/uPart;
   vec3 n=H(uv+vec2(0,px.y)).rgb, sd=H(uv-vec2(0,px.y)).rgb, e=H(uv+vec2(px.x,0)).rgb, w=H(uv-vec2(px.x,0)).rgb;
   vec3 mn=min(min(min(n,sd),min(e,w)),h.rgb), mx=max(max(max(n,sd),max(e,w)),h.rgb);
   vec3 amp=sqrt(clamp(min(mn,2.0-mx)/max(mx,1e-4),0.0,1.0));
-  vec3 k=-amp*0.18*smoothstep(0.55,0.95,uPart.x);
+  vec3 k=-amp*0.13*smoothstep(0.55,0.95,uPart.x);
   vec3 sharp=clamp((h.rgb+(n+sd+e+w)*k)/(1.0+4.0*k),mn,mx);
   vec3 c=(sharp+texture(uBloom,uv).rgb*uBloomK)*uExpo;
   vec2 v=uv-0.5; c*=1.0-0.45*dot(v,v);
