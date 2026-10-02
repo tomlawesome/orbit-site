@@ -20,7 +20,7 @@
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
-  euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"),
+  euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"), moon: IMG("install/moon.webp"),
 };
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 const EURO = [2, 24, 38, 55];
@@ -35,11 +35,19 @@ uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform 
 uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
 uniform mat3 uSkyM; uniform float uStarA;
-uniform float uBloom; uniform vec2 uBloomPt;
+uniform float uBloom, uPre; uniform vec2 uBloomPt;
+uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
+uniform float uNeb, uNebOff;
 out vec4 o;
 const float PI=3.14159265, TAU=6.2831853;
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float hash12(vec2 p){return hash13(vec3(p,7.31));}
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash13(i),hash13(i+vec3(1,0,0)),f.x),mix(hash13(i+vec3(0,1,0)),hash13(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash13(i+vec3(0,0,1)),hash13(i+vec3(1,0,1)),f.x),mix(hash13(i+vec3(0,1,1)),hash13(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+float fbm3(vec3 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=0.5; } return s; }
 
 /* ── the sky ── */
 vec3 stars(vec3 d,float f){
@@ -104,6 +112,7 @@ vec3 streaks(vec2 css){
         vec3 col=tcol<0.07?uTint:tcol<0.35?vec3(0.72,0.8,1.0):tcol<0.85?vec3(1.0,0.97,0.93):vec3(1.0,0.86,0.7);
         float hb=hash13(vec3(cj,s,17.0+float(i)));
         float bright=(0.2+1.4*near)*(0.35+0.65*z)*(0.25+2.2*hb*hb*hb*hb);
+        col*=mix(vec3(1.18,0.92,0.72),vec3(0.86,0.97,1.2),clamp(along,0.0,1.0)*0.85+0.15);
         acc+=col*core*tail*bright*smoothstep(10.0,60.0,r);
       }
     }
@@ -188,19 +197,68 @@ vec3 earth(vec2 css,out float cover){
   return L;
 }
 
-/* ── the star at the end ── */
+/* ── the passage: a nebula streaming past, two depths of it about the way ahead ── */
+vec3 nebula(vec2 css,out float dust){
+  dust=0.0; if(uNeb<=0.001) return vec3(0.0);
+  vec2 p=css-uVP; float r=length(p), a=atan(p.y,p.x), u=log(max(r,1.0));
+  vec3 acc=vec3(0.0);
+  for(int i=0;i<2;i++){
+    float k=i==0?1.5:3.1, sp=i==0?1.0:0.62;
+    vec3 q=vec3(cos(a)*k,sin(a)*k,(u-uNebOff*sp)*k*0.85+float(i)*13.0);
+    float f=fbm3(q);
+    /* filaments: the gas drawn out in threads; knots where it is densest; lanes of dust between */
+    float fil=1.0-abs(2.0*vnoise(q*vec3(2.6,2.6,1.3)+3.0)-1.0); fil=fil*fil*fil;
+    float d=smoothstep(0.44,0.82,f)*(0.35+0.65*fil);
+    float knot=pow(smoothstep(0.62,0.95,f),3.0);
+    float lane=smoothstep(0.5,0.75,vnoise(q*vec3(1.8,1.8,0.9)+11.0))*smoothstep(0.35,0.6,f);
+    float hue=vnoise(q*0.45+5.0);
+    vec3 col=mix(mix(vec3(0.42,0.16,1.0),vec3(1.0,0.22,0.52),smoothstep(0.3,0.68,hue)),vec3(0.16,0.58,0.86),smoothstep(0.66,0.9,hue));
+    float near=smoothstep(40.0,uRmax*0.45,r);
+    acc+=(col*d*1.2+vec3(1.0,0.86,0.9)*knot*1.6)*(0.3+0.9*near)*(i==0?1.0:0.55)*(1.0-lane*0.8);
+    dust+=(d*0.25+lane*0.55)*near;
+  }
+  dust=clamp(dust*uNeb,0.0,0.7); return acc*uNeb*1.1;
+}
+
+/* ── the moon passed on the way out: the install's gold moon, growing as it sweeps by ── */
+vec4 moonAt(vec2 css){
+  vec2 d=(css-uMoonS.xy)/uMoonS.z; float rr=dot(d,d); if(rr>1.0) return vec4(0.0);
+  vec3 n=vec3(d.x,-d.y,sqrt(1.0-rr));
+  float cs=cos(uMoonSpin), sn=sin(uMoonSpin); vec3 m=vec3(cs*n.x+sn*n.z,n.y,-sn*n.x+cs*n.z);
+  vec2 uv=vec2(atan(m.x,m.z)/TAU+0.5,0.5-asin(clamp(m.y,-1.0,1.0))/PI);
+  vec3 alb=pow(texture(uMoonT,uv).rgb,vec3(2.2)); float l=dot(alb,vec3(0.2126,0.7152,0.0722)); alb=mix(vec3(l),alb,0.5);
+  vec3 L=normalize(vec3(-0.25,-0.8,-0.15));
+  float lit=smoothstep(-0.05,0.25,dot(n,L))*max(dot(n,L),0.0);
+  vec3 c=alb*SUNL*lit*0.7+alb*0.006;
+  float cov=clamp((1.0-sqrt(rr))*uMoonS.z*uPx+0.5,0.0,1.0);
+  return vec4(c*cov,cov);
+}
+vec4 moon(vec2 css){
+  if(uMoonS.w<=0.0||length(css-uMoonS.xy)>uMoonS.z+length(uMoonV)+2.0) return vec4(0.0);
+  vec4 acc=vec4(0.0);
+  float j=hash13(vec3(gl_FragCoord.xy,uTime));
+  for(int i=0;i<10;i++) acc+=moonAt(css+uMoonV*((float(i)+j)/10.0-0.5));
+  return acc/10.0*uMoonS.w;
+}
+
+/* ── the star at the end: seen ahead as the flight brakes, then blooming ── */
 vec3 arrival(vec2 css){
-  if(uBloom<=0.0) return vec3(0.0);
-  vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx;
+  float lum=pow(uBloom,1.2)+uPre*0.3;
+  if(lum<=0.001) return vec3(0.0);
+  vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, Wd=uRes.x/uPx, a=atan(p.y,p.x);
   float e=pow(uBloom,1.2);
-  vec3 c=vec3(1.0,0.9,0.7)*e*(3.0*exp(-r/(H*0.02+H*0.05*e))+0.35*exp(-r/(H*0.25)));
-  /* the lens's spikes: four, long and thin, a little colour along them */
+  vec3 c=vec3(1.0,0.92,0.78)*lum*(4.0*exp(-r/(H*(0.004+0.045*e)))+0.3*exp(-r/(H*0.25)));
+  /* the corona: filaments, turning slowly */
+  float fil=0.55+0.45*vnoise(vec3(a*6.0,r/(H*0.06)-uTime*0.35,3.0))*vnoise(vec3(a*13.0+4.0,r/(H*0.03),uTime*0.2));
+  c+=vec3(1.0,0.8,0.55)*fil*lum*0.9*exp(-r/(H*(0.035+0.2*e)));
+  /* the lens: a long level streak, and four spikes */
+  c+=vec3(0.55,0.7,1.0)*lum*1.1*exp(-abs(p.y)/1.4)*exp(-abs(p.x)/(Wd*(0.05+0.4*e)));
   for(int k=0;k<2;k++){
     float an=0.35+float(k)*PI*0.5;
     vec2 ax=vec2(cos(an),sin(an));
     float al=abs(dot(p,ax)), pe=abs(dot(p,vec2(-ax.y,ax.x)));
-    float len=H*(0.05+0.32*e);
-    c+=mix(vec3(0.7,0.8,1.0),vec3(1.0,0.85,0.6),clamp(al/len,0.0,1.0))*e*1.1*exp(-pe/0.8)*exp(-al/len)*(1.0-exp(-al/12.0));
+    float len=H*(0.04+0.3*e);
+    c+=mix(vec3(0.7,0.8,1.0),vec3(1.0,0.85,0.6),clamp(al/len,0.0,1.0))*lum*1.1*exp(-pe/0.8)*exp(-al/len)*(1.0-exp(-al/12.0));
   }
   return c;
 }
@@ -212,7 +270,8 @@ void main(){
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
   c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
-  c+=streaks(css)*mix(0.35,1.0,smoothstep(0.0,0.4,sp));
+  float dust; vec3 neb=nebula(css,dust);
+  c=c*(1.0-dust)+streaks(css)*mix(0.35,1.0,smoothstep(0.0,0.4,sp))*(1.0-dust*0.6)+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
@@ -220,6 +279,7 @@ void main(){
     float cov; vec3 e=earth(css,cov);
     c=mix(c,vec3(0.0),cov*uEarthA)+e*uEarthA;
   }
+  vec4 mo=moon(css); c=c*(1.0-mo.a)+mo.rgb;
   c+=arrival(css);
   o=vec4(c,1.0);
 }`;
@@ -324,7 +384,7 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
     }).catch(() => { /* drawn without it */ });
-  setTimeout(() => { for (const k of ["sky", "lights", "euro", "clouds", "day"]) load(k); }, 2500);
+  setTimeout(() => { for (const k of ["sky", "lights", "euro", "clouds", "day", "moon"]) load(k); }, 2500);
   const blank = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const cam = doorCamera();
@@ -353,7 +413,8 @@ export function createVoyage(under) {
   const bind = (unit, t, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); };
 
   /* the flight's speed moves the streaks: each depth outwards at its own rate */
-  function advance(v, dt, K) { for (let i = 0; i < 4; i++) off[i] += v * dt * K * (0.35 + 0.22 * i) * 0.55; }
+  let nebOff = 0;
+  function advance(v, dt, K) { for (let i = 0; i < 4; i++) off[i] += v * dt * K * (0.35 + 0.22 * i) * 0.55; nebOff += v * dt * K * 0.16; }
 
   /* s: { t (ms), v (signed speed), K, vp [x,y], rmax, tint [r,g,b], progress (0..1 of the climb),
           world: { cx, cy, R, alpha, c } | null, bloom (0..1), bloomPt [x,y], dt (ms) } */
@@ -385,6 +446,21 @@ export function createVoyage(under) {
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
       gl.uniform4f(u.uEuroBox, ...EURO);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
+      const tu = s.tu ?? s.t, sm = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
+      /* the nebula, through the cruise */
+      gl.uniform1f(u.uNeb, sm(1200, 1750, tu) * (1 - sm(2350, 2950, tu))); gl.uniform1f(u.uNebOff, nebOff);
+      /* the moon, through the acceleration: from near the way ahead, out past the lower right, growing */
+      const mAt = (m) => { const tx = W * 0.8, ty = H * 0.68, dx = tx - s.vp[0], dy = ty - s.vp[1], dl = Math.hypot(dx, dy) || 1;
+        const r0 = Math.min(dl * 0.35, H * 0.3), r1 = dl + H * 0.75, e = Math.pow(m, 2.3);
+        return [s.vp[0] + (dx / dl) * (r0 + (r1 - r0) * e), s.vp[1] + (dy / dl) * (r0 + (r1 - r0) * e), H * (0.01 + 0.6 * Math.pow(m, 3.2))]; };
+      const mt = (tu - 700) / 800;
+      if (maps.moon && mt > 0 && mt < 1 && s.moon !== false) {
+        const a = mAt(mt), b = mAt(Math.max(0, mt - (1 / 60) / 0.8));
+        gl.uniform4f(u.uMoonS, a[0], a[1], a[2], sm(0, 0.12, mt)); gl.uniform2f(u.uMoonV, (a[0] - b[0]) * 0.5, (a[1] - b[1]) * 0.5);
+      } else gl.uniform4f(u.uMoonS, 0, 0, 1, 0);
+      gl.uniform1f(u.uMoonSpin, 0.6 + tu * 0.00025);
+      bind(5, maps.moon || blank, u.uMoonT);
+      gl.uniform1f(u.uPre, s.bloom != null && s.star !== false ? sm(2500, 3300, tu) : 0);
       gl.uniform1f(u.uBloom, s.bloom || 0); gl.uniform2f(u.uBloomPt, s.bloomPt?.[0] ?? W / 2, s.bloomPt?.[1] ?? H / 2);
       bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
@@ -399,5 +475,5 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); frames = []; } };
+  return { canvas, resize, draw, advance, clear, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }
