@@ -240,8 +240,9 @@ export function createInstall(pad, opts = {}) {
       if (motion.reverse) {
         u = clamp(motion.from * (1 - t / RETURN));
         motion.near?.(u);
-        /* the planet gives itself back to the dot in the last of the shot */
-        canvas.style.opacity = smooth(0.0, 0.05, u).toFixed(3);
+        /* the planet gives itself back to the dot in the last of the shot: the dot is already there beneath it
+           (main.js brings it back just before), so the planet fades off it rather than off nothing */
+        canvas.style.opacity = smooth(0.0, 0.12, u).toFixed(3);
         if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
       } else {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
@@ -259,10 +260,15 @@ export function createInstall(pad, opts = {}) {
     govern(dt);
   }
   /* where the dot is, and how big it is once it has swelled (its layout size, not its size mid-transition) */
+  /* going, the dot has swelled by half before the planet comes up through it; coming back, the planet ends at the
+     dot's own size, so the one gives way to the other without a change. A dot set at a depth (the rich door's
+     orbits) is scaled by its orbit: that is its size too */
   const SWELL = 1.5;
-  const dotOf = (scene) => {
-    const b = scene.body.getBoundingClientRect();
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * SWELL) };
+  const dotOf = (scene, swell = SWELL) => {
+    const b = scene.body.getBoundingClientRect(), spin = scene.body.closest(".spin");
+    const m = spin ? new DOMMatrixReadOnly(getComputedStyle(spin).transform === "none" ? undefined : getComputedStyle(spin).transform) : null;
+    const k = m ? Math.hypot(m.a, m.b) || 1 : 1;
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell) };
   };
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
@@ -302,7 +308,7 @@ export function createInstall(pad, opts = {}) {
     unform(scene) {
       return new Promise((resolve) => {
         if (!world || reduced || !running) { resolve(); return; }
-        const dot0 = dotOf(scene);
+        const dot0 = dotOf(scene, 1);
         placeFly(dot0);
         motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };
       });
