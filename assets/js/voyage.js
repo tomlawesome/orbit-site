@@ -43,7 +43,7 @@ uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampl
 uniform float uNeb, uNebOff;
 /* the docs' flight: the 3D galaxy, drawn beforehand at half size (GAL), its share of the sky, and how far it has come
    to the docs page's own view (dimmer down the middle, where the words go) */
-uniform sampler2D uGalTex; uniform float uG3, uGalPage;
+uniform sampler2D uGalTex; uniform float uG3, uGalPage; uniform mat3 uGCamR;
 /* the docs' constellations igniting at the end: x, y, size, intensity; and their colours */
 uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;
 out vec4 o;
@@ -350,14 +350,19 @@ void main(){
   if(uG3>0.001){
     vec3 gv=texture(uGalTex,gl_FragCoord.xy/uRes).rgb;
     float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
-    c=mix(c,vec3(0.0011,0.001,0.001)+gv*(1.0-0.55*mid*uGalPage),uG3);
+    /* behind it, the far sky: a sparse field of stars, turning with the camera */
+    float f=uRes.y/uPx*0.95;
+    vec3 dv=uGCamR*normalize(vec3((css.x-uRes.x/uPx*0.5)/f,(uRes.y/uPx*0.5-css.y)/f,1.0));
+    vec3 far=stars(dv,f*uPx)*0.07*(1.0-0.5*uGalPage);
+    c=mix(c,vec3(0.0011,0.001,0.001)+far+gv*(1.0-0.55*mid*uGalPage),uG3);
   }
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
   c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
   float dust; vec3 neb=nebula(css,dust);
-  c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*(1.0-0.75*uG3)+neb;
+  /* inside the galaxy its own stars are the streaks: the lanes are not drawn there at all */
+  if(uG3<0.999) c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*(1.0-uG3)+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
@@ -458,7 +463,7 @@ void main(){
   vec3 ro=uCamP, rd=normalize(uCamR*vec3((uv.x-uRes.x*0.5)/uF,(uv.y-uRes.y*0.5)/uF,1.0));
   /* only the slab of the disc is marched: where the ray is in it */
   const float SL=0.16;
-  float t0=0.0, t1=6.0;
+  float t0=0.0, t1=60.0;
   if(abs(rd.y)>1e-4){ float ta=(-SL-ro.y)/rd.y, tb=(SL-ro.y)/rd.y; t0=max(0.0,min(ta,tb)); t1=min(t1,max(ta,tb)); }
   else if(abs(ro.y)>SL){ o=vec4(0.0); return; }
   /* and inside the disc's reach */
@@ -637,13 +642,27 @@ export function createVoyage(under) {
       const ms = (performance.now() - t0) / 3;
       const next = Math.min(0.9, Math.max(0.4, part * Math.sqrt(11 / Math.max(ms, 1))));
       if (Math.abs(next - part) > 0.02) { part = next; resize(W, H); }
+      /* the docs' galaxy, inside the disc where it is heaviest: drawn once to make it ready, then timed */
+      if (starVao) {
+        const P = [0.8, 0.08, 0.38], f = (() => { const l = Math.hypot(...P); return P.map((x) => -x / l); })();
+        const r = (() => { const c = [f[2], 0, -f[0]], l = Math.hypot(...c); return c.map((x) => x / l); })();
+        const up = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
+        const g = { ...st, tu: 3000, galaxy3d: { w: 1, P, R: [...r, ...up, ...f], gain: 5.5, starK: 0.09, page: 0 } };
+        draw(g); sync();
+        const g0 = performance.now(); for (let i = 0; i < 2; i++) draw(g); sync();
+        const gms = (performance.now() - g0) / 2;
+        /* its share over the rest of the frame: the galaxy pass is drawn smaller until the whole frame fits */
+        const nq = Math.min(0.5, Math.max(0.28, gq * Math.sqrt(Math.max(1, 13 - ms * 0.6) / Math.max(1, gms - ms * 0.6))));
+        if (Math.abs(nq - gq) > 0.02) { gq = nq; CW = 0; resize(W, H); }
+      }
     } catch { /* drawn as it is */ }
     lastDraw = 0;
   }
   const blank = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
   const cam = doorCamera();
-  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0, galT = null;
+  /* gq: the galaxy's own drawing size, as a part of the frame's (measured in calibrate, so it costs about 5 ms) */
+  let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0, galT = null, gq = 0.45;
   /* the galaxy's stars, put on the GPU once (warm) */
   let starVao = null, starN = 0;
   function makeStars() {
@@ -670,7 +689,7 @@ export function createVoyage(under) {
     CW = cw; CH = ch; canvas.width = cw; canvas.height = ch;
     for (const c of [hdr, ...chain]) if (c) { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); }
     if (galT) { gl.deleteTexture(galT.t); gl.deleteFramebuffer(galT.f); }
-    hdr = target(cw, ch); chain = []; galT = target(Math.max(1, cw >> 1), Math.max(1, ch >> 1));
+    hdr = target(cw, ch); chain = []; galT = target(Math.max(1, Math.round(cw * gq)), Math.max(1, Math.round(ch * gq)));
     let a = cw, b = ch;
     for (let i = 0; i < 5; i++) { a = Math.max(1, a >> 1); b = Math.max(1, b >> 1); chain.push(target(a, b)); }
   }
@@ -758,6 +777,7 @@ export function createVoyage(under) {
       gl.uniform1i(u.uCN, n);
       gl.uniform1f(u.uG3, g3 ? g3.w : 0); bind(6, g3 ? galT.t : blank, u.uGalTex);
       gl.uniform1f(u.uGalPage, g3 ? g3.page || 0 : 0);
+      gl.uniformMatrix3fv(u.uGCamR, false, new Float32Array(g3 ? g3.R : [1, 0, 0, 0, 1, 0, 0, 0, 1]));
     });
     /* the galaxy's stars, added into the same light before the bloom: streaks, then their points */
     if (g3 && starVao) {

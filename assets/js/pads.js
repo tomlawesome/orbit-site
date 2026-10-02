@@ -86,7 +86,8 @@ function starTint(u) { return TINTS[u < 0.12 ? 0 : u < 0.3 ? 1 : u < 0.62 ? 2 : 
 /* the chart's light: a glow for every star of a figure, and the fine cross of the brightest */
 const chartDefs = () => `<defs><radialGradient id="aura"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".25" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
   <linearGradient id="spkh"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-  <linearGradient id="spkv" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>`;
+  <linearGradient id="spkv" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <filter id="lblshade" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur in="SourceAlpha" stdDeviation="3.2" result="b"/><feFlood flood-color="#020306" flood-opacity=".85"/><feComposite in2="b" operator="in" result="s"/><feMerge><feMergeNode in="s"/><feMergeNode in="s"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
 const fieldMarkup = ({ dots, arcs }) => `<g class="field">${dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.t}" style="--o:${d.o};--d:${d.d}s"/>`).join("")}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
 /* a figure's own faint cloud of light, in its colour, about its stars */
 const nebula = (gi, c, pts) => {

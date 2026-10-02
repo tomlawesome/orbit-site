@@ -641,6 +641,8 @@ body.showwarp #warp,body.showwarp #warpgl{opacity:1;transition:opacity .45s ease
 #flightmark{position:fixed;z-index:39;opacity:0;pointer-events:none;transition:opacity .35s ease}
 #flightmark.on{opacity:1}
 #flightmark.collapse{opacity:0;transform:scale(.05);transition:opacity .55s ease .1s,transform .7s cubic-bezier(.6,0,.9,.4)}
+/* the docs' flight: the ring becomes the galaxy, which is drawn just where it is and as large: it gives way to it, opening as the camera goes in */
+#flightmark.dissolve{opacity:0;transform:scale(1.35);filter:blur(1.5px);transition:opacity .6s ease,transform .9s cubic-bezier(.5,0,.8,.3),filter .6s ease}
 #flightmark svg{width:100%;height:100%;display:block}
 /* the mark tilts into the direction of travel while the flight is at speed, and levels to land */
 #flightmark{perspective:600px}
@@ -1055,15 +1057,17 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .con.chosen .lines line{stroke-opacity:.85}
 .pad.docs .con .name{cursor:pointer;outline:0}
 .pad.docs .con .name line{stroke:var(--c);stroke-opacity:.4;stroke-width:.8}
-.pad.docs .con .name text{font:500 12px "JetBrains Mono",monospace;letter-spacing:1.8px;text-transform:uppercase;fill:var(--ink-mid);transition:fill .3s;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
-.pad.docs .con .name .n{fill:var(--ink-faint);letter-spacing:1px}
+/* a figure's name: set small and wide, lit soft on the sky; a shadow under it (pads.js: #lblshade) rather than an outline round it,
+   so it reads over the bright band without a hard edge */
+.pad.docs .con .name text{font:500 12px "JetBrains Mono",monospace;letter-spacing:2.6px;text-transform:uppercase;fill:#d4d7e2;fill-opacity:.88;transition:fill .3s;filter:url(#lblshade)}
+.pad.docs .con .name .n{fill:var(--c);fill-opacity:.9;letter-spacing:1px}
 .pad.docs .con .name:hover text,.pad.docs .con .name:focus-visible text,.pad.docs .con.chosen .name text{fill:var(--c)}
 .pad.docs .con.chosen .name .n{fill:var(--c)}
 .pad.docs .con.quiet .name text{fill:var(--ink-faint)}
 .pad.docs .tip{pointer-events:none;opacity:0;transition:opacity .15s}
 .pad.docs .tip.show{opacity:1}
 .pad.docs .tip line{stroke:var(--c);stroke-width:.8}
-.pad.docs .tip text{font:500 11.5px "JetBrains Mono",monospace;letter-spacing:.6px;fill:var(--ink);paint-order:stroke;stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}
+.pad.docs .tip text{font:500 11.5px "JetBrains Mono",monospace;letter-spacing:.6px;fill:var(--ink);filter:url(#lblshade)}
 .pad.docs .entry.hot{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 14%,transparent)}
 .pad.docs .entry.pick{animation:pick 1.8s ease both}
 @keyframes pick{0%,60%{border-color:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent)}100%{}}
