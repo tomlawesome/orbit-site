@@ -385,14 +385,18 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
     }).catch(() => { /* drawn without it */ });
-  setTimeout(() => {
-    Promise.all(["sky", "lights", "euro", "clouds", "day", "moon"].map(load)).then(() => setTimeout(calibrate, 400));
-  }, 2500);
+  /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
+  let warming = null;
+  function warm() {
+    if (!warming) warming = Promise.all(["sky", "lights", "euro", "clouds", "day", "moon"].map(load))
+      .then(() => new Promise((r) => setTimeout(r, 50))).then(() => calibrate());
+    return warming;
+  }
   /* once everything has come, a few frames drawn unseen at the heaviest point of the flight (the nebula, the streaks
      at full speed): the shaders compiled and the maps on the GPU before the first flight, rather than during it,
      and the drawing's size chosen so a frame takes about 11 ms here */
   function calibrate() {
-    if (document.hidden || performance.now() - lastDraw < 5000) return;
+    if (document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
     if (W < 2) resize(innerWidth, innerHeight);
     const st = { t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
       progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 };
@@ -506,5 +510,5 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  return { canvas, resize, draw, advance, clear, warm, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }

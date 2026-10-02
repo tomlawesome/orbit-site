@@ -19,6 +19,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="assets/site.css" />
+  <!-- the door's Earth comes with the page, the sunrise picture just after it -->
+  <link rel="preload" as="image" href="assets/img/door/dawn-pre.webp" fetchpriority="high" />
+  <link rel="preload" as="image" href="assets/img/door/dawn.webp" fetchpriority="low" />
+  <!-- every module asked for at once, rather than each only when the one before it has been read -->
+  <link rel="modulepreload" href="assets/js/main.js" />
+  <link rel="modulepreload" href="assets/js/sky.js" />
+  <link rel="modulepreload" href="assets/js/home.js" />
+  <link rel="modulepreload" href="assets/js/data.js" />
+  <link rel="modulepreload" href="assets/js/law.js" />
+  <link rel="modulepreload" href="assets/js/tour.js" />
+  <link rel="modulepreload" href="assets/js/pads.js" />
+  <link rel="modulepreload" href="assets/js/flight.js" />
+  <link rel="modulepreload" href="assets/js/engine.js" />
+  <link rel="modulepreload" href="assets/js/timeline.js" />
+  <link rel="modulepreload" href="assets/js/voyage.js" />
+  <link rel="modulepreload" href="assets/js/install.js" />
+  <link rel="modulepreload" href="assets/js/world.js" />
 </head>
 <body class="at-door">
   <div class="sky" id="sky" aria-hidden="true"></div>
