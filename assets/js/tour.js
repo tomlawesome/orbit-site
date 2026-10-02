@@ -525,5 +525,7 @@ export function createPlayer() {
     if (e.key === "Escape" && running) stop(false);
   });
   playIcon(false); setCurrent(-1);
-  return { start, stop, show: () => { transport.classList.add("on", "ended"); name.textContent = "take the walk"; }, running: () => running };
+  return { start, stop, show: () => { transport.classList.add("on", "ended"); name.textContent = "take the walk"; },
+    /* the walk belongs to the sky: gone when the sky is left */
+    hide: () => { transport.classList.remove("on", "playing", "ended"); }, running: () => running };
 }
