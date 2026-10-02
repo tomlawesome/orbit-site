@@ -1012,8 +1012,10 @@ export function createFlight(canvas, options = {}) {
   function frame(now) {
     if (!flight) return;
     const active = flight;
-    const t = now - active.start;
-    const dt = Math.min(48, now - active.last) / 1000;
+    /* a profile may run its beats faster (the docs' and the information's flights) */
+    const rate = active.P.rate || 1;
+    const t = (now - active.start) * rate;
+    const dt = Math.min(48, now - active.last) / 1000 * rate;
     active.last = now;
     step(t, dt);
     if (t < active.P.dur + 400) flightRaf = raf(frame);
