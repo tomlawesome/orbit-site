@@ -574,26 +574,29 @@ export function createVoyage(under) {
   gl.getExtension("OES_texture_float_linear");
   under.parentNode.insertBefore(canvas, under);
 
-  const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile): asked for here,
+     and only looked at once they are done (made, below), so making them never holds the page up */
+  const par = gl.getExtension("KHR_parallel_shader_compile");
+  const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const vs = shader(gl.VERTEX_SHADER, VERT);
-  const program = (src) => {
-    const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, src)); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
-    return { p, u };
+  const program = (fsrc, vsh = vs) => {
+    const p = gl.createProgram(), fs = shader(gl.FRAGMENT_SHADER, fsrc);
+    gl.attachShader(p, vsh); gl.attachShader(p, fs); gl.linkProgram(p);
+    return { p, fs, vsh, u: {} };
   };
-  let P;
-  const programVF = (vsrc, fsrc) => {
-    const p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vsrc)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fsrc)); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
-    return { p, u };
+  const finish = (pr) => {
+    if (!gl.getProgramParameter(pr.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr.p) || gl.getShaderInfoLog(pr.fs) || gl.getShaderInfoLog(pr.vsh));
+    const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
-  try { P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: program(GAL), stars: programVF(STARV, STARF) }; }
-  catch (e) { console.warn(e); canvas.remove(); return null; }
+  const P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
+  let ok = false, dead = false;
+  const made = new Promise((resolve) => {
+    const done = () => { try { Object.values(P).forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); } resolve(ok); };
+    if (!par) { done(); return; }
+    const poll = () => (Object.values(P).every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
+    poll();
+  });
   const vao = gl.createVertexArray();
 
   const tex = (w, h, fmt, f, type, data = null) => {
@@ -623,7 +626,7 @@ export function createVoyage(under) {
   let warming = null;
   function warm() {
     try { makeStars(); } catch { /* drawn without them */ }
-    if (!warming) warming = Promise.all(["sky", "lights", "euro", "clouds", "day", "moon"].map(load))
+    if (!warming) warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon"].map(load)])
       .then(() => new Promise((r) => setTimeout(r, 50))).then(() => calibrate());
     return warming;
   }
@@ -706,6 +709,7 @@ export function createVoyage(under) {
   /* s: { t (ms), v (signed speed), K, vp [x,y], rmax, tint [r,g,b], progress (0..1 of the climb),
           world: { cx, cy, R, alpha, c } | null, bloom (0..1), bloomPt [x,y], dt (ms) } */
   function draw(s) {
+    if (!ok) return;
     if (!hdr) resize(W, H);
     /* the size is never changed mid-flight (a change reallocates every target, and that is a hitch): a slow flight
        is noted, and the next one is drawn smaller, the change made while nothing is flying */
@@ -801,6 +805,6 @@ export function createVoyage(under) {
     pass(P.film, null, CW, CH, (u) => { bind(0, hdr.t, u.uHdr); bind(1, chain[0].t, u.uBloom); gl.uniform2f(u.uRes, CW, CH);
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
-  function clear() { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, warm, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+  return { canvas, resize, draw, advance, clear, warm, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }

@@ -1241,6 +1241,13 @@ body.departing #installpad.formed{z-index:37}
 #installpad.forming .orbitgl{transition:none}
 /* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
 body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),
+/* readying: the way chosen pulses while the journey gathers what it draws (main.js: startWhen) */
+#door .planet.readying .spin>.halo{opacity:1!important;border-color:var(--c);animation:readying 1s ease-in-out infinite alternate}
+#door .planet.readying .body{filter:drop-shadow(0 0 calc(4 * var(--u)) var(--c))}
+#door .gate.readying{animation:readying-gate 1s ease-in-out infinite alternate}
+@keyframes readying{from{transform:translate(-50%,-50%) scale(1)}to{transform:translate(-50%,-50%) scale(1.3)}}
+@keyframes readying-gate{from{filter:brightness(1)}to{filter:brightness(1.25)}}
+body.readying{cursor:progress}
 body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity .7s ease}
 /* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
 body.departing #door .planet.chosen .spin{animation-play-state:paused}
@@ -1296,8 +1303,9 @@ html.rich #door .o3 path{fill:none;stroke:url(#orblit);stroke-width:.75;stroke-d
 html.rich #door .o3.far path{stroke-opacity:.5}
 html.rich #door .lockup .orbits3d,html.rich #door .lockup .o3{opacity:0;transition:opacity 1.4s ease 1s}
 html.rich body.lit #door .lockup .o3{opacity:1}
-html.rich #door .lockup .glyph{position:relative;z-index:2}
-html.rich #door .lockup .name{position:relative;z-index:4}
+/* the ring and the name are pictures: a planet behind them is still under the pointer */
+html.rich #door .lockup .glyph{position:relative;z-index:2;pointer-events:none}
+html.rich #door .lockup .name{position:relative;z-index:4;pointer-events:none}
 html.rich .planets .trdot{z-index:3}
 html.rich .planet .spin{animation:none;will-change:transform}
 html.rich .planet .spin i{top:0}

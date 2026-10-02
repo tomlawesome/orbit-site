@@ -559,7 +559,7 @@ export function wirePlanets(door, onGo) {
      go behind the ring and the name on the far side and in front of them on the near, a little larger and
      brighter as they come towards you. Drawn here each frame: the orbits' paths once, into the ring's own
      picture; each planet's place, size, depth and light; and its name beside it */
-  const ORBITS = { docs: { tilt: 61, node: -15 }, install: { tilt: 67, node: 10 }, info: { tilt: 64, node: -4 } }, DEPTH = 430;
+  const ORBITS = { docs: { tilt: 61, node: -15, phase: 0.1 }, install: { tilt: 67, node: 10, phase: 0.433 }, info: { tilt: 64, node: -4, phase: 0.767 } }, DEPTH = 430, SHARED_DUR = 64000;
   const rad = (d) => (d * Math.PI) / 180;
   const project = (r, a, T, N) => {
     const x = r * Math.sin(a), y = -r * Math.cos(a), yp = y * Math.cos(T), z = y * Math.sin(T);
@@ -570,13 +570,14 @@ export function wirePlanets(door, onGo) {
   function setup3d() {
     const svg = door.querySelector("#login-glyph svg"), ring = svg?.querySelector(".ring:not(.lux)");
     orbits3d = planets.map(({ p, spin }) => {
-      const o = ORBITS[p.dataset.section] || { tilt: 70, node: 0 }, cs = getComputedStyle(p);
-      const dur = parseFloat(cs.getPropertyValue("--dur")) || 60, delay = parseFloat(cs.getPropertyValue("--delay")) || 0;
+      const o = ORBITS[p.dataset.section] || { tilt: 70, node: 0, phase: 0 };
       const bs = parseFloat(getComputedStyle(p.querySelector(".body")).getPropertyValue("--bs")) || 15;
-      const rec = { T: rad(o.tilt), N: rad(o.node), dur: dur * 1000, t0: ((((-delay * 1000) % (dur * 1000)) + dur * 1000) % (dur * 1000)), spin, bs, anims: [], hover: false };
-      /* a planet stops under the pointer, and while the camera goes to it */
-      const sync = () => { const stop = rec.hover || p.classList.contains("chosen") || reduced; rec.anims.forEach((x) => (stop ? x.pause() : x.play())); };
-      const hold = (v) => () => { rec.hover = v; sync(); };
+      /* in three dimensions they share one pace, a third of an orbit apart, so they never gather in a bunch */
+      const rec = { T: rad(o.tilt), N: rad(o.node), dur: SHARED_DUR, t0: o.phase * SHARED_DUR, spin, bs, anims: [], hover: false };
+      /* the system stops while a planet is under the pointer (all of it, so they keep their spacing), and a planet
+         stays stopped while the camera goes to it */
+      const sync = () => { const stop = orbits3d.some((r) => r.hover) || p.classList.contains("chosen") || reduced; rec.anims.forEach((x) => (stop ? x.pause() : x.play())); };
+      const hold = (v) => () => { rec.hover = v; orbits3d.forEach((r) => r.sync()); };
       p.addEventListener("pointerenter", hold(true)); p.addEventListener("pointerleave", hold(false));
       p.addEventListener("focus", hold(true)); p.addEventListener("blur", hold(false));
       new MutationObserver(sync).observe(p, { attributes: true, attributeFilter: ["class"] });
