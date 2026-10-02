@@ -1348,3 +1348,25 @@ html.rich #door .gate:hover,html.rich #door .gate:focus-visible{filter:none;colo
 html.rich #door .lockup .name{background:linear-gradient(180deg,#fdfbf7 12%,#f2e7d3 60%,#dcbd80 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:blur(6px) drop-shadow(0 0 0 rgba(255,206,140,0))}
 html.rich body.lit #door .lockup .name{filter:blur(0) drop-shadow(0 0 calc(var(--R) * .045) rgba(255,206,140,.2))}
+
+/* ══ LAUNCHING SOON (html[data-soon]): the door alone ══════════════════════════════════════════════════
+   The planets turn on their orbits but are only the picture: no names, no rings about them, nothing to press.
+   In place of the way in, a quiet line in the lockup's own gold, a hairline either side, its last three points
+   lighting in turn: still to come, not missing */
+.soon{display:none}
+html[data-soon] #door .gate{display:none}
+html[data-soon] #door .planet .tag,html[data-soon] #door .planet .halo,html[data-soon] #door .planet .lead{display:none}
+html[data-soon] #door .planet,html[data-soon] #door .planet *{pointer-events:none!important;cursor:default}
+html[data-soon] #door .soon{display:inline-flex;align-items:center;margin:0;white-space:nowrap;
+  font:500 clamp(10.5px,calc(var(--R) * .029),13px) var(--mono);letter-spacing:.42em;text-transform:uppercase;color:#e2cd9c;
+  opacity:0;transform:translateY(10px);transition:opacity 1.4s ease 1.25s,transform 1.4s cubic-bezier(.2,.7,.2,1) 1.25s}
+html[data-soon] body.lit #door .soon{opacity:.86;transform:none}
+html[data-soon] #door .soon::before,html[data-soon] #door .soon::after{content:"";width:calc(var(--R) * .1);height:1px;flex:none}
+html[data-soon] #door .soon::before{margin-right:1.6em;background:linear-gradient(90deg,transparent,rgba(216,180,90,.6))}
+html[data-soon] #door .soon::after{margin-left:1.2em;background:linear-gradient(90deg,rgba(216,180,90,.6),transparent)}
+html[data-soon] #door .soon .d{display:inline-flex;letter-spacing:.18em;margin-left:-.3em}
+html[data-soon] #door .soon .d i{font-style:normal;opacity:.2;animation:soondot 2.6s ease-in-out infinite}
+html[data-soon] #door .soon .d i:nth-child(2){animation-delay:.35s}
+html[data-soon] #door .soon .d i:nth-child(3){animation-delay:.7s}
+@keyframes soondot{0%,100%{opacity:.2}30%,55%{opacity:1}}
+@media (prefers-reduced-motion:reduce){html[data-soon] #door .soon .d i{animation:none;opacity:.7}}

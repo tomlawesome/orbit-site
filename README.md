@@ -3,6 +3,13 @@
 The website for [Orbit](https://github.com/tomlawesome/orbit), served by
 GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 
+## Launching soon
+
+While the app is unfinished the site is in its launching-soon mode: `<html … data-soon>` in `index.html`. The door
+stands alone: its planets turn but carry no names and open nothing, the way in reads "Launching soon", deep links
+(`#install`, `#docs`, `#info`, the demo) land on the door, and none of the journeys are readied (no 3D compiled, none
+of their pictures fetched). Remove the `data-soon` attribute and the whole site is back as it was.
+
 ## Layout
 
 | Path | What |
