@@ -34,9 +34,10 @@ const startDawn = () => { loadEarth(); dawnRasters.start(); };
 
 /* ── every journey ready before it is asked for ─────────────────────────────
    Once the door's first picture is in, each journey is fetched and made ready
-   in the background, the likeliest first (the flight up, then the install's
-   world, then the docs), each begun when the browser is idle so the door never
-   drops a frame for it. On a connection that asks to save data, nothing is
+   in the background, in the order people take them: the demo (the flight up,
+   whose world every other flight shares), then the install's world, then the
+   docs, then the information's pictures, each begun when the browser is idle
+   so the door never drops a frame for it. On a connection that asks to save data, nothing is
    fetched until it is wanted. The pictures are kept by the site's cache (sw.js). */
 const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
 let warmingAll = null;
@@ -44,7 +45,11 @@ function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
   const step = (fn) => new Promise((r) => idle(() => Promise.resolve().then(fn).catch(() => {}).then(r)));
-  warmingAll = step(() => journey.warm()).then(() => step(() => PADS.install.ring.prepare?.())).then(() => step(() => PADS.docs.ring.ready?.()));
+  const infoShots = () => Promise.all([...document.querySelectorAll("#infopad img[src]")].map((im) => fetch(im.src).catch(() => {})));
+  warmingAll = step(() => journey.warm())                    /* 1. the demo */
+    .then(() => step(() => PADS.install.ring.prepare?.()))   /* 2. the install */
+    .then(() => step(() => PADS.docs.ring.ready?.()))        /* 3. the docs */
+    .then(() => step(infoShots));                            /* 4. the information */
   return warmingAll;
 }
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
