@@ -707,7 +707,7 @@ export function createWorld(canvas, opts = {}) {
   /* waits for everything asked of the GPU so far to be done: for timing frames */
   const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
   return {
-    gl, bake, draw, resize, finish,
+    gl, bake, draw, resize, finish, made,
     get baked() { return baked; },
     lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };

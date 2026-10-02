@@ -22,7 +22,7 @@
  * the reader's pack, PACK is the only object that changes.
  */
 import { createVoyage, fetchVoyage } from "./voyage.js";
-import { chore } from "./chores.js";
+import { note } from "./chores.js";
 import { seededRng } from "./sky.js";
 
 /**
@@ -1138,13 +1138,14 @@ export function createFlight(canvas, options = {}) {
     warm() {
       if (!warmed) {
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
-        /* its pictures asked for now; the flight's world is made as a chore (chores.js): not while the door is still coming up */
+        /* its pictures asked for, and its world made (its shaders set compiling in the background), at once; what it then
+           puts on the GPU waits its turn as chores (voyage.js) */
         if (!options.plain) fetchVoyage();
-        const made = options.plain ? Promise.resolve() : chore(() => {
+        const made = options.plain ? Promise.resolve() : Promise.resolve().then(() => {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
-        }, 60, "flight");
+        });
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; });
+        warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });
       }
       return warmed;
     },
