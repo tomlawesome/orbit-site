@@ -310,6 +310,8 @@ export function createInstall(pad, opts = {}) {
   }
   function frame(now) {
     if (!running) return;
+    /* a world that could not be made or loaded draws nothing: no loop for it */
+    if (failed || pad.classList.contains("flat")) { running = false; return; }
     raf = requestAnimationFrame(frame);
     const dt = last ? Math.min(100, now - last) : 16; last = now;
     if (pad.hidden || document.hidden || !world || !world.baked) return;
@@ -341,9 +343,10 @@ export function createInstall(pad, opts = {}) {
       }
     }
     if (reduced && !motion && frames.length > 2) return;
-    /* at rest the orbit is slow: every other frame is enough, unless the camera is following the pointer */
+    /* at rest the orbit is slow (the planet turns a pixel or two a second): a frame in four is enough, unless the
+       camera is following the pointer or the tilt; the GPU rests in between */
     const following = Math.abs(pointer.x - pointer.sx) + Math.abs(pointer.y - pointer.sy) > 0.002;
-    if (!motion && !following && (tick++ & 1)) return;
+    if (!motion && !following && (tick++ & 3)) return;
     draw(now);
     govern(dt);
   }
@@ -373,7 +376,10 @@ export function createInstall(pad, opts = {}) {
   let tilting = false, untilt = () => {};
   const onPointer = (e) => { if (tilting && e.pointerType !== "mouse") return; pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onTilted = (x, y) => { tilting = true; pointer.x = x; pointer.y = y; };
-  const onResize = () => { frames = []; size(); };
+  /* resized once a frame at most (a phone's address bar comes and goes in bursts of them; each one re-makes the
+     world's targets) */
+  let sizing = 0;
+  const onResize = () => { if (!sizing) sizing = requestAnimationFrame(() => { sizing = 0; frames = []; size(); }); };
 
   const api = {
     /* drawing the world now (the other page must not draw into it meanwhile) */

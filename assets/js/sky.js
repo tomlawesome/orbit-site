@@ -72,20 +72,21 @@ export const DUSK_FAR = tile(100, 0.4, 0.55, 0.14, 0.28, true);
 export const DUSK_NEAR = tile(48, 0.8, 0.85, 0.40, 0.38, false);
 
 export function mountFlightSky(host, far, near, idPrefix) {
-  /* three layers: the far field, the few stars that twinkle (so the far
-     field never repaints), and the near field — each drifting on its own */
-  const layer = (cls, fill, id, stars) => {
+  /* the far field, the few stars that twinkle, and the near field — each drifting on its own. The twinklers are
+     three layers of their own, each fading as a whole, out of step with the others: a layer's fade is the
+     compositor's, where a star's own would have the page repaint its layer every frame */
+  const layer = (cls, fill, id, stars, tw = null) => {
     const svg = el("svg", { class: cls, viewBox: "0 0 1600 1000", preserveAspectRatio: "xMidYMid slice" }, host);
+    if (tw !== null) svg.style.setProperty("--tw", `${tw}s`);
     const g = el("g", { fill }, svg);
     const tile = el("g", { id }, g);
-    for (const s of stars) {
-      const c = el("circle", { cx: s.cx, cy: s.cy, r: s.r, opacity: s.opacity }, tile);
-      if (s.delay) { c.setAttribute("class", "tw"); c.style.animationDelay = `${s.delay}s`; }
-    }
+    /* a twinkler is drawn at full strength, its layer fading it */
+    for (const s of stars) el("circle", { cx: s.cx, cy: s.cy, r: s.r, opacity: tw === null ? s.opacity : 1 }, tile);
     el("use", { href: `#${id}`, x: "1600" }, g);
   };
   layer("far", "var(--star-far, #e9edf8)", `${idPrefix}-far`, far.filter((s) => !s.delay));
-  layer("far tws", "var(--star-far, #e9edf8)", `${idPrefix}-tw`, far.filter((s) => s.delay));
+  const twinklers = far.filter((s) => s.delay);
+  for (let k = 0; k < 3; k++) layer("far tws", "var(--star-far, #e9edf8)", `${idPrefix}-tw${k}`, twinklers.filter((_, i) => i % 3 === k), -k * 1.5);
   layer("near", "var(--star-near, #f4f0ff)", `${idPrefix}-near`, near);
   measureTile(host);
 }

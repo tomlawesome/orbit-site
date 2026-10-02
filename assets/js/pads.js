@@ -673,18 +673,49 @@ export function wirePlanets(door, onGo) {
       o.anims.forEach((x) => { x.currentTime = at; });
       o.sync();
     });
+    buildGold();
   }
-  let built = false;
-  addEventListener("resize", () => { if (rich && built) build3d(); });
+  /* the gold world rides the ring (the stylesheet turns it), its lit side to the sun: that turn worked out once for
+     a lap, as the planets' are, and kept in step with the ring's */
+  let goldLight = null;
+  function buildGold() {
+    goldLight?.cancel(); goldLight = null;
+    const ride = gold?.getAnimations()[0];
+    if (!goldBody || !ride || !size) return;
+    const N = 96, k = [];
+    let prev = null;
+    for (let j = 0; j <= N; j++) {
+      const g = (j / N) * Math.PI * 2 + GOLD_AT;
+      let th = lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size);
+      if (prev !== null) th = prev + (((th - prev + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      prev = th; k.push({ offset: j / N, rotate: `${th.toFixed(4)}rad` });
+    }
+    const t = ride.effect.getTiming();
+    goldLight = goldBody.animate(k, { duration: t.duration, iterations: Infinity, easing: "linear", pseudoElement: "::before" });
+    syncGold();
+  }
+  /* the ring's turn starts again whenever the door is shown (a CSS animation does): the light starts with it */
+  function syncGold() {
+    const ride = gold?.getAnimations()[0];
+    if (goldLight && ride) goldLight.currentTime = (ride.currentTime || 0) - (ride.effect.getTiming().delay || 0);
+  }
+  let built = false, stale = false, placing = false;
+  /* a resize while the door is away is caught up with when it comes back */
+  addEventListener("resize", () => { if (rich && built) { if (door.hidden) stale = true; else build3d(); } });
+  /* the door's own loop runs only while the door is there: started when it is shown, ended when it is hidden */
+  const wake = () => { if (!placing && !door.hidden) { placing = true; requestAnimationFrame(place); } };
+  new MutationObserver(() => {
+    if (door.hidden) return;
+    if (stale && built) { stale = false; build3d(); } else if (built) requestAnimationFrame(syncGold);
+    wake();
+  }).observe(door, { attributes: true, attributeFilter: ["hidden"] });
   function place(now) {
+    if (door.hidden) { placing = false; return; }
     if (!size) measure();
     if (rich) {
-      if (!built && size && !door.hidden) { built = true; build3d(); }
-      /* only the gold world's light is turned here, a little at a time: it rides the ring on its own */
-      if (built && goldBody && now - last > 48) {
-        last = now; const a = angleOf(gold);
-        if (a !== null) { const g = a + GOLD_AT; goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`); }
-      }
+      /* once laid out, everything on the door turns on the compositor: nothing is left for this loop to do */
+      if (!built && size) { built = true; build3d(); }
+      if (built) { placing = false; return; }
       requestAnimationFrame(place); return;
     }
     if (!door.hidden && now - last > 48 && size) {
@@ -715,6 +746,6 @@ export function wirePlanets(door, onGo) {
     }
     requestAnimationFrame(place);
   }
-  requestAnimationFrame(place);
+  wake();
   return { hide() {} };
 }

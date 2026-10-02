@@ -44,5 +44,6 @@ export function onTilt(fn) {
   if (typeof DeviceOrientationEvent.requestPermission === "function") return () => {};
   listeners.add(fn);
   listen();
-  return () => { listeners.delete(fn); };
+  /* the last to stop lets the sensor rest */
+  return () => { listeners.delete(fn); if (!listeners.size && on) { removeEventListener("deviceorientation", read); on = false; } };
 }
