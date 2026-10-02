@@ -816,7 +816,8 @@ body.instrument .pad.docs .index>:not(.search):not(.skymap),body.instrument .pad
 body.bare .pad.docs .index>:not(.search):not(.skymap),body.instrument .pad.docs .index>:not(.search):not(.skymap),
 body.bare .pad.docs .back,body.instrument .pad.docs .back,body.bare .pad.docs .home,body.instrument .pad.docs .home{animation:chromein .7s ease .1s both;pointer-events:auto}
 body.bare .pad.docs .search,body.instrument .pad.docs .search{animation:slidein .8s cubic-bezier(.2,.75,.25,1) both}
-body.withdrawing .pad.docs .index,body.withdrawing .pad.docs .doorfoot{animation:chromeout .45s ease both}
+/* leaving, the words go first; the chart stays on its sky until the flight has come up over it, and goes out there */
+body.withdrawing .pad.docs .index>:not(.skymap),body.withdrawing .pad.docs .doorfoot{animation:chromeout .45s ease both}
 body.dispersing .pad.docs .search{animation:slideout .7s cubic-bezier(.5,0,.9,.45) both}
 @keyframes slideout{to{transform:translateX(56px);opacity:0}}
 
@@ -1255,8 +1256,12 @@ body.holding #flightmark.on circle:first-child{animation:holding 1.1s ease-in-ou
 body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo,body.departing #door .planet.chosen .lead{opacity:0;transition:opacity .7s ease}
 /* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
 body.departing #door .planet.chosen .spin{animation-play-state:paused}
-body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1.5);box-shadow:0 0 calc(5 * var(--u)) calc(1.4 * var(--u)) rgba(167,139,250,.6);opacity:0;
+body.departing #door .planet.chosen .body{transform:translate(-50%,-50%) scale(1.5);box-shadow:0 0 calc(5 * var(--u)) calc(1.4 * var(--u)) color-mix(in srgb,var(--c) 60%,transparent);opacity:0;
   transition:transform .35s cubic-bezier(.3,0,.2,1),box-shadow .35s ease,opacity .25s ease .2s}
+/* the lit door: its world flares as the camera finds it, bright in its own colour, and the dive comes up out of the
+   flare (install.js: flare), so the small picture never meets the world side by side */
+html.rich body.departing #door .planet.chosen .body{box-shadow:none;filter:brightness(1.5) drop-shadow(0 0 calc(4 * var(--u)) var(--c));opacity:0;
+  transition:transform .4s cubic-bezier(.3,0,.2,1),filter .26s ease,opacity .36s ease .22s}
 /* the rack focus: the dawn goes soft and dim behind the planet */
 #door .dsky,#door .world{transition:filter .9s cubic-bezier(.4,0,.2,1)}
 body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}

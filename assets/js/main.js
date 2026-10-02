@@ -266,10 +266,16 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   if (current === "install" || current === "info") { leaveWorld(); return; }
-  pad.ring.stop();
+  hurryChores();
+  /* the docs go back out through their galaxy, even if they were come to straight (a link), not flown to */
+  if (current === "docs" && !pad.flown) {
+    let carried = null; const carry = () => carried || (carried = pad.ring.flight?.() || null);
+    pad.flown = docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } });
+  }
+  /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { const door = $("#door"); door.classList.add("shown"); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
+    farewell() { const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });
 }
 
