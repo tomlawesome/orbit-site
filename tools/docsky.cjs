@@ -31,7 +31,9 @@ const srv = http.createServer((req, res) => {
   fs.readFile(p, (e, d) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { "content-type": types[path.extname(p)] || "application/octet-stream" }); res.end(d); });
 }).listen(0, async () => {
   const b = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
-  const pg = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+  /* the flight's galaxy is scaled to the screen's height (its width shows more or less of the sky), so the picture is
+     made wide (3:1), and the page sets it to the screen's height: the same sky at any shape of window */
+  const pg = await b.newPage({ viewport: { width: 3240, height: 1080 } });
   await pg.goto(`http://localhost:${srv.address().port}/`);
   await pg.waitForFunction(() => window.ready, null, { timeout: 120000 });
   await pg.evaluate(() => window.draw());

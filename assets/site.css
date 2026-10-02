@@ -1004,7 +1004,9 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 /* the docs are read at night, whatever the theme: a black sky, not a navy one, with the Milky Way across it */
 #docspad{color-scheme:dark;background:#05060a;--bg:#05060a;--panel:rgba(20,21,28,.62);--panel-raised:rgba(26,27,36,.84);--line:#252731;--line-soft:#1a1c24;
   --ink:#eceaf2;--ink-mid:#aaaebd;--ink-faint:#8b90a1;--ink-quiet:#a0a5b5;--accent:#d8b45a;--accent-text:#d8b45a;--star-far:#eeebe4;--star-near:#f6f2ea}
-.pad.docs .milky{position:absolute;inset:0;z-index:0;pointer-events:none;background:url(img/docs/milkyway.webp) center/cover no-repeat;opacity:.9;transition:opacity .8s ease}
+/* set to the screen's height, as the flight draws it (its width shows more or less of the same sky): wide enough
+   (3:1) for any window, so it meets the flight's last frame exactly (tools/docsky.cjs) */
+.pad.docs .milky{position:absolute;inset:0;z-index:0;pointer-events:none;background:url(img/docs/milkyway.webp) center/auto 100% no-repeat #05070d;opacity:1;transition:opacity .8s ease}
 .pad.docs:has(.reader:not([hidden])) .milky{opacity:.3}
 /* the docs' chart: the sources as constellations across the sky */
 .pad.docs .skymap{margin:26px -40px 6px;position:relative}
