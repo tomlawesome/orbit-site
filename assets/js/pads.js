@@ -553,8 +553,88 @@ export function wirePlanets(door, onGo) {
     const s = Math.max(innerWidth / 1600, innerHeight / 1000), sx = innerWidth / 2, sy = innerHeight - 70 * s;
     return Math.atan2(-(sx - x), sy - y);
   };
+  /* in the rich look the orbits are three dimensional: each planet's orbit is a plane of its own, tilted back
+     from the face of the ring and turned a little about the line of sight, seen in perspective. The planets
+     go behind the ring and the name on the far side and in front of them on the near, a little larger and
+     brighter as they come towards you. Drawn here each frame: the orbits' paths once, into the ring's own
+     picture; each planet's place, size, depth and light; and its name beside it */
+  const ORBITS = { docs: { tilt: 61, node: -15 }, install: { tilt: 67, node: 10 }, info: { tilt: 64, node: -4 } }, DEPTH = 430;
+  const rad = (d) => (d * Math.PI) / 180;
+  const project = (r, a, T, N) => {
+    const x = r * Math.sin(a), y = -r * Math.cos(a), yp = y * Math.cos(T), z = y * Math.sin(T);
+    const X = x * Math.cos(N) - yp * Math.sin(N), Y = x * Math.sin(N) + yp * Math.cos(N), k = DEPTH / (DEPTH - z);
+    return [X * k, Y * k, z, k];
+  };
+  let orbits3d = null;
+  function setup3d() {
+    const svg = door.querySelector("#login-glyph svg"), ring = svg?.querySelector(".ring:not(.lux)");
+    orbits3d = planets.map(({ p, spin }) => {
+      const o = ORBITS[p.dataset.section] || { tilt: 70, node: 0 }, cs = getComputedStyle(p);
+      const dur = parseFloat(cs.getPropertyValue("--dur")) || 60, delay = parseFloat(cs.getPropertyValue("--delay")) || 0;
+      let paused = false;
+      const hold = (v) => () => { paused = v; };
+      p.addEventListener("pointerenter", hold(true)); p.addEventListener("pointerleave", hold(false));
+      p.addEventListener("focus", hold(true)); p.addEventListener("blur", hold(false));
+      const bs = parseFloat(getComputedStyle(p.querySelector(".body")).getPropertyValue("--bs")) || 15;
+      return { T: rad(o.tilt), N: rad(o.node), w: (Math.PI * 2) / dur, a: (-delay / dur) * Math.PI * 2, paused: () => paused || p.classList.contains("chosen"), spin, bs };
+    });
+    /* the paths: the far half under the ring, the near half over it */
+    if (svg && ring) {
+      const NS = "http://www.w3.org/2000/svg", far = document.createElementNS(NS, "g"), near = document.createElementNS(NS, "g");
+      far.setAttribute("class", "o3 far lux"); near.setAttribute("class", "o3 near lux");
+      planets.forEach(({ rb }, i) => {
+        const { T, N } = orbits3d[i], runs = { far: [], near: [] };
+        let cur = null, side = null;
+        for (let k = 0; k <= 180; k++) {
+          const [X, Y, z] = project(rb * 200, (k / 180) * Math.PI * 2, T, N), sd = z < 0 ? "far" : "near";
+          if (sd !== side) { if (cur) cur.push([X, Y]); cur = []; runs[sd].push(cur); side = sd; }
+          cur.push([X, Y]);
+        }
+        for (const sd of ["far", "near"]) for (const run of runs[sd]) {
+          if (run.length < 2) continue;
+          const path = document.createElementNS(NS, "path");
+          path.setAttribute("d", run.map(([x, y], j) => `${j ? "L" : "M"}${(100 + x).toFixed(2)} ${(100 + y).toFixed(2)}`).join(""));
+          (sd === "far" ? far : near).appendChild(path);
+        }
+      });
+      ring.parentNode.insertBefore(far, svg.querySelector(".ring"));
+      ring.after(near);
+    }
+  }
+  let then = 0;
+  function place3d(now) {
+    if (!orbits3d) setup3d();
+    const dt = Math.min(0.25, then ? (now - then) / 1000 : 0); then = now;
+    if (door.hidden || !size) return;
+    const u = size / 200;
+    planets.forEach(({ body, tag, rb }, i) => {
+      const o = orbits3d[i];
+      if (!reduced && !o.paused()) o.a += o.w * dt;
+      const [X, Y, z, k] = project(rb * 200, o.a, o.T, o.N), zr = z / (rb * 200 * Math.sin(o.T));
+      const x = X * u, y = Y * u;
+      o.spin.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${k.toFixed(3)})`;
+      o.spin.style.zIndex = z < 0 ? "1" : "5";
+      body.style.opacity = (0.66 + 0.34 * (zr + 1) / 2).toFixed(3);
+      body.style.setProperty("--lr", `${lightAt(cx + x, cy + y).toFixed(3)}rad`);
+      /* the name: out from the centre, just past the world, upright; beside it when the world is low */
+      const d = Math.hypot(x, y) || 1, ux = x / d, uy = y / d, off = (o.bs / 2) * k * u + 7 * u;
+      const below = smooth(0.6, 0.9, uy), sideX = ux >= 0 ? 1 : -1;
+      let tx = x + ux * off, ty = y + uy * off, ax = -50 + 50 * clamp(ux / 0.5), ay = -50 + 50 * clamp(uy / 0.6);
+      tx += (x + sideX * off - tx) * below; ty += (y - ty) * below;
+      ax += ((sideX > 0 ? 0 : -100) - ax) * below; ay += (-50 - ay) * below;
+      const w = widths[i] || 0, left = cx + tx + (ax / 100) * w, right = left + w;
+      if (left < 8) tx += 8 - left; else if (right > innerWidth - 8) tx -= right - (innerWidth - 8);
+      tag.style.transform = `translate(calc(${tx.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${ty.toFixed(1)}px + ${ay.toFixed(1)}%))`;
+      tag.style.opacity = (0.7 + 0.3 * (zr + 1) / 2).toFixed(3);
+    });
+    if (goldBody) {
+      const a = angleOf(gold);
+      if (a !== null) { const g = a + GOLD_AT; goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`); }
+    }
+  }
   function place(now) {
     if (!size) measure();
+    if (rich) { place3d(now); requestAnimationFrame(place); return; }
     if (!door.hidden && now - last > 48 && size) {
       last = now;
       planets.forEach(({ spin, body, tag, r, rb }, i) => {

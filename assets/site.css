@@ -1279,6 +1279,22 @@ html.rich .planet:hover .halo,html.rich .planet:focus-visible .halo{opacity:1}
 html.rich .planet .lead{display:none}
 html.rich .planet:hover .body,html.rich .planet:focus-visible .body{box-shadow:none;filter:drop-shadow(0 0 calc(3 * var(--u)) color-mix(in srgb,var(--c) 70%,transparent))}
 html.rich .planet .tag{color:color-mix(in srgb,var(--c) 35%,#e4e7f2);letter-spacing:calc(1 * var(--u))}
+/* the orbits in three dimensions (pads.js draws them): the flat circles give way to the tilted paths, the far half
+   under the ring and the near half over it; each planet is placed by the page, every frame, at its depth: behind
+   the ring and the name, or in front of them. The way in comes up closer, as the orbits no longer reach below */
+html.rich #door .lockup .orbits{display:none}
+html.rich #door .o3 path{fill:none;stroke:url(#orblit);stroke-width:.75;stroke-dasharray:.5 2;stroke-linecap:round}
+html.rich #door .o3.far path{stroke-opacity:.5}
+html.rich #door .lockup .orbits3d,html.rich #door .lockup .o3{opacity:0;transition:opacity 1.4s ease 1s}
+html.rich body.lit #door .lockup .o3{opacity:1}
+html.rich #door .lockup .glyph{position:relative;z-index:2}
+html.rich #door .lockup .name{position:relative;z-index:4}
+html.rich .planets .trdot{z-index:3}
+html.rich .planet .spin{animation:none;will-change:transform}
+html.rich .planet .spin i{top:0}
+html.rich .planet .body::before{animation:none}
+html.rich .planet .tag{z-index:6}
+html.rich #door .gate-wrap{margin-top:calc(var(--R) * .03)}
 /* the gold world's wake: an arc of the ring lit behind it, fading back the way it came */
 html.rich .planets .trdot .trail{display:block;position:absolute;left:calc(-75 * var(--u));top:calc(-75 * var(--u));width:calc(150 * var(--u));height:calc(150 * var(--u));border-radius:50%;
   background:conic-gradient(from -50deg,rgba(255,214,140,0) 0deg,rgba(255,214,140,.08) 50deg,rgba(255,222,160,.75) 108deg,rgba(255,222,160,0) 109deg);
