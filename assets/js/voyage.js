@@ -348,23 +348,28 @@ vec2 shockBend(vec2 css,out float ring){
 void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; vec2 bent=shockBend(css,ring);
-  vec3 c=uG3<0.999?sky(bent):vec3(0.0);
+  vec3 c=sky(bent);
   if(uG3>0.001){
-    vec3 gv=texture(uGalTex,gl_FragCoord.xy/uRes).rgb;
+    /* the galaxy over the dawn's own sky, not in place of it, so the stars carry straight through; only as the flight
+       comes to rest inside does that sky give way to the galaxy's own far stars, turning with the camera */
+    vec4 g4=texture(uGalTex,gl_FragCoord.xy/uRes);
     float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
-    /* behind it, the far sky: a sparse field of stars, turning with the camera */
-    float f=uRes.y/uPx*0.95;
-    vec3 dv=uGCamR*normalize(vec3((css.x-uRes.x/uPx*0.5)/f,(uRes.y/uPx*0.5-css.y)/f,1.0));
-    vec3 far=stars(dv,f*uPx)*0.07*(1.0-0.5*uGalPage);
-    c=mix(c,vec3(0.0011,0.001,0.001)+far+gv*(1.0-0.55*mid*uGalPage),uG3);
+    vec3 back=c;
+    if(uGalPage>0.001){
+      float f=uRes.y/uPx*0.95;
+      vec3 dv=uGCamR*normalize(vec3((css.x-uRes.x/uPx*0.5)/f,(uRes.y/uPx*0.5-css.y)/f,1.0));
+      back=mix(c,vec3(0.0011,0.001,0.001)+stars(dv,f*uPx)*0.035,uGalPage);
+    }
+    c=mix(c,back*(1.0-g4.a*0.85)+g4.rgb*(1.0-0.55*mid*uGalPage),uG3);
   }
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
   c+=vec3(0.2,0.19,0.17)*sp*0.08*exp(-rv/(dg*0.45));
   float dust; vec3 neb=nebula(css,dust);
-  /* inside the galaxy its own stars are the streaks: the lanes are not drawn there at all */
-  if(uG3<0.999) c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*(1.0-uG3)+neb;
+  /* the lanes of the rush carry on into the galaxy (they are its speed), fading only as the flight comes to rest in it */
+  float lanes=1.0-0.9*uGalPage;
+  if(lanes>0.01) c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*lanes+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);

@@ -13,8 +13,6 @@ import { createInstall } from "./install.js";
 import { openChores, hurryChores } from "./chores.js";
 
 const $ = (s) => document.querySelector(s);
-/* the door in its rich look (the page's own, html.rich); the earlier, plainer door is kept, on request (?classic) */
-if (/[?&]classic\b/.test(location.search)) document.documentElement.classList.remove("rich");
 initTheme();
 bindSwatches();
 

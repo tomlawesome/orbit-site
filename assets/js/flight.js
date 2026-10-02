@@ -122,7 +122,7 @@ export function mountRasters(world, groups, prefix) {
    and rides to the centre of the screen, and the name written once on the
    void. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, deepGrowth } from "./engine.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -156,7 +156,7 @@ export function docsFlight(chart) {
   return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart };
 }
 export { UP, DOWN };
-import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
+import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN, T } from "./timeline.js";
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
 
@@ -216,9 +216,33 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.style.left = `${left}px`; mark.style.top = `${top}px`; mark.style.width = `${size}px`; mark.style.height = `${size}px`;
     flip(r, left, top, size, size, ms);
   }
+  /* the docs' flight: the mark is not gathered up, it becomes the galaxy. Tilted by now just as the galaxy is seen,
+     its ring grows with the galaxy, exactly (engine.js: deepGrowth), its rim as the camera rushes in, and thins away
+     as it goes past the frame; its gold planet glides to the centre and gives itself to the galaxy's core */
   function dissolveMark() {
-    mark.classList.remove("on"); mark.classList.add("dissolve");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
+    const svg = mark.querySelector("svg"), [ring, , gold] = svg ? svg.querySelectorAll("circle") : [];
+    const rate = flight.profile.rate || 1, H = innerHeight;
+    const tu0 = Math.max(FAR_T0, (T.markOut / rate - T.warp / rate) * rate), span = Math.max(1, FAR_T1 - tu0), dur = span / rate;
+    if (!ring || reduced) { mark.classList.remove("on"); mark.classList.add("dissolve"); return; }
+    ring.style.vectorEffect = "non-scaling-stroke";
+    const frames = [];
+    for (let i = 0; i <= 12; i++) {
+      const k = deepGrowth(tu0 + (span * i) / 12, H) / deepGrowth(tu0, H);
+      frames.push({ offset: i / 12, transform: `scale(${k.toFixed(4)})`, opacity: Math.max(0, Math.min(1, 1 - (k - 1.15) / 1.6)) * 0.85 });
+    }
+    const box = { transformOrigin: "100px 100px", transformBox: "view-box" };
+    Object.assign(ring.style, box); Object.assign(gold.style, { transformBox: "view-box", transformOrigin: "163px 63.5px" });
+    const a1 = ring.animate(frames, { duration: dur, easing: "linear", fill: "forwards" });
+    gold.animate([
+      { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
+      { transform: "translate(-63px, 36.5px) scale(.9)", opacity: 1, offset: 0.55 },
+      { transform: "translate(-63px, 36.5px) scale(1.6)", opacity: 0 },
+    ], { duration: Math.min(dur, 620), easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
+    a1.finished.then(() => {
+      mark.classList.remove("on");
+      for (const el of [ring, gold]) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; }
+    }).catch(() => {});
   }
   function dropMark() {
     mark.classList.remove("on"); mark.classList.add("collapse");
@@ -281,7 +305,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     body.classList.remove(...CLASSES, "holding");
     flight = { profile, glyph, on: hooks };
     /* which way the flight goes, for the mark's tilt into it */
-    mark.dataset.way = (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
+    mark.dataset.way = profile.ending === "chart" ? "deep" : (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
     let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1);
