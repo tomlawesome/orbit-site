@@ -1069,8 +1069,10 @@ export function createFlight(canvas, options = {}) {
   }
 
   /** @param {number} now */
-  function frame(now) {
+  function frame() {
     if (!flight) return;
+    /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (flight.js) */
+    const now = clock();
     const active = flight;
     /* a profile may run its beats faster (the docs' and the information's flights) */
     const rate = active.P.rate || 1;
@@ -1109,7 +1111,8 @@ export function createFlight(canvas, options = {}) {
       if (!warmed) {
         if (!voyage && !options.plain) { try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; } }
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
-        warmed = Promise.all([earthReady, voyage ? voyage.warm() : null]).catch(() => {});
+        /* if its shaders could not be made after all, the flight draws without it, as it always could */
+        warmed = Promise.all([earthReady, voyage ? voyage.warm() : null]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; });
       }
       return warmed;
     },

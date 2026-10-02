@@ -59,7 +59,13 @@ function warmJourneys() {
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 let starting = false;
-const startWhen = (p, go) => { if (starting) return; starting = true; within(p, 1800).then(() => { starting = false; go(); }); };
+/* a journey waits until what it draws is ready (on a first visit it may still be on its way), up to a few seconds;
+   meanwhile the door answers the click: the way chosen pulses, so the wait reads as the journey gathering itself */
+const startWhen = (p, go, el = null) => {
+  if (starting) return; starting = true;
+  const t = setTimeout(() => { document.body.classList.add("readying"); el?.classList.add("readying"); }, 120);
+  within(p, 6000).then(() => { clearTimeout(t); document.body.classList.remove("readying"); el?.classList.remove("readying"); starting = false; go(); });
+};
 const duskRasters = mountRasters($("#dusk .world"), {}, "dusk");
 let dawnDrawn = false, duskDrawn = false;
 const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
@@ -203,8 +209,9 @@ function leaveWorld() {
   });
 }
 function flyToPad(id) {
-  if (id === "install" || id === "info") { startWhen(shotOf(PADS[id]).prepare?.(), () => goToWorld(id)); return; }
-  startWhen(Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]), () => flyNow(id));
+  const planet = $(`#door .planet[data-section="${id}"]`);
+  if (id === "install" || id === "info") { startWhen(shotOf(PADS[id]).prepare?.(), () => goToWorld(id), planet); return; }
+  startWhen(Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]), () => flyNow(id), planet);
 }
 function flyNow(id) {
   const pad = PADS[id], sec = SECTIONS[id];
@@ -243,7 +250,7 @@ function backToDawn() {
    instrument two seconds after it (the app's own beats, to the millisecond) */
 function launch() {
   if (current === "door") $("#gate").classList.add("flash");
-  startWhen(journey.warm(), launchNow);
+  startWhen(journey.warm(), launchNow, $("#gate"));
 }
 function launchNow() {
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }

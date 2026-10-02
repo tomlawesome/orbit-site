@@ -163,8 +163,28 @@ const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrum
 /* a flight played faster keeps every beat in step: those inside it scale with it, those after it come sooner by what it saved */
 const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ ...b, at: b.at <= dur ? b.at / rate : b.at - (dur - dur / rate) })));
 
+/* the journey's clock: real time, except that a stall (the page busy for a moment: a picture decoded, a shader made
+   ready) is counted as no more than a frame or so. The flight and its beats both keep this time, so a stall pauses
+   the journey where it is rather than skipping it ahead to the landing */
+function journeyClock() {
+  let t = 0, last = performance.now(), raf = 0;
+  const pending = new Map(); let ids = 0;
+  const now = () => { const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p; return t; };
+  const poll = () => {
+    raf = 0; const at = now();
+    for (const [id, b] of pending) if (b.at <= at) { pending.delete(id); b.fn(); }
+    if (pending.size) raf = requestAnimationFrame(poll);
+  };
+  return {
+    now,
+    schedule(fn, ms) { const id = ++ids; pending.set(id, { at: now() + ms, fn }); if (!raf) raf = requestAnimationFrame(poll); return id; },
+    cancel(id) { pending.delete(id); },
+  };
+}
+
 export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {} }) {
-  const engine = createFlight(canvas);
+  const clock = journeyClock();
+  const engine = createFlight(canvas, { now: clock.now });
   addEventListener("resize", () => engine.resize());
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const body = document.body;
@@ -257,7 +277,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     mark.dataset.way = (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
-    cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1), ascentStep);
+    cancelTimeline = runTimeline(reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1), ascentStep, clock);
   }
   const ascend = (o = {}) => fly(UP, o);
   function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {} } = {}) {
@@ -265,7 +285,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
     descent = { onto, from, on: hooks, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
-    cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(descentBeats(), DOWNDUR, descent.rate), descentStep);
+    cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(descentBeats(), DOWNDUR, descent.rate), descentStep, clock);
   }
   return { fly, ascend, descend, reset, reduced, warm: () => engine.warm() };
 }
