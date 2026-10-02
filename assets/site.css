@@ -1056,14 +1056,14 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
   #installpad .words h1{font-size:clamp(28px,8.2vw,44px);margin-bottom:22px}
 }
 /* the words arrive once the camera has all but settled */
-body.instrument #installpad .words{animation:chromein 2.4s ease .3s both}
+body.instrument #installpad .words{animation:chromein .9s ease .05s both}
 body.withdrawing #installpad .words{animation:chromeout .45s ease both}
 /* forming: the install is over the door with no floor of its own; the shot starts from the planet that was clicked */
 #installpad.forming{background:transparent;z-index:37}
 /* and above the door until the door has gone, so the dawn never shows through on arrival */
 body.departing #installpad.formed{z-index:37}
 #installpad.forming .back,#installpad.forming .home,#installpad.forming .doorfoot,#installpad.forming .words,#installpad.forming .scrim,#installpad.forming .poster{opacity:0;transition:opacity .6s ease;pointer-events:none;animation:none}
-#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot,#installpad.formed .scrim{opacity:1;transition:opacity 2.4s ease}
+#installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot,#installpad.formed .scrim{opacity:1;transition:opacity .9s ease}
 #installpad.forming .orbitgl{transition:none}
 /* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
 body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),

@@ -70,7 +70,8 @@ function world0() {
   REST = TUNE.rest; FROM = TUNE.from;
 }
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
-const HOLD = 0.3, APPROACH = 2.7, SETTLE = 2.5, RETURN = 2.4;
+/* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
+const HOLD = 0.3, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
 
 function layoutFor(W, H) {
   const t = H > W * 1.1 ? TUNE.port : TUNE.land;
