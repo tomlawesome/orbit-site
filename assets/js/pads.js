@@ -495,7 +495,9 @@ export function createInfo(pad, world = null) {
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
 export function wirePlanets(door, onGo) {
   /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge */
-  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), tag: p.querySelector(".tag"), r: (+p.dataset.r + (innerWidth < 560 ? 15 : 21)) / 200 }));
+  const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), body: p.querySelector(".body"), tag: p.querySelector(".tag"), rb: +p.dataset.r / 200, r: (+p.dataset.r + (innerWidth < 560 ? 15 : 21)) / 200 }));
+  const gold = door.querySelector(".trdot"), goldBody = gold?.querySelector("i");
+  const GOLD_AT = Math.atan2(63, 36.5), GOLD_R = Math.hypot(63, 36.5) / 200;   /* where the gold world sits on its turning frame */
   planets.forEach(({ p }) => {
     p.addEventListener("click", (e) => { e.preventDefault(); onGo(p.dataset.section); });
     p.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onGo(p.dataset.section); } });
@@ -503,29 +505,57 @@ export function wirePlanets(door, onGo) {
   /* the name rides just past the leader, on the side away from the body, and
      stays upright; the spin's own clock says where the body is, so nothing
      is read back from the layout, and a name moves every third frame,
-     which at these speeds no eye can tell from every frame */
-  let last = 0, size = 0, cx = 0, widths = [];
+     which at these speeds no eye can tell from every frame. Its anchor turns
+     with the body, so it never jumps; at the bottom of the orbit, where the
+     way in sits below, it moves round beside its body instead of under it */
+  let last = 0, size = 0, cx = 0, cy = 0, widths = [];
   const measure = () => {
     const box = door.querySelector(".planets"), r = box.getBoundingClientRect();
-    size = box.clientWidth || 0; cx = r.left + r.width / 2;
+    size = box.clientWidth || 0; cx = r.left + r.width / 2; cy = r.top + r.height / 2;
     widths = planets.map(({ tag }) => tag.offsetWidth);
   };
   measure(); addEventListener("resize", measure);
+  const clamp = (x) => Math.max(-1, Math.min(1, x));
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const angleOf = (el) => {
+    const anim = el.getAnimations()[0]; if (!anim) return null;
+    const t = anim.effect.getTiming();
+    return (((anim.currentTime || 0) - (t.delay || 0)) / (t.duration || 1)) * Math.PI * 2;
+  };
+  /* in the rich look each world's lit side faces the sun, just under the horizon below: the picture is held upright
+     against its orbit by the stylesheet, and turned here by the sun's angle from it */
+  const lightAt = (x, y) => {
+    const s = Math.max(innerWidth / 1600, innerHeight / 1000), sx = innerWidth / 2, sy = innerHeight - 70 * s;
+    return Math.atan2(-(sx - x), sy - y);
+  };
   function place(now) {
     if (!size) measure();
     if (!door.hidden && now - last > 48 && size) {
       last = now;
-      planets.forEach(({ spin, tag, r }, i) => {
-        const anim = spin.getAnimations()[0]; if (!anim) return;
-        const t = anim.effect.getTiming(), a = (((anim.currentTime || 0) - (t.delay || 0)) / (t.duration || 1)) * Math.PI * 2;
+      const rich = document.documentElement.classList.contains("rich");
+      planets.forEach(({ spin, body, tag, r, rb }, i) => {
+        const a = angleOf(spin); if (a === null) return;
         const ux = Math.sin(a), uy = -Math.cos(a);           /* the body started at the top */
-        const ax = ux > 0.38 ? 0 : ux < -0.38 ? -100 : -50, ay = uy < -0.55 ? -100 : uy > 0.55 ? 0 : -50;
-        let x = ux * r * size;
+        const below = smooth(0.72, 0.94, uy), side = ux >= 0 ? 1 : -1;
+        let ax = -50 + 50 * clamp(ux / 0.5), ay = -50 + 50 * clamp(uy / 0.6);
+        let x = ux * r * size, y = uy * r * size;
+        /* beside the body: just past its haze, level with it */
+        const bx = ux * rb * size + side * 0.075 * size, by = uy * rb * size;
+        x += (bx - x) * below; y += (by - y) * below;
+        ax += ((side > 0 ? 0 : -100) - ax) * below; ay += (-50 - ay) * below;
         /* a name near the edge of a small screen slides in rather than off it */
         const w = widths[i] || 0, left = cx + x + (ax / 100) * w, right = left + w;
         if (left < 8) x += 8 - left; else if (right > innerWidth - 8) x -= right - (innerWidth - 8);
-        tag.style.transform = `translate(calc(${x.toFixed(1)}px + ${ax}%), calc(${(uy * r * size).toFixed(1)}px + ${ay}%))`;
+        tag.style.transform = `translate(calc(${x.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${y.toFixed(1)}px + ${ay.toFixed(1)}%))`;
+        if (rich) body.style.setProperty("--lr", `${lightAt(cx + ux * rb * size, cy + uy * rb * size).toFixed(3)}rad`);
       });
+      if (rich && goldBody) {
+        const a = angleOf(gold);
+        if (a !== null) {
+          const g = a + GOLD_AT;
+          goldBody.style.setProperty("--lr", `${lightAt(cx + Math.sin(g) * GOLD_R * size, cy - Math.cos(g) * GOLD_R * size).toFixed(3)}rad`);
+        }
+      }
     }
     requestAnimationFrame(place);
   }

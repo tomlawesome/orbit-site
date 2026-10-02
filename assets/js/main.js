@@ -12,6 +12,8 @@ import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 
 const $ = (s) => document.querySelector(s);
+/* the door in its rich look, for now on request (?rich), to set beside the plain one */
+if (/[?&]rich\b/.test(location.search)) document.documentElement.classList.add("rich");
 initTheme();
 bindSwatches();
 

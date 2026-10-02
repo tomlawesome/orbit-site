@@ -189,12 +189,15 @@ body.lit #door .lockup .planets{opacity:1}
 #door{--R:min(420px,84vw,48svh);--lift:4svh}
 @media (max-width:560px){
   #door{--R:min(420px,68vw,46svh);--lift:2svh}
-  /* on a phone the ring is small, so the name and the gate keep to its scale */
-  #door .lockup .name{font-size:clamp(40px,13vw,72px)}
-  #door .gate{font-size:10.5px;padding:8px 18px;letter-spacing:.05em}
-  #door .gate-wrap{transform:translateY(min(58px,13vw))}
 }
 #door .loginchrome{padding-bottom:calc(var(--lift) * 2)}
+/* one measure for the whole lockup: the name, the way in and the gap between them are all fractions of the
+   ring, so they keep their proportions on every screen. The name sits at the ring's centre with room to
+   breathe (about three fifths of its width); the way in sits below the outermost orbit, outside the system,
+   so no planet ever crosses it; and the lockup is centred as a whole, which lifts the ring a little */
+#door .lockup .name{font-size:calc(var(--R) * .145);letter-spacing:.01em}
+#door .gate-wrap{grid-area:2/1;transform:none;margin-top:calc(var(--R) * .17)}
+#door .gate{font-size:clamp(12px,calc(var(--R) * .04),16px);padding:.86em 2.3em;letter-spacing:.05em}
 #door .loginchrome .lockup .glyph svg{width:var(--R)}
 .loginchrome .lockup .glyph .tr{animation:spinback 40s linear infinite;transform-origin:100px 100px}
 #login-glyph{position:relative}
@@ -695,6 +698,7 @@ body.dispersing .transport{opacity:0}
    ring is 200 units across, so a unit is var(--R) / 200 */
 .planets{grid-area:1/1;position:relative;width:var(--R);aspect-ratio:1;--u:calc(var(--R) / 200)}
 .planets .trdot{position:absolute;left:50%;top:50%;width:0;height:0;animation:spinback 40s linear infinite;will-change:transform}
+.planets .trdot .trail{display:none}
 .planets .trdot i{position:absolute;left:calc(63 * var(--u));top:calc(-36.5 * var(--u));width:calc(14 * var(--u));height:calc(14 * var(--u));border-radius:50%;background:#d8b45a;transform:translate(-50%,-50%)}
 .planet{position:absolute;left:50%;top:50%;width:0;height:0;outline:0;text-decoration:none;color:#8791b3}
 .planet .spin{position:absolute;left:0;top:0;width:0;height:0;animation:spinback var(--dur) linear infinite;animation-delay:var(--delay);will-change:transform}
@@ -703,7 +707,7 @@ body.dispersing .transport{opacity:0}
 .planet .halo{width:calc(15.2 * var(--u));height:calc(15.2 * var(--u));border:max(1px,calc(.6 * var(--u))) solid #4a5468;transition:border-color .25s;pointer-events:none}
 .planet .lead{width:max(1px,calc(.6 * var(--u)));height:calc(9.4 * var(--u));border-radius:0;background:#4a5468;transform:translate(-50%,calc(-50% - 12.3 * var(--u)));transition:background .25s;pointer-events:none}
 .planet .body{width:calc(8.4 * var(--u));height:calc(8.4 * var(--u));background:var(--c);transition:transform .25s,box-shadow .25s;pointer-events:none}
-.planet .tag{position:absolute;left:0;top:0;white-space:nowrap;font:500 calc(4.4 * var(--u)) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:#8791b3;
+.planet .tag{position:absolute;left:0;top:0;white-space:nowrap;font:500 max(9.5px,calc(4.6 * var(--u))) "JetBrains Mono",monospace;letter-spacing:calc(.9 * var(--u));text-transform:uppercase;color:#8791b3;
   text-shadow:0 0 2px #04060e,0 0 4px #04060e,0 0 8px #04060e;transition:color .25s;will-change:transform;pointer-events:none}
 .planet:hover .spin,.planet:focus-visible .spin{animation-play-state:paused}
 .planet:hover .body,.planet:focus-visible .body{transform:translate(-50%,-50%) scale(1.24);box-shadow:0 0 6px var(--c)}
@@ -1200,3 +1204,44 @@ body.covered #door{visibility:hidden}
 body.showwarp #door .dsky svg,body.showwarp #door .rays svg,body.showwarp #door .world .breath{animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}
+
+/* ══ THE RICH DOOR (?rich): the same lockup, lit. The planets are small worlds of their own (tools/planets.py),
+   backlit by the sunrise and turned as they travel so the light always comes from it (pads.js); the ring and
+   the orbits catch the dawn from below; the gold world on the ring draws a trail of light behind it; the name
+   is lit from beneath and the way in is gold leaf with a slow sheen ══ */
+#door .lux{display:none}
+html.rich #door .lux{display:inline}
+html.rich #door .ring:not(.lux){stroke:url(#ringlit);stroke-width:1.6}
+html.rich #door .orbits circle{stroke:url(#orblit);stroke-opacity:1;stroke-width:.55;stroke-dasharray:.4 2.2;stroke-linecap:round}
+/* the bodies: each picture is 2.57 times its body, for the haze and the rings round it */
+html.rich .planet .body{width:calc(13 * var(--u));height:calc(13 * var(--u));background:none}
+/* each picture turns back against its orbit, on the compositor, so its light stays put whatever the page is busy with;
+   pads.js adds only the small turn towards the sun, which barely changes */
+html.rich .planet .body::before,html.rich .planets .trdot i::before{content:"";position:absolute;inset:-78.6%;background:center/100% no-repeat;rotate:var(--lr,0rad);will-change:transform}
+html.rich .planet .body::before{animation:spinback var(--dur) linear infinite reverse;animation-delay:var(--delay)}
+html.rich .planets .trdot i::before{animation:spinback 40s linear infinite reverse}
+html.rich .planet:hover .body::before,html.rich .planet:focus-visible .body::before,body.departing #door .planet.chosen .body::before{animation-play-state:paused}
+@media (prefers-reduced-motion:reduce){html.rich .planet .body::before,html.rich .planets .trdot i::before{animation:none}}
+html.rich .planet[data-section=install] .body::before{background-image:url(img/door/planet-install.webp)}
+html.rich .planet[data-section=info] .body::before{background-image:url(img/door/planet-info.webp)}
+html.rich .planet[data-section=docs] .body::before{background-image:url(img/door/planet-docs.webp)}
+html.rich .planets .trdot i{width:calc(14 * var(--u));height:calc(14 * var(--u));background:none}
+html.rich .planets .trdot i::before{background-image:url(img/door/planet-gold.webp)}
+html.rich .planet .halo{width:calc(21 * var(--u));height:calc(21 * var(--u));border-color:color-mix(in srgb,var(--c) 20%,transparent)}
+html.rich .planet .lead{height:calc(7 * var(--u));transform:translate(-50%,calc(-50% - 15.6 * var(--u)));background:linear-gradient(to top,color-mix(in srgb,var(--c) 55%,transparent),transparent)}
+html.rich .planet:hover .body,html.rich .planet:focus-visible .body{box-shadow:none;filter:drop-shadow(0 0 calc(3 * var(--u)) color-mix(in srgb,var(--c) 70%,transparent))}
+html.rich .planet .tag{color:#a9b2cc}
+/* the gold world's wake: an arc of the ring lit behind it, fading back the way it came */
+html.rich .planets .trdot .trail{display:block;position:absolute;left:calc(-75 * var(--u));top:calc(-75 * var(--u));width:calc(150 * var(--u));height:calc(150 * var(--u));border-radius:50%;
+  background:conic-gradient(from -50deg,rgba(255,214,140,0) 0deg,rgba(255,214,140,.08) 50deg,rgba(255,222,160,.75) 108deg,rgba(255,222,160,0) 109deg);
+  -webkit-mask:radial-gradient(closest-side,transparent 92.4%,#000 95.4%,#000 96.6%,transparent 99.6%);mask:radial-gradient(closest-side,transparent 92.4%,#000 95.4%,#000 96.6%,transparent 99.6%)}
+/* the name, lit from below by the dawn, with a little of its light round it */
+html.rich #door .lockup .name{background:linear-gradient(180deg,#fdfbf7 12%,#f2e7d3 60%,#dcbd80 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:blur(6px) drop-shadow(0 0 0 rgba(255,206,140,0))}
+html.rich body.lit #door .lockup .name{filter:blur(0) drop-shadow(0 0 calc(var(--R) * .045) rgba(255,206,140,.2))}
+/* the way in: gold leaf, a bevel of light along its top, a glow, and now and then a sheen across it */
+html.rich #door .gate{position:relative;overflow:hidden;color:#1d1406;background:linear-gradient(180deg,#f6dc98 0%,#e1bd62 46%,#c79b43 100%);
+  box-shadow:inset 0 1px 0 rgba(255,250,230,.7),inset 0 -1px 0 rgba(90,60,10,.35),0 0 0 1px rgba(255,226,160,.28),0 10px 34px rgba(216,170,80,.3),0 0 70px rgba(216,180,90,.2)}
+html.rich #door .gate::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-130%);animation:sheen 8s ease-in-out 3.6s infinite;pointer-events:none}
+@keyframes sheen{0%{transform:translateX(-130%)}16%,100%{transform:translateX(130%)}}
+@media (prefers-reduced-motion:reduce){html.rich #door .gate::after{animation:none}}
