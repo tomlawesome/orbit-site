@@ -797,7 +797,7 @@ export function createFlight(canvas, options = {}) {
 
     /* site: the sphere, ruled faint beneath the stars — its rings ride the
        same law as the streaks, only slower, so they read as the far sky */
-    if (av > 0.02) {
+    if (av > 0.02 && !voyage) {
       const lift = Math.min(1, (av - 0.02) / 0.3);
       ctx.strokeStyle = PACK.pen; ctx.lineWidth = 1.1;
       for (const ring of SPHERE) {
@@ -867,6 +867,9 @@ export function createFlight(canvas, options = {}) {
        vanishing point: p runs 1 → 0 instead of 0 → 1. */
     for (const g of active.props) {
       if (t < g.t0) continue;
+      /* over the voyage's sky, only the traffic that is real passes: the households, the docs' own
+         constellations; the made-up craft, systems, comets and rulings are left out */
+      if (voyage && g.kind !== "home" && g.kind !== "chart") continue;
       const advance = Math.max(av, 0.50) * (dt * 1000) / g.dur;
       /* prime() has already set every prop's `p` before step() ever runs. */
       g.p = /** @type {number} */ (g.p) + (active.rev ? -advance : advance);
