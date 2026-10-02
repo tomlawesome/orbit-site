@@ -317,8 +317,9 @@ export function createFlight(canvas, options = {}) {
   }, { once: true });
   /* the flight's world in WebGL beneath this canvas where it can be had (voyage.js): the Earth as a globe, the
      Milky Way, the streaks as light. Without it, this canvas draws all of it, as it always has. */
+  /* made when the flight is first readied (warm), not when the page starts: the door's first light is never kept
+     waiting by a GPU context and its shaders */
   let voyage = null;
-  try { voyage = options.plain ? null : createVoyage(canvas); } catch (e) { voyage = null; }
   /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
   let worldGL = null;
 
@@ -1047,6 +1048,7 @@ export function createFlight(canvas, options = {}) {
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
       if (!warmed) {
+        if (!voyage && !options.plain) { try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; } }
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
         warmed = Promise.all([earthReady, voyage ? voyage.warm() : null]).catch(() => {});
       }
