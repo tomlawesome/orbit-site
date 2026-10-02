@@ -900,7 +900,9 @@ export function createFlight(canvas, options = {}) {
        so the arrival's slow bloom is also the departure's slow contraction.
        site: a profile may name another ending; the app's own is the bloom. */
     const q = bloomAt(active.rev ? mirror(tc) : tc);
-    if (!P.ending || P.ending === "bloom") drawBloom(q); else drawEnding(P.ending, q, P);
+    /* with the voyage, its star carries the first of the bloom; this canvas's own takes over only for the
+       last of it, so the landing is handed the same full light as ever */
+    if (!P.ending || P.ending === "bloom") drawBloom(voyage ? Math.max(0, (q - 0.45) / 0.55) : q); else drawEnding(P.ending, q, P);
 
     /* and the world beneath, in the same frame */
     if (voyage && show) {
@@ -909,6 +911,7 @@ export function createFlight(canvas, options = {}) {
       voyage.draw({
         t, v, K: P.K, vp: [VPX, VPY], rmax: RMAX, tint: [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)],
         progress: active.rev ? 1 - tc / P.dur : tc / P.dur, world: worldGL, bloom,
+        tu: active.rev ? mirror(tc) : tc, star: !P.ending || P.ending === "bloom",
         bloomPt: [W / 2, P.ending === "halo" ? H * 0.24 : H * 0.5], dt: active.pinned ? 0 : dt * 1000,
       });
     }
