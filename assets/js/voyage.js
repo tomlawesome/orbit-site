@@ -251,12 +251,12 @@ vec3 nebula(vec2 css,out float dust){
 }
 
 /* ── the moon passed on the way out: the install's gold moon, growing as it sweeps by ── */
-vec4 moonAt(vec2 css){
+vec4 moonAt(vec2 css,float lod){
   vec2 d=(css-uMoonS.xy)/uMoonS.z; float rr=dot(d,d); if(rr>1.0) return vec4(0.0);
   vec3 n=vec3(d.x,-d.y,sqrt(1.0-rr));
   float cs=cos(uMoonSpin), sn=sin(uMoonSpin); vec3 m=vec3(cs*n.x+sn*n.z,n.y,-sn*n.x+cs*n.z);
   vec2 uv=vec2(atan(m.x,m.z)/TAU+0.5,0.5-asin(clamp(m.y,-1.0,1.0))/PI);
-  vec3 alb=pow(texture(uMoonT,uv).rgb,vec3(2.2)); float l=dot(alb,vec3(0.2126,0.7152,0.0722)); alb=mix(vec3(l),alb,0.5);
+  vec3 alb=pow(textureLod(uMoonT,uv,lod).rgb,vec3(2.2)); float l=dot(alb,vec3(0.2126,0.7152,0.0722)); alb=mix(vec3(l),alb,0.5);
   vec3 L=normalize(vec3(-0.25,-0.8,-0.15));
   float lit=smoothstep(-0.05,0.25,dot(n,L))*max(dot(n,L),0.0);
   vec3 c=alb*SUNL*lit*0.7+alb*0.006;
@@ -266,8 +266,11 @@ vec4 moonAt(vec2 css){
 vec4 moon(vec2 css){
   if(uMoonS.w<=0.0||length(css-uMoonS.xy)>uMoonS.z+length(uMoonV)+2.0) return vec4(0.0);
   vec4 acc=vec4(0.0);
-  /* its blur over the exposure: twelve fixed steps, so the edges are steady frame to frame */
-  for(int i=0;i<12;i++) acc+=moonAt(css+uMoonV*((float(i)+0.5)/12.0-0.5));
+  /* its blur over the exposure: twelve fixed steps, so the edges are steady frame to frame. Its map is read at one
+     level of detail for the whole disc (its texels across a pixel, at the centre), worked out once here: a read that
+     found its own level from its neighbours would have the compiler copy the loop out twelve times over */
+  float lod=log2(max(1.0,float(textureSize(uMoonT,0).x)/(TAU*uMoonS.z*uPx)));
+  for(int i=0;i<12;i++) acc+=moonAt(css+uMoonV*((float(i)+0.5)/12.0-0.5),lod);
   return acc/12.0*uMoonS.w;
 }
 
