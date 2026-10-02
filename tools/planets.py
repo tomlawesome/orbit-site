@@ -29,7 +29,7 @@ RP = 56            # the planet's radius in it, px (the page sizes the picture a
 SS = 3             # supersampling
 RIN, ROUT = 1.24, 2.34
 
-L = np.array([0.0, 0.88, -0.28]); L /= np.linalg.norm(L)   # to the sun: below (y is down), a little behind
+L = np.array([0.0, 0.94, -0.1]); L /= np.linalg.norm(L)   # to the sun: below (y is down), a little behind
 
 
 def load(name, size=None):
