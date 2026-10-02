@@ -61,3 +61,9 @@ export function fetchOnce(url) {
   if (!fetched.has(url)) fetched.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); }));
   return fetched.get(url);
 }
+
+/* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
+   browsers: this says where the time went) */
+export function note(what, since = 0) {
+  try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
+}

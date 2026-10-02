@@ -11,7 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore } from "./chores.js";
+import { chore, note } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 
@@ -345,12 +345,17 @@ export function createInstall(pad, opts = {}) {
     /* the textures are baked before they are wanted, while the door is quiet */
     /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
     prepare() {
-      /* its pictures asked for now; made, baked and measured as chores (chores.js): a piece at a time, after the door
-         has come up */
-      if (!this.prepared) fetchWorld(opts.world);
-      if (!this.prepared) this.prepared = chore(() => { const w = ensure(); if (w) size(); return w; }, 60, TAG)
-        .then((w) => (w ? w.bake() : false))
-        .then((ok) => (ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false));
+      /* its pictures asked for, and its shaders set compiling, at once: both go on away from the page (the browser
+         compiles in the background), so they have all of the first light and the door to be done in, and the
+         compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
+         measure) waits its turn as chores (chores.js), after the door has come up */
+      if (!this.prepared) {
+        fetchWorld(opts.world);
+        const w = ensure(); if (w) size();
+        w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`));
+        this.prepared = (w ? w.bake() : Promise.resolve(false))
+          .then((ok) => { note(`${TAG}: ready`); return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false; });
+      }
       return this.prepared;
     },
     start() {

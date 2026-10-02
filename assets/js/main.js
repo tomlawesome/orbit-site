@@ -46,11 +46,12 @@ let warmingAll = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
-  /* all asked for at once, so their pictures all start down the wire now; the work each needs on the page and the GPU
-     is queued as chores (chores.js) in this order, and done a piece at a time once the door has come up */
+  /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
+     their shaders start compiling now (both away from the page); the work each then needs on the GPU is queued as
+     chores (chores.js) in this order, and done a piece at a time once the door has come up */
   const all = [
-    journey.warm(),                    /* 1. the demo (and the docs' flight, which is the same flight's world) */
-    PADS.install.ring.prepare?.(),     /* 2. the install */
+    PADS.install.ring.prepare?.(),     /* 1. the install (the likeliest first journey) */
+    journey.warm(),                    /* 2. the demo (and the docs' flight, which is the same flight's world) */
     PADS.docs.ring.ready?.(),          /* 3. the docs */
     PADS.info.world?.prepare?.(),      /* 4. the information's world */
   ];
