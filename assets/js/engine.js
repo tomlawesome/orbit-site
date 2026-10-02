@@ -985,9 +985,11 @@ export function createFlight(canvas, options = {}) {
       ctx.strokeStyle = con.c; ctx.lineWidth = 1;
       for (let i = 1; i < n; i++) {
         const li = ease((u - (i - 1) * 0.06) / 0.28); if (li <= 0) break;
-        const a = con.pts[i - 1], p = con.pts[i];
+        /* each line stops short of its stars, as the page draws it (pads.js: GAP) */
+        const q = con.pts[i - 1], p = con.pts[i], l = Math.hypot(p[0] - q[0], p[1] - q[1]) || 1, ux = (p[0] - q[0]) / l, uy = (p[1] - q[1]) / l, k = Math.max(0, l - 14);
+        const ax = q[0] + ux * 7, ay = q[1] + uy * 7;
         ctx.globalAlpha = 0.42;
-        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0] + (p[0] - a[0]) * li, a[1] + (p[1] - a[1]) * li); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + ux * k * li, ay + uy * k * li); ctx.stroke();
       }
       ctx.fillStyle = PACK.star;
       for (let i = 0; i < n; i++) {
@@ -999,7 +1001,7 @@ export function createFlight(canvas, options = {}) {
       if (ni > 0) {
         ctx.globalAlpha = 0.5 * ni; ctx.strokeStyle = con.c; ctx.lineWidth = 0.8;
         ctx.beginPath(); ctx.moveTo(low[0], low[1] + 8); ctx.lineTo(nx, low[1] + 24); ctx.stroke();
-        ctx.font = `500 ${g.W > 1200 ? 11 : 10.5}px 'JetBrains Mono', monospace`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+        ctx.font = `500 ${g.W > 1200 ? 15 : g.W < 700 ? 17 : 12}px 'JetBrains Mono', monospace`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
         try { ctx.letterSpacing = "1.8px"; } catch { /* fine */ }
         ctx.fillStyle = PACK.ink; ctx.globalAlpha = ni;
         ctx.fillText(`${con.name.toUpperCase()} · ${n}`, nx, low[1] + 38);

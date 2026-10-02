@@ -49,10 +49,11 @@ function walk(n, [cx, cy, w, h], rnd) {
   return pts;
 }
 /* the boxes the constellations are scattered into. On a wide screen the
-   chart is the whole top of the page and the figures keep to its sides and
-   the band under the search, clear of the heading; otherwise a loose grid
-   across the chart, each cell nudged so no two sit in a row */
-const WIDE_SLOTS = [[190, 110, 260, 130], [1410, 110, 260, 130], [250, 300, 270, 130], [1350, 300, 270, 130], [180, 490, 250, 110], [1420, 490, 250, 110], [640, 340, 260, 100], [960, 340, 260, 100], [800, 500, 260, 100]];
+   chart is the whole top of the page, and the figures are nestled down its
+   two sides, clear of the heading, the search and the list between them;
+   otherwise a loose grid across the chart, each cell nudged so no two sit in
+   a row */
+const WIDE_SLOTS = [[205, 150, 250, 120], [1395, 175, 250, 120], [245, 360, 260, 125], [1360, 385, 260, 125], [190, 575, 250, 120], [1415, 600, 250, 120], [250, 790, 260, 110], [1350, 805, 260, 110], [800, 860, 240, 60]];
 function boxes(n, W, H, mode, rnd) {
   if (mode === "wide" && n <= WIDE_SLOTS.length) return WIDE_SLOTS.slice(0, n).map(([cx, cy, w, h]) => [cx + (rnd() - 0.5) * 40, cy + (rnd() - 0.5) * 30, w, h]);
   const cols = mode === "narrow" ? 2 : Math.min(4, Math.ceil(n / 2)), rows = Math.ceil(n / cols);
@@ -69,9 +70,9 @@ function boxes(n, W, H, mode, rnd) {
    page and the flight's canvas draw the same sky */
 function fieldData(W, H, rnd) {
   const dots = [];
-  for (let i = 0; i < (W > 1200 ? 190 : W > 700 ? 110 : 80); i++) {
-    const r = +(0.5 + rnd() * rnd() * 1.3).toFixed(2), o = +(0.15 + rnd() * 0.45).toFixed(2);
-    dots.push({ x: Math.round(rnd() * W), y: Math.round(rnd() * H), r, o, d: +(rnd() * 6).toFixed(1) });
+  for (let i = 0, n = Math.round((W * H) / 4200); i < n; i++) {
+    const r = +(0.45 + rnd() * rnd() * 1.4).toFixed(2), o = +(0.12 + rnd() * 0.5).toFixed(2);
+    dots.push({ x: Math.round(rnd() * W), y: Math.round(rnd() * H), r, o, d: +(rnd() * 6).toFixed(1), t: starTint(rnd()) });
   }
   const arcs = [];
   /* parallels: shallow arcs bowing upward; meridians: leaning lines */
@@ -79,7 +80,25 @@ function fieldData(W, H, rnd) {
   for (let k = 0; k < (W > 1200 ? 9 : 6); k++) { const x = W * (W > 1200 ? 0.06 + k * 0.11 : 0.08 + k * 0.17), lean = (x - W / 2) * 0.12; arcs.push(`M${(x - lean).toFixed(0)} -20 Q ${(x + lean * 0.3).toFixed(0)} ${H / 2} ${(x + lean).toFixed(0)} ${H + 20}`); }
   return { dots, arcs };
 }
-const fieldMarkup = ({ dots, arcs }) => `<g class="field">${dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" style="--o:${d.o};--d:${d.d}s"/>`).join("")}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
+/* a star's colour by its temperature: most near white, some blue, some gold, a few deep amber */
+const TINTS = ["#cfdcff", "#e4ebff", "#f6f4ee", "#fff4e0", "#ffe2b8", "#ffc996"];
+function starTint(u) { return TINTS[u < 0.12 ? 0 : u < 0.3 ? 1 : u < 0.62 ? 2 : u < 0.82 ? 3 : u < 0.95 ? 4 : 5]; }
+/* the chart's light: a glow for every star of a figure, and the fine cross of the brightest */
+const chartDefs = () => `<defs><radialGradient id="aura"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".25" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="spkh"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="spkv" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>`;
+const fieldMarkup = ({ dots, arcs }) => `<g class="field">${dots.map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.t}" style="--o:${d.o};--d:${d.d}s"/>`).join("")}</g><g class="grat"><path d="${arcs.join(" ")}"/></g>`;
+/* a figure's own faint cloud of light, in its colour, about its stars */
+const nebula = (gi, c, pts) => {
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const rx = (Math.max(...xs) - Math.min(...xs)) / 2 + 60, ry = (Math.max(...ys) - Math.min(...ys)) / 2 + 50;
+  return `<radialGradient id="neb${gi}"><stop offset="0" stop-color="${c}" stop-opacity=".13"/><stop offset=".55" stop-color="${c}" stop-opacity=".05"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient>
+    <ellipse class="neb" cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" rx="${rx.toFixed(0)}" ry="${ry.toFixed(0)}" fill="url(#neb${gi})"/>
+    <ellipse class="neb" cx="${(cx + rx * 0.3).toFixed(0)}" cy="${(cy - ry * 0.2).toFixed(0)}" rx="${(rx * 0.55).toFixed(0)}" ry="${(ry * 0.6).toFixed(0)}" fill="url(#neb${gi})"/>`;
+};
+/* a line of a figure stops short of the stars at its ends, the way a printed chart draws it */
+export const GAP = 7;
+const trim = (q, p, a = GAP, b = GAP) => { const dx = p[0] - q[0], dy = p[1] - q[1], l = Math.hypot(dx, dy) || 1; return [q[0] + (dx / l) * a, q[1] + (dy / l) * a, p[0] - (dx / l) * b, p[1] - (dy / l) * b, Math.max(0, l - a - b)]; };
 const hrefOf = (slug, id) => (id === "top" ? `#docs/${slug}` : `#docs/${slug}/${id}`);
 const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
 
@@ -124,23 +143,27 @@ export function createDocs(pad) {
   function drawChart() {
     mode = modeNow();
     const narrow = mode === "narrow", wide = mode === "wide" && DOCS.length <= WIDE_SLOTS.length;
-    const W = wide ? 1600 : narrow ? 600 : 1000, H = wide ? 600 : narrow ? Math.max(640, 170 * Math.ceil(DOCS.length / 2)) : Math.max(420, 200 * Math.ceil(DOCS.length / 4));
+    const W = wide ? 1600 : narrow ? 600 : 1000, H = wide ? 900 : narrow ? Math.max(640, 170 * Math.ceil(DOCS.length / 2)) : Math.max(420, 200 * Math.ceil(DOCS.length / 4));
     chart.setAttribute("viewBox", `0 0 ${W} ${H}`);
     chart.classList.toggle("wide", wide);
     const rnd = seededRng(SEED);
     starOf = new Map();
     const fd = fieldData(W, H, seededRng(SEED + 7));
     geometry = { W, H, field: fd, cons: [] };
-    let html = fieldMarkup(fd), gi = 0;
+    let html = chartDefs() + fieldMarkup(fd), gi = 0;
     const cells = boxes(DOCS.length, W, H, wide ? "wide" : mode, seededRng(SEED + 3));
     for (const d of DOCS) {
       const name = d.name, g = GROUPS[name], mine = ENTRIES.filter((e) => e.g === name), pts = walk(mine.length, cells[gi], rnd);
       geometry.cons.push({ name, c: g.c, pts });
-      const segs = pts.slice(1).map((p, i) => { const q = pts[i]; const len = Math.hypot(p[0] - q[0], p[1] - q[1]); return `<line x1="${q[0].toFixed(1)}" y1="${q[1].toFixed(1)}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" style="--l:${len.toFixed(0)};--i:${i}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}"/>`; }).join("");
-      const stars = pts.map(([x, y], i) => { const e = mine[i]; starOf.set(e.href, `${gi}-${i}`); return `<g class="star${e.key ? " key" : ""}${recent.includes(e.href) ? " read" : ""}" data-star="${gi}-${i}" data-href="${e.href}" style="--i:${i};--tw:${(2.6 + rnd() * 3).toFixed(1)}s;--td:${(rnd() * 4).toFixed(1)}s" tabindex="0" role="link" aria-label="${esc(e.t)}"><circle class="hit" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="14"/><circle class="glow" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 8 : 6.5}"/><circle class="ring" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 7 : 6}"/><circle class="dot" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${e.key ? 3.8 : 2.8}"/></g>`; }).join("");
+      const segs = pts.slice(1).map((p, i) => { const [x1, y1, x2, y2, len] = trim(pts[i], p); return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" style="--l:${len.toFixed(0)};--i:${i}" stroke-dasharray="${len.toFixed(0)}" stroke-dashoffset="${len.toFixed(0)}"/>`; }).join("");
+      const stars = pts.map(([x, y], i) => {
+        const e = mine[i], X = x.toFixed(1), Y = y.toFixed(1), tint = starTint(rnd()), sp = e.key ? 15 : 0;
+        starOf.set(e.href, `${gi}-${i}`);
+        return `<g class="star${e.key ? " key" : ""}${recent.includes(e.href) ? " read" : ""}" data-star="${gi}-${i}" data-href="${e.href}" style="--i:${i};--sc:${tint};--tw:${(2.6 + rnd() * 3).toFixed(1)}s;--td:${(rnd() * 4).toFixed(1)}s" tabindex="0" role="link" aria-label="${esc(e.t)}"><circle class="hit" cx="${X}" cy="${Y}" r="14"/><circle class="aura" cx="${X}" cy="${Y}" r="${e.key ? 16 : 11}" fill="url(#aura)"/>${sp ? `<rect class="spk" x="${(x - sp).toFixed(1)}" y="${(y - 0.45).toFixed(1)}" width="${sp * 2}" height=".9" fill="url(#spkh)"/><rect class="spk" x="${(x - 0.45).toFixed(1)}" y="${(y - sp).toFixed(1)}" width=".9" height="${sp * 2}" fill="url(#spkv)"/>` : ""}<circle class="glow" cx="${X}" cy="${Y}" r="${e.key ? 8 : 6.5}"/><circle class="ring" cx="${X}" cy="${Y}" r="${e.key ? 7 : 6}"/><circle class="dot" cx="${X}" cy="${Y}" r="${e.key ? 3.6 : 2.6}"/></g>`;
+      }).join("");
       /* the name sits just under the constellation's lowest star */
       const low = pts.reduce((a, p) => (p[1] > a[1] ? p : a), pts[0]), nx = Math.max(70, Math.min(W - 70, low[0]));
-      html += `<g class="con" data-group="${esc(name)}" style="--c:${g.c};--g:${gi}"><g class="lines">${segs}</g><g class="stars">${stars}</g>
+      html += `<g class="con" data-group="${esc(name)}" style="--c:${g.c};--g:${gi}">${nebula(gi, g.c, pts)}<g class="lines">${segs}</g><g class="stars">${stars}</g>
         <g class="name" role="button" tabindex="0" aria-pressed="false" aria-label="Only ${esc(name)}"><line x1="${low[0].toFixed(1)}" y1="${(low[1] + 8).toFixed(1)}" x2="${nx.toFixed(1)}" y2="${(low[1] + 24).toFixed(1)}"/><text x="${nx.toFixed(1)}" y="${(low[1] + 38).toFixed(1)}" text-anchor="middle">${esc(name)}<tspan class="n"> · ${mine.length}</tspan></text></g></g>`;
       gi++;
     }
