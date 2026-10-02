@@ -1006,7 +1006,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
   --ink:#eceaf2;--ink-mid:#aaaebd;--ink-faint:#8b90a1;--ink-quiet:#a0a5b5;--accent:#d8b45a;--accent-text:#d8b45a;--star-far:#eeebe4;--star-near:#f6f2ea}
 /* set to the screen's height, as the flight draws it (its width shows more or less of the same sky): wide enough
    (3:1) for any window, so it meets the flight's last frame exactly (tools/docsky.cjs) */
-.pad.docs .milky{position:absolute;inset:0;z-index:0;pointer-events:none;background:url(img/docs/milkyway.webp) center/auto 100% no-repeat #05070d;opacity:1;transition:opacity .8s ease}
+.pad.docs .milky{position:absolute;inset:0;z-index:0;pointer-events:none;background:url(img/docs/milkyway-wide.webp) center/auto 100% no-repeat #05070d;opacity:1;transition:opacity .8s ease}
 .pad.docs:has(.reader:not([hidden])) .milky{opacity:.3}
 /* the docs' chart: the sources as constellations across the sky */
 .pad.docs .skymap{margin:26px -40px 6px;position:relative}
