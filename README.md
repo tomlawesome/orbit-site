@@ -3,13 +3,13 @@
 The website for [Orbit](https://github.com/tomlawesome/orbit), served by
 GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 
-## Launching soon
+## Maintenance mode
 
-While the app is unfinished the site is in its launching-soon mode: `<html … data-soon>` in `index.html`. The door
-stands alone: its planets turn but carry no names and open nothing, the way in reads "Launching soon", deep links
-(`#install`, `#docs`, `#info`, the demo) land on the door, and none of the journeys are readied (no 3D compiled, none
-of their pictures fetched). Give the attribute words to say something else in that line, for maintenance say
-(`data-soon="Back shortly"`). Remove the attribute and the whole site is back as it was.
+`<html … data-maintenance="Launching soon">` in `index.html` puts the site in maintenance mode: the door stands
+alone, its planets turning but carrying no names and opening nothing, and in place of the way in is the attribute's
+message (`Launching soon` now; `Back shortly` if it is left empty). Deep links (`#install`, `#docs`, `#info`, the
+demo) land on the door, and none of the journeys are readied (no 3D compiled, none of their pictures fetched).
+Remove the attribute and the whole site is back as it was.
 
 ## Layout
 
