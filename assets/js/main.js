@@ -42,7 +42,7 @@ const startDawn = () => { loadEarth(); dawnRasters.start(); };
    so the door never drops a frame for it. On a connection that asks to save data, nothing is
    fetched until it is wanted. The pictures are kept by the site's cache (sw.js). */
 const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
-let warmingAll = null;
+let warmingAll = null, compiledAll = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
@@ -56,6 +56,10 @@ function warmJourneys() {
     PADS.info.world?.prepare?.(),      /* 4. the information's world */
   ];
   warmingAll = Promise.all(all.map((p) => Promise.resolve(p).catch(() => {})));
+  /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are (some
+     browsers compile on the page's own thread, and the page stands still meanwhile: better behind the running ring
+     than on the door) */
+  compiledAll = Promise.all([PADS.install.ring.compiled, journey.compiled()].map((p) => Promise.resolve(p).catch(() => {})));
   return warmingAll;
 }
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
@@ -128,6 +132,11 @@ function hideAll() {
 /* a first visit: nothing of the site's kept in this browser yet (sw.js keeps the pictures for 36 hours) */
 const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-seen"); localStorage.setItem("orbit-site-seen", String(Date.now())); return !seen || Date.now() - +seen > 36 * 3600e3; } catch { return true; } })();
 let doorLitOnce = false;
+/* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not, the page
+   stands still while the journeys' shaders compile, so that is done behind the running ring, never on the door */
+const compilesAside = (() => {
+  try { const gl = document.createElement("canvas").getContext("webgl2"); const ok = !!gl?.getExtension("KHR_parallel_shader_compile"); gl?.getExtension("WEBGL_lose_context")?.loseContext(); return ok || !gl; } catch { return true; }
+})();
 function showDoor() {
   journey.reset(); hideAll(); current = "door";
   const door = $("#door");
@@ -145,26 +154,36 @@ function showDoor() {
     : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
-  const minLaps = firstLight && firstVisit ? 1 : 0;
+  /* the ring runs on a first visit, and wherever the shaders would stop the page: until they are compiled too */
+  const waitCompiled = firstLight && (firstVisit || !compilesAside);
+  const minLaps = waitCompiled ? 1 : 0;
   let here = false;
-  critical.then(() => { here = true; warmJourneys(); });
+  /* the journeys are readied once the ring is up and running (one frame shown), so a page stopped by a compile
+     stops behind it */
+  critical.then(() => {
+    if (!waitCompiled) here = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      warmJourneys();
+      if (waitCompiled) within(compiledAll, 9000).then(() => { here = true; });
+    }));
+  });
   let lit = false;
   /* the reveal takes about three seconds; the chores (the GPU's share of readying the journeys) wait for it to end */
   const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); setTimeout(openChores, 3400); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
-    const ring = $("#door .lockup .ring:not(.lux)");
+    const ring = $("#door .lockup .runner");
     let laps = 0;
     const lap = () => {
       laps++;
       const enough = here && laps >= minLaps;
-      if (enough || laps >= 6) { ring?.removeEventListener("animationiteration", lap); light(); }
+      if (enough || laps >= 7) { ring?.removeEventListener("animationiteration", lap); light(); }
     };
     ring?.addEventListener("animationiteration", lap);
     /* without the animation (reduced motion), just the pieces */
     if (!ring || getComputedStyle(ring).animationName === "none") within(critical, 8000).then(light);
-    setTimeout(light, 11000);
+    setTimeout(light, 13000);
   });
   /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
 }

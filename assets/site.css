@@ -178,9 +178,16 @@ body.lit .rays{opacity:1;transform:scale(1,1)}
 body.lit #door .lockup .ring{animation:draw-ring 1.6s .15s both}
 /* while the dawn's first pieces are still coming (main.js: showDoor), the ring is a light running its circle: an arc
    that opens and closes as it goes round, each lap ending as a point at the ring's start, where its drawing begins */
-body.loading #door .lockup .ring{animation:ring-loop 1.8s cubic-bezier(.45,.05,.55,.95) infinite}
-@keyframes ring-loop{0%{stroke-dasharray:0 100;stroke-dashoffset:0}40%{stroke-dasharray:36 64;stroke-dashoffset:-28}80%,100%{stroke-dasharray:0 100;stroke-dashoffset:-100}}
-@media (prefers-reduced-motion:reduce){body.loading #door .lockup .ring{animation:none}}
+/* it is only turned, never redrawn, so the compositor keeps it going even while the page itself is busy (a browser
+   that compiles shaders on the page's own thread stands the page still meanwhile): a comet of light on the ring's
+   line, its tail fading behind it, each lap easing out to the ring's start at three o'clock, where the drawing begins */
+#door .lockup .glyph .runner{position:absolute;left:13.5%;top:13.5%;width:73%;height:73%;border-radius:50%;pointer-events:none;opacity:0;
+  background:conic-gradient(from 90deg,rgba(135,145,179,0) 0turn,rgba(135,145,179,0) .45turn,rgba(170,178,207,.5) .85turn,rgba(233,237,248,.95) .995turn,rgba(233,237,248,0) 1turn);
+  -webkit-mask:radial-gradient(closest-side,transparent 96.9%,#000 97.4%,#000 99.5%,transparent 100%);mask:radial-gradient(closest-side,transparent 96.9%,#000 97.4%,#000 99.5%,transparent 100%);
+  filter:drop-shadow(0 0 3px rgba(200,210,240,.35));transition:opacity .4s ease;will-change:transform,opacity}
+body.loading #door .lockup .glyph .runner{opacity:1;animation:runner 1.8s cubic-bezier(.45,.05,.55,.95) infinite}
+@keyframes runner{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){body.loading #door .lockup .glyph .runner{animation:none}}
 @keyframes draw-ring{from{stroke-dasharray:100 100;stroke-dashoffset:100;animation-timing-function:cubic-bezier(.45,0,.2,1)}99.9%{stroke-dasharray:100 100;stroke-dashoffset:0}to{stroke-dasharray:none;stroke-dashoffset:0}}
 #door .lockup .orbits{opacity:0;transition:opacity 1.4s ease 1s}
 body.lit #door .lockup .orbits{opacity:1}

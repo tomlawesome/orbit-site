@@ -71,8 +71,14 @@ const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4, WAIT = 6000;
 const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
 
 
+/* the install's world and the information's are one world, worn two ways (opts.world: its look): compiled, loaded
+   and baked once, its canvas moved to whichever is showing */
+let shared = null;
+
 export function createInstall(pad, opts = {}) {
-  const canvas = $(".orbitgl", pad);
+  const own = $(".orbitgl", pad), slot = document.createComment("the world's canvas");
+  own.before(slot);
+  let canvas = own, look = null;
   /* what its chores are readying (chores.js) */
   const TAG = pad.id.replace(/pad$/, "");
   /* this world's own tuning: the install's, with whatever opts.tune changes (each part replaced or merged one level) */
@@ -105,10 +111,25 @@ export function createInstall(pad, opts = {}) {
 
   function ensure() {
     if (world || failed) return world;
-    try { world = createWorld(canvas, { ...opts.world, tag: TAG }); } catch (e) { console.warn(e); world = null; }
+    if (!shared) {
+      let w = null;
+      try { w = createWorld(own, { ...opts.world, tag: TAG }); } catch (e) { console.warn(e); }
+      shared = { world: w, canvas: own, owner: null };
+    }
+    world = shared.world;
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
-    canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
+    look = world.lookOf(opts.world || {});
+    shared.canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
     return world;
+  }
+  /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
+  function adopt() {
+    if (!shared?.world) return;
+    if (shared.owner && shared.owner !== api) shared.owner.stop();
+    shared.owner = api;
+    canvas = shared.canvas;
+    if (canvas.previousSibling !== slot) slot.after(canvas);
+    if (own !== canvas) own.hidden = true;
   }
   function size() {
     world0();
@@ -228,7 +249,7 @@ export function createInstall(pad, opts = {}) {
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
-      sun: sunNow, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
+      look, sun: sunNow, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
       vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
@@ -250,7 +271,7 @@ export function createInstall(pad, opts = {}) {
      the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
      the scene's, which goes with its area; the part chosen is the largest that keeps a frame inside 15 ms */
   function calibrate() {
-    const w = world; if (!w || !w.baked || motion || reduced) return;
+    const w = world; if (!w || !w.baked || motion || reduced || shared?.owner?.busy) return;
     const keep = u; u = 0.5;
     const time = (part) => { draw(performance.now(), { part, dustN: 18 }); w.finish(); const t0 = performance.now();
       for (let i = 0; i < 3; i++) draw(performance.now(), { part, dustN: 18 }); w.finish(); return (performance.now() - t0) / 3; };
@@ -341,7 +362,9 @@ export function createInstall(pad, opts = {}) {
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
 
-  return {
+  const api = {
+    /* drawing the world now (the other page must not draw into it meanwhile) */
+    get busy() { return running; },
     /* the textures are baked before they are wanted, while the door is quiet */
     /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
     prepare() {
@@ -353,6 +376,7 @@ export function createInstall(pad, opts = {}) {
         fetchWorld(opts.world);
         const w = ensure(); if (w) size();
         w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`));
+        this.compiled = w ? w.made : Promise.resolve(false);
         this.prepared = (w ? w.bake() : Promise.resolve(false))
           .then((ok) => { note(`${TAG}: ready`); return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false; });
       }
@@ -360,6 +384,7 @@ export function createInstall(pad, opts = {}) {
     },
     start() {
       const w = ensure();
+      adopt();
       if (running) return;
       running = true; last = 0;
       size();
@@ -399,7 +424,7 @@ export function createInstall(pad, opts = {}) {
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
     async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
-      size(); if (!(await world.bake())) return false;
+      adopt(); size(); if (!(await world.bake())) return false;
       motion = dotAt ? { dot: { ...dotAt, from: dotAt.from ?? fromFor(dotAt.rot ?? null) } } : null; u = k; clock = idle;
       /* a frame of the shot in motion: the one before it, a 60th of a second earlier */
       if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: performance.now() - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
@@ -407,4 +432,5 @@ export function createInstall(pad, opts = {}) {
       return true;
     },
   };
+  return api;
 }

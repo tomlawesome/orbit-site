@@ -1132,8 +1132,10 @@ export function createFlight(canvas, options = {}) {
     voyage?.reset();
   }
 
-  let warmed = null;
+  let warmed = null, compiled = null;
   return {
+    /* when the flight's shaders are compiled (after warm has made its world) */
+    compiled() { return compiled || Promise.resolve(); },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
       if (!warmed) {
@@ -1144,6 +1146,7 @@ export function createFlight(canvas, options = {}) {
         const made = options.plain ? Promise.resolve() : Promise.resolve().then(() => {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
         });
+        compiled = made.then(() => voyage?.made);
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });
       }
