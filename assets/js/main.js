@@ -190,7 +190,7 @@ function leaveWorld() {
   scene.near = (u) => {
     if (u < 0.32) document.body.classList.remove("covered");
     if (u < 0.3) document.body.classList.remove("racking");
-    if (u < 0.05) document.body.classList.remove("departing");
+    if (u < 0.15) document.body.classList.remove("departing");
   };
   document.body.classList.add("departing", "racking", "covered", "at-door", "lit");
   document.body.classList.remove("instrument", "arrived");
@@ -216,8 +216,9 @@ function flyNow(id) {
     title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph,
     on: {
       release: leaveCurrent,
-      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
-      settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); pad.ring.start(); },
+      /* the docs are ready to read as the sky lands; the others wait for their instrument */
+      land() { pad.el.hidden = false; current = id; if (carried) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
+      settled() { document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); },
     },
   });
 }

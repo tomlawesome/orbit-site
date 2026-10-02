@@ -801,6 +801,11 @@ body.bare .pad.docs .skymap:not(:has(.chart.settled)){opacity:0}
 body.bare .pad.docs .search{animation:slidein 1.1s cubic-bezier(.2,.75,.25,1) both}
 @keyframes slidein{from{transform:translateX(56px);opacity:0}to{transform:none;opacity:1}}
 body.instrument .pad.docs .index>:not(.search):not(.skymap),body.instrument .pad.docs .doorfoot{animation:chromein 1.3s ease .45s both}
+/* the docs keep no dwell: what is read there comes up as the sky lands (the same animation at both stages, so it
+   does not run again when the instrument arrives) */
+body.bare .pad.docs .index>:not(.search):not(.skymap),body.instrument .pad.docs .index>:not(.search):not(.skymap),
+body.bare .pad.docs .back,body.instrument .pad.docs .back,body.bare .pad.docs .home,body.instrument .pad.docs .home{animation:chromein .7s ease .1s both;pointer-events:auto}
+body.bare .pad.docs .search,body.instrument .pad.docs .search{animation:slidein .8s cubic-bezier(.2,.75,.25,1) both}
 body.withdrawing .pad.docs .index,body.withdrawing .pad.docs .doorfoot{animation:chromeout .45s ease both}
 body.dispersing .pad.docs .search{animation:slideout .7s cubic-bezier(.5,0,.9,.45) both}
 @keyframes slideout{to{transform:translateX(56px);opacity:0}}
