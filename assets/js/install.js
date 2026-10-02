@@ -13,7 +13,7 @@
  */
 import { chore } from "./chores.js";
 import { reduced } from "./sky.js";
-import { createWorld } from "./world.js";
+import { createWorld, fetchWorld } from "./world.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -66,14 +66,20 @@ const BASE = TUNE;
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
 /* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
 const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
+/* the door's picture of the install's planet (tools/planets.py): how its pole leans in the picture, so the shot can
+   start (and end) looking at the rings exactly as the picture shows them */
+const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
 
 
 export function createInstall(pad, opts = {}) {
   const canvas = $(".orbitgl", pad);
+  /* what its chores are readying (chores.js) */
+  const TAG = pad.id.replace(/pad$/, "");
   /* this world's own tuning: the install's, with whatever opts.tune changes (each part replaced or merged one level) */
   const TUNE = { ...opts.tune, ...Object.fromEntries(Object.entries(BASE).map(([k, v]) => [k, opts.tune?.[k] === undefined ? v
     : Array.isArray(v) || typeof v !== "object" ? opts.tune[k] : { ...v, ...opts.tune[k] }])) };
   let SUN, TILT, TO_TILT, SKY, REST, FROM;
+  const sprite = opts.sprite === undefined ? SPRITE : opts.sprite;
   function world0() {
     SUN = norm(TUNE.sun);
     TILT = mm(rz(TUNE.tiltZ), rx(TUNE.tiltX));      /* planet frame → world */
@@ -99,7 +105,7 @@ export function createInstall(pad, opts = {}) {
 
   function ensure() {
     if (world || failed) return world;
-    try { world = createWorld(canvas, opts.world); } catch (e) { console.warn(e); world = null; }
+    try { world = createWorld(canvas, { ...opts.world, tag: TAG }); } catch (e) { console.warn(e); world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); world = null; failed = true; pad.classList.add("flat"); });
     return world;
@@ -126,6 +132,35 @@ export function createInstall(pad, opts = {}) {
     SKY = [...x, ...n, ...core];
     world?.resize(W, H, scale);
   }
+  /* where the shot starts from, so the rings are seen as the door's picture shows them: its pole, leaning as it was
+     drawn and turned as the picture is turned (rot, clockwise on the screen), is put where the camera sees the
+     world's pole. That fixes all but the camera's turn about the pole, which is chosen to be as near the shot's own
+     start as it can (and a ring looks the same from either face of its plane, so either pole will do) */
+  function fromFor(rot) {
+    if (!sprite || rot === null || !TILT) return null;
+    const sz = Math.sin(sprite.tiltZ), cz = Math.cos(sprite.tiltZ), sx = Math.sin(sprite.tiltX), cx = Math.cos(sprite.tiltX);
+    const A = [sz * cx, -cz * cx, -sx];                /* the picture's pole: x right, y down, z towards the eye */
+    const c = Math.cos(rot), s = Math.sin(rot);
+    const q0 = [A[0] * c - A[1] * s, -(A[0] * s + A[1] * c), A[2]];   /* turned, and y up: right, up, back */
+    const P = mv(TILT, [0, 1, 0]);
+    const U = norm(cross(P, Math.abs(P[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1])), V = cross(P, U);
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    let best = null;
+    for (const sg of [1, -1]) {
+      const q = mul(q0, sg), h = Math.sqrt(Math.max(0, 1 - q[2] * q[2])), beta = Math.atan2(q[1], q[0]);
+      for (let i = 0; i < 360; i++) {
+        const ps = (i / 360) * Math.PI * 2;
+        const b = add(mul(P, q[2]), mul(add(mul(U, Math.cos(ps)), mul(V, Math.sin(ps))), h));
+        if (Math.abs(b[1]) > 0.97) continue;
+        const fwd = mul(b, -1), right = norm(cross(fwd, [0, 1, 0])), up = cross(right, fwd);
+        const az = FROM.az + wrap(Math.atan2(b[0], b[2]) - FROM.az), el = Math.asin(b[1]);
+        const roll = FROM.roll + wrap(Math.atan2(dot(P, up), dot(P, right)) - beta - FROM.roll);
+        const cost = (az - FROM.az) ** 2 + (el - FROM.el) ** 2 + (roll - FROM.roll) ** 2;
+        if (!best || cost < best.cost) best = { az, el, roll, cost };
+      }
+    }
+    return best;
+  }
   /* the moon passed on the way in: beside the path where the camera is at fly.k */
   function placeFly(dot0) {
     const f = TUNE.fly, v = view(f.k, 0, true, dot0);
@@ -146,9 +181,10 @@ export function createInstall(pad, opts = {}) {
     /* the camera is held, not mounted: a slow, small wander, more of it while it is moving fast */
     const hand = reduced || bare ? 0 : 0.0007 + 0.0035 * Math.sin(Math.PI * clamp(k)) ** 2;
     const nz = (t, a, b, c) => Math.sin(t * 0.83 + a) * 0.6 + Math.sin(t * 2.17 + b) * 0.3 + Math.sin(t * 5.3 + c) * 0.1;
-    const az = lerp(FROM.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k) + hand * nz(idle, 0.3, 1.7, 2.9);
-    const el = lerp(FROM.el, REST.el, eE) + (bare ? 0 : -pointer.sy * 0.03 * k) + hand * nz(idle, 2.1, 0.4, 5.2);
-    const roll = lerp(FROM.roll, REST.roll, eT) + hand * 1.6 * nz(idle, 4.4, 3.3, 0.8);
+    const F = dot0?.from || FROM;
+    const az = lerp(F.az, REST.az, eT) + drift + (bare ? 0 : pointer.sx * 0.05 * k) + hand * nz(idle, 0.3, 1.7, 2.9);
+    const el = lerp(F.el, REST.el, eE) + (bare ? 0 : -pointer.sy * 0.03 * k) + hand * nz(idle, 2.1, 0.4, 5.2);
+    const roll = lerp(F.roll, REST.roll, eT) + hand * 1.6 * nz(idle, 4.4, 3.3, 0.8);
     const c = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
     const cam = mul(c, dist), fwd = mul(c, -1);
     let right = norm(cross(fwd, [0, 1, 0])), up = cross(right, fwd);
@@ -291,15 +327,15 @@ export function createInstall(pad, opts = {}) {
     /* the light the door's picture of the planet is lit by (the sunrise, below and a little behind it: its picture is
        baked lit straight down and turned towards the sun, tools/planets.py, pads.js), on the screen: x right, y down,
        z towards the eye. The dive starts in that light and turns to its own sun as the camera comes round */
-    let light = null;
+    let light = null, rot = null;
     try {
       const rot = getComputedStyle(scene.body, "::before").rotate;
       if (rot && rot !== "none") {
         const v = parseFloat(rot), th = /rad/.test(rot) ? v : /turn/.test(rot) ? v * Math.PI * 2 : (v * Math.PI) / 180;
-        light = norm([-Math.sin(th) * 0.94, Math.cos(th) * 0.94, -0.1]);
+        light = norm([-Math.sin(th) * 0.94, Math.cos(th) * 0.94, -0.1]); rot = th;
       }
     } catch { /* lit by its own sun from the first */ }
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light };
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light, rot };
   };
   const onPointer = (e) => { pointer.x = (e.clientX / innerWidth) * 2 - 1; pointer.y = (e.clientY / innerHeight) * 2 - 1; };
   const onResize = () => { frames = []; size(); };
@@ -308,10 +344,12 @@ export function createInstall(pad, opts = {}) {
     /* the textures are baked before they are wanted, while the door is quiet */
     /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
     prepare() {
-      /* made, baked and measured as chores (chores.js): a piece at a time, after the door has come up */
-      if (!this.prepared) this.prepared = chore(() => { const w = ensure(); if (w) size(); return w; })
+      /* its pictures asked for now; made, baked and measured as chores (chores.js): a piece at a time, after the door
+         has come up */
+      if (!this.prepared) fetchWorld(opts.world);
+      if (!this.prepared) this.prepared = chore(() => { const w = ensure(); if (w) size(); return w; }, 60, TAG)
         .then((w) => (w ? w.bake() : false))
-        .then((ok) => (ok ? chore(() => { calibrate(); return true; }, 200) : false));
+        .then((ok) => (ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false));
       return this.prepared;
     },
     start() {
@@ -327,7 +365,7 @@ export function createInstall(pad, opts = {}) {
     form(scene) {
       return new Promise(async (resolve) => {
         this.start();
-        const dot0 = dotOf(scene);
+        const dot0 = dotOf(scene); dot0.from = fromFor(dot0.rot);
         const ok = world && (await world.bake());
         if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
         pad.classList.add("lit");
@@ -341,7 +379,7 @@ export function createInstall(pad, opts = {}) {
     unform(scene) {
       return new Promise((resolve) => {
         if (!world || reduced || !running) { resolve(); return; }
-        const dot0 = dotOf(scene, 1);
+        const dot0 = dotOf(scene, 1); dot0.from = fromFor(dot0.rot);
         placeFly(dot0);
         motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near };
       });
@@ -354,7 +392,7 @@ export function createInstall(pad, opts = {}) {
     async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
       size(); if (!(await world.bake())) return false;
-      motion = dotAt ? { dot: dotAt } : null; u = k; clock = idle;
+      motion = dotAt ? { dot: { ...dotAt, from: dotAt.from ?? fromFor(dotAt.rot ?? null) } } : null; u = k; clock = idle;
       /* a frame of the shot in motion: the one before it, a 60th of a second earlier */
       if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: performance.now() - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
       draw(performance.now()); motion = null;

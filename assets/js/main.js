@@ -79,6 +79,8 @@ const PADS = {
 /* the information's world: the install's own, its planet coral (the map turned, no rings, a warm haze), lit from
    above so it rests as a great crescent under the title, the camera coming round to it from the other side */
 const INFO_WORLD = {
+  /* no rings to line up with its picture on the door: it comes in on its own line */
+  sprite: null,
   world: { hue: 100, sat: 1.12, ringsOn: false, haze: [1.0, 0.8, 0.72],
     /* the coral of its door: the map's light and shade graded deep rust → coral → pale peach, a little of its own colour kept */
     grade: [[0.09, 0.018, 0.012], [0.62, 0.17, 0.11], [0.98, 0.72, 0.58], 0.85] },
@@ -232,7 +234,7 @@ function leaveWorld() {
 function flyToPad(id) {
   /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
-  hurryChores();
+  hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
   flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]));
 }
@@ -257,7 +259,7 @@ function flyNow(id, ready = null) {
 function arrivePad(id) {
   const pad = PADS[id];
   /* arriving straight at a landing: what it needs is wanted now */
-  hurryChores();
+  hurryChores(id, 1500);
   $("#door").hidden = true; document.body.classList.remove("at-door");
   pad.el.hidden = false; current = id;
   document.body.classList.add("instrument", "arrived"); if (id === "install" || pad.world) pad.el.classList.add("formed"); pad.world?.start(); pad.ring.start();
@@ -266,7 +268,7 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   if (current === "install" || current === "info") { leaveWorld(); return; }
-  hurryChores();
+  hurryChores(["flight", "docs"]);
   /* the docs go back out through their galaxy, even if they were come to straight (a link), not flown to */
   if (current === "docs" && !pad.flown) {
     let carried = null; const carry = () => carried || (carried = pad.ring.flight?.() || null);
@@ -283,7 +285,7 @@ function backToDawn() {
    instrument two seconds after it (the app's own beats, to the millisecond) */
 function launch() {
   if (current === "door") $("#gate").classList.add("flash");
-  hurryChores();
+  hurryChores("flight");
   launchNow(journey.warm());
 }
 function launchNow(ready = null) {

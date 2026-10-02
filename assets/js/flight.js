@@ -122,7 +122,7 @@ export function mountRasters(world, groups, prefix) {
    and rides to the centre of the screen, and the name written once on the
    void. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, deepGrowth } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, DEEP_SKIP, deepGrowth } from "./engine.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -140,7 +140,10 @@ export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
    vanishing point, its bearings, its traffic met the other way, and its own
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
 const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
-export const descentFrom = (P) => ({ ...DOWN_DAWN, rate: P.rate ? DOWNDUR / (DOWNDUR - 1000) : undefined, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props) });
+/* out of the docs' galaxy it starts past its still first part (engine.js: DEEP_SKIP) */
+const DEEP_SKIP_T = (DOWNDUR * DEEP_SKIP) / UPDUR;
+export const descentFrom = (P) => ({ ...DOWN_DAWN, rate: P.rate ? DOWNDUR / (DOWNDUR - 1000) : undefined, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props),
+  ...(P.ending === "chart" ? { skip: DEEP_SKIP_T, skipTu: DEEP_SKIP } : {}) });
 /* the demo's climb: the rest of the galaxy passes — the other households in
    the sample, each with its items as bodies where its dial has them — and
    the flight lands on your own. `homes` is [{ name, bodies:[[x,y,colour,r]] }] */
@@ -369,9 +372,14 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     descent = { onto, from, on: hooks, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
     let beats = descentBeats();
-    /* out of the docs' galaxy: the ring gathers out of its rim as it shrinks (condense), then rides home a little later */
+    /* out of the docs' galaxy: under way at once. The page lets go as the flight comes up beneath it (the same sky,
+       so the one becomes the other), and the flight starts past its still first part, the camera already drawing
+       back; everything after comes sooner by as much. The ring gathers out of the galaxy's rim as it shrinks
+       (condense), then rides home a little later */
     if (from?.ending === "chart") {
-      const at = (tu) => D.warp + DOWNDUR * (1 - tu / UPDUR);
+      const warp = 300, shift = D.warp - warp + DEEP_SKIP_T;
+      const at = (tu) => warp + DOWNDUR * (1 - tu / UPDUR) - DEEP_SKIP_T;
+      beats = beats.map((b) => (b.act === "withdraw" ? b : b.act === "disperse" ? { ...b, at: 240 } : b.act === "warp" ? { ...b, at: warp } : { ...b, at: Math.max(warp + 60, b.at - shift) }));
       beats = [...beats.map((b) => (b.act === "markIn" ? { ...b, at: Math.max(b.at, at(T.markOut - T.warp) + 60) } : b)), { at: at(FAR_T1), act: "condense" }];
     }
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate), descentStep, clock);
