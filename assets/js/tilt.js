@@ -6,8 +6,8 @@
  * pointer would be, -1 to 1 across and down the screen, a turn of about twenty degrees for the whole way, whichever
  * way up the screen is.
  *
- * Phones that give their tilt freely (Android) give it at once. Those that ask first (iOS: a prompt that only a tap
- * may raise) give it only once it has been allowed (ask).
+ * Only where the phone gives its tilt freely (Android). Where it must ask first (iOS, a prompt raised by a tap) it
+ * is not asked: the worlds there stay as they are (owner, 2026-10).
  */
 const coarse = matchMedia("(pointer: coarse)").matches;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -41,12 +41,8 @@ function listen() {
 /** follow the tilt (fn(x, y), each -1..1, as a pointer across the screen); returns how to stop */
 export function onTilt(fn) {
   if (!coarse || still || typeof DeviceOrientationEvent === "undefined") return () => {};
+  if (typeof DeviceOrientationEvent.requestPermission === "function") return () => {};
   listeners.add(fn);
-  if (typeof DeviceOrientationEvent.requestPermission !== "function") listen();
+  listen();
   return () => { listeners.delete(fn); };
-}
-/** where the phone asks first (iOS): ask, from a tap */
-export function askTilt() {
-  if (!coarse || still || typeof DeviceOrientationEvent?.requestPermission !== "function" || on) return;
-  DeviceOrientationEvent.requestPermission().then((s) => { if (s === "granted") listen(); }).catch(() => {});
 }
