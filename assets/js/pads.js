@@ -5,6 +5,7 @@
  * documents; the information's are what Orbit is, in the README's words.
  */
 import { reduced, seededRng } from "./sky.js";
+import { chore } from "./chores.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
@@ -127,7 +128,8 @@ export function createDocs(pad) {
   };
   function load() {
     if (loading) return loading;
-    loading = fetch(DOCS_DIR + "index.json").then((r) => r.json()).then((data) => {
+    /* fetched at once; read into the chart and the list as a chore (chores.js), not while the door comes up */
+    loading = fetch(DOCS_DIR + "index.json").then((r) => r.json()).then((data) => chore(() => {
       DOCS = data.sources; generated = data.generated; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
         GROUPS[d.name] = { c: d.c, slug: d.slug };
@@ -136,7 +138,7 @@ export function createDocs(pad) {
       keys.innerHTML = KEYS.map((h) => ENTRIES.find((e) => e.href === h)).filter(Boolean).map((e) => `<a class="key" href="${e.href}" style="--c:${GROUPS[e.g].c}">${esc(e.t)}</a>`).join("");
       if (stamp) stamp.textContent = generated ? `charted from the repositories · ${when(generated)}` : "";
       drawChart(); render();
-    }).catch(() => { results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
+    })).catch(() => { results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
     return loading;
   }
 

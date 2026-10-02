@@ -22,6 +22,7 @@
  * the reader's pack, PACK is the only object that changes.
  */
 import { createVoyage } from "./voyage.js";
+import { chore } from "./chores.js";
 import { seededRng } from "./sky.js";
 
 /**
@@ -1109,10 +1110,13 @@ export function createFlight(canvas, options = {}) {
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
       if (!warmed) {
-        if (!voyage && !options.plain) { try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; } }
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
+        /* the flight's world is made as a chore (chores.js): not while the door is still coming up */
+        const made = options.plain ? Promise.resolve() : chore(() => {
+          try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
+        });
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, voyage ? voyage.warm() : null]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; });
+        warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; });
       }
       return warmed;
     },

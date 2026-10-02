@@ -11,6 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
+import { chore } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld } from "./world.js";
 
@@ -236,7 +237,10 @@ export function createInstall(pad, opts = {}) {
     pointer.sx += (pointer.x - pointer.sx) * Math.min(1, dt / 900);
     pointer.sy += (pointer.y - pointer.sy) * Math.min(1, dt / 900);
     if (motion) {
-      const t = (performance.now() - motion.t0) / 1000;   /* the clock the shot was started on */
+      /* the shot's own clock: real time, but a stall (the page busy for a moment) counts as no more than a frame or
+         so, so the shot pauses where it is rather than jumping ahead */
+      motion.el = (motion.el || 0) + Math.min(dt, 50) / 1000;
+      const t = motion.el;
       if (motion.reverse) {
         u = clamp(motion.from * (1 - t / RETURN));
         motion.near?.(u);
@@ -277,8 +281,10 @@ export function createInstall(pad, opts = {}) {
     /* the textures are baked before they are wanted, while the door is quiet */
     /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
     prepare() {
-      const w = ensure(); if (!w) return Promise.resolve(false);
-      if (!this.prepared) { size(); this.prepared = w.bake().then((ok) => { if (ok) calibrate(); return ok; }); }
+      /* made, baked and measured as chores (chores.js): a piece at a time, after the door has come up */
+      if (!this.prepared) this.prepared = chore(() => { const w = ensure(); if (w) size(); return w; })
+        .then((w) => (w ? w.bake() : false))
+        .then((ok) => (ok ? chore(() => { calibrate(); return true; }, 200) : false));
       return this.prepared;
     },
     start() {

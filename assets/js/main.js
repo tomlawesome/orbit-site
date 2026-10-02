@@ -10,10 +10,11 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
+import { openChores, hurryChores } from "./chores.js";
 
 const $ = (s) => document.querySelector(s);
-/* the door in its rich look, for now on request (?rich), to set beside the plain one */
-if (/[?&]rich\b/.test(location.search)) document.documentElement.classList.add("rich");
+/* the door in its rich look (the page's own, html.rich); the earlier, plainer door is kept, on request (?classic) */
+if (/[?&]classic\b/.test(location.search)) document.documentElement.classList.remove("rich");
 initTheme();
 bindSwatches();
 
@@ -47,11 +48,15 @@ let warmingAll = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
-  const step = (fn) => new Promise((r) => idle(() => Promise.resolve().then(fn).catch(() => {}).then(r)));
-  warmingAll = step(() => journey.warm())                    /* 1. the demo */
-    .then(() => step(() => PADS.install.ring.prepare?.()))   /* 2. the install */
-    .then(() => step(() => PADS.docs.ring.ready?.()))        /* 3. the docs */
-    .then(() => step(() => PADS.info.world?.prepare?.()));   /* 4. the information's world */
+  /* all asked for at once, so their pictures all start down the wire now; the work each needs on the page and the GPU
+     is queued as chores (chores.js) in this order, and done a piece at a time once the door has come up */
+  const all = [
+    journey.warm(),                    /* 1. the demo (and the docs' flight, which is the same flight's world) */
+    PADS.install.ring.prepare?.(),     /* 2. the install */
+    PADS.docs.ring.ready?.(),          /* 3. the docs */
+    PADS.info.world?.prepare?.(),      /* 4. the information's world */
+  ];
+  warmingAll = Promise.all(all.map((p) => Promise.resolve(p).catch(() => {})));
   return warmingAll;
 }
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
@@ -139,10 +144,11 @@ function showDoor() {
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
   const minLaps = firstLight && firstVisit ? 1 : 0;
-  let here = false, journeyIn = false;
-  critical.then(() => { here = true; journey.warm().then(() => { journeyIn = true; }); warmJourneys(); });
+  let here = false;
+  critical.then(() => { here = true; warmJourneys(); });
   let lit = false;
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); }); };
+  /* the reveal takes about three seconds; the chores (the GPU's share of readying the journeys) wait for it to end */
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); setTimeout(openChores, 3400); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
@@ -150,7 +156,7 @@ function showDoor() {
     let laps = 0;
     const lap = () => {
       laps++;
-      const enough = here && laps >= minLaps && (journeyIn || laps >= 3 || !minLaps);
+      const enough = here && laps >= minLaps;
       if (enough || laps >= 6) { ring?.removeEventListener("animationiteration", lap); light(); }
     };
     ring?.addEventListener("animationiteration", lap);
@@ -228,6 +234,7 @@ function leaveWorld() {
 function flyToPad(id) {
   /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
+  hurryChores();
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
   flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]));
 }
@@ -251,6 +258,8 @@ function flyNow(id, ready = null) {
 }
 function arrivePad(id) {
   const pad = PADS[id];
+  /* arriving straight at a landing: what it needs is wanted now */
+  hurryChores();
   $("#door").hidden = true; document.body.classList.remove("at-door");
   pad.el.hidden = false; current = id;
   document.body.classList.add("instrument", "arrived"); if (id === "install" || pad.world) pad.el.classList.add("formed"); pad.world?.start(); pad.ring.start();
@@ -270,6 +279,7 @@ function backToDawn() {
    instrument two seconds after it (the app's own beats, to the millisecond) */
 function launch() {
   if (current === "door") $("#gate").classList.add("flash");
+  hurryChores();
   launchNow(journey.warm());
 }
 function launchNow(ready = null) {
@@ -345,7 +355,7 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
 
 if (wantsPad) arrivePad(wantsPad); else if (arrived || wantsDrawer) arrive(); else showDoor();
 /* arriving anywhere but the door, the journeys are readied all the same, a little later */
-if (current !== "door") setTimeout(warmJourneys, 4000);
+if (current !== "door") setTimeout(() => { warmJourneys(); openChores(); }, 4000);
 /* the site's own cache (sw.js): pictures kept a day, the code always fresh */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
   addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => { /* fine without it */ }); });

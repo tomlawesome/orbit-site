@@ -20,6 +20,8 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
+import { chore } from "./chores.js";
+
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
@@ -611,10 +613,9 @@ export function createVoyage(under) {
 
   /* the maps: asked for a little after the page is up, each used as soon as it has come */
   const maps = {};
-  /* each picture is put on the GPU on its own, in a pause between frames, one after another: never all at once */
-  let uploads = Promise.resolve();
-  const idle = (fn) => new Promise((r) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => r(fn()), { timeout: 400 }) : setTimeout(() => r(fn()), 16)));
-  const inTurn = (fn) => (uploads = uploads.then(() => idle(fn)));
+  /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
+     chore of its own (chores.js): never all at once, and never while the door is still coming up */
+  const inTurn = (fn) => chore(fn);
   const load = (key) => fetch(TEX[key]).then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => inTurn(() => {
@@ -629,39 +630,49 @@ export function createVoyage(under) {
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null;
   function warm() {
-    try { makeStars(); } catch { /* drawn without them */ }
-    if (!warming) warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon"].map(load)])
-      .then(() => new Promise((r) => setTimeout(r, 50))).then(() => calibrate());
+    if (!warming) {
+      const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
+        progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
+      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon"].map(load)])
+        .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }))
+        /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
+           (drivers finish their shaders on the first draw) before a flight, at no cost to see */
+        .then(() => chore(() => touch(ST())))
+        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 })))
+        .then(() => chore(() => touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] })))
+        .then(() => chore(calibrate, 200));
+    }
     return warming;
   }
-  /* once everything has come, a few frames drawn unseen at the heaviest point of the flight (the nebula, the streaks
-     at full speed): the shaders compiled and the maps on the GPU before the first flight, rather than during it,
-     and the drawing's size chosen so a frame takes about 11 ms here */
+  /* a camera in the docs' galaxy, looking at its core */
+  function galaxyAt(P) {
+    const l = Math.hypot(...P), f = P.map((x) => -x / l);
+    const c = [f[2], 0, -f[0]], lc = Math.hypot(...c), r = c.map((x) => x / lc);
+    const up = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
+    return { w: 1, P, R: [...r, ...up, ...f], gain: 5.5, starK: 0.09, page: 0 };
+  }
+  function touch(st) {
+    if (!ok) return;
+    if (W < 2) resize(innerWidth, innerHeight);
+    gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 4, 4);
+    try { draw(st); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); } catch { /* fine */ }
+    gl.disable(gl.SCISSOR_TEST); lastDraw = 0;
+  }
+  /* then the measure: a few whole frames at the heaviest point of the flight (the nebula, the streaks at full speed),
+     timed, and the drawing's size chosen so a frame takes about 11 ms here; the galaxy's own drawing in proportion */
   function calibrate() {
-    if (document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
+    if (!ok || document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
     if (W < 2) resize(innerWidth, innerHeight);
     const st = { t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
       progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 };
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     try {
-      draw(st); draw({ ...st, world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }); sync();
-      const t0 = performance.now(); for (let i = 0; i < 3; i++) draw(st); sync();
-      const ms = (performance.now() - t0) / 3;
+      draw(st); sync();
+      const t0 = performance.now(); for (let i = 0; i < 2; i++) draw(st); sync();
+      const ms = (performance.now() - t0) / 2;
       const next = Math.min(0.9, Math.max(0.4, part * Math.sqrt(11 / Math.max(ms, 1))));
-      if (Math.abs(next - part) > 0.02) { part = next; resize(W, H); }
-      /* the docs' galaxy, inside the disc where it is heaviest: drawn once to make it ready, then timed */
-      if (starVao) {
-        const P = [0.8, 0.08, 0.38], f = (() => { const l = Math.hypot(...P); return P.map((x) => -x / l); })();
-        const r = (() => { const c = [f[2], 0, -f[0]], l = Math.hypot(...c); return c.map((x) => x / l); })();
-        const up = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
-        const g = { ...st, tu: 3000, galaxy3d: { w: 1, P, R: [...r, ...up, ...f], gain: 5.5, starK: 0.09, page: 0 } };
-        draw(g); sync();
-        const g0 = performance.now(); for (let i = 0; i < 2; i++) draw(g); sync();
-        const gms = (performance.now() - g0) / 2;
-        /* its share over the rest of the frame: the galaxy pass is drawn smaller until the whole frame fits */
-        const nq = Math.min(0.5, Math.max(0.28, gq * Math.sqrt(Math.max(1, 13 - ms * 0.6) / Math.max(1, gms - ms * 0.6))));
-        if (Math.abs(nq - gq) > 0.02) { gq = nq; CW = 0; resize(W, H); }
-      }
+      const nq = next >= 0.7 ? 0.45 : next >= 0.55 ? 0.4 : 0.34;
+      if (Math.abs(next - part) > 0.02 || nq !== gq) { part = next; gq = nq; CW = 0; resize(W, H); }
     } catch { /* drawn as it is */ }
     lastDraw = 0;
   }
