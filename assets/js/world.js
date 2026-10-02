@@ -7,11 +7,11 @@
  * planet's map (assets/img/install/planet*.webp). Here it is flattened by its
  * spin, darkens towards the limb through a thin haze, and wears rings of
  * hundreds of ringlets that shade it and are shaded by it; a gold moon beyond,
- * and the galaxy behind, baked on the GPU. The frame is drawn in light (HDR),
- * bloomed, and tone-mapped like film.
+ * and the galaxy behind (a photograph; painted on the GPU only if it cannot be
+ * had). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
  *
- * createWorld(canvas) → null when WebGL2 is not there; otherwise
- *   { bake(sync), baked, draw(view), resize(w, h, scale), lose() }
+ * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
+ *   { gl, made, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
 import { chore, fetchOnce } from "./chores.js";
 

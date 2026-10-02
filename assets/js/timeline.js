@@ -62,42 +62,10 @@ const SETTLE = 1100;
 const instrumentAt = ASCENT_BASE.land + SETTLE;                               /*  5900 */
 const tourAt = instrumentAt + ASCENT_BASE.instrument + ASCENT_BASE.tourGap;  /* 10650 */
 
-/*
- * THE NEWCOMER'S CLOCK (§15 second pass, ruling 4; the count sealed in the
- * third and moved a second earlier in the fourth).
- *
- * The newcomer flies the SAME climb and sets down somewhere else, so every
- * number above stands — except the dwell. The newcomer's arrival was ratified
- * verbatim WITH the 3s bare dwell and its tail was trimmed and sealed
- * separately after that ("the dwell before the count reduces by 1s, the beat's
- * internal rhythm unchanged"), while the 2s trim belongs to the first-run and
- * login landing. So the dwell is SPLIT rather than lowered, exactly as
- * design/v19/first-run.html splits it, and the sealed newcomer numbers are
- * where they were:
- *
- *     9400   the labelled sky's chrome arrives
- *     9700   the count fades IN on the settling sky, boxless (0.45s)
- *    12900   it fades OUT again (0.45s) — ~4.55s of screen time in all
- *    13800   and the question arrives in the space it left
- *
- * RETIMED (#870, owner): the gap before the count starts, the fade itself
- * (arrival.css's `.nf .disc` transition) and the hold all moved; the fade OUT
- * before the question stands, unchanged.
- */
-const newDwell = 3000;
-const countGap = 300;
-const countHold = 3200;
-const countFade = 900;
-const newInstrumentAt = ASCENT_BASE.land + SETTLE + 300;   /*  6200: the site's amendment, as above */
-const countOn = newInstrumentAt + countGap;                /*  9700 */
-const countOff = countOn + countHold;                      /* 12900 */
-const belongAt = countOff + countFade;                     /* 13800 */
 
 export const T = {
   ...ASCENT_BASE,
   instrumentAt, tourAt,
-  newDwell, countGap, countHold, countFade,
-  newInstrumentAt, countOn, countOff, belongAt,
 };
 
 /* the descent's own offsets, kept as the mockup wrote them: the flight starts
@@ -144,27 +112,6 @@ export function ascentBeats() {
   ].sort(byTime);
 }
 
-/**
- * The launch again, landing where the newcomer lands: the same beats to the
- * millisecond up to the handoff, the ratified 3s dwell after it, and then the
- * count's own three (§15 second pass, ruling 4).
- */
-export function newcomerAscentBeats() {
-  return [
-    { at: 0, act: "arming" },
-    { at: T.warp, act: "warp" },
-    { at: T.mark, act: "mark" },
-    { at: T.release, act: "release" },
-    { at: T.markOut, act: "markOut" },
-    { at: T.nameOn, act: "nameOn" },
-    { at: T.nameOff, act: "nameOff" },
-    { at: T.land, act: "land" },
-    { at: T.newInstrumentAt, act: "instrument" },
-    { at: T.countOn, act: "countOn" },
-    { at: T.countOff, act: "countOff" },
-    { at: T.belongAt, act: "belong" },
-  ].sort(byTime);
-}
 
 /** The descent, as beats. */
 export function descentBeats() {
@@ -197,23 +144,6 @@ export function ascentBeatsReduced() {
     { at: 0, act: "release" },
     { at: 0, act: "land" },
     { at: 700 + T.dwell, act: "instrument" },
-  ];
-}
-/**
- * The newcomer under reduced motion. The mockup's own rule: the crossfade
- * replaces the climb, the ratified 3s dwell still passes on the bare labelled
- * sky, and "the count still takes its turn — it appears, holds, and yields to
- * the question. Only the fade is dropped." Its hold is the mockup's own 1900.
- */
-export function newcomerAscentBeatsReduced() {
-  const landed = 700 + T.newDwell;
-  return [
-    { at: 0, act: "release" },
-    { at: 0, act: "land" },
-    { at: landed, act: "instrument" },
-    { at: landed, act: "countOn" },
-    { at: landed + 1900, act: "countOff" },
-    { at: landed + 1900, act: "belong" },
   ];
 }
 
