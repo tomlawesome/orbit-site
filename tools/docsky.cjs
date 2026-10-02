@@ -7,7 +7,7 @@
  * fades into wears the very sky the flight arrived in.
  *
  *   NODE_PATH=$(npm root -g) node tools/docsky.cjs     (needs playwright)
- *   → assets/img/docs/milkyway.webp
+ *   → assets/img/docs/milkyway-wide.webp
  */
 const { chromium } = require("playwright");
 const http = require("http"), fs = require("fs"), path = require("path");
@@ -47,7 +47,7 @@ const srv = http.createServer((req, res) => {
     const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; c.getContext("2d").drawImage(img, 0, 0);
     return c.toDataURL("image/webp", 0.86);
   }, shot.toString("base64"));
-  const out = path.join(root, "assets/img/docs/milkyway.webp");
+  const out = path.join(root, "assets/img/docs/milkyway-wide.webp");
   fs.writeFileSync(out, Buffer.from(url.split(",")[1], "base64"));
   console.log("wrote", path.relative(root, out), Math.round(fs.statSync(out).size / 1024) + " KB");
   await b.close(); srv.close();
