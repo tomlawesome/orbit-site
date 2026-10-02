@@ -502,7 +502,9 @@ function picturesOf(opts) {
     MAP: opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
     RINGS: opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href,
     MOON: opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href,
-    GALAXY: opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href,
+    /* the galaxy behind is soft and dim: at 2k it cannot be told from 4k even on a dense screen (compared side by
+       side), and the flight already brings the 2k one, so it comes once, for everything */
+    GALAXY: opts.galaxy ?? new URL("../img/install/galaxy-2k.webp", import.meta.url).href,
   };
 }
 /** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */
