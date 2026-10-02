@@ -24,6 +24,8 @@ export function restorePristine() { pristine(); closeRow(); renderDial(); render
 export function resetSite() { forget(); location.hash = ""; location.reload(); }
 
 export function household() { return households[state.camera]; }
+let backHome = null;
+export function onBackHome(fn) { backHome = fn; }
 export function itemById(id) {
   for (const h of Object.values(households)) for (const it of h.items) if (it.id === id) return { item: it, household: h };
   return null;
@@ -525,7 +527,8 @@ export function mountHome(skyCams) {
   $$("[data-open-drawer]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); $("#account").classList.remove("open"); openDrawer(b.dataset.openDrawer, true); }));
   $("#dial .sun-link").addEventListener("click", (e) => { e.preventDefault(); $("#today").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" }); });
   addEventListener("resize", () => { if (!state.flying) renderGalaxy(); });
-  $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
+  /* from another household, back to yours; from yours, back to the dawn (main.js says how) */
+  $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });
   /* a tap anywhere else, or a scroll, lets the callout go */
   document.addEventListener("pointerdown", (e) => { if (armedBody && !e.target.closest(".body-link") && !e.target.closest("#body-callout")) hideBodyCallout(); });

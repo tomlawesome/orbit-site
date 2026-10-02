@@ -211,6 +211,23 @@ function signOut() {
   journey.descend({ title: h.name, on: { farewell() { current = "dusk"; } } });
 }
 
+/* from the sky back to the dawn: the climb run backwards, landing on the door as the landings' "— the dawn" does */
+function homeToDawn() {
+  if (current !== "home") return;
+  player.stop(false); home.closeDrawers();
+  try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
+  journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
+    surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
+    farewell() {
+      const h = $("#home"); h.classList.remove("shown"); h.hidden = true;
+      $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door";
+      document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
+      try { history.replaceState(null, "", " "); } catch { /* fine */ }
+      setTimeout(() => { if (current === "door") PADS.install.ring.prepare?.(); }, 3200);
+    },
+  } });
+}
+home.onBackHome(homeToDawn);
 $("#gate").addEventListener("click", launch);
 $("#signout").addEventListener("click", signOut);
 $("#gate-back").addEventListener("click", showDoor);
