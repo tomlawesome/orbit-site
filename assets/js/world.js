@@ -217,11 +217,8 @@ vec3 moon(vec3 P,vec4 M,vec3 rd){
     vec3 E=normalize(vec3(m.z,0.0,-m.x)+1e-5), Nn=cross(m,E);
     nb=normalize(m-(E*hE+Nn*hN)*0.03);
   } else {
-    float cr=0.0, s=1.0;
-    for(int i=0;i<4;i++){float n=snoise(m*(4.0*s)+float(i)*7.3); cr+=smoothstep(0.6,0.88,1.0-abs(n))*0.5/s; s*=2.2;}
-    float n=fbm(m*5.0,6);
-    alb=mix(srgb(98,82,58),srgb(184,156,108),0.5+0.5*n)*(1.0-0.3*cr);
-    nb=normalize(m+0.12*vec3(snoise(m*16.0),snoise(m*16.0+3.0),snoise(m*16.0+6.0)));
+    /* without its photograph, a plain grey-gold ball (the noise that once painted it cost more to compile than it gave) */
+    alb=srgb(150,128,94);
   }
   /* regolith: between Lambert and Lommel-Seeliger, so the disc is flatter-lit than a ball, as the Moon is */
   float ndl=max(dot(nb,uSun),0.0), ndv=max(dot(nb,-rd),0.02);
@@ -545,20 +542,24 @@ export function createWorld(canvas, opts = {}) {
   };
   /* in light where the GPU can draw in floats; straight to the screen where it cannot */
   const hdr = floatOK;
+  /* the galaxy's own painting (SKY) is only wanted if its photograph cannot be had: by far the largest shader here,
+     it is compiled then, not on every first visit (bake) */
   const P = {
-    sky: program(SKY),
+    sky: null,
     render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
     down: hdr ? program(DOWN) : null, up: hdr ? program(UP) : null, film: hdr ? program(FILM) : null,
+  };
+  const ready = (pr) => {
+    if (!gl.getProgramParameter(pr.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr.p) || gl.getShaderInfoLog(pr.fs) || gl.getShaderInfoLog(vs));
+    const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name] = gl.getUniformLocation(pr.p, a.name); }
+    return pr;
   };
   const made = new Promise((resolve) => {
     const all = Object.values(P).filter(Boolean);
     const done = () => {
       try {
-        for (const pr of all) {
-          if (!gl.getProgramParameter(pr.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr.p) || gl.getShaderInfoLog(pr.fs) || gl.getShaderInfoLog(vs));
-          const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
-          for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name] = gl.getUniformLocation(pr.p, a.name); }
-        }
+        all.forEach(ready);
         resolve(true);
       } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
@@ -592,7 +593,7 @@ export function createWorld(canvas, opts = {}) {
 
   /* the textures: the planet's map (loaded), the galaxy (baked), the rings (loaded; drawn until they come) */
   let albT = null, SW = 1, SH = 1;
-  const skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE), skyF = fb(skyT);
+  let skyT = null, skyF = null;
   const RN = 8192;
   const ringT = tex(RN, 1, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, ringProfile(RN), gl.CLAMP_TO_EDGE);
   mip(ringT);
@@ -631,10 +632,15 @@ export function createWorld(canvas, opts = {}) {
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => inTurn(() => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
       (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
+  /* without the photograph: the galaxy painted, a strip a frame */
   const jobs = [];
   const STRIPS = 4;
-  for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
-  jobs.push(() => mip(skyT));
+  function paintSky() {
+    try { P.sky = ready(program(SKY)); } catch (e) { console.warn(e); skyDone = true; return; }
+    skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
+    for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
+    jobs.push(() => mip(skyT));
+  }
   let next = 0, skyDone = false, baked = false;
   function bakeSome(n) {
     gl.disable(gl.BLEND);
@@ -646,7 +652,7 @@ export function createWorld(canvas, opts = {}) {
   /* ready when the map is in and the galaxy is baked; resolves false if the map cannot be had */
   function bake() {
     if (!baking) baking = new Promise((res) => {
-      const step = () => { if (galT) skyDone = true; else bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
+      const step = () => { if (galT) skyDone = true; else { if (!P.sky) paintSky(); if (!skyDone) bakeSome(1); } if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
       Promise.all([made, loadGalaxy]).then(([ok]) => (ok ? requestAnimationFrame(step) : res(false)));
     });
     return baking;
@@ -685,7 +691,7 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
       gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, HUE); gl.uniform1f(u.uRingK, RING_K); gl.uniform3fv(u.uHazeT, HAZE);
       gl.uniform1f(u.uGradeK, GRADE ? GRADE[3] : 0); if (GRADE) { gl.uniform3fv(u.uG0, GRADE[0]); gl.uniform3fv(u.uG1, GRADE[1]); gl.uniform3fv(u.uG2, GRADE[2]); }
-      bind(0, albT, u.uAlb); bind(1, galT || skyT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
+      bind(0, albT, u.uAlb); bind(1, galT || skyT || ringT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
     let src = hdrT;
