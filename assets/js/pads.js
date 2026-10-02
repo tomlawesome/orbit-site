@@ -427,6 +427,8 @@ export function createInfo(pad, world = null) {
   const seen = new Set();
   const io = new IntersectionObserver((es) => {
     for (const x of es) { if (x.isIntersecting) { x.target.classList.add("in"); seen.add(x.target.dataset.scene); } else seen.delete(x.target.dataset.scene); }
+    /* the relay plays the moment it is scrolled to, not on a clock of its own */
+    if (live && seen.has("relay") && !relaying) relayLoop();
   }, { root: scroll, threshold: 0.2 });
 
   /* the orbit: the household's year, a month a second. Each item draws in as it comes due, is done at the dashed ring,
@@ -481,12 +483,15 @@ export function createInfo(pad, world = null) {
     }
     later(5200, itemLoop);
   }
+  /* played while it is in view, from the moment it comes into view: forwarded, read, asked, half a second apart;
+     held to be read; let go a moment; again */
+  let relaying = false, live = false;
   function relayLoop() {
-    if (seen.has("relay")) {
-      steps.forEach((x, i) => later(250 + i * 1100, () => x.classList.add("on")));
-      later(5600, () => steps.forEach((x) => x.classList.remove("on")));
-    }
-    later(6400, relayLoop);
+    if (!seen.has("relay")) { relaying = false; return; }
+    relaying = true;
+    steps.forEach((x, i) => later(120 + i * 520, () => x.classList.add("on")));
+    later(5200, () => steps.forEach((x) => x.classList.remove("on")));
+    later(5800, relayLoop);
   }
   /* the world under the title gives way as the scenes are read: dimmed by the first screen of scrolling, and, once
      all but gone, not drawn at all until it is scrolled back to */
@@ -505,9 +510,9 @@ export function createInfo(pad, world = null) {
       scenes.forEach((c) => { c.classList.remove("in"); io.observe(c); });
       if (reduced) { card.classList.add("done"); steps.forEach((x) => x.classList.add("on")); return; }
       last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(orbit);
-      timers.forEach(clearTimeout); timers = []; itemLoop(); relayLoop();
+      timers.forEach(clearTimeout); timers = []; live = true; relaying = false; itemLoop(); relayLoop();
     },
-    stop() { scenes.forEach((c) => io.unobserve(c)); scroll.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers = []; },
+    stop() { live = false; relaying = false; scenes.forEach((c) => io.unobserve(c)); scroll.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); timers.forEach(clearTimeout); timers = []; },
   };
 }
 
