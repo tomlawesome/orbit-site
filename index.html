@@ -482,7 +482,14 @@
           <div class="prose">
             <span class="kicker">The system</span>
             <h2>One app. Standard parts.</h2>
-            <p>One application container, the official PostgreSQL, and an isolated ClamAV scanner. Secrets are generated for you, mounted as files, and never placed in the environment.</p>
+            <p>Three containers on a Linux machine of your own, set up by one command. Nothing exotic to learn, nothing to babysit.</p>
+            <dl class="spec">
+              <div><dt>You bring</dt><dd>A Linux host with Docker and about 4&nbsp;GB of memory to spare, a domain with HTTPS, and a sign-in provider you already use (any OpenID Connect, such as Authentik).</dd></div>
+              <div><dt>It runs</dt><dd>Orbit itself, PostgreSQL&nbsp;17 for your records, and ClamAV checking every upload before it is kept.</dd></div>
+              <div><dt>If you like</dt><dd>Email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
+              <div><dt>Your data</dt><dd>On your own disk: records in the database, documents encrypted at rest.</dd></div>
+              <div><dt>Updates</dt><dd>Run the installer again. Every release is pinned to an exact image, and your settings carry over.</dd></div>
+            </dl>
           </div>
           <figure class="stage">
             <svg class="system" viewBox="0 0 400 260" aria-hidden="true">

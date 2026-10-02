@@ -941,6 +941,12 @@ body.departing #infopad.formed{z-index:37}
 /* the end: the statement, and four ports of call. Each is a small body on its own orbit, in its own colour;
    reached, the body goes round, the card lifts and its edge takes the colour */
 .pad.info .scene.last{min-height:80svh;align-items:center;text-align:center}
+/* the system's spec: what you bring, what it runs, what is optional, where your data lives, how it updates */
+.pad.info .spec{margin:26px 0 0;display:grid;gap:0;border-top:1px solid var(--line)}
+.pad.info .spec>div{display:grid;grid-template-columns:7.5em 1fr;gap:16px;padding:13px 0;border-bottom:1px solid var(--line)}
+.pad.info .spec dt{font:500 12px/1.9 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-text)}
+.pad.info .spec dd{margin:0;font:15.5px/1.55 var(--ui);color:#c6cbdb}
+@media (max-width:560px){.pad.info .spec>div{grid-template-columns:1fr;gap:4px}}
 .pad.info .ports{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;width:min(1060px,100%);margin:44px auto 0;text-align:left}
 .pad.info .port{position:relative;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:14px;row-gap:3px;align-items:center;
   padding:16px 34px 16px 16px;border-radius:16px;text-decoration:none;color:var(--ink);
