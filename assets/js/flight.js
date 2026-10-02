@@ -184,10 +184,14 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     const left = innerWidth / 2 - size / 2, top = toY - size / 2;
     mark.style.transition = "none";
     mark.style.left = `${r.left}px`; mark.style.top = `${r.top}px`; mark.style.width = `${r.width}px`; mark.style.height = `${r.height}px`;
-    mark.classList.remove("collapse"); mark.classList.add("on");
+    mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
     srcSvg.style.visibility = "hidden";
     mark.style.left = `${left}px`; mark.style.top = `${top}px`; mark.style.width = `${size}px`; mark.style.height = `${size}px`;
     flip(r, left, top, size, size, ms);
+  }
+  function dissolveMark() {
+    mark.classList.remove("on"); mark.classList.add("dissolve");
+    for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
   function dropMark() {
     mark.classList.remove("on"); mark.classList.add("collapse");
@@ -197,7 +201,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     const from = { left: innerWidth / 2 - 18, top: innerHeight / 2 - 18, width: 36, height: 36 };
     mark.style.transition = "none";
     mark.style.left = `${from.left}px`; mark.style.top = `${from.top}px`; mark.style.width = "36px"; mark.style.height = "36px";
-    mark.classList.remove("collapse"); mark.classList.add("on");
+    mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
     if (!glyph) return;
     const g = glyph.getBoundingClientRect();
     glyph.style.visibility = "hidden";
@@ -211,7 +215,8 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
       case "warp": body.classList.add("showwarp"); engine.start(flight.profile); break;
       case "mark": body.classList.remove("arming"); liftMark(flight.glyph(), innerHeight * 0.5, MARK_ARRIVE, MARK_RIDE_UP / (flight.profile.rate || 1)); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
-      case "markOut": dropMark(); break;
+      /* on the docs' flight the mark is not gathered up: its ring becomes the galaxy, so it dissolves into it */
+      case "markOut": if (flight.profile.ending === "chart") dissolveMark(); else dropMark(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
       case "land": body.classList.remove("showwarp", "launching"); body.classList.add("bare"); (flight.on.land ?? on.land)?.(); break;
@@ -239,7 +244,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     cancelTimeline(); cancelTimeline = () => {};
     engine.clear();
     body.classList.remove(...CLASSES);
-    mark.classList.remove("on", "collapse"); name.classList.remove("on");
+    mark.classList.remove("on", "collapse", "dissolve"); name.classList.remove("on");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));

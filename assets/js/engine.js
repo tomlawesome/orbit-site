@@ -930,6 +930,8 @@ export function createFlight(canvas, options = {}) {
      to lie as the docs page shows it, dimmer down the middle where the words go. Then the docs' constellations
      light on it, one by one, each star flaring as it catches and settling, where the page will draw them. */
   const smoothq = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
+  /* the mark's ring at the centre: 166.4px across (timeline.js: MARK_ARRIVE), the ring 72 of its 200 */
+  const MARK_RING = 166.4 * 72 / 200, FAR_T0 = 1080, FAR_T1 = 1750;
   const hexLin = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.pow(x / 255, 2.2)); };
   const v3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
     norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
@@ -937,10 +939,21 @@ export function createFlight(canvas, options = {}) {
   const PATH = [[0.7, 2.35, 1.85], [0.95, 0.95, 1.35], [0.82, 0.1, 0.42], [0.56, 0.006, 0]];
   const bez = (s) => { const u = 1 - s; return [0, 1, 2].map((k) => u * u * u * PATH[0][k] + 3 * u * u * s * PATH[1][k] + 3 * u * s * s * PATH[2][k] + s * s * s * PATH[3][k]); };
   /* how far along: the climb's own speed, summed, so the camera goes as fast as the flight feels */
-  const ALONG = (() => { const out = [], t0 = 1000, t1 = 3500; let acc = 0; for (let t = t0; t <= t1; t += 10) { out.push(acc); acc += UP.speed(t) * 10; } return { t0, t1, out, total: acc }; })();
+  const ALONG = (() => { const out = [], t0 = FAR_T1, t1 = 3500; let acc = 0; for (let t = t0; t <= t1; t += 10) { out.push(acc); acc += UP.speed(t) * 10; } return { t0, t1, out, total: acc }; })();
   const along = (tu) => { if (tu <= ALONG.t0) return 0; if (tu >= ALONG.t1) return 1; const i = (tu - ALONG.t0) / 10, k = Math.floor(i); return (ALONG.out[k] + (ALONG.out[Math.min(k + 1, ALONG.out.length - 1)] - ALONG.out[k]) * (i - k)) / ALONG.total; };
+  /* before that, the galaxy is first seen exactly where and as large as the mark's ring at the centre of the screen,
+     tilted as the mark is, so the ring becomes it; then the camera rushes in from there, faster and faster, to the
+     start of the way in */
+  const A_LEN = Math.hypot(...PATH[0]), A_DIR = PATH[0].map((x) => x / A_LEN);
+  function camPos(tu) {
+    if (tu >= FAR_T1) return bez(along(tu));
+    const ringPx = MARK_RING, d0 = Math.max(A_LEN * 1.5, (1.12 * H * 0.95) / ringPx);
+    const e = Math.pow(Math.min(1, Math.max(0, (tu - FAR_T0) / (FAR_T1 - FAR_T0))), 1.7);
+    const d = d0 * Math.pow(A_LEN / d0, e);
+    return A_DIR.map((x) => x * d);
+  }
   function camAt(tu) {
-    const P = bez(along(tu)), f = v3.norm(v3.sub([0, 0, 0], P));
+    const P = camPos(tu), f = v3.norm(v3.sub([0, 0, 0], P));
     let r = v3.norm(v3.cross([0, 1, 0], f)), u = v3.cross(f, r);
     const roll = 0.34 * smoothq(2600, 3700, tu), cr = Math.cos(roll), sr = Math.sin(roll);
     [r, u] = [[r[0] * cr + u[0] * sr, r[1] * cr + u[1] * sr, r[2] * cr + u[2] * sr], [u[0] * cr - r[0] * sr, u[1] * cr - r[1] * sr, u[2] * cr - r[2] * sr]];
@@ -948,7 +961,7 @@ export function createFlight(canvas, options = {}) {
   }
   function milkyWay(tu, b, chart) {
     const now = camAt(tu), prev = camAt(tu - 21), back = smoothq(2600, 3900, tu);
-    const galaxy3d = { w: smoothq(950, 1450, tu), P: now.P, R: now.R, prevP: prev.P, prevR: prev.R, gain: 5.5, starK: 0.09, page: back };
+    const galaxy3d = { w: smoothq(880, 1240, tu), P: now.P, R: now.R, prevP: prev.P, prevR: prev.R, gain: 5.5, starK: 0.09, page: back };
     const stars = [];
     if (b > 0) {
       const { rect, geometry: g } = chart, s = rect.w / g.W, ease = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 2.2);
