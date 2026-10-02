@@ -13,6 +13,14 @@ import { createInstall } from "./install.js";
 import { openChores, hurryChores } from "./chores.js";
 
 const $ = (s) => document.querySelector(s);
+/* launching soon (index.html: data-soon): the door alone, opening nothing, and nothing readied for journeys */
+const SOON = document.documentElement.hasAttribute("data-soon");
+if (SOON) {
+  try { if (location.hash) history.replaceState(null, "", location.pathname + location.search); } catch { /* fine */ }
+  const p = document.querySelector("#door .planets");
+  p?.setAttribute("aria-hidden", "true");
+  p?.querySelectorAll(".planet").forEach((a) => { a.removeAttribute("href"); a.setAttribute("tabindex", "-1"); });
+}
 initTheme();
 bindSwatches();
 
@@ -45,6 +53,7 @@ const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { tim
 let warmingAll = null, compiledAll = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
+  if (SOON) return (warmingAll = Promise.resolve());
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page); the work each then needs on the GPU is queued as
@@ -73,8 +82,9 @@ const player = createPlayer();
 
 let arrived = false;
 try { arrived = sessionStorage.getItem("orbit-site-arrived") === "1"; } catch { /* this visit only */ }
-const wantsDrawer = location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
-const wantsPad = ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash.split("/")[0]] ?? null;
+if (SOON) arrived = false;
+const wantsDrawer = SOON ? null : location.hash === "#key" ? "keydrawer" : location.hash === "#inbox" ? "inboxdrawer" : null;
+const wantsPad = SOON ? null : ({ "#install": "install", "#docs": "docs", "#info": "info" })[location.hash.split("/")[0]] ?? null;
 /* the landings: each a pad, a ring, and a way to fly there */
 const PADS = {
   install: { el: $("#installpad"), profile: UP_RING },
@@ -134,7 +144,7 @@ const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-
 let doorLitOnce = false;
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not, the page
    stands still while the journeys' shaders compile, so that is done behind the running ring, never on the door */
-const compilesAside = (() => {
+const compilesAside = SOON || (() => {
   try { const gl = document.createElement("canvas").getContext("webgl2"); return !gl || !!gl.getExtension("KHR_parallel_shader_compile"); } catch { return true; }
 })();
 function showDoor() {
@@ -155,8 +165,9 @@ function showDoor() {
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
   /* the ring runs on a first visit, and wherever the shaders would stop the page: until they are compiled too */
-  const waitCompiled = firstLight && (firstVisit || !compilesAside);
-  const minLaps = waitCompiled ? 1 : 0;
+  const waitCompiled = !SOON && firstLight && (firstVisit || !compilesAside);
+  /* a first visit's first light is always at least a lap of the ring */
+  const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
   let here = false;
   /* the journeys are readied once the ring is up and running (one frame shown), so a page stopped by a compile
      stops behind it */
@@ -362,10 +373,10 @@ function homeToDawn() {
   } });
 }
 home.onBackHome(homeToDawn);
-$("#gate").addEventListener("click", launch);
+if (!SOON) $("#gate").addEventListener("click", launch);
 $("#signout").addEventListener("click", signOut);
 $("#gate-back").addEventListener("click", showDoor);
-const planets = wirePlanets($("#door"), flyToPad);
+const planets = wirePlanets($("#door"), SOON ? () => {} : flyToPad);
 for (const pad of Object.values(PADS)) {
   pad.el.querySelector(".back.dawn").addEventListener("click", backToDawn);
 }
