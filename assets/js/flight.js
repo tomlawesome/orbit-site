@@ -160,7 +160,7 @@ export function docsFlight({ rect, geometry }) {
     return { kind: "chart", name: con.name, c: con.c, pts: con.pts.map((p) => [(p[0] - cx) * k, (p[1] - cy) * k]),
       t0: 640 + i * 190, dur: 1500 + (i % 3) * 380, ang: 128 + ((i * 47) % 100), z: 0.42 + ((i * 3) % 5) * 0.09, spin: (i % 2 ? -1 : 1) * (0.06 + (i % 3) * 0.04) };
   });
-  return { ...RIGHT, props, ending: "chart", chart: { rect, geometry } };
+  return { ...RIGHT, vpX: 0.74, vpY: 0.46, props, ending: "chart", chart: { rect, geometry } };
 }
 export { UP, DOWN };
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN } from "./timeline.js";
