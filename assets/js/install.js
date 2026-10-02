@@ -65,7 +65,7 @@ export const TUNE = {
 const BASE = TUNE;
 /* the hold while the camera finds the planet, the shot in, the moment the words come, the shot back out */
 /* the page comes in while the camera is still settling, so the whole arrival is over by about three seconds */
-const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4;
+const HOLD = 0.16, APPROACH = 2.7, SETTLE = 1.9, RETURN = 2.4, WAIT = 6000;
 /* the door's picture of the install's planet (tools/planets.py): how its pole leans in the picture, so the shot can
    start (and end) looking at the rings exactly as the picture shows them */
 const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
@@ -367,7 +367,9 @@ export function createInstall(pad, opts = {}) {
       return new Promise(async (resolve) => {
         this.start();
         const dot0 = dotOf(scene); dot0.from = fromFor(dot0.rot);
-        const ok = world && (await world.bake());
+        /* the world is waited for, but never long: past WAIT (a first visit on a slow line or a slow machine) the page
+           comes as it is, over its poster, and the world fades in under the words when it is ready (start: lit) */
+        const ok = world && (await Promise.race([world.bake(), new Promise((r) => setTimeout(() => r(false), WAIT))]));
         if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
         pad.classList.add("lit");
         canvas.style.opacity = "0";

@@ -328,24 +328,20 @@ void main(){
   if(uMoon2.w>0.0&&tm2.x>0.0&&tm2.x<tOp){tOp=tm2.x; hit=3;}
   float tr; vec4 rc=ring(ro,rd,tr); if(uRingK<0.5) tr=-1.0;
   bool ringOn=tr>0.0&&tr<tOp;
-  if(tOp<1e8){ vec3 P=ro+rd*tOp; col=hit==1?cloudDeck(P,rd):moon(P,hit==2?uMoon:uMoon2,rd); alpha=1.0; }
   /* the moons' limbs, smoothed: a pixel their edge passes through is shaded by how much of it the moon covers (the
-     ray's nearest miss of it, against a pixel's width out there), so the edge does not crawl as the camera drifts */
+     ray's nearest miss of it, against a pixel's width out there), so the edge does not crawl as the camera drifts.
+     Each surface is still shaded once at most (the shader is compiled at the click on a first visit: kept lean) */
+  float cov=0.0; vec4 EM=vec4(0.0); vec3 Pm=vec3(0.0);
   for(int k=0;k<2;k++){
     vec4 M=k==0?uMoon:uMoon2; if(M.w<=0.0)continue;
     vec3 oc=M.xyz-ro; float b=dot(oc,rd); if(b<=0.0)continue;
-    vec3 nr=oc-rd*b; float d=length(nr);
-    float cov=clamp((M.w-d)*uFocal/b+0.5,0.0,1.0);
-    if(cov<=0.0||cov>=1.0)continue;
-    if(hit==k+2){
-      /* on the moon: what is behind its edge shows through the part of the pixel it leaves */
-      vec3 back=tp.x>0.0?cloudDeck(ro+rd*tp.x,rd):(uBg>0.001?sky(rd)*uBg:vec3(0.0));
-      col=mix(back,col,cov); alpha=mix(tp.x>0.0?1.0:uBg,1.0,cov);
-    } else if(b-M.w<tOp){
-      /* just off it: the limb covers a little of the pixel */
-      col=mix(col,moon(M.xyz-normalize(nr)*M.w,M,rd),cov); alpha=mix(alpha,1.0,cov);
-    }
+    vec3 nr=oc-rd*b; float c=clamp((M.w-length(nr))*uFocal/b+0.5,0.0,1.0);
+    if(hit==k+2){ EM=M; cov=c; Pm=ro+rd*tOp; break; }
+    if(c>0.0&&hit<2&&b-M.w<tOp){ EM=M; cov=c; Pm=M.xyz-normalize(nr)*M.w; break; }
   }
+  /* the planet, where it is hit, or seen past a moon's edge */
+  if(tp.x>0.0&&(hit==1||(hit>=2&&cov<1.0))){ col=cloudDeck(ro+rd*tp.x,rd); alpha=1.0; }
+  if(EM.w>0.0){ col=mix(col,moon(Pm,EM,rd),cov); alpha=mix(alpha,1.0,cov); }
   if(ringOn&&ta.x>0.0&&tr>ta.y){col=col*(1.0-rc.a)+rc.rgb; alpha=alpha+(1.0-alpha)*rc.a;}
   /* the haze over the cloud tops: violet at the limb, lit where the sun is */
   if(ta.y>0.0&&max(ta.x,0.0)<tOp){
