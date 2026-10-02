@@ -7,7 +7,10 @@
  * whatever circle the flight gives the world each frame, so it moves exactly
  * as the flight's world does while its shading stays true: the cities on the
  * night side, the air lit along the limb, the sunlit crescent opening as the
- * camera climbs. Behind it, the Milky Way as Gaia saw it and the fine stars;
+ * camera climbs. Behind it, the Milky Way as Gaia saw it and the fine stars
+ * (on the docs' flight, the Milky Way is where it goes: the core swelling
+ * ahead, its star clouds streaming past, then the whole band across the sky
+ * as the docs page shows it, the constellations lighting on it);
  * in front, the streaks of the climb, light in depth layers about the way
  * ahead; at the end, the star the flight arrives at. Then the film: bloom,
  * the door's own tone curve, grain.
@@ -38,6 +41,10 @@ uniform mat3 uSkyM; uniform float uStarA, uDens;
 uniform float uBloom, uPre; uniform vec2 uBloomPt;
 uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
 uniform float uNeb, uNebOff;
+/* the docs' flight into the Milky Way: x its share of the sky, y the zoom, z the gain, w the roll; the centre it is seen about */
+uniform vec4 uGal; uniform vec2 uGalC; uniform float uGalPage;
+/* the docs' constellations igniting at the end: x, y, size, intensity; and their colours */
+uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;
 out vec4 o;
 const float PI=3.14159265, TAU=6.2831853;
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
@@ -77,6 +84,44 @@ vec3 sky(vec2 css){
   if(uHas.w>0.5) c+=pow(texture(uSky,uv).rgb,vec3(2.2))*0.055;
   c+=stars(s,f*uPx)*0.16*uStarA;
   return c;
+}
+/* the Milky Way the docs' flight goes into: the band about a centre on the screen, turned to lie as the docs page
+   shows it, drawn close (zoomed in, the core swelling ahead) or far (zoomed out past the frame, the whole band across
+   the sky, as the page has it). Seen the way the page shows it, too: the glow off the plane taken down to black */
+vec3 skyGal(vec2 css){
+  float f=uRes.y/uPx*0.95;
+  vec2 v=vec2(css.x-uGalC.x,uGalC.y-css.y)/f;
+  float cr=cos(uGal.w), sr=sin(uGal.w); v=vec2(cr*v.x-sr*v.y,sr*v.x+cr*v.y);
+  float lv=length(v), th=lv/uGal.y; vec2 dv=lv>1e-5?v/lv:vec2(0.0);
+  vec3 s=vec3(sin(th)*dv.x,sin(th)*dv.y,cos(th));
+  vec2 uv=vec2(atan(s.x,s.z)/TAU+0.5,0.5-asin(clamp(s.y,-1.0,1.0))/PI);
+  vec3 g=pow(textureLod(uSky,uv,max(0.0,1.2-log2(uGal.y+0.25))).rgb,vec3(2.2));
+  float l=dot(g,vec3(0.2126,0.7152,0.0722));
+  g*=smoothstep(0.035,0.2,l)*(0.6+0.8*smoothstep(0.1,0.5,l));
+  g*=vec3(1.05,0.98,0.9);
+  /* as it comes to the page's view, it takes the page's light too: dimmer down the middle, where the words go */
+  float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
+  vec3 c=vec3(0.0011,0.0010,0.0010)+g*uGal.z*(1.0-0.55*mid*uGalPage);
+  /* the stars: fewer and fainter as the view widens, so the wide sky is not crowded */
+  c+=stars(normalize(s),f*uPx*uGal.y)*0.1*uStarA*clamp(uGal.y,0.35,1.0)*(1.0-0.45*uGalPage);
+  return c;
+}
+/* the docs' constellations, lit one by one: each star a hot white core in its figure's colour, a glow round it,
+   the brightest with a fine cross; flaring as it lights and settling to the page's own */
+vec3 ignite(vec2 css){
+  vec3 acc=vec3(0.0); float H=uRes.y/uPx, reach=H*0.14;
+  for(int i=0;i<64;i++){
+    if(i>=uCN) break;
+    vec4 st=uCS[i]; if(st.w<=0.001) continue;
+    vec2 d=css-st.xy; float r2=dot(d,d); if(r2>reach*reach) continue;
+    float r=sqrt(r2), sz=st.z, win=1.0-smoothstep(reach*0.5,reach,r);
+    vec3 col=uCC[i];
+    float core=exp(-r2/(sz*sz*1.1));
+    float halo=exp(-r/(sz*4.0))*0.22+exp(-r/(sz*12.0))*0.012;
+    float spk=sz>2.6?(exp(-abs(d.y)/0.55)*exp(-abs(d.x)/(sz*8.0))+exp(-abs(d.x)/0.55)*exp(-abs(d.y)/(sz*8.0)))*0.3:0.0;
+    acc+=(mix(vec3(1.0),col,0.3)*core*5.0+col*(halo+spk)*2.2)*st.w*win;
+  }
+  return acc;
 }
 
 /* ── the streaks: light passing, in four depths, each a ring of lanes about the way ahead ── */
@@ -214,8 +259,16 @@ vec3 nebula(vec2 css,out float dust){
     float lane=smoothstep(0.5,0.75,vnoise(q*vec3(1.8,1.8,0.9)+11.0))*smoothstep(0.35,0.6,f);
     float hue=vnoise(q*0.45+5.0);
     vec3 col=mix(mix(vec3(0.42,0.16,1.0),vec3(1.0,0.22,0.52),smoothstep(0.3,0.68,hue)),vec3(0.16,0.58,0.86),smoothstep(0.66,0.9,hue));
+    vec3 kc=vec3(1.0,0.86,0.9);
     float near=smoothstep(40.0,uRmax*0.45,r);
-    acc+=(col*d*1.2+vec3(1.0,0.86,0.9)*knot*1.6)*(0.3+0.9*near)*(i==0?1.0:0.55)*(1.0-lane*0.8);
+    if(uGal.x>0.5){
+      /* the Milky Way's own: star clouds warm white to cream, bluer where they are young, a rare red knot of
+         hydrogen, and dust lanes brown at their edges */
+      col=mix(mix(vec3(1.0,0.86,0.68),vec3(0.98,0.95,0.9),smoothstep(0.25,0.6,hue)),vec3(0.72,0.8,1.0),smoothstep(0.75,0.95,hue));
+      kc=mix(vec3(1.0,0.82,0.62),vec3(1.0,0.36,0.32),step(0.86,vnoise(q*0.7+21.0)));
+      acc-=vec3(0.0,0.03,0.06)*lane*near;
+    }
+    acc+=(col*d*1.2+kc*knot*1.6)*(0.3+0.9*near)*(i==0?1.0:0.55)*(1.0-lane*0.8);
     dust+=(d*0.25+lane*0.55)*near;
   }
   dust=clamp(dust*uNeb,0.0,0.7); return acc*uNeb*1.1;
@@ -321,7 +374,8 @@ vec2 shockBend(vec2 css,out float ring){
 void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; vec2 bent=shockBend(css,ring);
-  vec3 c=sky(bent);
+  vec3 c=uGal.x<0.999?sky(bent):vec3(0.0);
+  if(uGal.x>0.001) c=mix(c,skyGal(bent),uGal.x);
   /* the way ahead: a faint light on the vanishing point, more of it the faster */
   float rv=length(css-uVP), dg=length(uRes/uPx);
   float sp=abs(uSpeed);
@@ -337,6 +391,7 @@ void main(){
   }
   vec4 mo=moon(css); c=c*(1.0-mo.a)+mo.rgb;
   c+=arrival(css);
+  if(uCN>0) c+=ignite(css);
   /* the shock's own light: a bright edge, red outside and blue in */
   if(ring>0.001){
     vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, rs=uBloom*H*1.25, w=H*0.006;
@@ -550,7 +605,7 @@ export function createVoyage(under) {
         const r0 = Math.min(dl * 0.35, H * 0.3), r1 = dl + H * 0.75, e = Math.pow(m, 2.3);
         return [s.vp[0] + (dx / dl) * (r0 + (r1 - r0) * e), s.vp[1] + (dy / dl) * (r0 + (r1 - r0) * e), H * (0.003 + 0.6 * Math.pow(m, 3.2))]; };
       const mt = (tu - 700) / 800;
-      if (maps.moon && mt > 0 && mt < 1 && s.moon !== false) {
+      if (maps.moon && mt > 0 && mt < 1 && s.moon !== false && !s.galaxy) {
         const a = mAt(mt), b = mAt(Math.max(0, mt - (1 / 60) / 0.8));
         /* it comes out of the distance: tiny, and faint until it is a third of the way */
         gl.uniform4f(u.uMoonS, a[0], a[1], a[2], sm(0, 0.35, mt)); gl.uniform2f(u.uMoonV, (a[0] - b[0]) * 0.5, (a[1] - b[1]) * 0.5);
@@ -561,6 +616,16 @@ export function createVoyage(under) {
       gl.uniform1f(u.uBloom, s.bloom || 0); gl.uniform2f(u.uBloomPt, s.bloomPt?.[0] ?? W / 2, s.bloomPt?.[1] ?? H / 2);
       bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
+      /* the docs' flight: the Milky Way, and the constellations lighting */
+      const g = s.galaxy;
+      gl.uniform4f(u.uGal, g ? g.w : 0, g ? g.Z : 1, g ? g.gain : 0, g ? g.roll : 0); gl.uniform2f(u.uGalC, g ? g.cx : 0, g ? g.cy : 0); gl.uniform1f(u.uGalPage, g ? g.page : 0);
+      const cs = s.cstars || [], n = Math.min(64, cs.length);
+      if (n) {
+        const a = new Float32Array(64 * 4), c = new Float32Array(64 * 3);
+        for (let i = 0; i < n; i++) { const t = cs[i]; a.set([t[0], t[1], t[2], t[3]], i * 4); c.set([t[4], t[5], t[6]], i * 3); }
+        gl.uniform4fv(u.uCS, a); gl.uniform3fv(u.uCC, c);
+      }
+      gl.uniform1i(u.uCN, n);
     });
     let src = hdr;
     chain.forEach((c, i) => { pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); }); src = c; });

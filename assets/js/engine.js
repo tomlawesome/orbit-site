@@ -912,13 +912,47 @@ export function createFlight(canvas, options = {}) {
     if (voyage && show) {
       const n = parseInt(TINT.slice(1), 16), lin = (x) => Math.pow(x / 255, 2.2) * 2.5;
       const bloom = !P.ending || P.ending === "bloom" ? q : P.ending === "halo" ? q * 0.6 : 0;
+      const tu = active.rev ? mirror(tc) : tc, deep = P.ending === "chart" && P.chart ? milkyWay(tu, q, P.chart) : null;
       voyage.draw({
         t, v, K: P.K, vp: [VPX, VPY], rmax: RMAX, tint: [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)],
         progress: active.rev ? 1 - tc / P.dur : tc / P.dur, world: worldGL, bloom,
-        tu: active.rev ? mirror(tc) : tc, star: !P.ending || P.ending === "bloom",
+        galaxy: deep?.galaxy, cstars: deep?.stars,
+        tu, star: !P.ending || P.ending === "bloom",
         bloomPt: [W / 2, P.ending === "halo" ? H * 0.24 : H * 0.5], dt: active.pinned ? 0 : dt * 1000,
       });
     }
+  }
+
+  /* the docs' flight, into the Milky Way (voyage.js draws it). Off the dawn the sky turns until the galaxy's core
+     lies ahead and the band swells about it as the climb gathers pace; through the cruise its star clouds and dust
+     lanes stream past (the passage, in the Milky Way's colours); braking, the camera pulls back and round until the
+     whole band lies across the sky as the docs page shows it, and the constellations light, one by one, each star
+     flaring as it catches and settling to the page's own, where the page will draw them */
+  const smoothq = (a, b, x) => { const q = Math.min(1, Math.max(0, (x - a) / (b - a))); return q * q * (3 - 2 * q); };
+  const hexLin = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.pow(x / 255, 2.2)); };
+  function milkyWay(tu, b, chart) {
+    const near = smoothq(500, 2500, tu), back = smoothq(2500, 3900, tu);
+    const Zin = 1 + 1.5 * near, gin = 0.055 + 0.3 * smoothq(300, 1500, tu);
+    const galaxy = {
+      w: smoothq(250, 1000, tu),
+      Z: Zin + (0.42 - Zin) * back,
+      gain: gin + (0.55 - gin) * back, page: back,
+      roll: -0.12 + (0.297 + 0.12) * back,
+      cx: VPX + (W / 2 - VPX) * back, cy: VPY + (H * 0.54 - VPY) * back,
+    };
+    const stars = [];
+    if (b > 0) {
+      const { rect, geometry: g } = chart, s = rect.w / g.W, ease = (u) => 1 - Math.pow(1 - Math.max(0, Math.min(1, u)), 2.2);
+      g.cons.forEach((con, gi) => {
+        const u = (b - (0.12 + gi * 0.055)) / 0.55, c = hexLin(con.c);
+        con.pts.forEach((p, i) => {
+          const si = ease((u - i * 0.06) / 0.2); if (si <= 0) return;
+          const flare = 1 + 2.4 * Math.exp(-Math.pow((si - 0.45) / 0.2, 2));
+          stars.push([rect.x + p[0] * s, rect.y + p[1] * s, Math.max(1.6, 2.6 * s * (i === 0 ? 1.25 : 1)), si * flare * 0.7, c[0], c[1], c[2]]);
+        });
+      });
+    }
+    return { galaxy, stars };
   }
 
   /* site: the other endings — each landing arrives its own way.
