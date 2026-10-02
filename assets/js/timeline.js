@@ -52,10 +52,14 @@
 const ASCENT_BASE = {
   warp: 200, mark: 260, release: 430, markOut: 1340,
   nameOn: 1560, nameOff: 2600,
-  land: 4800, condensed: 6400, dwell: 2000, instrument: 1800,
+  land: 4800, condensed: 6400, dwell: 600, instrument: 1800,
   tourGap: 450,
 };
-const instrumentAt = ASCENT_BASE.condensed + ASCENT_BASE.dwell;              /*  8400 */
+/* THE SITE'S OWN AMENDMENT (owner, 2026-10): on the site the bare sky's dwell read as a wait, not a breath. The
+   instrument now arrives as the dial finishes settling (its condense runs 1.3s from the landing), not two seconds
+   after the settle: the land and the draw-in are untouched, the dead air between them is gone */
+const SETTLE = 1100;
+const instrumentAt = ASCENT_BASE.land + SETTLE;                               /*  5900 */
 const tourAt = instrumentAt + ASCENT_BASE.instrument + ASCENT_BASE.tourGap;  /* 10650 */
 
 /*
@@ -84,7 +88,7 @@ const newDwell = 3000;
 const countGap = 300;
 const countHold = 3200;
 const countFade = 900;
-const newInstrumentAt = ASCENT_BASE.condensed + newDwell;  /*  9400 */
+const newInstrumentAt = ASCENT_BASE.land + SETTLE + 300;   /*  6200: the site's amendment, as above */
 const countOn = newInstrumentAt + countGap;                /*  9700 */
 const countOff = countOn + countHold;                      /* 12900 */
 const belongAt = countOff + countFade;                     /* 13800 */
