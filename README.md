@@ -21,7 +21,7 @@ GitHub Pages. Plain HTML, CSS and ES modules; no build step.
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
-| `assets/js/install.js` | The install: into orbit. The camera goes from the purple planet on the door to the world it is, and settles in orbit over it; the one line waits in the dark above |
+| `assets/js/install.js` | The dives into a world: the camera goes from a planet on the door to the world it is, and settles in orbit over it. Two worlds use it: the install's (the purple ringed planet; the one line waits in the dark above) and the information's (`main.js`, `INFO_WORLD`: a coral planet, no rings, lit from above, resting as a crescent under the title, dimmed as its scenes are read). Each world has its own tuning, look and framing |
 | `assets/js/world.js` | The world, drawn in WebGL2: a ray-traced gas giant, flattened by its spin, under a thin haze, with rings that shade it and are shaded by it, a gold moon, and the galaxy (baked on the GPU); drawn in light, bloomed and tone-mapped |
 | `assets/img/install/planet*.webp` | The gas giant's cloud deck: Cassini's map of Jupiter (PIA07782, NASA/JPL/Space Science Institute), regraded to violet by `tools/gas-giant.py --base` (`pip install numpy scipy pillow`) |
 | `assets/img/install/orbit*.webp` | The world, still: shown while it loads, and in its place where WebGL2 is not |

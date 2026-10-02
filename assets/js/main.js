@@ -48,11 +48,10 @@ function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
   const step = (fn) => new Promise((r) => idle(() => Promise.resolve().then(fn).catch(() => {}).then(r)));
-  const infoShots = () => Promise.all([...document.querySelectorAll("#infopad img[src]")].map((im) => fetch(im.src).catch(() => {})));
   warmingAll = step(() => journey.warm())                    /* 1. the demo */
     .then(() => step(() => PADS.install.ring.prepare?.()))   /* 2. the install */
     .then(() => step(() => PADS.docs.ring.ready?.()))        /* 3. the docs */
-    .then(() => step(infoShots));                            /* 4. the information */
+    .then(() => step(() => PADS.info.world?.prepare?.()));   /* 4. the information's world */
   return warmingAll;
 }
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
@@ -76,7 +75,32 @@ const PADS = {
   docs: { el: $("#docspad"), profile: RIGHT },
   info: { el: $("#infopad"), profile: LEFT },
 };
-for (const [id, pad] of Object.entries(PADS)) { mountTiledSky(pad.el.querySelector(".sky"), `pad-${id}`); pad.ring = id === "install" ? createInstall(pad.el) : id === "docs" ? createDocs(pad.el) : createInfo(pad.el); }
+/* the information's world: the install's own, its planet coral (the map turned, no rings, a warm haze), lit from
+   above so it rests as a great crescent under the title, the camera coming round to it from the other side */
+const INFO_WORLD = {
+  world: { hue: 100, sat: 1.12, ringsOn: false, haze: [1.0, 0.8, 0.72],
+    /* the coral of its door: the map's light and shade graded deep rust → coral → pale peach, a little of its own colour kept */
+    grade: [[0.09, 0.018, 0.012], [0.62, 0.17, 0.11], [0.98, 0.72, 0.58], 0.85] },
+  tune: {
+    sun: [0.12, 0.82, 0.42], tiltZ: -0.22, tiltX: 0.1,
+    sky: { core: [0.32, -0.3], along: [-0.55, 0.15] },
+    look: { galK: 0.03 },
+    /* it dives straight at the planet, and only late lets it settle beneath, a crescent under the title */
+    aim: [0.42, 0.58],
+    /* it comes in from above, on the sun's side, so the planet it dives at is lit, and drops to rest beneath the crescent */
+    rest: { az: 0.55, el: -0.08, roll: -0.06, d: 3.0 }, from: { az: 0.3, el: 0.72, roll: -0.18 },
+    fly: { k: 0.89, side: [1.2, -0.7], r: 0.2 },
+    land: { R: 1.0, cx: 0.0, cy: -1.14, moon: [0.34, 0.28], moonR: 8.0 },
+    port: { R: 0.72, cx: 0.0, cy: -0.98, moon: [0.3, 0.2], moonR: 8.0 },
+  },
+};
+for (const [id, pad] of Object.entries(PADS)) {
+  mountTiledSky(pad.el.querySelector(".sky"), `pad-${id}`);
+  if (id === "info") pad.world = createInstall(pad.el, INFO_WORLD);
+  pad.ring = id === "install" ? createInstall(pad.el) : id === "docs" ? createDocs(pad.el) : createInfo(pad.el, pad.world);
+}
+/* the worlds dived into (the install's, the information's): the shot is the world's */
+const shotOf = (pad) => pad.world || pad.ring;
 let current = null;   /* "door" | "home" | a pad id */
 const visibleGlyph = () => (current === "home" ? $("#dial") : current && PADS[current] ? PADS[current].el.querySelector(".ring") : $("#login-glyph svg"));
 
@@ -93,7 +117,7 @@ const journey = createJourney({
 function hideAll() {
   $("#home").classList.remove("shown"); $("#home").hidden = true; player.hide();
   $("#dusk").hidden = true;
-  for (const pad of Object.values(PADS)) { pad.ring.stop(); pad.el.hidden = true; }
+  for (const pad of Object.values(PADS)) { pad.ring.stop(); pad.world?.stop(); pad.el.hidden = true; }
   document.body.classList.remove("arrived");
 }
 function showDoor() {
@@ -114,15 +138,15 @@ function showDoor() {
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
   if (current === "door") { $("#door").classList.remove("shown"); setTimeout(() => { $("#door").hidden = true; }, 800); }
-  else if (current && PADS[current]) { const pad = PADS[current]; pad.ring.stop(); setTimeout(() => { pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
+  else if (current && PADS[current]) { const pad = PADS[current]; pad.ring.stop(); pad.world?.stop(); setTimeout(() => { pad.el.hidden = true; }, 800); document.body.classList.remove("arrived"); }
   else if (current === "home") { const h = $("#home"); h.classList.remove("shown"); player.hide(); setTimeout(() => { h.hidden = true; }, 800); }
 }
 /* a section: the flight there, and the landing */
 /* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
 let sceneTimer = 0;
-const installPlanet = () => { const planet = $('#door .planet[data-section="install"]'); return { planet, body: planet.querySelector(".body") }; };
-function goToWorld() {
-  const pad = PADS.install, door = $("#door");
+const planetOf = (id) => { const planet = $(`#door .planet[data-section="${id}"]`); return { planet, body: planet.querySelector(".body") }; };
+function goToWorld(id = "install") {
+  const pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   planets.hide(); player.stop(true); home.closeDrawers();
   clearTimeout(sceneTimer);
   /* from anywhere but the door, the dawn comes up under what is leaving */
@@ -131,21 +155,22 @@ function goToWorld() {
     if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
     door.hidden = false; door.classList.add("shown"); document.body.classList.add("at-door", "lit");
   }
-  const scene = installPlanet();
+  const scene = planetOf(id);
   scene.planet.classList.add("chosen");
   /* the camera finds the planet: the door racks out of focus behind it, and it swells and glows */
   document.body.classList.add("departing", "racking");
   /* once the world's own sky has filled the frame, the door behind it is let go, so it is not drawn (blurred) for nothing */
   scene.near = (u) => { if (u > 0.32) document.body.classList.add("covered"); };
-  pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = "install";
-  try { history.replaceState(null, "", "#install"); } catch { /* fine */ }
-  pad.ring.form(scene).then(() => {
-    if (current !== "install") return;
+  pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = id;
+  try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ }
+  shot.form(scene).then(() => {
+    if (current !== id) return;
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
     document.body.classList.add("instrument", "arrived");
+    if (pad.world) pad.ring.start();   /* the information's scenes, over its world */
     /* the door goes once the sky is all the world's */
     sceneTimer = setTimeout(() => {
-      if (current !== "install") return;
+      if (current !== id) return;
       door.classList.remove("shown"); door.hidden = true;
       document.body.classList.remove("departing", "racking", "covered", "at-door"); scene.planet.classList.remove("chosen");
     }, 600);
@@ -153,10 +178,11 @@ function goToWorld() {
 }
 /* back to the dawn: the same shot out, the planet set down on its orbit wherever it has got to */
 function leaveWorld() {
-  const pad = PADS.install, door = $("#door");
+  const id = current, pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   clearTimeout(sceneTimer);
   if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
-  const scene = installPlanet();
+  if (pad.world) { pad.ring.stop(); pad.el.querySelector(".scroll").scrollTop = 0; pad.el.style.setProperty("--worldA", 1); shot.start(); }
+  const scene = planetOf(id);
   scene.planet.classList.add("chosen");
   /* the door comes back soft, and comes into focus as the camera reaches it; the dot takes the planet back */
   scene.near = (u) => {
@@ -168,14 +194,14 @@ function leaveWorld() {
   document.body.classList.remove("instrument", "arrived");
   door.hidden = false; door.classList.add("shown");
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
-  pad.ring.unform(scene).then(() => {
-    pad.ring.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
+  shot.unform(scene).then(() => {
+    shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door";
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
 }
 function flyToPad(id) {
-  if (id === "install") { startWhen(PADS.install.ring.prepare?.(), goToWorld); return; }
+  if (id === "install" || id === "info") { startWhen(shotOf(PADS[id]).prepare?.(), () => goToWorld(id)); return; }
   startWhen(Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]), () => flyNow(id));
 }
 function flyNow(id) {
@@ -197,12 +223,12 @@ function arrivePad(id) {
   const pad = PADS[id];
   $("#door").hidden = true; document.body.classList.remove("at-door");
   pad.el.hidden = false; current = id;
-  document.body.classList.add("instrument", "arrived"); if (id === "install") pad.el.classList.add("formed"); pad.ring.start();
+  document.body.classList.add("instrument", "arrived"); if (id === "install" || pad.world) pad.el.classList.add("formed"); pad.world?.start(); pad.ring.start();
 }
 /* back to the dawn: the descent, setting down on the door */
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
-  if (current === "install") { leaveWorld(); return; }
+  if (current === "install" || current === "info") { leaveWorld(); return; }
   pad.ring.stop();
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
