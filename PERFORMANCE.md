@@ -13,10 +13,12 @@ prints (`orbit · …`).
   - **Firefox** has no `KHR_parallel_shader_compile` and blocks the page while it compiles.
   - **Chrome and Edge** compile in the background, but a compile still takes seconds there.
   - A private window has no shader cache, so it's the worst case.
-- **Firefox, measured on the owner's machine (current state):**
-  - The install world's compile went from about 6.8 s to about 1.3 s after its fallback shaders were made lazy.
-  - The flight compiles in about 3.5 s; it is now the largest compile.
-  - Both run behind the first-light loading ring, which keeps turning because it is animated on the compositor.
+- **Firefox, measured on the owner's machine (current state, a private window):**
+  - The install world compiles by about 1.7–2.3 s after opening.
+  - The page then freezes for about 3 s while the flight compiles (to about 5 s). This is now the largest single cost.
+  - Every picture is downloaded during that freeze, decoded just after it, and on the GPU 12–84 ms later.
+  - Install and info are ready at about 5.9–6.9 s, the flight at about 6.5–7.6 s (it was 9.0 s and 9.4 s).
+  - The freeze runs behind the first-light loading ring, which keeps turning because it is animated on the compositor.
 
 ## Already done
 
@@ -30,6 +32,8 @@ prints (`orbit · …`).
   - install and info share one world: one compile, one set of textures.
 - **Background work:**
   - GPU work is scheduled as chores, and a click hurries only the chosen journey's chores;
+  - the chores begin the moment the door is lit. They used to wait 3.4 s for its reveal, but the reveal is carried
+    by the compositor, so they cannot stutter it, and the wait only held the pictures back (2.8 s, measured);
   - a world is drawn once, unseen, before its dive, so a driver's first-use stall doesn't land on the dive.
 - **Waiting:**
   - a dive waits at most 6 s for its world; after that the page arrives over its poster;
@@ -39,6 +43,15 @@ prints (`orbit · …`).
   - idle pages do almost no main-thread work (see the audit commits).
 
 ## Paths for compile time (most promising first)
+
+Tried, October 2026:
+- **Measuring** (path 1): in Firefox on Windows the translations are small: world render 54K, flight scene 62K,
+  galaxy 11K. The size does not show what Direct3D does with them afterwards.
+- **Uniform loop bounds** (path 2): every loop in the flight scene, the galaxy and the world render was counted from
+  an unset uniform, so Direct3D could not unroll it. Measured against the same code without the change, in Firefox
+  on Windows, the sizes and the compile times were the same. Not kept.
+- **Where the time goes after compiling:** each picture, the first unseen draw and the measure take well under
+  0.2 s each. The remaining cost is the flight's compile; paths 3, 4 and 7 are what is left for it.
 
 1. **Measure each program's translated size first; it's cheap.**
    - `WEBGL_debug_shaders.getTranslatedShaderSource(shader)` returns the HLSL (or other translation) the browser
