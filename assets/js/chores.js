@@ -13,7 +13,7 @@
  * measures (frames timed to fit the drawing to the machine: "measure") are never hurried.
  */
 const queue = [];
-let open = false, running = false, want = null, until = 0, wake = 0, calm = true, held = false;
+let open = false, running = false, want = null, until = 0, wake = 0;
 /* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 250 }) : setTimeout(fn, 30));
 /* the order the rest are done in, when no journey has been chosen: the likeliest first, the measures last */
@@ -27,7 +27,7 @@ function pump() {
   let i = want ? queue.findIndex((j) => want.includes(j.tag)) : -1;
   const hurried = i >= 0;
   if (!hurried) {
-    if (!open || (held && !calm)) return;
+    if (!open) return;
     /* the rest waits until the journey has had its opening */
     if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     i = 0;
@@ -36,9 +36,8 @@ function pump() {
   running = true;
   const run = () => {
     const [job] = queue.splice(Math.min(i, queue.length - 1), 1);
-    let out; const t0 = performance.now();
+    let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
-    if (!hurried && !calm && performance.now() - t0 > 25) held = true;
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
       running = false;
       /* a rest between chores: a couple of frames, so whatever is moving keeps moving; hurried, still a frame */
@@ -53,13 +52,8 @@ export function chore(fn, rest = 60, tag = "") {
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
 /** the door is up: the chores may begin */
-/* settled: when what is moving on the page has finished. Until then chores go on only while each proves cheap: the
-   first that takes more than a frame and a half holds the rest until it has, so a slow GPU keeps the reveal smooth
-   and a quick one wastes no time */
-export function openChores(settled = null) {
-  if (settled) { calm = false; settled.then(() => { calm = true; pump(); }); }
-  open = true; pump();
-}
+/* the door is lit: the chores may begin (what moves in its reveal is carried by the compositor, away from them) */
+export function openChores() { open = true; pump(); }
 /** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms) */
 export function hurryChores(tags, opening = 6000) {
   want = [].concat(tags || []);
