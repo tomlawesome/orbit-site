@@ -89,6 +89,8 @@ void main(){
 /* THE SHOT: everything a ray meets, lit, in light (tone-mapped later, unless DIRECT) */
 const RENDER = `#version 300 es
 precision highp float;
+/* never set, so always 0: a loop counted from it is one Direct3D cannot unroll (each copy is compile time) */
+uniform int uZ;
 out vec4 o;
 uniform vec2 uRes, uShift, uSunPx;
 uniform float uFocal, uTime, uBg, uSunVis;
@@ -134,7 +136,7 @@ float ringAt(vec3 X,float lod){
 
 vec3 stars(vec3 d,float dens){
   vec3 c=vec3(0.0); float pxA=1.0/uFocal;
-  for(int i=0;i<4;i++){
+  for(int i=uZ;i<4;i++){
     float fi=float(i), sc=(i==0?18.0:i==1?60.0:i==2?190.0:520.0);
     vec3 g=d*sc, id=floor(g);
     float h1=hash13(id+fi*31.0), h2=hash13(id.yzx+fi*17.0+5.0), h3=hash13(id.zxy+fi*13.0+11.0), h4=hash13(id+vec3(7.0,3.0,1.0)+fi);
@@ -278,7 +280,7 @@ vec3 dust(vec3 ro,vec3 rd,float tMax){
   vec3 tN=(cell+max(st,0.0)-p)/rd;
   vec3 acc=vec3(0.0);
   float ph=dot(rd,uSun), g=0.65, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5);
-  for(int i=0;i<30;i++){
+  for(int i=uZ;i<30;i++){
     if(i>=uDustN)break;
     float t0=min(tN.x,min(tN.y,tN.z))*CS;
     float h=hash13(cell);
@@ -329,7 +331,7 @@ void main(){
      ray's nearest miss of it, against a pixel's width out there), so the edge does not crawl as the camera drifts.
      Each surface is still shaded once at most (the shader is compiled at the click on a first visit: kept lean) */
   float cov=0.0; vec4 EM=vec4(0.0); vec3 Pm=vec3(0.0);
-  for(int k=0;k<2;k++){
+  for(int k=uZ;k<2;k++){
     vec4 M=k==0?uMoon:uMoon2; if(M.w<=0.0)continue;
     vec3 oc=M.xyz-ro; float b=dot(oc,rd); if(b<=0.0)continue;
     vec3 nr=oc-rd*b; float c=clamp((M.w-length(nr))*uFocal/b+0.5,0.0,1.0);
@@ -346,7 +348,7 @@ void main(){
     vec3 s=vec3(0.0); float od=0.0;
     vec3 ls=normalize(squash(uSun));
     float rsh=1.0-0.6*ringAt(ro+rd*(0.5*(t0+t1)),7.0)*uRingK;
-    for(int i=0;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
+    for(int i=uZ;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
       /* the haze is lit by how high the sun stands over it: it fades through dusk, no hard edge */
       float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
       float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od); }
