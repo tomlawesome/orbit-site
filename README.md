@@ -25,6 +25,8 @@ Remove the attribute and the whole site is back as it was.
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
+| `assets/js/chores.js` | The background work, a piece at a time: each journey's pictures put on the GPU, its shaders checked, its first frames drawn unseen, starting the moment the door is lit; a chosen journey's own pieces go first. Each world also prints how long it took to the console (`orbit · …`) |
+| `assets/js/tilt.js` | On Android phones, the phone's tilt moves the worlds as a mouse pointer would (iOS is never asked) |
 | `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`), plus a sideways vanishing point and three more endings |
 | `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
 | `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
@@ -50,6 +52,7 @@ Remove the attribute and the whole site is back as it was.
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
 | `.github/workflows/import-docs.yml` | Runs the import every night and on request, and commits what changed |
 | `.nojekyll` | Pages serves the files as they are |
+| `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#docs/<source>` and
 `#docs/<source>/<heading>` open a page of the docs; `#key` and `#inbox`

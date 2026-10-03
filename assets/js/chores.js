@@ -4,7 +4,7 @@
  * Readying the journeys is heavy for the page: pictures put on the GPU, shaders made, frames drawn to measure the
  * machine. Done all at once it stutters whatever is moving. So each piece is a chore, queued here and done one at
  * a time, each in a pause between frames, with a few frames' rest between one and the next, and none at all until
- * the door has finished coming up (open). The network is not a chore: pictures are fetched (and decoded) as soon
+ * the door is lit (open). The network is not a chore: pictures are fetched (and decoded) as soon
  * as they are asked for, off the page's own thread; only what touches the page or the GPU waits its turn.
  *
  * When a journey is chosen, what that journey still needs is done straight away (hurry), a frame between each piece,

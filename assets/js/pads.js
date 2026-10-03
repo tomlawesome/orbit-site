@@ -128,7 +128,7 @@ export function createDocs(pad) {
   };
   function load() {
     if (loading) return loading;
-    /* fetched at once; read into the chart and the list as a chore (chores.js), not while the door comes up */
+    /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
     loading = fetch(DOCS_DIR + "index.json").then((r) => r.json()).then((data) => chore(() => {
       DOCS = data.sources; generated = data.generated; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {

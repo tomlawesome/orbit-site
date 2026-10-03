@@ -642,7 +642,7 @@ export function createVoyage(under) {
   /* the maps: asked for a little after the page is up, each used as soon as it has come */
   const maps = {};
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
-     chore of its own (chores.js): never all at once, and never while the door is still coming up */
+     chore of its own (chores.js): never all at once */
   const inTurn = (fn) => chore(fn, 60, "flight");
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
