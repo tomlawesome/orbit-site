@@ -406,8 +406,8 @@ export function createInstall(pad, opts = {}) {
         this.prepared = (w ? w.bake() : Promise.resolve(false))
           .then((ok) => {
             note(`${TAG}: ready`);
-            if (ok) chore(touch, 60, TAG);
-            return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
+            if (ok) chore(() => { const s = performance.now(); touch(); note(`${TAG}: first unseen draw took`, s); }, 60, TAG);
+            return ok ? chore(() => { const s = performance.now(); calibrate(); note(`${TAG}: measuring took`, s); return true; }, 200, "measure") : false;
           });
       }
       return this.prepared;

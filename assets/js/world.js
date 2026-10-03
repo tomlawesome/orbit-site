@@ -13,7 +13,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { chore, fetchOnce, noteShaders } from "./chores.js";
+import { chore, fetchOnce, note, noteShaders } from "./chores.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -571,6 +571,9 @@ export function createWorld(canvas, opts = {}) {
   });
   /* each picture is put on the GPU as a chore of its own (chores.js), one after another, never while the door comes up */
   const inTurn = (fn) => chore(fn, 60, opts.tag);
+  /* timing (perf branch): when each picture arrives, is decoded, gets its turn, and how long putting it on the GPU takes */
+  const was = (what) => (x) => { note(`world: ${what}`); return x; };
+  const timed = (what, fn) => inTurn(() => { note(`world: ${what} given its turn`); const s = performance.now(); fn(); gl.getError(); note(`world: ${what} on the GPU took`, s); });
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -614,26 +617,26 @@ export function createWorld(canvas, opts = {}) {
 
   /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
   const loadMap = fetchOnce(MAP)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => {
+    .then(was("map fetched")).then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then(was("map decoded")).then((img) => timed("map", () => {
       albT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(albT);
       SW = img.width; SH = img.height; img.close?.();
     }));
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const loadRings = fetchOnce(RINGS)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
-    .then((img) => inTurn(() => {
+    .then(was("rings fetched")).then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
+    .then(was("rings decoded")).then((img) => timed("rings", () => {
       gl.bindTexture(gl.TEXTURE_2D, ringT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(ringT); img.close?.();
     }), (e) => console.warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
   const loadMoon = fetchOnce(MOON)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); }),
+    .then(was("moon fetched")).then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then(was("moon decoded")).then((img) => timed("moon", () => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); }),
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
   let galT = null;
   const loadGalaxy = fetchOnce(GALAXY)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
+    .then(was("galaxy fetched")).then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then(was("galaxy decoded")).then((img) => timed("galaxy", () => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
       (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
   /* without the photograph: the galaxy painted, a strip a frame */
   const jobs = [];
