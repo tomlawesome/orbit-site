@@ -187,12 +187,25 @@ function showDoor() {
     }));
   });
   let lit = false;
-  /* the chores (the GPU's share of readying the journeys) begin the moment the ring has drawn itself in: the rest of
-     the reveal is carried by the compositor, but the ring's stroke is painted on the page's own thread, and a chore
-     under it stutters it. A journey chosen sooner has its own chores done at once (hurryChores) */
+  /* the chores (the GPU's share of readying the journeys) begin the moment the reveal's painted part has finished:
+     what only moves or fades is carried by the compositor, and nothing on the page's thread can stutter it, but what
+     is painted (the ring's stroke drawing in, the name's blur clearing, anything inside an SVG) is drawn on the
+     page's own thread, and a chore under it stutters it. So each such animation is waited for, by its own end, not
+     by a guess. A journey chosen sooner has its own chores done at once (hurryChores) */
+  const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
+  const painted = (a) => {
+    try {
+      const t = a.effect.target;
+      if (t instanceof SVGElement && !(t instanceof SVGSVGElement)) return true;
+      const props = a.transitionProperty ? [a.transitionProperty] : a.effect.getKeyframes().flatMap(Object.keys);
+      return props.some((k) => !COMPOSITED.has(k));
+    } catch { return true; }
+  };
   const drawn = () => {
-    try { return Promise.all(($("#door .lockup .ring")?.getAnimations() || []).map((a) => a.finished.catch(() => {}))); }
-    catch { return Promise.resolve(); }
+    try {
+      const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime) && painted(a));
+      return Promise.all(ends.map((a) => a.finished.catch(() => {})));
+    } catch { return Promise.resolve(); }
   };
   const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); drawn().then(() => openChores()); }); };
   within(critical, 250).then(() => {

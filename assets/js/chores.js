@@ -4,7 +4,7 @@
  * Readying the journeys is heavy for the page: pictures put on the GPU, shaders made, frames drawn to measure the
  * machine. Done all at once it stutters whatever is moving. So each piece is a chore, queued here and done one at
  * a time, each in a pause between frames, with a few frames' rest between one and the next, and none at all until
- * the door is lit and its ring drawn in (open). The network is not a chore: pictures are fetched (and decoded) as soon
+ * the painted part of the door's reveal is done (open). The network is not a chore: pictures are fetched (and decoded) as soon
  * as they are asked for, off the page's own thread; only what touches the page or the GPU waits its turn.
  *
  * When a journey is chosen, what that journey still needs is done straight away (hurry), a frame between each piece,
@@ -52,7 +52,7 @@ export function chore(fn, rest = 60, tag = "") {
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
 /** the door is up: the chores may begin */
-/* the door is lit and its ring drawn: the chores may begin (the rest of its reveal is carried by the compositor) */
+/* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
 export function openChores() { open = true; pump(); }
 /** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms) */
 export function hurryChores(tags, opening = 6000) {
