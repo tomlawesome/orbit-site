@@ -52,6 +52,13 @@ Tried, October 2026:
   on Windows, the sizes and the compile times were the same. Not kept.
 - **The docs galaxy compiled apart** (path 3): the galaxy and its stars no longer hold up the flight's compile.
   Chrome and Edge compile them in the background beside it; Firefox compiles them after it, as a chore.
+- **What each effect costs the flight's compile** (Firefox on Windows, the scene shader with one effect left out;
+  whole: 2.9 s): the streaks and nebula 1.86 s, the star 1.06 s, the Earth 0.9 s, the docs' galaxy and
+  constellations 0.6 s, the moon 0.24 s. These add to more than the whole: a big shader costs more than its parts.
+  The streaks and nebula alone compile in 0.8 s, everything else alone in 1.05 s.
+- **The flight's scene split in two** (from that): the rush (sky, galaxy, nebula, streaks) and what lies over it
+  (Earth, moon, star, constellations, the shock), blended exactly. About 1.9 s in place of 2.9 s.
+- **Asking for a compile's result later** (`?defer`) does not help in Firefox: it compiles when asked, not before.
 - **Where the time goes after compiling:** each picture, the first unseen draw and the measure take well under
   0.2 s each. The remaining cost is the flight's compile; paths 4 and 7 are what is left for it.
 

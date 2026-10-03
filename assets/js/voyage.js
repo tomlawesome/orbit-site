@@ -378,20 +378,33 @@ void main(){
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
   float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
+  o=vec4(c,1.0);
+}`;
+
+/* what lies over the rush: the Earth, the moon, the star, the docs' constellations, the shock's light. A program of
+   its own, drawn over the first and blended by how much of it still shows through (alpha), so the sum is exactly the
+   one program it was: two halves compile in well under the time the whole did (Firefox, measured: 0.8 s and 1.05 s,
+   against 2.9 s), the page's freeze the shorter by a second */
+const OVER = SCENE.slice(0, SCENE.indexOf("void main(){")) + `void main(){
+  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
+  float ring; shockBend(css,ring);
+  /* each layer over: what was beneath times (1-a), plus its own light. Kept as how much shows through (T) and what
+     is added (S), so the blend gives beneath*T+S */
+  float T=1.0; vec3 S=vec3(0.0);
   if(uEarthA>0.0){
-    float cov; vec3 e=earth(css,cov);
-    c=mix(c,vec3(0.0),cov*uEarthA)+e*uEarthA;
+    float cov; vec3 e=earth(css,cov); float a=cov*uEarthA;
+    T*=1.0-a; S=S*(1.0-a)+e*uEarthA;
   }
-  vec4 mo=moon(css); c=c*(1.0-mo.a)+mo.rgb;
-  c+=arrival(css);
-  if(uCN>0) c+=ignite(css);
+  vec4 mo=moon(css); T*=1.0-mo.a; S=S*(1.0-mo.a)+mo.rgb;
+  S+=arrival(css);
+  if(uCN>0) S+=ignite(css);
   /* the shock's own light: a bright edge, red outside and blue in */
   if(ring>0.001){
     vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, rs=uBloom*H*1.25, w=H*0.006;
     vec3 band=vec3(exp(-pow((r-rs-w*0.5)/w,2.0)),exp(-pow((r-rs)/w,2.0)),exp(-pow((r-rs+w*0.5)/w,2.0)));
-    c+=mix(vec3(dot(band,vec3(0.34))),band,0.35)*vec3(1.0,0.86,0.66)*0.32*(1.0-uBloom)*(1.0-uBloom);
+    S+=mix(vec3(dot(band,vec3(0.34))),band,0.35)*vec3(1.0,0.86,0.66)*0.32*(1.0-uBloom)*(1.0-uBloom);
   }
-  o=vec4(c,1.0);
+  o=vec4(S,1.0-T);
 }`;
 
 const DOWN = `#version 300 es
@@ -601,7 +614,7 @@ export function createVoyage(under) {
     const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
-  const P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: null, stars: null };
+  const P = { scene: program(SCENE), over: program(OVER), down: program(DOWN), up: program(UPS), film: program(FILM), gal: null, stars: null };
   const compiled = (list) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
     const poll = () => (list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
@@ -786,7 +799,7 @@ export function createVoyage(under) {
       gl.uniform2f(u.uRes, galT.w, galT.h); gl.uniform3fv(u.uCamP, g3.P); gl.uniformMatrix3fv(u.uCamR, false, new Float32Array(g3.R));
       gl.uniform1f(u.uF, galT.h * 0.95); gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uGain, g3.gain);
     });
-    pass(P.scene, hdr.f, CW, CH, (u) => {
+    const sceneU = (u) => {
       gl.uniform2f(u.uRes, CW, CH); gl.uniform1f(u.uPx, px); gl.uniform1f(u.uTime, (s.t / 1000) % 1000);
       gl.uniform2f(u.uVP, s.vp[0], s.vp[1]); gl.uniform1f(u.uSpeed, s.v); gl.uniform1f(u.uRmax, s.rmax);
       gl.uniform4fv(u.uOff, off); gl.uniform4fv(u.uLen, len); gl.uniform3fv(u.uTint, s.tint);
@@ -827,7 +840,12 @@ export function createVoyage(under) {
       gl.uniform1f(u.uG3, g3 ? g3.w : 0); bind(6, g3 ? galT.t : blank, u.uGalTex);
       gl.uniform1f(u.uGalPage, g3 ? g3.page || 0 : 0);
       gl.uniformMatrix3fv(u.uGCamR, false, new Float32Array(g3 ? g3.R : [1, 0, 0, 0, 1, 0, 0, 0, 1]));
-    });
+    };
+    pass(P.scene, hdr.f, CW, CH, sceneU);
+    /* and what lies over it (OVER, above), blended by how much of the first still shows through */
+    gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+    pass(P.over, hdr.f, CW, CH, sceneU);
+    gl.disable(gl.BLEND);
     /* the galaxy's stars, added into the same light before the bloom: streaks, then their points */
     if (g3 && starVao) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.f); gl.viewport(0, 0, CW, CH);
