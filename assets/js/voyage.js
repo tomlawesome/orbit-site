@@ -20,7 +20,7 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
-import { chore, fetchOnce } from "./chores.js";
+import { chore, fetchOnce, noteShaders } from "./chores.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 const TEX = {
@@ -604,7 +604,7 @@ export function createVoyage(under) {
   const P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
   let ok = false, dead = false;
   const made = new Promise((resolve) => {
-    const done = () => { try { Object.values(P).forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); } resolve(ok); };
+    const done = () => { try { Object.values(P).forEach(finish); ok = true; noteShaders(gl, "flight", P); } catch (e) { console.warn(e); dead = true; canvas.remove(); } resolve(ok); };
     if (!par) { done(); return; }
     const poll = () => (Object.values(P).every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
     poll();

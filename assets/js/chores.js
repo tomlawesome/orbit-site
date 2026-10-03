@@ -72,3 +72,13 @@ export function fetchOnce(url) {
 export function note(what, since = 0) {
   try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
 }
+
+/* how big each shader is as the browser actually compiles it (its translation: HLSL on Windows), in the console,
+   so what makes a compile slow can be measured (PERFORMANCE.md). Where the browser will not say, nothing */
+export function noteShaders(gl, what, programs) {
+  try {
+    const dbg = gl.getExtension("WEBGL_debug_shaders"); if (!dbg) return;
+    const sizes = Object.entries(programs).filter(([, pr]) => pr?.fs).map(([k, pr]) => `${k} ${Math.round(dbg.getTranslatedShaderSource(pr.fs).length / 1024)}K`);
+    console.info(`orbit · ${what} shaders as compiled: ${sizes.join(", ")}`);
+  } catch { /* fine */ }
+}

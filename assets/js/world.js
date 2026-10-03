@@ -13,7 +13,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { chore, fetchOnce } from "./chores.js";
+import { chore, fetchOnce, noteShaders } from "./chores.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -561,6 +561,7 @@ export function createWorld(canvas, opts = {}) {
     const done = () => {
       try {
         all.forEach(ready);
+        noteShaders(gl, "world", P);
         resolve(true);
       } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
