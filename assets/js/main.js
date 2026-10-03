@@ -187,9 +187,14 @@ function showDoor() {
     }));
   });
   let lit = false;
-  /* the chores (the GPU's share of readying the journeys) begin as the door is lit: its reveal is carried by the
-     compositor, so they cost it nothing, and each journey is ready the soonest it can be */
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); openChores(); }); };
+  /* the chores (the GPU's share of readying the journeys) begin the moment the ring has drawn itself in: the rest of
+     the reveal is carried by the compositor, but the ring's stroke is painted on the page's own thread, and a chore
+     under it stutters it. A journey chosen sooner has its own chores done at once (hurryChores) */
+  const drawn = () => {
+    try { return Promise.all(($("#door .lockup .ring")?.getAnimations() || []).map((a) => a.finished.catch(() => {}))); }
+    catch { return Promise.resolve(); }
+  };
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); drawn().then(() => openChores()); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
