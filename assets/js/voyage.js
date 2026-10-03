@@ -751,7 +751,11 @@ export function createVoyage(under) {
     for (const c of [hdr, ...chain]) if (c) { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); }
     if (galT) { gl.deleteTexture(galT.t); gl.deleteFramebuffer(galT.f); }
     hdr = target(cw, ch); chain = []; galT = target(Math.max(1, Math.round(cw * gq)), Math.max(1, Math.round(ch * gq)));
-    let a = cw, b = ch;
+    /* the bloom's halvings are sized from the screen, not from the drawing, so its glow spreads the same however
+       finely the frame is drawn: sized from the drawing, a frame drawn coarser (a slow measure, or a slow flight
+       before it) glowed up to twice as wide, a haze over the docs' galaxy that came and went */
+    const ref = Math.min(dpr * 0.9, Math.sqrt(1.6e6 / Math.max(1, W * H)));
+    let a = Math.max(1, Math.round(W * ref)), b = Math.max(1, Math.round(H * ref));
     for (let i = 0; i < 5; i++) { a = Math.max(1, a >> 1); b = Math.max(1, b >> 1); chain.push(target(a, b)); }
   }
   const pass = (prog, fbo, w, h, setup) => {
