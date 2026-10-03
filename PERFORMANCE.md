@@ -50,8 +50,10 @@ Tried, October 2026:
 - **Uniform loop bounds** (path 2): every loop in the flight scene, the galaxy and the world render was counted from
   an unset uniform, so Direct3D could not unroll it. Measured against the same code without the change, in Firefox
   on Windows, the sizes and the compile times were the same. Not kept.
+- **The docs galaxy compiled apart** (path 3): the galaxy and its stars no longer hold up the flight's compile.
+  Chrome and Edge compile them in the background beside it; Firefox compiles them after it, as a chore.
 - **Where the time goes after compiling:** each picture, the first unseen draw and the measure take well under
-  0.2 s each. The remaining cost is the flight's compile; paths 3, 4 and 7 are what is left for it.
+  0.2 s each. The remaining cost is the flight's compile; paths 4 and 7 are what is left for it.
 
 1. **Measure each program's translated size first; it's cheap.**
    - `WEBGL_debug_shaders.getTranslatedShaderSource(shader)` returns the HLSL (or other translation) the browser

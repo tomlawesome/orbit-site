@@ -601,14 +601,32 @@ export function createVoyage(under) {
     const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
-  const P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
-  let ok = false, dead = false;
-  const made = new Promise((resolve) => {
-    const done = () => { try { Object.values(P).forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); } resolve(ok); };
-    if (!par) { done(); return; }
-    const poll = () => (Object.values(P).every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
+  const P = { scene: program(SCENE), down: program(DOWN), up: program(UPS), film: program(FILM), gal: null, stars: null };
+  const compiled = (list) => new Promise((resolve) => {
+    if (!par) { resolve(); return; }
+    const poll = () => (list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
     poll();
   });
+  let ok = false, dead = false;
+  const core = Object.values(P).filter(Boolean);
+  const made = compiled(core).then(() => {
+    try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); }
+    return ok;
+  });
+  /* the docs' galaxy and its stars are wanted by the docs' flight alone, so the flight is not kept waiting for them:
+     where the browser compiles in the background they are asked for now, beside the rest; where it compiles on the
+     page's own thread (Firefox) they are a chore of their own, after the rest (warm, below) */
+  let galOK = false, galMade = null;
+  const makeGal = () => {
+    if (!galMade) {
+      const G = { gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
+      galMade = compiled(Object.values(G)).then(() => {
+        try { Object.values(G).forEach(finish); Object.assign(P, G); galOK = true; } catch (e) { console.warn("orbit: the docs' galaxy could not be drawn", e); }
+      });
+    }
+    return galMade;
+  };
+  if (par) makeGal();
   const vao = gl.createVertexArray();
 
   const tex = (w, h, fmt, f, type, data = null) => {
@@ -649,7 +667,8 @@ export function createVoyage(under) {
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
         .then(() => chore(() => touch(ST()), 60, "flight"))
         .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"))
-        .then(() => chore(() => touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }), 60, "flight"));
+        .then(() => chore(makeGal, 60, "docs"))
+        .then(() => chore(() => { if (galOK) touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }); }, 60, "docs"));
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
       warming.then(() => chore(calibrate, 200, "measure"));
     }
@@ -762,7 +781,7 @@ export function createVoyage(under) {
     const mm = (a, b) => { const o = []; for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) o.push(a[r] * b[c * 3] + a[3 + r] * b[c * 3 + 1] + a[6 + r] * b[c * 3 + 2]); return o; };
     const SK = mm(Ry, mm(Rx, Rz));
     gl.disable(gl.BLEND);
-    const g3 = s.galaxy3d && s.galaxy3d.w > 0.001 ? s.galaxy3d : null;
+    const g3 = galOK && s.galaxy3d && s.galaxy3d.w > 0.001 ? s.galaxy3d : null;
     if (g3) pass(P.gal, galT.f, galT.w, galT.h, (u) => {
       gl.uniform2f(u.uRes, galT.w, galT.h); gl.uniform3fv(u.uCamP, g3.P); gl.uniformMatrix3fv(u.uCamR, false, new Float32Array(g3.R));
       gl.uniform1f(u.uF, galT.h * 0.95); gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uGain, g3.gain);
