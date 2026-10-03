@@ -365,7 +365,7 @@ export const CHAPTERS = [
     await c.callout("A month out it turns amber, and Orbit sends you a reminder.", dial, "top");
     c.dropCallout(); g.remove();
   } },
-  { id: "post", name: "Paper by post", async play(c) {
+  { id: "post", name: "Forwarding", async play(c) {
     c.veil(false); home.closeDrawers(); await c.scrollTo($("#hero"), "start");
     const orb = c.ctl({ sel: "#inbox-orb", round: true }); c.veil(true);
     await c.goto(orb); await c.press(orb); c.unlight(orb);
