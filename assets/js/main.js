@@ -187,15 +187,9 @@ function showDoor() {
     }));
   });
   let lit = false;
-  /* the reveal takes about three seconds; the chores (the GPU's share of readying the journeys) begin with it, and
-     carry on through it only where each proves cheap: elsewhere they wait for its animations to finish (chores.js) */
-  const settled = () => {
-    try {
-      const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime));
-      return Promise.all(ends.map((a) => a.finished.catch(() => {})));
-    } catch { return Promise.resolve(); }
-  };
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); openChores(settled()); }); };
+  /* the chores (the GPU's share of readying the journeys) begin as the door is lit: its reveal is carried by the
+     compositor, so they cost it nothing, and each journey is ready the soonest it can be */
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); openChores(); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
