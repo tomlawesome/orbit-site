@@ -397,7 +397,7 @@ export function createInstall(pad, opts = {}) {
       /* its pictures asked for, and its shaders set compiling, at once: both go on away from the page (the browser
          compiles in the background), so they have all of the first light and the door to be done in, and the
          compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
-         measure) waits its turn as chores (chores.js), after the door has come up */
+         measure) waits its turn as chores (chores.js), from the moment the door is lit */
       if (!this.prepared) {
         fetchWorld(opts.world);
         const w = ensure(); if (w) size();

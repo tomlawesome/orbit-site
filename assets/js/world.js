@@ -568,7 +568,7 @@ export function createWorld(canvas, opts = {}) {
     const poll = () => (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
     poll();
   });
-  /* each picture is put on the GPU as a chore of its own (chores.js), one after another, never while the door comes up */
+  /* each picture is put on the GPU as a chore of its own (chores.js), one after another */
   const inTurn = (fn) => chore(fn, 60, opts.tag);
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
