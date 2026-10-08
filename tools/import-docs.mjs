@@ -58,6 +58,8 @@ const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').rep
 /* a link inside a source: to a heading of its own, to another imported
    source, or out to the repository; an image stays on GitHub's raw host */
 function resolveLink(href, src, bySourcePath, isImage) {
+  // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
+  if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
   if (/^(https?:|mailto:|data:)/i.test(href)) return href;
   if (href.startsWith("#")) return `#docs/${src.slug}/${href.slice(1)}`;
   const [file, anchor] = href.split("#");
