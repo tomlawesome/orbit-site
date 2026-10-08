@@ -5,6 +5,8 @@
 <html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon">
 <head>
   <meta charset="utf-8" />
+  <!-- ?preview in the address shows the whole site past the maintenance door (for checking before launch) -->
+  <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Orbit — everything in your orbit, on track</title>
   <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. One container, one command to install." />
@@ -488,7 +490,7 @@
             <p>Three containers on a Linux machine of your own, set up by one command. Nothing exotic to learn, nothing to babysit.</p>
             <dl class="spec">
               <div><dt>You bring</dt><dd>A Linux host with Docker and a domain with HTTPS. Sign in with Orbit's own accounts, or with a provider you already use (any OpenID Connect, such as Authentik) if you would rather.</dd></div>
-              <div><dt>It runs</dt><dd>Orbit itself and PostgreSQL&nbsp;17 for your records. That is all it needs.</dd></div>
+              <div><dt>It runs</dt><dd>Orbit itself and PostgreSQL&nbsp;18 for your records. That is all it needs.</dd></div>
               <div><dt>If you like</dt><dd>ClamAV to check every upload before it is kept (it wants about 4&nbsp;GB of memory of its own), email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
               <div><dt>Your data</dt><dd>On your own disk: records in the database, documents encrypted at rest.</dd></div>
               <div><dt>Updates</dt><dd>Run the installer again. Every release is pinned to an exact image, and your settings carry over.</dd></div>
