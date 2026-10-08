@@ -315,8 +315,11 @@ export function createInstall(pad, opts = {}) {
     else if (avg < 13 && !motion) next = Math.min(maxScale, scale * 1.1);
     if (Math.abs(next - scale) > 0.01) { scale = next; lastAdjust = now; world?.resize(W, H, scale); }
   }
+  /* the first second of a dive, counted: how the hand-over from the door went (the console says) */
+  let stat = null;
   function frame(now) {
     if (!running) return;
+    if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, last ? now - last : 0); if (now - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
     /* a world that could not be made or loaded draws nothing: no loop for it */
     if (failed || pad.classList.contains("flat")) { running = false; return; }
     raf = requestAnimationFrame(frame);
@@ -424,6 +427,7 @@ export function createInstall(pad, opts = {}) {
     },
     /* the shot in from the door's planet: resolves when the camera has all but settled */
     form(scene) {
+      stat = { t0: performance.now(), n: 0, worst: 0, done: false };
       return new Promise(async (resolve) => {
         this.start();
         const dot0 = dotOf(scene); dot0.from = fromFor(dot0.rot);

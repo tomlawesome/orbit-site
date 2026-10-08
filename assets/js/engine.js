@@ -1106,6 +1106,9 @@ export function createFlight(canvas, options = {}) {
     const rate = active.P.rate || 1;
     const t = (now - active.start) * rate;
     const dt = Math.min(48, now - active.last) / 1000 * rate;
+    /* the first second, counted: how the hand-over from the door went (the console says) */
+    if (t < 1000 * rate) { active.n = (active.n || 0) + 1; active.worst = Math.max(active.worst || 0, now - active.last); }
+    else if (active.n && !active.noted) { active.noted = true; note(`flight: first second ${active.n} frames, worst ${Math.round(active.worst)} ms`); }
     active.last = now;
     step(t, dt);
     if (t < active.P.dur + 400) flightRaf = raf(frame);
