@@ -24,7 +24,7 @@
  * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note, COMPILES_ASIDE } from "./chores.js";
+import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -113,11 +113,15 @@ const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l
    compiles took (their own time, not the wait for their turn) */
 let made;
 const MAP_W = 1024;
+/* the programs compiled (or never to be): main.js says how many programs were compiled before the door */
+let compiledNow = null;
+const compiledThen = new Promise((resolve) => { compiledNow = resolve; });
+export const planetsCompiled = () => compiledThen;
 function layersOf(door) {
   if (made !== undefined) return made;
   const lockup = door?.querySelector(".lockup"), glyph = door?.querySelector("#login-glyph"), box = door?.querySelector(".planets");
   /* the plain door's planets are turned about the ring, not placed on it: nothing here to read */
-  if (!lockup || !glyph || !box || !document.documentElement.classList.contains("rich")) return (made = null);
+  if (!lockup || !glyph || !box || !document.documentElement.classList.contains("rich")) { compiledNow(); return (made = null); }
   const since = performance.now();
   /* the two layers: the same program in each, nothing shared */
   const layer = (side) => {
@@ -128,7 +132,7 @@ function layersOf(door) {
     return gl && { canvas, gl, prog: null, sh: [], u: {}, maps: {}, vao: null, par: gl.getExtension("KHR_parallel_shader_compile") };
   };
   const far = layer("far"), near = layer("near");
-  if (!far || !near) { console.warn("orbit: the planets stay pictures (no WebGL2)"); return (made = null); }
+  if (!far || !near) { console.warn("orbit: the planets stay pictures (no WebGL2)"); compiledNow(); return (made = null); }
   const layers = [far, near];
 
   const make = (L) => {
@@ -136,7 +140,7 @@ function layersOf(door) {
     for (const [type, src] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]]) {
       const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); gl.attachShader(p, s); L.sh.push(s);
     }
-    gl.linkProgram(p);
+    gl.linkProgram(p); linked("planets");
     L.p = p;
   };
   const compiled = (L) => new Promise((resolve) => {
@@ -159,8 +163,9 @@ function layersOf(door) {
     .then(() => chore(() => {
       const t0 = performance.now();
       layers.forEach(finish);
-      note(`planets: shaders compiled in ${Math.round(took + performance.now() - t0)} ms`, since);
+      note(`planets: shaders compiled in ${Math.round(took + performance.now() - t0)} ms${counted("planets")}`, since);
     }, crest, ctag));
+  ready.then(compiledNow, compiledNow);
   return (made = { lockup, glyph, box, far, near, layers, ready });
 }
 /** where the browser compiles on the page's own thread (COMPILES_ASIDE false), asked for at the page's start (main.js):

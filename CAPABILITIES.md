@@ -35,6 +35,14 @@ stall of 50-150 ms while nothing moves yet. Draw it four times into a 512x512 ta
 numbers: compile ms (predicts the ring budget) and ms per million pixels (predicts frame cost). Then release the
 context. Calibration points from the real shaders: see the measurements.
 
+As built (`assets/js/capability.js`, `probe()`, 8 October 2026): where compiles are in the background the probe is
+compiled twice (salted, two programs) and the second is the one timed, since a fresh context's first compile is
+3-5x the rest on Safari; on the page's thread once, since each is a stall. The result is kept in `localStorage` for
+**7 days**, keyed by the user agent, the screen's width and height and the pixel ratio, and while it is that fresh
+the probe is skipped altogether (the console says `stored` instead of `fresh`). Only a probe that worked is kept.
+`doorWeight()` turns it into the door's weight: the rich Earth predicted at ms per Mpx × the band's Mpx × 0.55,
+"rich" at 24 ms or less, "both" (lean first, rich tried by the ladder) at 40 or less, "lean" above; no probe, "both".
+
 ## The ladder
 
 | Level | What ships | Proof required, in order |
@@ -107,13 +115,21 @@ came from: the flight is five programs (scene, overlay, two bloom passes, film),
 live door four (lean, rich, the cloud field pass, the glow pass) and the planets compile their one program twice
 (two canvases). Edge pays the same durations in the background.
 
-**What it implies, before any ladder:** fewer programs, same picture.
-- The flight's two bloom passes and film become one program with a mode switch (saves two compiles).
-- The live door compiles rich only, when the probe says rich fits; lean only otherwise (saves one).
-- The cloud field and glow passes become one program (saves one), or are folded into the main pass.
-- The planets compile once: one context, the far half blitted (saves one).
-- Programs the first visit never needs (the docs' galaxy, the flight's rich overlay where the door is still) are
-  compiled on demand, after the ring.
+**What it implies, before any ladder:** fewer programs, same picture. (Status as of 8 October 2026; see
+PERFORMANCE.md, "Fewer programs, same picture".)
+- **Done.** The flight's two bloom passes and film become one program with a mode switch (saves two compiles). The
+  install/information world's the same (two more).
+- **Done.** The live door compiles rich only, when the probe says rich fits; lean only otherwise (saves one). Between
+  the two ("both") it is as before: lean first, rich if the ladder finds room. The lean one is compiled after a rich
+  start only if the rich one is still over budget at half density.
+- **Done**, the second way: the cloud field and glow passes are folded into the rich Earth's own program (saves both,
+  in the door's context and in the flight's).
+- **Deferred** to a later build: the planets compile once (one context, the far half blitted). They still compile
+  their one program twice.
+- **Done** for the docs' galaxy where compiles are in the background: it is compiled after the door is live, not
+  during the reveal. On the page's thread it stays under the ring (there is no better slot). The flight's rich overlay
+  is compiled only where the door's weight needs it: in place of the lean one where the door is rich, as before where
+  it is "both", never where it is lean.
 On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.
 
 **Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Mac 0.20), rich ≈ 0.3-0.55 (the Mac 0.32, the PCs 0.45-0.55); a compile ≈ the

@@ -11,7 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note, quiet, COMPILES_ASIDE } from "./chores.js";
+import { chore, note, quiet, counted, COMPILES_ASIDE } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 import { onTilt } from "./tilt.js";
@@ -455,7 +455,7 @@ export function createInstall(pad, opts = {}) {
         fetchWorld(opts.world);
         const make = () => { const w = ensure(); if (w) size(); return w; };
         const made = (COMPILES_ASIDE ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
-        made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms` : "failed"}`)));
+        made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms${counted("world")}` : "failed"}`)));
         this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
         this.baked = made.then((w) => (w ? w.bake() : false));

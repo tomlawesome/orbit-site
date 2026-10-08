@@ -21,7 +21,8 @@
  * climbing into is not yet yours to have chosen. If it is ever asked to wear
  * the reader's pack, PACK is the only object that changes.
  */
-import { createVoyage, fetchVoyage, doorIsLive } from "./voyage.js";
+import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
+import { probe } from "./capability.js";
 import { chore, note, COMPILES_ASIDE } from "./chores.js";
 import { seededRng } from "./sky.js";
 
@@ -1155,8 +1156,11 @@ export function createFlight(canvas, options = {}) {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
           return voyage?.made;
         };
-        const made = options.plain ? Promise.resolve() : COMPILES_ASIDE ? Promise.resolve().then(() => { make(); })
-          : chore(make, 20, ["compile", "flight"]).then(() => {}, () => {});
+        /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
+           voyage.js) */
+        const first = DOOR3D && !options.plain ? probe().catch(() => null) : Promise.resolve();
+        const made = options.plain ? Promise.resolve() : COMPILES_ASIDE ? first.then(() => { make(); })
+          : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
         compiled = made.then(() => voyage?.made).then((ok) => (COMPILES_ASIDE ? ok : Promise.resolve(voyage?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });

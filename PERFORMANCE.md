@@ -295,3 +295,66 @@ Tried, October 2026:
   - With the extension emulated (the Edge path): the journeys' compile lines at 3.9–4.1 s, the body lit at 5.0 s, and
     the chores opened 2.7 s later. Then install ready 10.5 s, flight ready 17.5 s. The door's and the planets'
     compiles came as `"door"` chores after that, as before. No WebGL call during the painted reveal.
+
+## Fewer programs, same picture (8 October 2026)
+
+- Why: measured on five machines (CAPABILITIES.md, "Measured with the tests"), a WebGL2 program costs about
+  200–300 ms to compile on the PCs whatever its size. So the number of programs is the cost. On Firefox each compile
+  stalls the page; elsewhere they run in the background but still hold up readiness. A first visit under `?door3d`
+  compiled about 20 programs.
+- What was merged:
+  - **One post-process program** in the flight (voyage.js) and in the install/information world (world.js). The
+    bloom's down and up steps and the film are now one fragment shader, `POST`, with `uniform int uMode` (0 down,
+    1 up, 2 film). Each old `main` is kept as a function (`down()`, `up()`, `film()`), and the uniforms are the union
+    of the three. A step points `uHdr` and `uBloom` at the map it reads, so no sampler of the program is ever the
+    target it draws into.
+  - **The rich Earth's passes folded into the rich program.** The clouds' field and the cities' glow had small
+    programs of their own (`FIELD`, `GLOWF`, `passPrograms`), one of each in the door's context and in the flight's.
+    Their code is now `PARTS.passes`, in the rich scene head only (`sceneHead({ slab: true })` also defines
+    `HAS_PASSES`). The rich program draws them itself: `uPass` 1 or 2, through `PASS_SWITCH`, the first lines of the
+    door's `main` and the flight's `OVER_MAIN`. `cloudField(gl, prog, …)` and `cityGlow(gl, prog, …)` take that
+    program. A field is made with its map if the rich program is already there, otherwise as soon as the program is
+    finished. The glow is made once every map has come. Both are made before the door's rich measure, and before the
+    flight's `richOK`.
+  - **The probe** (capability.js, `probe()`), the first thing main.js does. It is one throwaway context and the tests'
+    probe shader, compiled (twice where compiles are in the background, the second timed) and drawn four times at
+    512×512. It is kept for 7 days per browser and screen. It prints
+    `probe: compile N ms (background|page thread), M ms per Mpx (fresh|stored)`.
+  - **The door compiles only the weight it will draw** (door3d.js). `doorWeight()` predicts the rich Earth at the
+    probe's ms per Mpx × the band's Mpx × 0.55:
+    - "rich" (≤ 24 ms): the rich program alone, drawn from the first frame, measured, and drawn coarser if it must be.
+      Only if it is still over 40 ms at 0.5× is the lean one compiled and drawn instead.
+    - "both" (≤ 40 ms), or no probe: as before. Lean first; rich tried by the ladder.
+    - "lean": the lean program alone.
+
+    `&rich` and `&lean` still force a weight. The console says which weight was chosen and why:
+    `door: weight lean (predicted 174 ms of 40 for the rich, …)`.
+  - **The flight compiles only the overlay it will draw** (voyage.js). Where the door is "rich", the rich `OVER` is
+    compiled in place of the lean one, with the flight's own fields and glow made before the flight is ready. Where it
+    is "lean", the rich one is never made. "both" and the public path are as before.
+  - **The docs' galaxy** is now a `["galaxy", "docs"]` chore where compiles are in the background. `"galaxy"` ranks
+    after `"door"` and `"measure"` in chores.js ORDER, and the docs' journey still hurries it. On the page's thread it
+    stays a `"compile"` chore under the ring. `compiled()` (engine.js) and main.js's wait still don't wait for it on
+    the background path.
+  - **Counts in the console** (`?door3d` only): each `… compiled in N ms` line gains `(N programs)`, and main.js prints
+    `programs compiled before the door: N (…)` once all the ring waits for, the door's first weight and the planets
+    are compiled.
+- Program counts: linkProgram calls counted per module in headless Chromium at 1200×800, 1×, `?preview&door3d`.
+  SwiftShader's probe is 920–1020 ms per Mpx, so it picks "lean".
+
+  | Path | Before (HEAD) | After |
+  |---|---|---|
+  | Background (`KHR_parallel_shader_compile` emulated), by the time the door is live | 16: world 4, flight 5, docs galaxy 2, the field pass in each context 2, door lean 1, planets 2 | 8: world 2, flight 3, door 1, planets 2. The galaxy's 2 come after the door is live; the probe's 2 are in its own throwaway context |
+  | Page thread (`&mainthread`), all under the ring | 20: world 4, flight 5 + rich overlay 1, galaxy 2, the field and glow passes in each context 4, door lean + rich 2, planets 2 | 10: world 2, flight 3, galaxy 2, door 1, planets 2, plus the probe's 1. `&rich` is also 10 (the overlay and the door rich only) |
+
+  A machine whose weight is "both" still compiles the lean and rich door and the flight's rich overlay. That is 12
+  on the page thread and 8 + 2 later in the background, against 20 before.
+- Same picture, checked in SwiftShader with reduced motion. The live door's canvas was read back (with
+  `preserveDrawingBuffer`) after its last ladder line and compared with HEAD's:
+  - `?preview&door3d&rich`: 600×144 (drawn at 0.5×), maximum difference 0, 0 pixels differ. This covers the rich
+    program and its folded field and glow passes.
+  - `&lean`: likewise 0 / 0.
+  - The world planets' canvases are not deterministic from one run to the next, even on HEAD against itself (their
+    orbit and grain run on time). By eye, HEAD's and this build's were the same.
+- Seen on the background path: the galaxy compiled after the door was live (13.3 s against 8.8 s). It still came
+  before the door's own lean measure (14.5 s), because `quiet()` waits for the chore queue to be empty.

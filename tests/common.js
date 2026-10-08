@@ -60,32 +60,8 @@ export function timeDraws(gl, prog, fbo, w, h, set, n = 4) {
   return { mean: rest.reduce((a, b) => a + b, 0) / rest.length, first: times[0], all: times.map((x) => +x.toFixed(1)) };
 }
 
-/* an Earth-like probe shader of about two thousand characters: a short march with noise and a few texture reads */
-export const PROBE = `#version 300 es
-precision highp float;
-uniform vec2 uRes; uniform sampler2D uA, uB; uniform float uT; out vec4 o;
-float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
-float vnoise(vec3 p){ vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
-  return mix(mix(mix(hash13(i),hash13(i+vec3(1,0,0)),f.x),mix(hash13(i+vec3(0,1,0)),hash13(i+vec3(1,1,0)),f.x),f.y),
-             mix(mix(hash13(i+vec3(0,0,1)),hash13(i+vec3(1,0,1)),f.x),mix(hash13(i+vec3(0,1,1)),hash13(i+vec3(1,1,1)),f.x),f.y),f.z); }
-float fbm(vec3 p){ float s=0.0,a=0.5; for(int i=0;i<4;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=0.5; } return s; }
-vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c; if(d<0.0) return vec2(-1.0); d=sqrt(d); return vec2(-b-d,-b+d); }
-void main(){
-  vec2 uv=gl_FragCoord.xy/uRes;
-  vec3 ro=vec3(0.0,0.0,-2.2), rd=normalize(vec3((uv-0.5)*vec2(uRes.x/uRes.y,1.0),1.2));
-  vec2 t=sph(ro,rd,1.0), ta=sph(ro,rd,1.06);
-  vec3 L=vec3(0.0), T=vec3(1.0);
-  if(ta.y>0.0){ float t0=max(ta.x,0.0), t1=t.x>0.0?t.x:ta.y, ds=(t1-t0)/16.0;
-    for(int i=0;i<16;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); float h=length(x)-1.0;
-      float dr=exp(-h/0.02), dm=exp(-h/0.004); vec3 ext=vec3(5.8,13.5,33.1)*dr+vec3(21.0)*dm;
-      float cl=texture(uA,x.xy*0.5+0.5+uT*0.01).r; float cd=smoothstep(0.4,0.8,cl+0.2*fbm(x*8.0))*step(h,0.02);
-      vec3 ins=(vec3(5.8,13.5,33.1)*dr*0.06+vec3(21.0)*dm*0.02)*vec3(1.0,0.96,0.9)*20.0+cd*vec3(0.8);
-      vec3 st=exp(-(ext+cd*30.0)*ds); L+=T*ins*(1.0-st)/max(ext+cd*30.0,vec3(1e-6)); T*=st; } }
-  if(t.x>0.0){ vec3 P=ro+rd*t.x; vec2 g=vec2(atan(P.y,P.x)/6.2832+0.5,0.5-asin(clamp(P.z,-1.0,1.0))/3.14159);
-    vec3 alb=pow(texture(uB,g).rgb,vec3(2.2)); float lit=max(dot(normalize(P),normalize(vec3(0.3,0.2,-1.0))),0.0);
-    L+=T*(alb*lit*3.0+pow(texture(uA,g*4.0).rgb,vec3(2.2))*0.4); }
-  o=vec4(1.0-exp(-L*0.35),1.0);
-}`;
+/* the probe shader (about two thousand characters, an Earth-like march), the one the site probes with at its start */
+export { PROBE } from "../assets/js/capability.js";
 
 export const line = (k, v) => `${k}: ${v}`;
 export const round = (x, d = 1) => (Number.isFinite(x) ? +x.toFixed(d) : x);
