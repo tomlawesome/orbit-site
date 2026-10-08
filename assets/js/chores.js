@@ -12,14 +12,16 @@
  * tagged by what they ready: "flight", "docs", "install", "info"), so nothing it does not need stalls it. The
  * measures (frames timed to fit the drawing to the machine: "measure") are never hurried, and the live door's wait
  * for the queue to be at rest (quiet) before they time anything. Where the browser compiles shaders on the page's
- * own thread (COMPILES_ASIDE false), every compile is a chore tagged "compile", and those go before all the rest.
+ * own thread (COMPILES_ASIDE false), every compile is a chore tagged "compile", and those alone may run from the
+ * page's start (openCompiles), under the first light's ring, before the door is lit; the rest still wait for open.
  */
 const queue = [];
-let open = false, running = false, want = null, until = 0, wake = 0, started = 0;
+let open = false, compiling = false, running = false, want = null, until = 0, wake = 0, started = 0, openedAt = 0;
 
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
-   every compile freezes the page for as long as it takes, so each is a chore tagged "compile", done first of all once
-   the painted part of the door's reveal is over (ORDER), while only the compositor moves anything. Asked of a context
+   every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
+   is a chore tagged "compile", all of them done while the first light's ring runs, before the door is lit
+   (openCompiles; main.js waits for them), where only the ring's runner can show the hitch. Asked of a context
    made for the purpose and let go at once (Safari keeps only a few). &mainthread: as if it did not (to try the Firefox
    path in another browser) */
 export const COMPILES_ASIDE = (() => {
@@ -32,9 +34,9 @@ export const COMPILES_ASIDE = (() => {
 /* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 120 }) : setTimeout(fn, 30));
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
-   freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so), then the journeys (a visitor can do nothing until
-   one is ready), then the live door (door3d.js: its picture is already on screen), the measures, and last of all
-   the rich clouds, which nothing waits for */
+   freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
+   (a visitor can do nothing until one is ready), then the live door (door3d.js: its picture is already on screen),
+   the measures, and last of all the rich clouds, which nothing waits for */
 const ORDER = ["compile", "install", "flight", "docs", "info", "", "door", "measure", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 const tags = (tag) => [].concat(tag);
@@ -47,11 +49,13 @@ function pump() {
   let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => want.includes(t))) : -1;
   const hurried = i >= 0;
   if (!hurried) {
-    if (!open) return;
+    if (!open && !compiling) return;
     /* the rest waits until the journey has had its opening */
     if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     i = 0;
     for (let k = 1; k < queue.length; k++) if (rank(queue[k].tag) < rank(queue[i].tag)) i = k;
+    /* before open, a compile or nothing ("compile" ranks first, so if there is one, this is it) */
+    if (!open && tags(queue[i].tag)[0] !== "compile") return;
   }
   running = true;
   const run = () => {
@@ -73,13 +77,16 @@ function pump() {
 export function chore(fn, rest = 60, tag = "") {
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
-/** the door is up: the chores may begin */
 /* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
-export function openChores() { open = true; pump(); }
+export function openChores() { if (!open) openedAt = performance.now(); open = true; pump(); }
+/* the page has started, where compiles freeze it (main.js, COMPILES_ASIDE false): the "compile" chores may run now,
+   while the first light's ring runs, and nothing else until openChores */
+export function openCompiles() { compiling = true; pump(); }
 /** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms) */
 export function hurryChores(tags, opening = 6000) {
   want = [].concat(tags || []);
   until = Math.max(until, performance.now() + opening);
+  if (!open) openedAt = performance.now();
   open = true; pump();
 }
 
@@ -101,7 +108,7 @@ export function quiet() {
   });
 }
 /* for the test only (?door3d): the queue as it is now */
-try { if (/[?&]door3d\b/.test(location.search)) window.__chores = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open }); } catch { /* not a page */ }
+try { if (/[?&]door3d\b/.test(location.search)) window.__chores = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open, compiling, openedAt }); } catch { /* not a page */ }
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
 const fetched = new Map();

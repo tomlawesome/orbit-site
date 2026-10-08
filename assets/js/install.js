@@ -447,14 +447,15 @@ export function createInstall(pad, opts = {}) {
       /* its pictures asked for, and its shaders set compiling, at once: both go on away from the page (the browser
          compiles in the background), so they have all of the first light and the door to be done in, and the
          compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
-         measure) waits its turn as chores (chores.js), from the moment the door is lit. Where the browser compiles on
-         the page's own thread (COMPILES_ASIDE false), making the world is itself a chore ("compile", first of all,
-         after the door's painted reveal; hurried with this journey's own) */
+         measure) waits its turn as chores (chores.js), once the door's painted reveal is over. Where the browser
+         compiles on the page's own thread (COMPILES_ASIDE false), making the world is itself a chore ("compile",
+         queued at once and run under the first light's ring, which main.js holds until it is done; hurried with
+         this journey's own). The time the compiles took is said (world.js: compileMs) */
       if (!this.prepared) {
         fetchWorld(opts.world);
         const make = () => { const w = ensure(); if (w) size(); return w; };
         const made = (COMPILES_ASIDE ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
-        made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`)));
+        made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms` : "failed"}`)));
         this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
         this.baked = made.then((w) => (w ? w.bake() : false));

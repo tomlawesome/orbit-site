@@ -20,7 +20,7 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
-import { chore, fetchOnce, note } from "./chores.js";
+import { chore, fetchOnce, note, COMPILES_ASIDE } from "./chores.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
@@ -181,6 +181,12 @@ function passProgram(gl, key, src) {
   }
   return m[key];
 }
+/* where compiles freeze the page (chores.js: COMPILES_ASIDE false), a pass's program is made with the rest, under the
+   first light's ring (the door's weights, door3d.js; the flight's world and its rich Earth, below), not when its first
+   pass is drawn after the reveal: the field's with the lean Earth, the glow's with the rich one */
+export function passPrograms(gl, rich) {
+  try { passProgram(gl, rich ? "glow" : "field", rich ? GLOWF : FIELD); } catch { /* said again when the pass is drawn */ }
+}
 /* one pass into a texture of its own (RGBA8; levels made after, if asked), the context left as the draws expect it */
 function passInto(gl, prog, w, h, { repeat = false, levels = false } = {}, setup) {
   const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -218,16 +224,13 @@ export function cityGlow(gl, lights, w, h, lightsN, blank) {
   });
 }
 
-/* the scene's functions, in two weights (a ladder: the door draws the lean one first, and the rich one only if this
-   machine has room for it). LEAN (slab false): the clouds a flat cover on the ground, lit as the ground is, as the
-   Earth was before the slab; the cheapest Earth, and what the flight draws unless the door has gone rich. RICH (slab
-   true): dawn.py's cloud slab, marched through the low air from the fields made once a context (cloudField, cityGlow) */
-export function sceneHead({ slab = false } = {}) {
-  return `#version 300 es
-${slab ? "#define SLAB 1\n" : ""}precision highp float;
-uniform vec2 uRes; uniform float uPx, uTime;
-uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;
-uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
+/* the scene's uniforms, each with the part of the scene that reads it (a door-only Earth declares only its own; the
+   flight declares them all, in the order they always came in, so its source is what it was). uSky and uEarthA ride on
+   the Earth's lines, as they always did: declared, and unread by the door, they cost it nothing */
+const UNIFORMS = [
+  ["common", `uniform vec2 uRes; uniform float uPx, uTime;`],
+  ["streaks", `uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;`],
+  ["earth", `uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
 uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
@@ -242,17 +245,24 @@ uniform sampler2D uLightsS; uniform vec4 uStripBox; uniform float uHasS;
 /* and the sharper strip fading in over it (sharpStrip): how far */
 uniform sampler2D uLightsS2; uniform float uStripMix;
 /* the sun's light through the air (sunTable) */
-uniform sampler2D uSunT;
-uniform mat3 uSkyM; uniform float uStarA, uDens;
-uniform float uBloom, uPre; uniform vec2 uBloomPt;
-uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
-uniform float uNeb, uNebOff;
-/* the docs' flight: the 3D galaxy, drawn beforehand at half size (GAL), its share of the sky, and how far it has come
+uniform sampler2D uSunT;`],
+  ["sky", `uniform mat3 uSkyM; uniform float uStarA, uDens;`],
+  ["arrival", `uniform float uBloom, uPre; uniform vec2 uBloomPt;`],
+  ["moon", `uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;`],
+  ["nebula", `uniform float uNeb, uNebOff;`],
+  ["galaxy", `/* the docs' flight: the 3D galaxy, drawn beforehand at half size (GAL), its share of the sky, and how far it has come
    to the docs page's own view (dimmer down the middle, where the words go) */
-uniform sampler2D uGalTex; uniform float uG3, uGalPage; uniform mat3 uGCamR;
-/* the docs' constellations igniting at the end: x, y, size, intensity; and their colours */
-uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;
-out vec4 o;
+uniform sampler2D uGalTex; uniform float uG3, uGalPage; uniform mat3 uGCamR;`],
+  ["ignite", `/* the docs' constellations igniting at the end: x, y, size, intensity; and their colours */
+uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;`],
+];
+/* the scene's functions, in parts: common (the output, the hashes, the noise), sky (the stars), ignite (the docs'
+   constellations), streaks, earth (the air and its sun table, the ground and its tiers of maps, the slab, the limb:
+   all the live door draws), nebula, moon, arrival (the star at the end), shock. The flight's programs take them all,
+   in this order; the door's (door3d.js), common and earth alone: its compile grew with the whole flight's code, which
+   it never ran (Firefox: 0.37 to 1.0 s for the lean one) */
+const PARTS = {
+  common: `out vec4 o;
 const float PI=3.14159265, TAU=6.2831853;
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float hash12(vec2 p){return hash13(vec3(p,7.31));}
@@ -263,7 +273,8 @@ float vnoise(vec3 p){
 }
 float fbm3(vec3 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=0.5; } return s; }
 
-/* ── the sky ── */
+`,
+  sky: `/* ── the sky ── */
 vec3 stars(vec3 d,float f){
   vec3 c=vec3(0.0); float pxA=1.0/f;
   for(int i=0;i<3;i++){
@@ -292,7 +303,8 @@ vec3 sky(vec2 css){
   c+=stars(s,f*uPx)*0.16*uStarA;
   return c;
 }
-/* the docs' constellations, lit one by one: each star a hot white core in its figure's colour, a glow round it,
+`,
+  ignite: `/* the docs' constellations, lit one by one: each star a hot white core in its figure's colour, a glow round it,
    the brightest with a fine cross; flaring as it lights and settling to the page's own */
 vec3 ignite(vec2 css){
   vec3 acc=vec3(0.0); float H=uRes.y/uPx, reach=H*0.14;
@@ -310,7 +322,8 @@ vec3 ignite(vec2 css){
   return acc;
 }
 
-/* ── the streaks: light passing, in four depths, each a ring of lanes about the way ahead ── */
+`,
+  streaks: `/* ── the streaks: light passing, in four depths, each a ring of lanes about the way ahead ── */
 vec3 streaks(vec2 css){
   vec2 p=css-uVP; float r=length(p); if(r<6.0) return vec3(0.0);
   float a=atan(p.y,p.x), u=log(r);
@@ -352,7 +365,8 @@ vec3 streaks(vec2 css){
   return acc;
 }
 
-/* ── the Earth (tools/dawn.py, its picture the measure of this: the same air, clouds, ground and lights) ── */
+`,
+  earth: `/* ── the Earth (tools/dawn.py, its picture the measure of this: the same air, clouds, ground and lights) ── */
 const vec3 BR=vec3(36.95,86.38,210.9);      /* Rayleigh, per Earth radius */
 const float HR=8.0/6371.0, BM=25.46, BMX=28.0, HM=1.2/6371.0, RA=1.0+100.0/6371.0;
 const vec3 BO=vec3(0.650,1.881,0.085)*6371.0e-3*0.6;
@@ -599,7 +613,8 @@ vec3 earthAA(vec2 css,out float cover){
   cover=n==1?cv:k+0.5; return acc;
 }
 
-/* ── the passage: a nebula streaming past, two depths of it about the way ahead ── */
+`,
+  nebula: `/* ── the passage: a nebula streaming past, two depths of it about the way ahead ── */
 vec3 nebula(vec2 css,out float dust){
   dust=0.0; if(uNeb<=0.001) return vec3(0.0);
   vec2 p=css-uVP; float r=length(p), a=atan(p.y,p.x), u=log(max(r,1.0));
@@ -622,7 +637,8 @@ vec3 nebula(vec2 css,out float dust){
   dust=clamp(dust*uNeb,0.0,0.7); return acc*uNeb*1.1;
 }
 
-/* ── the moon passed on the way out: the install's gold moon, growing as it sweeps by ── */
+`,
+  moon: `/* ── the moon passed on the way out: the install's gold moon, growing as it sweeps by ── */
 vec4 moonAt(vec2 css,float lod){
   vec2 d=(css-uMoonS.xy)/uMoonS.z; float rr=dot(d,d); if(rr>1.0) return vec4(0.0);
   vec3 n=vec3(d.x,-d.y,sqrt(1.0-rr));
@@ -646,7 +662,8 @@ vec4 moon(vec2 css){
   return acc/12.0*uMoonS.w;
 }
 
-/* ── the star at the end: seen ahead as the flight brakes, then blooming ──
+`,
+  arrival: `/* ── the star at the end: seen ahead as the flight brakes, then blooming ──
    Built as a star is seen through a lens: a limb-darkened photosphere with its granulation and a red chromosphere at
    the rim; a corona of streamers drifting outwards; the ciliary glare, hundreds of hair-fine rays fringed with colour;
    six diffraction spikes, banded along their length, the red reaching furthest; a level anamorphic streak; a faint
@@ -712,7 +729,8 @@ vec3 arrival(vec2 css){
   return c;
 }
 
-/* the shockwave of the arrival: a ring running outwards that bends the starlight it crosses */
+`,
+  shock: `/* the shockwave of the arrival: a ring running outwards that bends the starlight it crosses */
 vec2 shockBend(vec2 css,out float ring){
   ring=0.0; if(uBloom<=0.0||uBloom>=1.0) return css;
   vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx;
@@ -721,7 +739,21 @@ vec2 shockBend(vec2 css,out float ring){
   ring=g*fade;
   return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
-`;
+`,
+};
+const FLIGHT = ["common", "sky", "ignite", "streaks", "earth", "nebula", "moon", "arrival", "shock"], DOOR = ["common", "earth"];
+
+/* the scene's functions, in two weights (a ladder: the door draws the lean one first, and the rich one only if this
+   machine has room for it). LEAN (slab false): the clouds a flat cover on the ground, lit as the ground is, as the
+   Earth was before the slab; the cheapest Earth, and what the flight draws unless the door has gone rich. RICH (slab
+   true): dawn.py's cloud slab, marched through the low air from the fields made once a context (cloudField, cityGlow).
+   door: the Earth alone (DOOR, above), for the live door */
+export function sceneHead({ slab = false, door = false } = {}) {
+  const want = door ? DOOR : FLIGHT;
+  return `#version 300 es
+${slab ? "#define SLAB 1\n" : ""}precision highp float;
+${UNIFORMS.filter(([part]) => !door || want.includes(part)).map(([, u]) => u).join("\n")}
+${want.map((part) => PARTS[part]).join("")}`;
 }
 
 /* the rush, beneath: the sky, the galaxy, the streaks, the nebula (its Earth is OVER's) */
@@ -756,7 +788,7 @@ const SCENE = sceneHead() + `void main(){
   o=vec4(c,1.0);
 }`;
 
-/* the scene's own functions, LEAN, for whatever draws only its Earth (door3d.js asks sceneHead for its two weights) */
+/* the scene's own functions, LEAN, whole: the flight's OVER is made of them (door3d.js asks sceneHead for its Earth alone) */
 export const SCENE_HEAD = sceneHead();
 /* the live door's Earth (door3d.js), once it is drawn: the flight takes up its turn, its clouds, its sun and its air,
    so it starts from the very frame the door shows, and comes back to it */
@@ -1004,6 +1036,8 @@ export function createVoyage(under) {
      and only looked at once they are done (made, below), so making them never holds the page up */
   const par = gl.getExtension("KHR_parallel_shader_compile");
   const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  /* (when the compiles began: how long they took, to the last link status read, is said once they are done) */
+  const t0 = performance.now();
   const vs = shader(gl.VERTEX_SHADER, VERT);
   const program = (fsrc, vsh = vs) => {
     const p = gl.createProgram(), fs = shader(gl.FRAGMENT_SHADER, fsrc);
@@ -1016,6 +1050,8 @@ export function createVoyage(under) {
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
   const P = { scene: program(SCENE), over: program(OVER), down: program(DOWN), up: program(UPS), film: program(FILM), gal: null, stars: null };
+  /* (the clouds' field, drawn here only where the door is live: its program made now, where compiles freeze the page) */
+  if (DOOR3D && !COMPILES_ASIDE) passPrograms(gl, false);
   const compiled = (list) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
     const poll = () => (list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
@@ -1025,29 +1061,39 @@ export function createVoyage(under) {
   const core = Object.values(P).filter(Boolean);
   const made = compiled(core).then(() => {
     try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); }
+    if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms`);
     return ok;
   });
   /* the docs' galaxy and its stars are wanted by the docs' flight alone, so the flight is not kept waiting for them:
      where the browser compiles in the background they are asked for now, beside the rest; where it compiles on the
-     page's own thread (Firefox) they are a chore of their own, after the rest (warm, below) */
+     page's own thread (Firefox: COMPILES_ASIDE false) they are a "compile" chore of their own, queued now, behind the
+     flight's, so they too are done under the first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
   const makeGal = () => {
     if (!galMade) {
+      const g0 = performance.now();
       const G = { gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
       galMade = compiled(Object.values(G)).then(() => {
-        try { Object.values(G).forEach(finish); Object.assign(P, G); galOK = true; } catch (e) { console.warn("orbit: the docs' galaxy could not be drawn", e); }
+        try {
+          Object.values(G).forEach(finish); Object.assign(P, G); galOK = true;
+          note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms`);
+        } catch (e) { console.warn("orbit: the docs' galaxy could not be drawn", e); }
       });
     }
     return galMade;
   };
-  if (par) makeGal();
+  const galaxy = COMPILES_ASIDE ? makeGal() : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
   const vao = gl.createVertexArray();
 
   /* the rich Earth (wantRich, above): its program, as the lean one is made (compiled, finish), and the cities' glow its
      clouds take from below (cityGlow), once the lights have come; drawn only when both are done */
   let richMade = null, richProg = null;
   /* its program alone (tag: the chores', "door" when asked for by wantRich, "compile" by compileRich), made once */
-  const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => { const pr = program(sceneHead({ slab: true }) + OVER_MAIN); return compiled([pr]).then(() => pr); }, tag === "compile" ? 20 : 60, tag)
+  const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => {
+    const pr = program(sceneHead({ slab: true }) + OVER_MAIN);
+    if (tag === "compile") passPrograms(gl, true);
+    return compiled([pr]).then(() => pr);
+  }, tag === "compile" ? 20 : 60, tag)
     .then((pr) => chore(() => { finish(pr); P.overRich = pr; return true; }, tag === "compile" ? 20 : 60, tag))));
   richCompile = () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
   richMake = () => richMade || (richMade = made.then((good) => {
@@ -1121,7 +1167,7 @@ export function createVoyage(under) {
         .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"));
       /* the docs' galaxy after it, the docs' own (warmDocs): the flight is ready before it */
       warmingDocs = warming
-        .then(() => chore(makeGal, 60, "docs"))
+        .then(() => galaxy)
         .then(() => chore(() => { if (galOK) touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }); }, 60, "docs"));
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
       warming.then(() => chore(calibrate, 200, "measure"));
@@ -1330,5 +1376,5 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, made, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, made, galaxy, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }

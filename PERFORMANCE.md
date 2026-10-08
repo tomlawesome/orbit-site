@@ -248,3 +248,50 @@ Tried, October 2026:
     the queue empty (door lean 251 ms a frame at 40.6 s; door planets 7.1 ms at 44.5 s, not halved).
   - With the extension emulated (the Edge path), the order was unchanged: compiles at 3.8 s, before the reveal, then
     the journeys ready, then the door.
+
+## Firefox: every compile under the ring; nothing of the GPU's during the reveal; a door-only Earth (8 October 2026)
+
+- The previous entry's placement is reverted. Measured by the owner on Firefox, running every compile after the
+  reveal cost about 3 s on the ways in, and the stalls still showed: the drifting stars hitched three times, because
+  Firefox stalls even compositor animations while it compiles.
+- Where `COMPILES_ASIDE` is false, the compiles now run under the loading ring, before the door is lit, where only the
+  ring's runner can show a hitch:
+  - `openCompiles()` (chores.js), called at the page's start (main.js), lets the `"compile"` chores run while the rest
+    of the queue stays shut until `openChores()`.
+  - `compileFirst()` (main.js, at first light) queues every compile at once: the install/information world
+    (`prepare`), the flight (`engine.warm`), the docs' galaxy (voyage.js `makeGal`, now a `["compile", "docs"]` chore
+    queued with the flight's world), the live door's lean and rich programs and the flight's rich one (door3d.js
+    `compileDoor`), and the planets' (planets3d.js `compilePlanets`). door3d.js and planets3d.js are now imported at
+    the page's start, not at light. Their canvases, maps and loops still wait for the reveal (`liveDoorOf`).
+  - The two passes' small programs (voyage.js `passPrograms`) are compiled with them: the clouds' field with the lean
+    weight and the flight's world, the cities' glow with the rich. Before this they compiled on the page's thread at
+    their first upload, after the reveal.
+  - The ring waits for all of these on every visit (`waitCompiled`, via `compiledAll`, which now holds the door's and
+    the docs' galaxy's), capped at 8 s so a failure never holds the door. `minLaps` is unchanged.
+- On every browser, the chores (uploads, bakes, first draws) and the live door (`liveDoorOf`) now start at `drawn()`,
+  the end of the reveal's painted part, no longer at light. Where `COMPILES_ASIDE` is true the compiles still start in
+  the background at once, as before.
+- The door-only Earth: voyage.js's scene source is in named parts (`UNIFORMS` tagged by part; `PARTS`: common, sky,
+  ignite, streaks, earth, nebula, moon, arrival, shock). `sceneHead({ slab, door: true })` gives common and earth only
+  (earth carries its sun table lookup, its map tiers, the slab and the limb), and door3d.js compiles that. The flight's
+  SCENE, OVER and rich OVER are byte-identical to before (diffed).
+  - Door program (fragment, with its main): lean 28,937 → 16,919 characters; rich 28,952 → 16,934 (−42%).
+  - The live band (y ≥ 560 px, 1440×900 at 1×, `&lean`, reduced motion, the pictures hidden), rendered by the new
+    program and by HEAD's: mean absolute difference 0.0 per channel, maximum 0.
+  - The Firefox compile time is still to be measured on the owner's machine. SwiftShader caches and is not
+    representative: 11 ms → 7–9 ms.
+- Every compile prints its duration as `<tag>: shaders compiled in N ms`: `install:` and `info:` (world.js
+  `compileMs`: from the first compile asked for to the last link status read), `flight:` (voyage.js `made`),
+  `docs galaxy:`, and `planets:`. The door's existing `door: lean|rich compiled N ms` lines are unchanged.
+- Checked in SwiftShader at 1200×800, 1×, `?preview&door3d`. Every WebGL call was timed against the reveal
+  (`__chores().openedAt`).
+  - `&mainthread`: compiles opened at 0.6 s. Compile lines: install 2.1 s (52 ms), flight 5.4 s (936 ms), info 5.6 s,
+    docs galaxy 6.6 s (95 ms), door lean 6.8 s (438 ms), door rich 7.1 s (186 ms), planets 7.4 s (155 ms). Then the
+    body was lit at 8.8 s and the chores opened 2.65 s later. After that: install/info ready 13.5 s, flight ready
+    20.4 s, planets live 24.5 s, door live 25.6 s.
+    - No WebGL call during the painted reveal, and no compile after it.
+    - Before the reveal, the worlds' render targets and ring texture are still made in their compile chores
+      (16 textures, 14 framebuffers).
+  - With the extension emulated (the Edge path): the journeys' compile lines at 3.9–4.1 s, the body lit at 5.0 s, and
+    the chores opened 2.7 s later. Then install ready 10.5 s, flight ready 17.5 s. The door's and the planets'
+    compiles came as `"door"` chores after that, as before. No WebGL call during the painted reveal.
