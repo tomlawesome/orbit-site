@@ -182,3 +182,5 @@ Tried, October 2026:
   in one load (then stepped to 1×) and 2.0 s in another; rich (forced) 3.3 s; the committed slab 3.3 s. Other runs
   shared the machine, so the noise is about 2×. SwiftShader also pays for every branch on every step, so it shows
   little of the fields' saving. Still to be measured on the RTX 3080.
+
+- 8 October 2026, `?door3d` only: the install's and the information's door planets are drawn by their own world (install.js: `doorPlanets`), its whole pipeline twice a frame into a square five radii a side; over 8 ms a frame (the first 30 timed) it draws them at half scale, and the console says which.

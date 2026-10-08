@@ -32,6 +32,9 @@ function bezier(x1, y1, x2, y2) {
 }
 /* the shot is slow on purpose: a long ease into the move, a long glide, a long settle */
 const easeDolly = bezier(0.5, 0, 0.2, 1), easeTurn = bezier(0.5, 0, 0.3, 1), easeAim = bezier(0.6, 0, 0.3, 1);
+/* the door's own swell and flare (site.css: html.rich body.departing … .chosen .body, transform .24s cubic-bezier(.3,0,.2,1)
+   and filter .18s ease), played inside the shot when it goes on from the world's own frame on the door (doorPlanets) */
+const SWELL_T = 0.24, easeSwell = bezier(0.3, 0, 0.2, 1), FLARE_T = 0.18, easeFlare = bezier(0.25, 0.1, 0.25, 1);
 
 /* vectors and 3×3 rotations (row-major; uploaded transposed) */
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -75,6 +78,10 @@ const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
 /* the install's world and the information's are one world, worn two ways (opts.world: its look): compiled, loaded
    and baked once, its canvas moved to whichever is showing */
 let shared = null;
+/* each world by the door's name for its planet (install, info), so the door's planets can be drawn by their own
+   worlds (doorPlanets); and that loop, once started */
+const worlds = new Map();
+let doorLoop = null;
 
 export function createInstall(pad, opts = {}) {
   const own = $(".orbitgl", pad), slot = document.createComment("the world's canvas");
@@ -136,7 +143,8 @@ export function createInstall(pad, opts = {}) {
     if (canvas.previousSibling !== slot) slot.after(canvas);
     if (own !== canvas) own.hidden = true;
   }
-  function size() {
+  /* (resize false: measured only, the world's targets left at whatever the door's planets have them) */
+  function size(resize = true) {
     world0();
     W = pad.clientWidth || innerWidth; H = pad.clientHeight || innerHeight;
     const dpr = devicePixelRatio || 1;
@@ -153,13 +161,13 @@ export function createInstall(pad, opts = {}) {
     moonPos = [...add(v.cam, mul(rd, -b + h > 0 ? -b + h : 12)), 0.075];
     /* resized mid-shot: where the door's planet is now (the door lays its orbits out again), so the shot still
        starts from it, or still comes back to it */
-    if (motion?.scene) { const d = dotOf(motion.scene, motion.reverse ? 1 : SWELL); d.from = fromFor(d.rot); motion.dot = d; }
+    if (motion?.scene) { const d = dotOf(motion.scene, motion.reverse || motion.cont ? 1 : SWELL); d.from = fromFor(d.rot); motion.dot = d; }
     placeFly(motion?.dot || null);
     /* the galaxy turned so its core and its band fall where they are wanted on this screen at rest */
     const at = (f) => { const px = f[0] * W - W / 2, py = H / 2 - f[1] * H; return norm(add(v.fwd, add(mul(v.right, (px - v.shift[0]) / lay.focal), mul(v.up, (py - v.shift[1]) / lay.focal)))); };
     const core = at(TUNE.sky.core), n = norm(cross(core, at(TUNE.sky.along))), x = cross(n, core);
     SKY = [...x, ...n, ...core];
-    world?.resize(W, H, scale);
+    if (resize) world?.resize(W, H, scale);
   }
   /* where the shot starts from, so the rings are seen as the door's picture shows them: its pole, leaning as it was
      drawn and turned as the picture is turned (rot, clockwise on the screen), is put where the camera sees the
@@ -204,7 +212,8 @@ export function createInstall(pad, opts = {}) {
     const AIM = TUNE.aim || [0, 0.62];
     const eD = easeDolly(clamp((k - 0.06) / 0.94)), eT = easeTurn(clamp(k)), eA = easeAim(clamp((k - AIM[0]) / AIM[1])), eE = easeTurn(clamp((k - 0.4) / 0.6));
     const d1 = Math.sqrt((L.focal / L.R) ** 2 + 1);
-    const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r)) ** 2 + 1) : d1 * 60;
+    /* the dot's size, and its swell while the shot goes on from the door's own frame (g: 1 → SWELL, as the picture swelled) */
+    const d0 = dot0 ? Math.sqrt((L.focal / Math.max(1.5, dot0.r * (dot0.g || 1))) ** 2 + 1) : d1 * 60;
     const dist = Math.exp(lerp(Math.log(d0), Math.log(d1), eD));
     const drift = reduced ? 0 : idle * 0.0018;
     /* the camera is held, not mounted: a slow, small wander, more of it while it is moving fast */
@@ -223,13 +232,18 @@ export function createInstall(pad, opts = {}) {
     const shift = [lerp(from[0], L.cx, eA), lerp(from[1], L.cy, eA)];
     return { cam, fwd, right, up, shift, dist };
   }
-  function draw(now, force = null) {
+  /* reg: the frame cut down to a square round the door's planet (doorPlanets): the shot at k = 0 from reg.dot, at
+     density reg.d, the square S pixels a side starting at reg.o (pixels from the left and the foot of the screen's
+     frame, T): everything given in the screen's pixels is moved by where the square starts, so each pixel of it is
+     the pixel the screen's frame would have there */
+  function draw(now, force = null, reg = null) {
     const w = world; if (!w || !lay) return;
     const idle = clock;
-    const k = u;
-    const dot0 = motion?.dot || null;
+    const k = reg ? 0 : u;
+    const dot0 = reg ? reg.dot : motion?.dot || null;
     const v = view(k, idle, false, dot0);
-    const s = scale;
+    const s = reg ? reg.d : scale;
+    const at = reg ? (x, i) => x - reg.o[i] : (x) => x;
     /* the sun on the lens: where it would be, and how much of it the planet leaves */
     const sf = dot(SUN, v.fwd);
     const sp = sf > 0.02
@@ -248,32 +262,41 @@ export function createInstall(pad, opts = {}) {
     }
     /* what the camera's motion does to the exposure: motes streak by its velocity over a 1/60 s shutter,
        and while it rushes in, the frame blurs out from where it is going */
+    /* the swell (the dot's g) stands for the door's picture swelling, not for the camera moving: it neither streaks
+       the motes nor blurs the frame (the camera's distance goes as 1 / g while it swells) */
+    const g = dot0?.g || 1, pg = prev?.g || 1;
     const dtS = prev ? Math.max(1 / 240, (now - prev.t) / 1000) : 1;
-    let vel = prev ? mul(add(v.cam, mul(prev.cam, -1)), 1 / dtS / 60) : [0, 0, 0];
+    let vel = prev ? mul(add(v.cam, mul(prev.cam, -pg / g)), 1 / dtS / 60) : [0, 0, 0];
     const vl = Math.hypot(...vel); if (vl > 0.4) vel = mul(vel, 0.4 / vl);
-    const zoom = prev ? Math.abs(Math.log(v.dist) - Math.log(prev.dist)) / dtS : 0;
+    const zoom = prev ? Math.abs(Math.log(v.dist * g) - Math.log(prev.dist * pg)) / dtS : 0;
     const blur = reduced ? 0 : Math.min(10, zoom * H * 0.006) * s;
-    prev = { t: now, cam: v.cam, dist: v.dist };
+    prev = { t: now, cam: v.cam, dist: v.dist, g };
     w.draw({
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
-      focal: lay.focal * s, shift: [v.shift[0] * s, v.shift[1] * s], sunPx: [sp[0] * s, sp[1] * s],
+      focal: lay.focal * s, sunPx: [at(sp[0] * s, 0), at(sp[1] * s, 1)],
+      shift: reg ? [reg.T[0] / 2 + v.shift[0] * s - reg.o[0] - reg.S / 2, reg.T[1] / 2 + v.shift[1] * s - reg.o[1] - reg.S / 2] : [v.shift[0] * s, v.shift[1] * s],
       look, sun: sunNow, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
-      vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [(W / 2 + v.shift[0]) * s, (H / 2 + v.shift[1]) * s],
+      vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [at((W / 2 + v.shift[0]) * s, 0), at((H / 2 + v.shift[1]) * s, 1)],
     });
   }
   /* going in, the world starts as bright as the door's planet is as it flares, and settles as the camera moves:
      the flare is where the one becomes the other */
   function flare() {
     if (!motion || motion.reverse || reduced) return 1;
-    return 1 + 0.55 * (1 - smooth(0.08, 0.8, motion.el || 0));
+    /* going on from the world's own frame on the door, the flare rises from nothing as the picture's did */
+    const rise = motion.cont ? easeFlare(clamp(((motion.el || 0) - (motion.el0 ?? 0)) / FLARE_T)) : 1;
+    return 1 + 0.55 * rise * (1 - smooth(0.08, 0.8, motion.el || 0));
   }
   /* the scene's resolution: the measured part while the camera rushes, rising to all of it as it slows into orbit
      (the dive's second half is slow, and the eye has time there) */
   function partAt() {
     if (!motion) return 1;
-    return mq + (1 - mq) * smooth(0.25, 0.7, u);
+    const p = mq + (1 - mq) * smooth(0.25, 0.7, u);
+    /* going on from the door (or back to it), the frame at the planet is drawn as the door's planets are (doorPlanets:
+       its scale), and gives way to the measured part as the camera moves */
+    return motion.cont ? lerp(doorLoop?.rs ?? 1, p, smooth(0, 0.1, u)) : p;
   }
   /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
      the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
@@ -324,7 +347,10 @@ export function createInstall(pad, opts = {}) {
     if (failed || pad.classList.contains("flat")) { running = false; return; }
     raf = requestAnimationFrame(frame);
     const dt = last ? Math.min(100, now - last) : 16; last = now;
+    let handing = false;
     if (pad.hidden || document.hidden || !world || !world.baked) return;
+    /* the shot's last frame, kept on screen while the door's loop takes the planet back (doorPlanets: back) */
+    if (motion?.held) return;
     clock += dt / 1000;
     pointer.sx += (pointer.x - pointer.sx) * Math.min(1, dt / 900);
     pointer.sy += (pointer.y - pointer.sy) * Math.min(1, dt / 900);
@@ -333,19 +359,33 @@ export function createInstall(pad, opts = {}) {
          so, so the shot pauses where it is rather than jumping ahead */
       motion.el = (motion.el || 0) + Math.min(dt, 50) / 1000;
       const t = motion.el;
+      /* going on from the door, the planet swells inside the shot as the door's picture of it would have, timed from
+         the shot's first frame (el0), so that frame is the door's own */
+      if (motion.cont && !motion.reverse) { motion.el0 ??= t; motion.dot.g = lerp(1, SWELL, easeSwell(clamp((t - motion.el0) / SWELL_T))); }
       if (motion.reverse) {
+        /* going back to the world's own frame on the door, the shot ends where the planet is when it ends, not where
+           it was when it began (the orbit is stopped for it a frame late: pads.js) */
+        if (motion.cont) { const d = dotOf(motion.scene, 1); d.from = fromFor(d.rot); motion.dot = d; placeFly(d); }
         u = clamp(motion.from * (1 - t / RETURN));
         motion.near?.(u);
         /* the planet gives itself back to the dot in the last of the shot: the dot is already there beneath it
-           (main.js brings it back just before), so the planet fades off it rather than off nothing */
-        canvas.style.opacity = smooth(0.0, 0.12, u).toFixed(3);
-        if (u <= 0) { const m = motion; motion = null; draw(now); m.resolve(); return; }
+           (main.js brings it back just before), so the planet fades off it rather than off nothing. Going back to
+           the world's own frame on the door, nothing fades: the last frame is held until the door's loop has drawn
+           the same frame in its place (doorPlanets: back), and the two change over between one paint and the next */
+        if (!motion.cont) canvas.style.opacity = smooth(0.0, 0.12, u).toFixed(3);
+        if (u <= 0) {
+          const m = motion;
+          if (m.cont && doorLoop) { draw(now); m.held = true; doorLoop.back(now, () => { if (motion === m) motion = null; m.resolve(); }); return; }
+          motion = null; draw(now); m.resolve(); return;
+        }
       } else {
         /* the hold: the door goes soft behind the dot, the dot swells and glows, and the planet comes up through it */
         /* the world comes up through the door's planet as it flares (site.css: departing), the two the same picture
            (the same rings, the same light, the same size), and the camera holds still until the door's has gone, so
            nothing differs while both are seen: then it moves */
-        canvas.style.opacity = smooth(0.02, 0.26, t).toFixed(3);
+        /* going on from the world's own frame on the door, the canvas is shown whole on its first frame (below) */
+        if (!motion.cont) canvas.style.opacity = smooth(0.02, 0.26, t).toFixed(3);
+        else if (!motion.shown) motion.shown = handing = true;
         u = clamp((t - HOLD) / APPROACH);
         motion.near?.(u);
         if (!motion.settled && t >= HOLD + SETTLE) { motion.settled = true; motion.resolve(); }
@@ -358,6 +398,8 @@ export function createInstall(pad, opts = {}) {
     const following = Math.abs(pointer.x - pointer.sx) + Math.abs(pointer.y - pointer.sy) > 0.002;
     if (!motion && !following && (tick++ & 3)) return;
     draw(now);
+    /* the shot's first frame is up, the same as the door's last: only now does the door's own canvas go */
+    if (handing) { canvas.style.opacity = "1"; doorLoop?.release(TAG); }
     govern(dt);
   }
   /* where the dot is, and how big it is once it has swelled (its layout size, not its size mid-transition) */
@@ -380,7 +422,7 @@ export function createInstall(pad, opts = {}) {
         light = norm([-Math.sin(th) * 0.94, Math.cos(th) * 0.94, -0.1]); rot = th;
       }
     } catch { /* lit by its own sun from the first */ }
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light, rot };
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(1.5, (scene.body.offsetWidth / 2) * k * swell), light, rot, k };
   };
   /* the camera leans with the pointer; on a phone, with the phone's tilt (tilt.js), which then has it alone */
   let tilting = false, untilt = () => {};
@@ -429,17 +471,21 @@ export function createInstall(pad, opts = {}) {
     form(scene) {
       stat = { t0: performance.now(), n: 0, worst: 0, done: false };
       return new Promise(async (resolve) => {
+        /* the planet on the door is this world's own frame (doorPlanets): the shot goes on from it, the same clock,
+           the same pose at its orbital size, swelling inside the shot; otherwise from the door's picture, swelled */
+        const cont = !!doorLoop?.has(TAG);
         this.start();
-        const dot0 = dotOf(scene); dot0.from = fromFor(dot0.rot);
+        const dot0 = dotOf(scene, cont ? 1 : SWELL); dot0.from = fromFor(dot0.rot);
         /* the world is waited for, but never long: past WAIT (a first visit on a slow line or a slow machine) the page
            comes as it is, over its poster, and the world fades in under the words when it is ready (start: lit) */
         const ok = world && (await Promise.race([world.bake(), new Promise((r) => setTimeout(() => r(false), WAIT))]));
-        if (!ok || reduced) { u = 1; motion = null; resolve(); return; }
+        if (!ok || reduced) { u = 1; motion = null; if (cont) doorLoop.release(TAG); resolve(); return; }
         pad.classList.add("lit");
         canvas.style.opacity = "0";
-        u = 0; clock = 0; frames = [];
+        u = 0; frames = [];
+        if (!cont) clock = 0;
         placeFly(dot0);
-        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false, near: scene.near, scene };
+        motion = { t0: performance.now(), dot: dot0, reverse: false, resolve, settled: false, near: scene.near, scene, cont };
       });
     },
     /* the shot back out to where the planet is on the door now */
@@ -449,13 +495,19 @@ export function createInstall(pad, opts = {}) {
         if (!world || !world.baked || reduced || !running) { resolve(); return; }
         const dot0 = dotOf(scene, 1); dot0.from = fromFor(dot0.rot);
         placeFly(dot0);
-        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near, scene };
+        /* back to the world's own frame on the door (doorPlanets), if it is drawing it */
+        const cont = !!doorLoop?.has(TAG);
+        motion = { t0: performance.now(), dot: dot0, reverse: true, from: u, resolve, near: scene.near, scene, cont };
       });
     },
     stop() {
       running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer); untilt(); untilt = () => {};
+      /* the world is free again: the door's planets may be drawn by it */
+      doorLoop?.wake();
     },
+    /* the door's planets drawn by their own worlds while the door is shown (?door3d): resolves once it is under way */
+    doorPlanets(door) { return startDoor(door, mine); },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
     async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
@@ -467,5 +519,160 @@ export function createInstall(pad, opts = {}) {
       return true;
     },
   };
+  /* this world's planet on the door (doorPlanets): the shot's first frame, k = 0 from the planet's pose at its orbital
+     size, drawn not to the screen but into a square round it (side css px at density d: the screen's frame, cut
+     down), so the dive can go on from it */
+  const mine = {
+    api, tag: TAG,
+    ok: () => !!world && !failed && world.baked,
+    canvas: () => shared?.canvas,
+    scale: () => scale,
+    /* the clock runs while the door is shown: the planet turns, its weather moves */
+    advance(dt) { clock += dt / 1000; },
+    dot(scene) {
+      /* measured again if the window has changed while the door was shown (the world's targets are left alone) */
+      if (!lay || (!running && (W !== (pad.clientWidth || innerWidth) || H !== (pad.clientHeight || innerHeight)))) size(false);
+      const d = dotOf(scene, 1); d.from = fromFor(d.rot);
+      return d;
+    },
+    draw(now, dot, side, d) {
+      world.resize(side, side, d);
+      /* the screen's frame at this density (T), where the planet falls in it (P: from the left and the foot), and the
+         square round it, started on a whole pixel so the two frames' pixels are the same pixels */
+      const S = Math.max(1, Math.round(side * d)), T = [Math.max(1, Math.round(W * d)), Math.max(1, Math.round(H * d))];
+      const P = [T[0] / 2 + (dot.x - W / 2) * d, T[1] / 2 + (H / 2 - dot.y) * d];
+      const o = [Math.round(P[0] - S / 2), Math.round(P[1] - S / 2)];
+      placeFly(dot);
+      draw(now, { part: 1, dustN: 18 }, { dot, d, o, S, T });
+      /* where the square is on the screen, in css px */
+      return { S, x: (o[0] * W) / T[0], y: ((T[1] - o[1] - S) * H) / T[1], w: (S * W) / T[0] };
+    },
+  };
+  worlds.set(TAG, mine);
   return api;
+}
+
+/* THE DOOR'S PLANETS, BY THEIR OWN WORLDS (?door3d): the install's and the information's planets drawn on the door by
+   the world each dives into, so a dive is the same renderer going on from what is already on screen, and the return
+   ends on the very frame the door then goes on drawing. Every frame while the door is shown (and no journey is under
+   way, and the world is not drawing a page): for each planet, the shot's first frame (k = 0, the planet's pose at its
+   orbital size, its own world's look) drawn into a square five times its radius round it, and copied into a small
+   canvas of its own at that place on the door, behind the ring or before it as its anchor goes. planets3d.js draws
+   them until the first of these frames (html[data-worldplanets]), and the docs' moon all along */
+function startDoor(door, lead) {
+  if (doorLoop) return doorLoop.ready;
+  const root = document.documentElement, body = document.body;
+  const lockup = door?.querySelector(".lockup"), box = door?.querySelector(".planets");
+  /* the plain door's planets are turned about the ring, not placed on it (planets3d.js likewise) */
+  if (!lockup || !box || !root.classList.contains("rich")) return null;
+  const since = performance.now();
+  const list = [...worlds.values()].filter((w) => w.api.prepared).map((w) => {
+    const a = door.querySelector(`.planet[data-section="${w.tag}"]`);
+    if (!a) return null;
+    const c = document.createElement("canvas");
+    c.className = "worldplanet away"; c.setAttribute("aria-hidden", "true");
+    return { w, a, scene: { planet: a, body: a.querySelector(".body") }, c, ctx: c.getContext("2d") };
+  }).filter((p) => p && p.ctx && p.scene.body);
+  if (!list.length) return null;
+
+  let raf = 0, started = false, live = false, failed = false, last = 0, hook = null;
+  /* the square's side, device px, shared by both (the larger), changed only when it is a tenth out; the scale the
+     world draws it at, halved once if the two take more than 8 ms a frame (over the first 30) */
+  let side = 0, rs = 1, n = 0, spent = 0;
+  const busy = () => [...worlds.values()].some((w) => w.api.busy);
+  /* as planets3d.js: not while the door is not seen, and not once a journey begins */
+  const shown = () => !document.hidden && !door.hidden && !/\b(launching|departing|showwarp)\b/.test(body.className) && getComputedStyle(door).opacity !== "0";
+  /* stopped, each canvas is let go (site.css: worldplanet.away) so nothing stale is shown when the door comes back;
+     the planet a dive goes to is held as it is until the shot's first frame is up over it (release) */
+  const away = () => {
+    const diving = /\bdeparting\b/.test(body.className);
+    for (const p of list) {
+      if (p.c.classList.contains("away")) continue;
+      p.c.classList.add("away");
+      if (diving && p.a.classList.contains("chosen")) p.c.classList.add("held");
+    }
+  };
+  function paint(now, dt) {
+    const dpr = devicePixelRatio || 1, at = [];
+    for (const p of list) { if (!p.w.ok()) continue; p.w.advance(dt); at.push([p, p.w.dot(p.scene)]); }
+    if (!at.length) throw new Error("no world to draw them");
+    const want = clamp(Math.max(...at.map(([, d]) => 5 * d.r * dpr)), 48, 1024);
+    if (!side || Math.abs(want - side) > side * 0.1) side = want;
+    const d = lead.scale() * rs, L = lockup.getBoundingClientRect(), src = lead.canvas();
+    const t0 = performance.now();
+    for (const [p, dot] of at) {
+      const r = p.w.draw(now, dot, side / dpr, d);
+      if (p.c.width !== r.S || p.c.height !== r.S) { p.c.width = r.S; p.c.height = r.S; } else p.ctx.clearRect(0, 0, r.S, r.S);
+      p.ctx.drawImage(src, 0, 0);
+      const st = p.c.style;
+      st.left = `${r.x - L.left}px`; st.top = `${r.y - L.top}px`; st.width = st.height = `${r.w}px`;
+      p.c.classList.toggle("near", dot.k > 1);
+    }
+    const ms = performance.now() - t0;
+    for (const p of list) p.c.classList.remove("away", "held");
+    if (!live) {
+      live = true;
+      root.dataset.worldplanets = list.map((p) => p.w.tag).join(" ");
+      note("install: door planets live", since);
+    }
+    if (n < 30 && dt) {
+      spent += ms;
+      if (++n === 30) {
+        const avg = spent / 30;
+        if (avg > 8) rs = 0.5;
+        note(`install: door planets ${avg.toFixed(1)} ms a frame${rs < 1 ? ", so drawn at half scale" : ""}`);
+      }
+    }
+  }
+  function tick(now) {
+    raf = 0;
+    if (failed || !started) return;
+    if (!shown() || busy()) { away(); return; }
+    raf = requestAnimationFrame(tick);
+    /* the door's own reveal brings the planets all the way in first */
+    if (!live && getComputedStyle(box).opacity !== "1") return;
+    const dt = last ? Math.min(100, now - last) : 16; last = now;
+    try { paint(now, dt); } catch (e) { fail(e); }
+  }
+  const wake = () => { if (!raf && started && !failed) { last = 0; raf = requestAnimationFrame(tick); } };
+  function fail(e) {
+    failed = true;
+    console.warn("orbit: the door's planets stay planets3d's", e);
+    for (const p of list) p.c.remove();
+    delete root.dataset.worldplanets;
+  }
+  const watch = () => { if (started && !failed && (!shown() || busy())) away(); wake(); };
+  new MutationObserver(watch).observe(body, { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(watch).observe(door, { attributes: true, attributeFilter: ["class", "hidden"] });
+  document.addEventListener("visibilitychange", watch);
+  addEventListener("resize", wake);
+
+  /* the worlds baked and measured first (prepare: the measure draws at the screen's size, so it is not to be met by a
+     square); planets3d.js's spheres stand in until then */
+  const ready = Promise.all(list.map((p) => p.w.api.prepared)).then((oks) => {
+    if (!oks.every(Boolean)) throw new Error("a world could not be made");
+    for (const p of list) lockup.append(p.c);
+    started = true; wake();
+  }).catch(fail);
+  doorLoop = {
+    ready,
+    get rs() { return rs; },
+    has: (tag) => live && !failed && list.some((p) => p.w.tag === tag && p.w.ok()),
+    /* the shot's first frame is up: the planet's canvas goes as the rest did (site.css: departing) */
+    release(tag) { list.find((p) => p.w.tag === tag)?.c.classList.remove("held"); },
+    /* the shot back has drawn its last frame: the door draws the same one (same dot, clock and look, the same moment)
+       and shows it, and only then is the shot let go (done), all before the next paint */
+    back(now, done) {
+      const go = () => { try { if (!failed) paint(now, 0); } catch (e) { fail(e); } done(); wake(); };
+      const h = hook; hook = null;
+      let wait = null;
+      try { wait = h?.(); } catch { /* the test's own */ }
+      if (wait?.then) wait.then(go, go); else go();
+    },
+    wake,
+  };
+  /* for the test only: called when a shot back has drawn its last frame, before the door draws its first; the door
+     waits for what it returns */
+  if (/[?&]door3d\b/.test(location.search)) window.__doorPlanets = { onReturn(cb) { hook = cb; } };
+  return ready;
 }
