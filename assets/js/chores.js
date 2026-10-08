@@ -15,7 +15,7 @@
 const queue = [];
 let open = false, running = false, want = null, until = 0, wake = 0;
 /* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
-const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 250 }) : setTimeout(fn, 30));
+const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 120 }) : setTimeout(fn, 30));
 /* the order the rest are done in, when no journey has been chosen: the journeys first (a visitor can do nothing until
    one is ready), then the live door (door3d.js: its picture is already on screen), the measures, and last of all
    the rich clouds, which nothing waits for */
@@ -42,8 +42,9 @@ function pump() {
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
       running = false;
-      /* a rest between chores: a couple of frames, so whatever is moving keeps moving; hurried, still a frame */
-      if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.rest));
+      /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
+         so nothing heavy sits right beside them); hurried, still a frame */
+      if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.tag === "measure" ? job.rest : Math.min(job.rest, 20)));
     });
   };
   if (hurried) setTimeout(run, 0); else idle(run);
