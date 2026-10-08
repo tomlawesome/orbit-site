@@ -38,15 +38,23 @@ if (!process.env.SITE) {
 
 const problems = [];
 const browser = await playwright[BROWSER].launch();
+/* Each step opens its own tab, as a visitor arriving from a link does: a
+   hash change inside one tab is a different path (the site flies between
+   landings on a click, not on the address alone). */
 const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
-const page = await ctx.newPage();
-page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
-page.on("console", (m) => { if (m.type() === "error") problems.push(`console.error: ${m.text()}`); });
-page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
-page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
+let page = null;
+const fresh = async () => {
+  await page?.close();
+  page = await ctx.newPage();
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error") problems.push(`console.error: ${m.text()}`); });
+  page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
+  page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
+  return page;
+};
 
 const step = async (name, fn) => {
-  try { await fn(); console.log(`ok   ${name}`); }
+  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
   catch (e) { problems.push(`${name}: ${e.message.split("\n")[0]}`); console.log(`FAIL ${name}`); }
 };
 
@@ -64,6 +72,7 @@ if (maintenance) {
      That is what the site ships, so that is what is checked. */
   console.log("     (maintenance mode: the door alone, no landings)");
   await step("the notice is shown", async () => {
+    await page.goto(SITE, { waitUntil: "load" });
     const words = (await page.getAttribute("html", "data-maintenance"))?.trim() || "Back shortly";
     await page.locator("#door .notice .t", { hasText: words }).waitFor({ state: "visible", timeout: 10000 });
   });
