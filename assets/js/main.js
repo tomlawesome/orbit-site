@@ -7,7 +7,7 @@ import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
 import * as law from "./law.js";
-import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, DAWN } from "./flight.js";
+import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 import { openChores, hurryChores } from "./chores.js";
@@ -43,7 +43,7 @@ mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
    frame is on screen, so the picture is up before the work behind it starts */
 /* the glows are pictures now (tools/glows.cjs), all but the sun's own: drawn here, per size, dithered, so its dark
    gradient does not step into rings (flight.js: rasterise); and mountRasters keeps the rays turning about the sunrise point */
-const dawnRasters = mountRasters($("#door .world"), { sun: DAWN.sun }, "dawn");
+const dawnRasters = mountRasters($("#door .world"), { sun: SUN }, "dawn");
 /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
 function loadEarth() {
   const world = $("#door .world");
