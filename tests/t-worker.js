@@ -28,12 +28,14 @@ export async function run(host) {
   let triP = null; try { if (gl) triP = program(gl, TRI, { salt: false }); } catch { /* without */ }
   /* the page's loop: the dot turned by the page, the triangle drawn by the page's WebGL; every gap between frames
      kept, and the WebGL draw's own time */
-  let on = true, gaps = [], draws = [], last = 0, a = 0;
+  /* webgl: whether the page draws its triangle too (no pixel read back: as the live site draws), so the page's own
+     frames can be timed with and without its WebGL in them */
+  let on = true, webgl = false, gaps = [], draws = [], last = 0, a = 0;
   const loop = (t) => {
     if (!on) return;
     if (last) gaps.push(t - last); last = t;
     a += 0.15; d2.clearRect(0, 0, 34, 34); d2.fillStyle = "#f0c050"; d2.beginPath(); d2.arc(17 + 11 * Math.cos(a), 17 + 11 * Math.sin(a), 4, 0, 6.2832); d2.fill();
-    if (gl && triP) { const t0 = performance.now(); gl.useProgram(triP.p); gl.uniform1f(triP.u.uT, a); gl.viewport(0, 0, 34, 34); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); draws.push(performance.now() - t0); }
+    if (webgl && gl && triP) { const t0 = performance.now(); gl.useProgram(triP.p); gl.uniform1f(triP.u.uT, a); gl.viewport(0, 0, 34, 34); gl.drawArrays(gl.TRIANGLES, 0, 3); draws.push(performance.now() - t0); }
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -47,18 +49,24 @@ export async function run(host) {
     if (hello.error) { out.push(line("worker WebGL2", hello.error)); throw new Error("stop"); }
     out.push(line("worker WebGL2", `yes; compiles in background there: ${hello.background ? "yes" : "no"}`));
     await window_(500);
-    const quiet = { gaps: gaps.slice(), draws: draws.slice() }; gaps = []; draws = [];
-    out.push(line("page's longest frame gap, worker idle", `${worst(quiet.gaps)} ms (its WebGL draw ${worst(quiet.draws)} ms)`));
+    out.push(line("page's longest frame gap, worker idle, no WebGL on the page", `${worst(gaps)} ms`));
+    webgl = true; gaps = []; draws = []; await window_(500);
+    out.push(line("page's longest frame gap, worker idle, the page drawing WebGL too", `${worst(gaps)} ms (its draw ${worst(draws)} ms)`));
     for (const [label, src] of [["probe (2k chars)", PROBE], ["door rich (real)", sceneHead({ slab: true, door: true }) + DOOR_MAIN], ["flight rich head (real)", sceneHead({ slab: true }) + FLIGHT_MAIN]]) {
-      gaps = []; draws = [];
-      const t0 = performance.now();
-      const r = await ask({ src: salted(src) });
-      const wall = performance.now() - t0;
-      await window_(100);
-      if (r.error) { out.push(line(label, `failed in the worker: ${r.error}`)); continue; }
-      out.push(line(label, `compiled in the worker in ${round(r.ms)} ms (drew in ${round(r.draw)} ms); meanwhile the page's longest frame gap ${worst(gaps)} ms, its own WebGL draw at most ${worst(draws)} ms, over ${round(wall)} ms`));
+      /* twice: the page drawing only its dot (2D), then its WebGL triangle too */
+      for (const withGl of [false, true]) {
+        webgl = withGl; gaps = []; draws = [];
+        await window_(120);
+        gaps = []; draws = [];
+        const t0 = performance.now();
+        const r = await ask({ src: salted(src) });
+        const wall = performance.now() - t0;
+        await window_(100);
+        if (r.error) { out.push(line(label, `failed in the worker: ${r.error}`)); break; }
+        out.push(line(`${label}, page ${withGl ? "drawing WebGL too" : "drawing 2D only"}`, `compiled in the worker in ${round(r.ms)} ms; meanwhile the page's longest frame gap ${worst(gaps)} ms${withGl ? `, its WebGL draw at most ${worst(draws)} ms` : ""}, over ${round(wall)} ms`));
+      }
     }
-    out.push(line("the eye's verdict", "did the CSS spinner (left) pause during the compiles? did the dot (middle)? say"));
+    out.push(line("the eye's verdict", "did the CSS spinner (left) pause during the compiles? did the dot (middle)? say which, and in which phase"));
   } catch (e) { if (e.message !== "stop") out.push(line("error", e.message)); }
   on = false; w.terminate();
   if (gl) { if (triP) gl.deleteProgram(triP.p); release(gl); }
