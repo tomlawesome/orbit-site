@@ -339,7 +339,9 @@ export function createInstall(pad, opts = {}) {
     if (Math.abs(next - scale) > 0.01) { scale = next; lastAdjust = now; world?.resize(W, H, scale); }
   }
   /* the first second of a dive, counted: how the hand-over from the door went (the console says) */
-  let stat = null;
+  /* and its click, timed: the world's resize to the screen (sized: start) and the shot's first draw, so a stall there
+     can be told from one later on (each the page's own time to ask for it; the GPU's share is not waited for) */
+  let stat = null, sized = 0;
   function frame(now) {
     if (!running) return;
     if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, last ? now - last : 0); if (now - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
@@ -397,7 +399,10 @@ export function createInstall(pad, opts = {}) {
        camera is following the pointer or the tilt; the GPU rests in between */
     const following = Math.abs(pointer.x - pointer.sx) + Math.abs(pointer.y - pointer.sy) > 0.002;
     if (!motion && !following && (tick++ & 3)) return;
-    draw(now);
+    if (stat && stat.first == null && motion && !motion.reverse) {
+      const t0 = performance.now(); draw(now); stat.first = performance.now() - t0;
+      note(`${TAG}: dive began: resize ${sized.toFixed(1)} ms, first frame ${stat.first.toFixed(1)} ms`);
+    } else draw(now);
     /* the shot's first frame is up, the same as the door's last: only now does the door's own canvas go */
     if (handing) { canvas.style.opacity = "1"; doorLoop?.release(TAG); }
     govern(dt);
@@ -464,14 +469,14 @@ export function createInstall(pad, opts = {}) {
       adopt();
       if (running) return;
       running = true; last = 0;
-      size();
+      const t0 = performance.now(); size(); sized = performance.now() - t0;
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
       if (w) w.bake().then((ok) => pad.classList.add(ok ? "lit" : "flat"));
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     /* the shot in from the door's planet: resolves when the camera has all but settled */
     form(scene) {
-      stat = { t0: performance.now(), n: 0, worst: 0, done: false };
+      stat = { t0: performance.now(), n: 0, worst: 0, done: false, first: null }; sized = 0;
       return new Promise(async (resolve) => {
         /* the planet on the door is this world's own frame (doorPlanets): the shot goes on from it, the same clock,
            the same pose at its orbital size, swelling inside the shot; otherwise from the door's picture, swelled */
@@ -529,6 +534,11 @@ export function createInstall(pad, opts = {}) {
     ok: () => !!world && !failed && world.baked,
     canvas: () => shared?.canvas,
     scale: () => scale,
+    /* the world's targets made for the door's square (side css px at density d) before its loop first draws it, and
+       for the screen again (full) if the square has had to change: the world keeps both (world.js: resize), so the
+       loop's first frame and a dive's first both find theirs made */
+    fit(side, d) { world?.resize(side, side, d); },
+    full() { if (!running && world) size(); },
     /* the clock runs while the door is shown: the planet turns, its weather moves */
     advance(dt) { clock += dt / 1000; },
     dot(scene) {
@@ -621,7 +631,9 @@ function startDoor(door, lead) {
       spent += ms;
       if (++n === 30) {
         const avg = spent / 30;
-        if (avg > 8) rs = 0.5;
+        /* (the square at half scale is a new size, and the world lets the screen's targets go for it: they are made
+           again now, between frames, not at the click) */
+        if (avg > 8) { rs = 0.5; chore(() => lead.full(), 60, lead.tag); }
         note(`install: door planets ${avg.toFixed(1)} ms a frame${rs < 1 ? ", so drawn at half scale" : ""}`);
       }
     }
@@ -651,8 +663,19 @@ function startDoor(door, lead) {
 
   /* the worlds baked and measured first (prepare: the measure draws at the screen's size, so it is not to be met by a
      square); planets3d.js's spheres stand in until then */
+  /* and the world's targets made for the square before the loop's first frame (fit), as a chore between frames, so the
+     world holds both the square's and the screen's (made at prepare, drawn once by touch) from then on */
+  const fit = () => {
+    if (!shown()) return;
+    const dpr = devicePixelRatio || 1, at = list.filter((p) => p.w.ok()).map((p) => p.w.dot(p.scene));
+    if (!at.length) return;
+    side = clamp(Math.max(...at.map((d) => 5 * d.r * dpr)), 48, 1024);
+    lead.fit(side / dpr, lead.scale() * rs);
+  };
   const ready = Promise.all(list.map((p) => p.w.api.prepared)).then((oks) => {
     if (!oks.every(Boolean)) throw new Error("a world could not be made");
+    return chore(fit, 60, lead.tag).catch(() => { /* the loop's first frame makes them */ });
+  }).then(() => {
     for (const p of list) lockup.append(p.c);
     started = true; wake();
   }).catch(fail);

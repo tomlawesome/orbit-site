@@ -19,7 +19,7 @@
  * &rich (the rich one whatever the lean one took; still measured), &lean (never the rich one).
  */
 import { chore, fetchOnce, note } from "./chores.js";
-import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, cloudField, cityGlow, wantRich } from "./voyage.js";
+import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich } from "./voyage.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
 const LOADED = performance.now();
@@ -69,8 +69,9 @@ export function liveDoor(world) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
   /* the pictures down the wire at once; only putting them on the GPU waits its turn. The sharpest lights at the
-     sharpness this screen shows (theStrip: the flight then draws the same) */
-  const strip = theStrip();
+     sharpness this screen shows (theStrip: the flight then draws the same), the smallest of them first, the screen's
+     own faded in over it after everything else, here and in the flight alike (sharpStrip) */
+  const strip = theStrip(), stripS = sharpStrip();
   const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN", "lightsS"];
   for (const k of keys) fetchOnce(TEX[k]).catch(() => {});
 
@@ -102,18 +103,23 @@ export function liveDoor(world) {
     const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
     poll();
   });
+  /* a map put on the GPU (each as load does it; the sharper strip, too: sharpStrip) */
+  const upload = (key, bm) => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    /* the ground is seen almost edge on: without this the cities blur into the coarsest maps */
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => chore(() => {
-      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      /* the ground is seen almost edge on: without this the cities blur into the coarsest maps */
-      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const t = upload(key, bm);
       maps[key] = t; dims[key] = [bm.width, bm.height];
       /* a clouds map's slab field, made with it, for the rich weight (voyage.js: cloudField) */
       if (key === "clouds" || key === "cloudsN") {
@@ -173,12 +179,16 @@ export function liveDoor(world) {
     gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
     gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
     gl.uniform4f(u.uStripBox, ...strip.box); gl.uniform1f(u.uHasS, maps.lightsS ? 1 : 0);
+    /* the sharper strip fading in (with reduced motion, simply there); once in, the small one let go */
+    let mixS = maps.lightsS2 ? (reduced ? 1 : stripS.mix()) : 0;
+    if (mixS >= 1) { gl.deleteTexture(maps.lightsS); maps.lightsS = maps.lightsS2; maps.lightsS2 = null; mixS = 0; }
+    gl.uniform1f(u.uStripMix, mixS);
     gl.uniform2f(u.uSunPt, W / 2, ly(920)); gl.uniform2f(u.uFade, ly(640), 60 * s);
     gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 110) * 6.2832 + 3.1416));
     const bind = (unit, tx, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
     bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
     bind(3, maps.euro || blank, u.uEuro); bind(4, maps.lightsN || blank, u.uLightsN); bind(5, maps.cloudsN || blank, u.uCloudsN);
-    bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT); bind(8, maps.lightsS || blank, u.uLightsS);
+    bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT); bind(8, maps.lightsS || blank, u.uLightsS); bind(12, maps.lightsS2 || blank, u.uLightsS2);
     bind(9, fields.clouds || blank, u.uCloudF); bind(10, fields.cloudsN || blank, u.uCloudFN); bind(11, glowT || blank, u.uGlow);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     dirty = false;
@@ -264,6 +274,8 @@ export function liveDoor(world) {
   const ready = compile(false)
     .then((p) => { prog = p; })
     .then(() => Promise.all(keys.map(load)))
+    /* the sharper strip, once the small one is in (sharpStrip): put on the GPU beside it, and drawn from then on */
+    .then(() => { if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
     .then(() => chore(() => {
       world.querySelector(".wl.earth")?.after(canvas);
       resize(); draw();
@@ -273,7 +285,7 @@ export function liveDoor(world) {
       wake();
     }, 60, "door"))
     .then(() => chore(ladder, 60, "door"))
-    .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); });
+    .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });
   document.addEventListener("visibilitychange", wake);
   /* the door coming back (its class or its hidden flag changing) starts the clock again */

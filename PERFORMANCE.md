@@ -184,3 +184,24 @@ Tried, October 2026:
   little of the fields' saving. Still to be measured on the RTX 3080.
 
 - 8 October 2026, `?door3d` only: the install's and the information's door planets are drawn by their own world (install.js: `doorPlanets`), its whole pipeline twice a frame into a square five radii a side; over 8 ms a frame (the first 30 timed) it draws them at half scale, and the console says which.
+
+## The dive's click, and the strip small first (8 October 2026)
+
+- Measured on the RTX 3080 (4K at 1.5×): the first second after a click on the install planet drew 60 frames, the
+  worst 33 ms; on the information planet 58, the worst 67 ms. At the click the world went from the door's square
+  (doorPlanets) to the full screen, and `resize` made its HDR target and bloom chain again at 3.3 Mpx in that frame.
+- world.js `resize` now keeps the targets for the last two sizes drawn (keyed by the drawn size; a third lets the one
+  drawn longest ago go), so the square and the screen are both kept and the click only changes which is drawn into.
+  The screen's are made at `prepare` and drawn once by `touch`; the door's loop has its square's made as a chore
+  before its first frame (`fit`); if its square halves (over 8 ms a frame), the screen's are made again as a chore.
+  The canvas's own size still changes at the click (the browser's drawing buffer), which no cache here can keep.
+  Checked in SwiftShader at 1200×800: the screen's targets made at 5 s (prepare), the square's (90×90) by `fit` just
+  before the door's planets went live, and none at the click.
+- The information world is not deferred: it is the install's world (install.js: `shared`), compiled and baked once.
+- `?door3d`: the city-lights strip loads 120 px a degree first (0.62 MB: all the flight waits for); the device's own
+  tier (`theStrip`), if sharper, comes after everything as one chore ("rich") that puts it on the GPU in the door's
+  context and the flight's, then fades it in over 1 s in both by the same clock (`uStripMix`, the small one freed
+  when the fade ends), so they never show two sharpnesses. The console says `strip: N px a degree in, fading over 1 s`.
+- The click is timed: `orbit · install: dive began: resize X ms, first frame Y ms` (likewise `info:`), X the world's
+  resize to the screen and Y the shot's first draw, each the page's own time (the GPU's share is not waited for),
+  printed before the existing `first second N frames, worst M ms`.
