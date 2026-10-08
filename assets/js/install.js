@@ -11,7 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note, quiet, counted, COMPILES_ASIDE } from "./chores.js";
+import { chore, note, noteChores, quiet, counted, COMPILES_ASIDE } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 import { onTilt } from "./tilt.js";
@@ -461,7 +461,7 @@ export function createInstall(pad, opts = {}) {
         this.baked = made.then((w) => (w ? w.bake() : false));
         this.prepared = this.baked
           .then((ok) => {
-            note(`${TAG}: ready`);
+            note(`${TAG}: ready`); noteChores(`${TAG} ready`);
             if (ok) chore(touch, 60, TAG);
             return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
           });

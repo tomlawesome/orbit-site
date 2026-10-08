@@ -1,7 +1,9 @@
 /* how long shaders take to compile here: a probe of known size, then the site's real Earth shaders (the door's lean
-   and rich, the flight's lean head), each salted so the browser's cache cannot answer for the compiler */
+   and rich, the flight's lean head), then three of its programs whole (the flight's rush, the install's world, the
+   docs' galaxy), each salted so the browser's cache cannot answer for the compiler */
 import { context, release, program, PROBE, PROBE_ROLLED, TRIVIAL, line, round } from "./common.js";
-import { sceneHead } from "../assets/js/voyage.js";
+import { sceneHead, SOURCES } from "../assets/js/voyage.js";
+import { RENDER_SRC, RENDER_VERT } from "../assets/js/world.js";
 export const name = "compile";
 const DOOR_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
 const FLIGHT_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; vec3 c=sky(css); float cov; vec3 e=earthAA(css,cov); o=vec4(c*(1.0-cov)+e,1.0); }`;
@@ -20,9 +22,13 @@ export async function run() {
     ["door rich (real)", sceneHead({ slab: true, door: true }) + DOOR_MAIN],
     ["flight lean head (real)", sceneHead({ slab: false }) + FLIGHT_MAIN],
     ["flight rich head (real)", sceneHead({ slab: true }) + FLIGHT_MAIN],
+    ["flight scene, the rush (real)", SOURCES.scene],
+    /* (the hdr one, as createWorld compiles it where it can draw in floats; its own vertex shader, a buffer's) */
+    ["world render (real)", RENDER_SRC, { vert: RENDER_VERT }],
+    ["docs galaxy (real)", SOURCES.galaxy],
   ];
-  for (const [label, src] of each) {
-    try { const pr = program(gl, src); out.push(line(label, `${round(pr.ms)} ms (${pr.chars} chars)`)); gl.deleteProgram(pr.p); }
+  for (const [label, src, opts] of each) {
+    try { const pr = program(gl, src, opts); out.push(line(label, `${round(pr.ms)} ms (${pr.chars} chars)`)); gl.deleteProgram(pr.p); }
     catch (e) { out.push(line(label, `failed: ${e.message}`)); }
     await new Promise((r) => setTimeout(r, 50));
   }
