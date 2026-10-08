@@ -11,7 +11,7 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
-import { openChores, openCompiles, hurryChores, note, programs, COMPILES_ASIDE } from "./chores.js";
+import { openChores, openCompiles, openSoft, softRan, hurryChores, note, programs, COMPILES_ASIDE, HOLD_REVEAL } from "./chores.js";
 
 /* first of all, before anything else asks the GPU for anything: how fast it is here (capability.js; kept a week), so
    the live door's weight, and so what is compiled, is known from the start */
@@ -251,7 +251,10 @@ function showDoor() {
      and nothing on the page's thread can stutter it, but what is painted (the ring's stroke drawing in, the name's
      blur clearing, anything inside an SVG) is drawn on the page's own thread, and a chore under it stutters it. So
      each such animation is waited for, by its own end, not by a guess. A journey chosen sooner has its own chores
-     done at once (hurryChores) */
+     done at once (hurryChores). Only the soft chores (a band of a picture put on the GPU, under ~5 ms: upload.js) run
+     during the reveal, one a frame, from the moment the door is lit (openSoft; not with ?holdreveal); and the reveal's
+     longest gap between two frames is said with them when it ends (the proof it stayed smooth: 16.7 ms is a whole
+     frame at 60 Hz) */
   const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
   const painted = (a) => {
     try {
@@ -268,6 +271,10 @@ function showDoor() {
     } catch { return Promise.resolve(); }
   };
   const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
+    if (!HOLD_REVEAL) openSoft();
+    let gap = 0, last = 0, timing = firstLight;
+    const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing) requestAnimationFrame(frame); };
+    if (timing) requestAnimationFrame(frame);
     /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
     planetsIn = new Promise((r) => requestAnimationFrame(() => {
       const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
@@ -275,7 +282,10 @@ function showDoor() {
     }));
     warmJourneys();
     /* (the live door too: its canvas and its context's first textures are the GPU's, so they wait with the rest) */
-    drawn().then(() => { openChores(); if (DOOR3D) liveDoorOf(); }); }); };
+    drawn().then(() => {
+      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms`); }
+      openChores(); if (DOOR3D) liveDoorOf();
+    }); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");

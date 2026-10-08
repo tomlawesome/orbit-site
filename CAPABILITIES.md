@@ -14,6 +14,9 @@ every other module reads its level from; nothing decides on its own.)
 2. **Probe before you pay.** Cheap checks come before expensive work: a compile's duration before the next compile, a
    small synthetic draw before megabytes of maps are fetched or uploaded.
 
+Uploads during the door's reveal are bounded per frame: one band of a picture, under ~5 ms (upload.js). The
+`reveal:` line in the console measures them: how many ran, and the reveal's longest frame gap.
+
 ## What a browser can tell us
 
 | Signal | How good | When known | Used for |
@@ -74,11 +77,12 @@ laptop Firefox 15.4 s / 16.1 s. The flight's compile grew from ~1.9 s to 3.1 s o
 
 ## Testing across devices
 
-The tests live at `tests/` (`https://tomlawesome.github.io/orbit-site/tests/`): six small pages, one task each, and a
+The tests live at `tests/` (`https://tomlawesome.github.io/orbit-site/tests/`): seven small pages, one task each, and a
 runner that runs them all and copies one report: `machine` (what the browser says, WebGL2 and its extensions, the GPU's
 name), `compile` (the probe shader and the real door and flight Earth shaders, salted against the shader cache),
 `draw` (the probe at 512x512 for ms per million pixels, then the real lean and rich door shaders at this screen's own
-band with maps of noise so every path runs), `upload` (maps of the site's sizes put on the GPU with their mipmaps),
+band with maps of noise so every path runs), `upload` (maps of the site's sizes put on the GPU with their mipmaps), `upload-bands` (a map put on
+the GPU in bands as the site does, against whole: 0 bytes apart is the pass),
 `stall` (a spinner turns while the rich shader compiles: the frame gaps, and the eye's verdict on the spinner), and
 `network` (two of the maps fetched fresh). Numbers from each device go into the table above. A laptop's power state changes everything: the 4700U on battery
 compiled the probe in 315 ms and drew the rich door at 24 ms a frame, on mains 197 ms and 11 ms. Say which when

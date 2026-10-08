@@ -376,6 +376,61 @@ Tried, October 2026:
 - What this leaves as true: the fixed cost of a program is ~10 ms; a big shader costs more than its parts (the
   effects table above); on a slow compiler the lever is less code compiled before the door.
 
+## Fill the reveal (8 October 2026)
+
+- Why: after the shaders compile under the ring, the door is lit and its reveal plays for about 2.5 s. Until now no GPU
+  work ran during it. chores.js opened its queue (`openChores`) only at `drawn()` in main.js, once every painted
+  animation of the reveal had finished, because one 40-90 ms upload on the page's thread stutters the ring's stroke,
+  which is drawn on that thread. So every upload, bake and first draw the ways in need waited until after the reveal,
+  and the ways in opened 0.9 s (Edge) to 1.3 s (Firefox) after it. Measured on the laptop: on Edge, 4.9 s between the
+  last compile and the first upload; on Firefox, `held 2940 ms for the reveal`.
+- The design: uploads are cut into bands small enough to fit in one frame's slack, one band a frame, during the
+  reveal. The mipmaps (30-170 ms for the big maps) are built after the reveal as ordinary chores. No visual change,
+  and every texture is byte-identical to before.
+  - **Soft chores** (chores.js). `chore(fn, rest, tag, { soft: true })` promises to take under ~5 ms. `openSoft()`
+    is called by main.js at `light()`, when the door is lit and the reveal begins. From then until `openChores()`
+    (still at `drawn()`), pump() runs only soft chores (and the compiles, where they may run). They run one a frame:
+    the next starts on the next animation frame and `setTimeout(0)`, with no 20 ms rest. Once the queue is open they
+    are ordinary chores, ranked by their tags as before. A journey chosen hurries them as it hurries the rest.
+  - **Bands** (new: upload.js `uploadBanded`). The texture is made at its full size at once (`texImage2D` with no
+    data) with LINEAR filtering and the caller's own wrap modes. The picture then goes in with `texSubImage2D`, a band
+    of rows at a time, each band a soft chore. Each band is its own small bitmap (`createImageBitmap` of the picture's
+    rows, off the page's thread), cut while the band before waits its turn: at most two in flight per picture. A band
+    starts at about 1 MB (4096 wide: 64 rows; 2048: 128; 1024: 256; never under 16). The first band is timed: over
+    4 ms halves the rest, under 1.5 ms doubles them.
+  - **Mipmaps after**. After the last band, one ordinary chore with the same tag makes the mipmaps, sets
+    LINEAR_MIPMAP_LINEAR and the caller's anisotropy. Until then the texture is complete at its first level and
+    drawable. The helper's promise resolves only then.
+  - **Who uses it**: the flight's maps (voyage.js `load`), the install and information worlds' map, rings, moon and
+    galaxy photograph (world.js, SRGB8_ALPHA8), the live door's eight maps (door3d.js), and the planets' two maps in
+    each of their two contexts (planets3d.js). A map's slab field, the cities' glow, the flight's warm draws and
+    `loaded`, the worlds' `baked`, the door's first frame and the planets' first frame all still wait for the
+    mipmaps. The sharper lights strip (`sharpStrip`, the last chore of all, never during the reveal) is still put on
+    the GPU whole: its one chore serves every context and starts the fade on one clock.
+  - **`?holdreveal`** restores the old behaviour exactly, for A/B: `openSoft` is never called, and each picture is put
+    on the GPU whole in one ordinary chore, its mipmaps with it.
+- What to read in the console:
+  - `reveal: N soft chores ran, X ms; longest frame gap Y ms`, printed by main.js at `drawn()`. The gap is measured by
+    an animation-frame loop from `light()` to `drawn()`, between consecutive frames; 16.7 ms is a whole frame at
+    60 Hz. This is the smoothness proof: compare it with `&holdreveal`.
+  - The `chores at … ready` line now says `held N ms for the reveal, of which N soft chores (X ms) during the reveal`.
+  - With `?door3d` only, each texture's bands: `upload: lights 4096x2048 in 32 bands, longest 3.1 ms`.
+- The test page has a new test, `upload-bands` (tests/t-upload-bands.js). It puts `clouds-near.webp` on the GPU whole
+  and in bands, draws each into a target and compares them byte for byte: level 0, then level 2 once both have their
+  mipmaps. RGBA8 and SRGB8_ALPHA8 both differ by 0 bytes (headless Chromium).
+- Checked in SwiftShader (1200×800, 1×, `?preview&door3d`; correctness only, its timings are not evidence):
+  - With reduced motion, the live door's canvas against HEAD's: `&rich` and `&lean` both 600×144, 0 pixels differ.
+  - Without it: the `reveal:` line printed 112 soft chores (102 with `&mainthread`, 0 with `&holdreveal`), and
+    `install: ready` and `flight: ready` printed. `&holdreveal` ran 12 chores by install ready and 26 by flight ready,
+    as HEAD did. No `orbit:` warnings. The sign-in's flight and the install's dive drew.
+- Expected: the ways in open at about the reveal's end, about 2.5 s sooner on Edge and about 1 s sooner on Firefox.
+  To be confirmed on the laptop, with the `reveal:` line's frame gap no worse than `&holdreveal`'s. SwiftShader's
+  timings are not evidence either way.
+- Once the queue is open, or a journey is hurried, the bands no longer wait a frame each: they run back to back
+  within an 8 ms share of the frame (chores.js: SHARE), then the next frame is waited for. Without that the live
+  door's eight maps took 50-220 frames to go in after the reveal, and a click before the flight's maps were in
+  waited a frame a band.
+
 ## The plan from here (8 October 2026)
 
 One change a build, each gated by a number from the laptop in Firefox (the worst case we own), with Edge and the
@@ -390,7 +445,7 @@ Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
    (Edge) of waiting for an idle moment on the laptop before the flight was ready, the full 120 ms timeout each time.
    Chores now start a frame after the last. The line still prints: the queue's empty time (pictures still coming, or
    decoding) and its rests are told apart, for the next look.
-3. **Uploads on Firefox.** Each map 25-95 ms on the page thread plus its mipmaps, and the door and the flight upload
+3. **Uploads on Firefox** (in: "Fill the reveal", above). Each map 25-95 ms on the page thread plus its mipmaps, and the door and the flight upload
    the same maps twice. Count and total first; then upload once where both need a map, mipmaps only where a map is
    minified, the smaller tier on weak machines. Expected 1-2 s, and fewer stutters after the reveal.
 4. **One context for the door and the flight.** The rich Earth compiled once, its maps uploaded once, the handoff the

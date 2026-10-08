@@ -25,6 +25,7 @@
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
+import { uploadBanded } from "./upload.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -201,20 +202,12 @@ export function mountPlanets(door) {
     dur: parseFloat(getComputedStyle(a).getPropertyValue("--dur")) || 60, bs: 0, pole: null, e1: null, chosen: a.classList.contains("chosen"),
   }));
 
-  /* one map to both layers */
-  const upload = (key, bm) => {
-    for (const { gl, maps } of layers) {
-      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      maps[key] = t;
-    }
-    bm.close?.();
-  };
+  /* one map to both layers: into each a band at a time (upload.js: soft chores), its mipmaps after (the planets are
+     drawn at a level of their own, uLod, so nothing is drawn until both maps are in, mipmaps and all: ready) */
+  const wrap = (g) => { g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.REPEAT); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE); };
+  const upload = (key, bm) => Promise.all(layers.map(({ gl, maps }, i) => uploadBanded(gl, bm, { internal: gl.SRGB8_ALPHA8, tag: "door", name: `planets ${key} ${i}`, setup: wrap, keep: true })
+    .then((t) => { maps[key] = t; })))
+    .finally(() => bm.close?.());
 
   /* the ring's measure and the layers' place: each canvas a square round the ring's centre, wide enough for the
      outermost orbit, a ring about the giant, and the nearest planets' growth (170 of the ring's 200 units each way) */
@@ -337,7 +330,7 @@ export function mountPlanets(door) {
      ring where compiles freeze the page), then each map into both, then the layers laid either side of the ring and
      the clock started; the pictures go once the first frame is drawn (draw) */
   const ready = L0.ready
-    .then(() => Promise.all(bitmaps.map((b) => b.then(({ key, bm }) => chore(() => upload(key, bm), 60, "door")))))
+    .then(() => Promise.all(bitmaps.map((b) => b.then(({ key, bm }) => upload(key, bm)))))
     .then(() => chore(() => {
       glyph.before(far.canvas); glyph.after(near.canvas);
       started = true; measure(); wake();

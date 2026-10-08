@@ -21,6 +21,7 @@
  */
 
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
+import { uploadBanded } from "./upload.js";
 import { theDoorWeight } from "./capability.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
@@ -1098,7 +1099,7 @@ export function createVoyage(under) {
   let richMade = null, richProg = null, allIn = false;
   const fieldsOf = () => {
     for (const key of ["clouds", "cloudsN"]) {
-      if (!P.overRich || !maps[key] || fields[key]) continue;
+      if (!P.overRich || !maps[key] || !mipped.has(key) || fields[key]) continue;
       try { fields[key] = cloudField(gl, P.overRich, maps[key], ...dims[key], key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
     }
   };
@@ -1140,35 +1141,44 @@ export function createVoyage(under) {
   const target = (w, h) => { const t = tex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT); const f = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f, w, h }; };
 
-  /* the maps: asked for a little after the page is up, each used as soon as it has come */
-  const maps = {}, dims = {}, fields = {};
+  /* the maps: asked for a little after the page is up, each used as soon as it has come; mipped: those whose mipmaps
+     are made too (a field is made from a map only then) */
+  const maps = {}, dims = {}, fields = {}, mipped = new Set();
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
-  /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
-     chore of its own (chores.js): never all at once */
-  const inTurn = (fn) => chore(fn, 60, "flight");
-  /* a map put on the GPU (each as load does it; the sharper strip, too: sharpStrip) */
+  /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
+     at a time (upload.js: soft chores, which may run during the reveal), its mipmaps after, a chore of their own */
+  const wrapOf = (key) => (g) => {
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, BOXED.includes(key) ? g.CLAMP_TO_EDGE : g.REPEAT);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+  };
+  /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
+  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
+  /* the sharper strip, put on the GPU whole (sharpStrip: in every context in the one chore, its fade started on the
+     same clock; the last chore of all, never during the reveal) */
   const upload = (key, bm) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
-    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    sharper(gl); wrapOf(key)(gl);
     return t;
   };
   /* the strip's sharper tier, fading in over the small one (sharpStrip; ?door3d only) */
   let stripS = null;
+  /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
+     only once its mipmaps are made */
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((bm) => inTurn(() => {
-      const t = upload(key, bm);
-      maps[key] = t; dims[key] = [bm.width, bm.height];
+    .then((bm) => {
+      const wh = [bm.width, bm.height];
+      return uploadBanded(gl, bm, { tag: "flight", name: key, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
+    })
+    .then(() => {
+      mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
-    })).catch(() => { /* drawn without it */ });
+    }).catch(() => { /* drawn without it */ });
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null, warmingDocs = null, loaded = null;
   const warmDocs = () => { warm(); return warmingDocs; };
