@@ -27,7 +27,7 @@ void main(){
   float s=uCirc.z/3000.0;
   vec2 p=css-uSunPt;
   float along=exp(-pow(p.x/(150.0*s),2.0)), across=exp(-pow((p.y+1.5*s)/(2.2*s+0.7),2.0));
-  float sh=0.75+0.5*vnoise(vec3(p.x/(9.0*s),uTime*0.7,1.3))*vnoise(vec3(p.x/(23.0*s)+4.0,uTime*0.31,7.1));
+  float sh=0.75+0.5*vnoise(vec3(p.x/(9.0*s),uTime*0.3,1.3))*vnoise(vec3(p.x/(23.0*s)+4.0,uTime*0.13,7.1));
   e+=vec3(1.0,0.66,0.4)*along*across*sh*uFirst*0.7;
   /* the flight's film, without its bloom or grain (the door has its own grain) */
   vec3 c=1.0-exp(-max(e,0.0)*0.35);
@@ -37,9 +37,9 @@ void main(){
   o=vec4(c,cov);
 }`;
 
-/* the ground turns once in this long (s), the clouds drift a degree a minute over it, the sun rises and sinks a
-   little (degrees under the horizon) */
-const TURN = 1500, CLOUD = 1 / 360 / 60, SUN = 0.15;
+/* the ground turns once in this long (s: five hours, all but still), the clouds drift a quarter of a degree a minute
+   over it, the sun rises and sinks a little (degrees under the horizon) */
+const TURN = 18000, CLOUD = 1 / 360 / 240, SUN = 0.15;
 /* the air's own light, as a share of the flight's: the door's glows beneath already carry most of it */
 const AIR = 0.28;
 
@@ -118,7 +118,7 @@ export function liveDoor(world) {
   function draw() {
     if (!prog) return;
     const t = reduced ? 0 : clock;
-    const cam = doorCamera(SUN + (reduced ? 0 : 0.03 * Math.sin((t / 47) * 6.2832) + 0.012 * Math.sin((t / 17) * 6.2832 + 1.3)));
+    const cam = doorCamera(SUN + (reduced ? 0 : 0.03 * Math.sin((t / 110) * 6.2832) + 0.012 * Math.sin((t / 41) * 6.2832 + 1.3)));
     /* the ground turned about the camera's own vertical: the horizon slides to the right, the stars drift to the left */
     const Z = [-cam.B[6], -cam.B[7], -cam.B[8]], a = (t / TURN) * 6.2832, c = Math.cos(a), sn = Math.sin(a), k = 1 - c;
     const M = [
@@ -138,7 +138,7 @@ export function liveDoor(world) {
     gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, 0);
     gl.uniform4f(u.uEuroBox, ...EURO);
     gl.uniform2f(u.uSunPt, W / 2, ly(920));
-    gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 47) * 6.2832 + 3.1416));
+    gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 110) * 6.2832 + 3.1416));
     const bind = (unit, tx, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
     bind(0, maps.lights, u.uLights); bind(1, maps.day, u.uDay); bind(2, maps.clouds, u.uClouds); bind(3, maps.euro, u.uEuro);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
