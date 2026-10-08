@@ -41,9 +41,9 @@ void main(){
   o=vec4(c*a,a);
 }`;
 
-/* the ground turns once in this long (s: five hours, all but still), the clouds drift a quarter of a degree a minute
+/* the ground turns once in this long (s: three hours and twenty minutes, all but still), the clouds drift a quarter of a degree a minute
    over it, the sun rises and sinks a little (degrees under the horizon) */
-const TURN = 18000, CLOUD = 1 / 360 / 240, SUN = 0.15;
+const TURN = 12000, CLOUD = 1 / 360 / 240, SUN = 0.15;
 /* the air's light over the limb, against the flight's: the door has shown its two pictures one over the other
    (dawn-pre under dawn), and their air adds up to this much more (fitted against them) */
 const AIR = 1.4;
