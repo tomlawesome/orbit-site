@@ -11,9 +11,10 @@
  */
 import { chore, note, HOLD_REVEAL } from "./chores.js";
 
-/* a band to start from: about a megabyte (4096 wide: 64 rows; 2048: 128; 1024: 256), never under 16 rows; the first
-   band timed, and the rest halved if it took over 4 ms, doubled if under 1.5 */
-const BYTES = 1 << 20, FEWEST = 16, SLOW = 4, FAST = 1.5;
+/* a band to start from: about a megabyte (4096 wide: 64 rows; 2048: 128; 1024: 256), never under 16 rows; every band
+   timed, and the rows halved after any that took over 4 ms (never doubled: a band doubled after a quick first one
+   took 30-50 ms on the laptop in Edge, and the reveal dropped frames) */
+const BYTES = 1 << 20, FEWEST = 16, SLOW = 4;
 const CUT = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
 /* each texture's bands said in the console only with ?door3d (the console stays short otherwise) */
 const SAY = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
@@ -78,7 +79,8 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
         const end = band.y + band.n;
         next = end < h ? cut(end) : null;
         const ms = await put(band);
-        if (!bands++) { firstBand = ms; rows = ms > SLOW ? Math.min(h, Math.max(FEWEST, rows >> 1)) : ms < FAST ? Math.min(h, rows * 2) : rows; }
+        if (!bands++) firstBand = ms;
+        if (ms > SLOW) rows = Math.max(FEWEST, rows >> 1);
         longest = Math.max(longest, ms);
         if (!next) break;
       }

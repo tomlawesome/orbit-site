@@ -29,7 +29,7 @@ let softN = 0, softMs = 0;
    chores run back to back within this much of a frame (ms) before the next frame is waited for; during the reveal,
    one a frame and no more */
 let frameAt = 0;
-const SHARE = 8;
+const SHARE = 8, REVEAL_SHARE = 4;
 /* ?holdreveal: nothing during the reveal, as before (openSoft is never called, and upload.js puts each picture on the
    GPU whole): for the owner's A/B */
 export const HOLD_REVEAL = (() => { try { return /[?&]holdreveal\b/.test(location.search); } catch { return false; } })();
@@ -96,7 +96,8 @@ function pump() {
          more (it fits in a frame's slack, and the reveal is short) */
       /* (a soft one after the reveal, or hurried: the next at once while the frame's share lasts) */
       const frame = (ms) => requestAnimationFrame(() => { frameAt = performance.now(); setTimeout(pump, ms); });
-      if (job.soft && (open || hurried) && performance.now() - frameAt < SHARE) setTimeout(pump, 0);
+      /* (during the reveal a smaller share, 4 ms: a second band in the frame when the first was quick) */
+      if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(pump, 0);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
     });
