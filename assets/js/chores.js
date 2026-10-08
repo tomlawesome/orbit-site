@@ -3,7 +3,7 @@
  *
  * Readying the journeys is heavy for the page: pictures put on the GPU, shaders made, frames drawn to measure the
  * machine. Done all at once it stutters whatever is moving. So each piece is a chore, queued here and done one at
- * a time, each in a pause between frames, with a few frames' rest between one and the next, and none at all until
+ * a time, a frame apart (no sooner), with a few frames' rest between one and the next, and none at all until
  * the painted part of the door's reveal is done (open). The network is not a chore: pictures are fetched (and decoded) as soon
  * as they are asked for, off the page's own thread; only what touches the page or the GPU waits its turn.
  *
@@ -18,7 +18,7 @@
 const queue = [];
 let open = false, compiling = false, running = false, want = null, until = 0, wake = 0, started = 0, openedAt = 0;
 /* where the chores' time goes (noteChores): waiting for an idle moment, running, and the first one's start */
-let waited = 0, ran = 0, firstAt = 0;
+let waited = 0, ran = 0, firstAt = 0, empty = 0, emptyAt = 0;
 
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
@@ -33,8 +33,9 @@ export const COMPILES_ASIDE = (() => {
     const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return ok;
   } catch { return true; }
 })();
-/* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
-const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 120 }) : setTimeout(fn, 30));
+/* (each chore used to wait for an idle moment, requestIdleCallback with a 120 ms timeout: while the door moves neither
+   browser calls one, so each waited the whole 120 ms. Measured on the laptop, 8 October: 1.6 s of waiting in Firefox
+   and 1.3 s in Edge before the flight was ready. Now a chore starts a frame after the last, and no sooner) */
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
    freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
    (a visitor can do nothing until one is ready), then the live door (door3d.js: its picture is already on screen),
@@ -69,17 +70,18 @@ function pump() {
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
-      running = false; ran += performance.now() - t0;
+      running = false; ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
          so nothing heavy sits right beside them); hurried, still a frame */
       if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.tag === "measure" ? job.rest : Math.min(job.rest, 20)));
     });
   };
-  if (hurried) setTimeout(run, 0); else idle(run);
+  setTimeout(run, 0);
 }
 
 /** queue a piece of work for a journey (tag); resolves with what it returns (or what its promise resolves to) */
 export function chore(fn, rest = 60, tag = "") {
+  if (emptyAt) { empty += performance.now() - emptyAt; emptyAt = 0; }
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
 /* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
@@ -123,10 +125,11 @@ export function fetchOnce(url) {
 }
 
 /** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as
-    running), waiting for an idle moment to start (idle), and the rest (the rests between, and nothing queued) */
+    running), waiting to start (a frame, or the opening a journey is given), the queue empty (nothing to do: the
+    pictures still coming, or decoding), and the rests between */
 export function noteChores(when) {
   const wall = firstAt ? performance.now() - firstAt : 0;
-  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms for idle, ${Math.round(Math.max(0, wall - ran - waited))} ms resting or empty, over ${Math.round(wall)}`);
+  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - empty))} ms, over ${Math.round(wall)}`);
 }
 /* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went) */

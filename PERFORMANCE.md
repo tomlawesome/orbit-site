@@ -362,39 +362,19 @@ Tried, October 2026:
 - Seen on the background path: the galaxy compiled after the door was live (13.3 s against 8.8 s). It still came
   before the door's own lean measure (14.5 s), because `quiet()` waits for the chore queue to be empty.
 
-## Rolled loops (8 October 2026)
+## Rolled loops (8 October 2026): tried, measured, taken out
 
-- Why, measured on the laptop (4700U, Firefox 157 and Edge 154, both Direct3D through ANGLE; the tests page):
-  - A trivial program compiles in 8-13 ms. The fixed cost of a program is next to nothing.
-  - The 2k-character probe (capability.js `PROBE`: a 16-step march with a 4-octave noise inside) compiles in 315 ms.
-    The same shader with a uniform `uZ`, always 0, added to each loop's count (`i<16+uZ`, `i<4+uZ`; the tests'
-    `PROBE_ROLLED`) compiles in 129 ms, in both browsers. It draws at the same speed (11.3 against 11.7 ms a frame
-    at 512x512).
-  - So Direct3D's compiler unrolls every loop whose count it can see, and that is where the big shaders' compile
-    time goes. Before this change: the door's rich Earth 770 ms, the flight's rich head 998 ms, the flight's whole
-    scene several seconds on that machine. This corrects the premise of "Fewer programs, same picture": the count of
-    programs was the cost only for ~10 ms each, and for the contention in the background.
-- What changed: every fixed-count loop in every shader counts to `N+uZ`. `uniform int uZ;` is declared once per
-  program and never set (0 after linking, by the WebGL spec), so the compiler cannot know the count.
-  - voyage.js: `uZ` with the scene's common uniforms, so the flight's `SCENE`, `OVER`, `OVER_RICH` and the door's
-    programs (door3d.js, through `sceneHead`) all have it; and in `GAL`. 14 loops: fbm3's 5, the stars' 3,
-    ignite's 64, the streaks' 4x2x2, the air's 22 and the low air's 64, the limb's 2, the nebula's 2, the moon's 12,
-    the star's 2 and 3, the galaxy's 52. `POST`, `STARV` and `STARF` have no loops and are unchanged.
-  - world.js: `uZ` in `NOISE` (so in `RENDER` and `SKY`, which both include it) and in `POST`. 8 loops: fbm's and
-    ridged's 12 (their `if(i>=oct)break;` kept), the stars' 4, the dust's 30, the moons' 2, the haze's `N`, the
-    film's blur 8.
-  - door3d.js and planets3d.js have no loops of their own. capability.js's `PROBE` is left as it is: it is the
-    measured reference, and the tests' `PROBE_ROLLED` is its rolled twin.
-  - No loop body reads a texture with implicit derivatives behind a break on a varying condition (the Earth reads
-    with `textureGrad` and `textureLod`, the galaxy's march reads no texture), so no read was changed. The loops
-    with a varying break or continue: ignite's (continue), the streaks' (continue), the air's 22 and the low air's
-    64, the limb's 2, the galaxy's 52; in world.js the dust's (`t0>tMax`) and the moons'. The film's blur reads
-    `texture()` but has no break, and its `if` is on a uniform.
-  - tests/t-compile.js compiles three real programs whole after the rest: the flight's rush (`SCENE`), the world's
-    render (`RENDER`, the HDR one, with world.js's own vertex shader) and the docs' galaxy (`GAL`). voyage.js exports
-    `SOURCES`, world.js `RENDER_SRC` and `RENDER_VERT`; common.js's `program()` takes an optional `vert`.
-- Not yet measured on Direct3D with the real shaders: the laptop's next tests run says what the site's own programs
-  gain.
+- The probe (capability.js `PROBE`, a 16-step march with a 4-octave noise inside) compiles in 315 ms on the laptop
+  (Firefox and Edge, Direct3D) and 129 ms with a uniform that is always 0 in each loop's count (the tests'
+  `PROBE_ROLLED`), drawing at the same speed; a trivial program compiles in 8-13 ms. On that, every fixed-count loop
+  in voyage.js and world.js was given the same `+uZ` (24 loops).
+- Measured the same evening, against the unchanged probe in the same run (the laptop ran ~35% faster that run, so
+  absolute times mislead): the rich door went from 2.4x the probe to 2.5x, the flight's rich head from 3.2x to 3.0x,
+  the lean door from 1.4x to 1.7x; Edge the same. No gain on the real shaders: their cost is not in their loops (the
+  probe's is), which is what "Uniform loop bounds (path 2)" above had found. Taken out the same evening. Kept: the
+  tests' trivial and rolled-probe cases, and the real flight scene, world render and galaxy in the compile test.
+- What this leaves as true: the fixed cost of a program is ~10 ms; a big shader costs more than its parts (the
+  effects table above); on a slow compiler the lever is less code compiled before the door.
 
 ## The plan from here (8 October 2026)
 
@@ -405,10 +385,11 @@ CAPABILITIES.md corrected whenever a measurement overturns a belief (as the loop
 Targets, laptop, Firefox, first visit: the ring 4 s or under (10 s today); the ways in open at 7 s or under (15 s);
 Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 
-1. **Rolled loops** (in). Gate: the compile test on the laptop, both browsers. Expected: the 6.8 s of compiles to ~3 s.
-2. **Chore waiting.** The `chores at … ready` line (chores.js: noteChores) says how long the chores ran, waited for an
-   idle moment, and rested. If the waiting is the 2 s under the ring and much of the 3 s after the reveal that the
-   laptop's timeline shows, run them back to back with one frame between, as a click already does. Expected 2-4 s.
+1. **Rolled loops.** Tried and measured the same day: no gain on the real shaders (above). Taken out.
+2. **Chore waiting** (in). The `chores at … ready` line (chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
+   (Edge) of waiting for an idle moment on the laptop before the flight was ready, the full 120 ms timeout each time.
+   Chores now start a frame after the last. The line still prints: the queue's empty time (pictures still coming, or
+   decoding) and its rests are told apart, for the next look.
 3. **Uploads on Firefox.** Each map 25-95 ms on the page thread plus its mipmaps, and the door and the flight upload
    the same maps twice. Count and total first; then upload once where both need a map, mipmaps only where a map is
    minified, the smaller tier on weak machines. Expected 1-2 s, and fewer stutters after the reveal.
