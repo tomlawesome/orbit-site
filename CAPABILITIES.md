@@ -80,6 +80,36 @@ normal door (`orbit · …`). Devices to hand: the desktop (Edge, Firefox), the 
 no WebKit desktop of our own (a friend's Mac can be asked). The probe page must work on a phone, and its report must
 be short enough to paste from one: a friend with a Mac should be able to open the link and send back the text.
 
+## Measured with the tests (8 October 2026)
+
+| | Desktop RTX 3080 (over Remote Desktop: 1920x1080 at 1.25x, reduced motion on) | Laptop 4700U, integrated Radeon, 1920x1080 at 1.25x |
+|---|---|---|
+| Compile, Firefox (each a stall): probe 2k / door lean 16k / door rich / flight head 28k / flight rich | 199 / 279 / 439 / 346 / 537 ms | 317 / 457 / 772 / 583 / 934 ms |
+| Compile, Edge (background, same programs) | 200 / 286 / 450 / 398 / 543 ms | 308 / 421 / 1039 / 777 / 1393 ms |
+| Draw at this band (0.83 Mpx): probe ms per Mpx / door lean / door rich | 9-13 / 1.7-2.0 / 4.7-4.8 ms | 40-48 / 9.6-12.7 / 22-24 ms |
+| Upload 4096x2048 with mipmaps | ~50 ms | ~70-130 ms |
+| Stall of the page for the rich compile, Firefox | 445 ms | 520 ms |
+
+**The finding: a program costs ~200-300 ms to compile whatever its size.** The 2k-character probe takes 199 ms on
+the desktop and 317 on the laptop; the 16k door shader 279/457; the 28k flight head 346/583. Size adds a little
+(about 0.01 ms a character, more for loops); the count of programs is the cost. That is where the Firefox totals
+came from: the flight is five programs (scene, overlay, two bloom passes, film), the install world several, the
+live door four (lean, rich, the cloud field pass, the glow pass) and the planets compile their one program twice
+(two canvases). Edge pays the same durations in the background.
+
+**What it implies, before any ladder:** fewer programs, same picture.
+- The flight's two bloom passes and film become one program with a mode switch (saves two compiles).
+- The live door compiles rich only, when the probe says rich fits; lean only otherwise (saves one).
+- The cloud field and glow passes become one program (saves one), or are folded into the main pass.
+- The planets compile once: one context, the far half blitted (saves one).
+- Programs the first visit never needs (the docs' galaxy, the flight's rich overlay where the door is still) are
+  compiled on demand, after the ring.
+On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.
+
+**Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx, rich ≈ 0.45-0.55; a compile ≈ the
+probe's compile time plus ~0.01 ms a character (loop-heavy code ~1.5x). Firefox's GPU name is made up ("GTX 980",
+"R9 200 Series"); Edge's is real.
+
 ## Open questions
 
 - The exact ring budget (how many seconds of compiles a visitor will wait on a first visit before the door): 2.5 s?
