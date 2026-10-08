@@ -35,6 +35,7 @@
 import { chore, fetchOnce, note, quiet, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { sceneHead, PASS_SWITCH, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 import { probe, theDoorWeight, BUDGET } from "./capability.js";
+import { uploadBanded } from "./upload.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
 const LOADED = performance.now();
@@ -161,43 +162,55 @@ export function liveDoor(world) {
   /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept); mode: the weights chosen (the
      probe's: capability.js); rich: the rich program, once there is one (its passes draw the fields and the glow) */
   let prog = null, sunTex = null, glowT = null, mode = "both", rich = null;
-  const maps = {}, dims = {}, fields = {};
+  /* mipped: the maps whose mipmaps are made too (a field is made from a map only then) */
+  const maps = {}, dims = {}, fields = {}, mipped = new Set();
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* a map not (yet) there is drawn without: black in its place, and its flag down (uHas, uHasN) */
   const blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, blank);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-  /* a map put on the GPU (each as load does it; the sharper strip, too: sharpStrip) */
+  /* a map's own parameters: its wrap, and (with its mipmaps) the anisotropy, as the ground is seen almost edge on:
+     without it the cities blur into the coarsest maps */
+  const wrapOf = (key) => (g) => {
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, BOXED.includes(key) ? g.CLAMP_TO_EDGE : g.REPEAT);
+    g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+  };
+  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
+  /* the sharper strip, put on the GPU whole (sharpStrip: in every context in the one chore, its fade started on the
+     same clock; the last chore of all) */
   const upload = (key, bm) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    /* the ground is seen almost edge on: without this the cities blur into the coarsest maps */
-    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK);
+    sharper(gl);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    wrapOf(key)(gl);
     return t;
   };
   /* the rich weight's fields, one a clouds map (voyage.js: cloudField), drawn by the rich program: made as soon as the
      map and the program are both there; and the cities' glow (cityGlow), once every map has come */
   const fieldOf = (key) => {
-    if (!rich || !maps[key] || fields[key]) return;
+    if (!rich || !maps[key] || !mipped.has(key) || fields[key]) return;
     try { fields[key] = cloudField(gl, rich, maps[key], ...dims[key], key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
   };
   const richMaps = () => {
     fieldOf("clouds"); fieldOf("cloudsN");
     if (rich && !glowT && maps.lights) glowT = cityGlow(gl, rich, maps.lights, ...dims.lights, maps.lightsN, blank);
   };
+  /* each map put on the GPU a band at a time (upload.js: soft chores), its mipmaps after; drawable from its last band
+     (its first level alone, LINEAR: the canvas is not on the page until every map is in, mipmaps and all) */
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((bm) => chore(() => {
-      const t = upload(key, bm);
-      maps[key] = t; dims[key] = [bm.width, bm.height];
+    .then((bm) => {
+      const wh = [bm.width, bm.height];
+      return uploadBanded(gl, bm, { tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
+    })
+    .then(() => {
+      mipped.add(key);
       /* a clouds map's slab field, made with it if the rich program is already there (else with it: richMaps) */
       if (key === "clouds" || key === "cloudsN") fieldOf(key);
-    }, 60, "door"))
+    })
     .catch(() => { /* drawn without it */ });
   const vao = gl.createVertexArray();
 

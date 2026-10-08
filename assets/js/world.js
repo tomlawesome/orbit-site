@@ -13,7 +13,8 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { chore, fetchOnce, linked } from "./chores.js";
+import { fetchOnce, linked } from "./chores.js";
+import { uploadBanded } from "./upload.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -570,8 +571,6 @@ export function createWorld(canvas, opts = {}) {
     const poll = () => (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
     poll();
   });
-  /* each picture is put on the GPU as a chore of its own (chores.js), one after another */
-  const inTurn = (fn) => chore(fn, 60, opts.tag);
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -587,11 +586,19 @@ export function createWorld(canvas, opts = {}) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     return t;
   };
+  const sharp = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
   const mip = (t) => {
     gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    sharp(gl);
   };
+  /* a picture put on the GPU a band at a time (upload.js: soft chores, which may run during the reveal), with the
+     parameters tex gives it, its mipmaps after (mip's); resolves once they are made. Nothing is drawn with it before
+     then: the world is drawn only once it is baked */
+  const banded = (img, name, wrapS = gl.REPEAT) => uploadBanded(gl, img, {
+    internal: gl.SRGB8_ALPHA8, tag: opts.tag, name: `${opts.tag} ${name}`, after: sharp,
+    setup: (g) => { g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, wrapS); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE); },
+  });
   const fb = (t) => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
 
   /* the textures: the planet's map (loaded), the galaxy (baked), the rings (loaded; drawn until they come) */
@@ -599,7 +606,7 @@ export function createWorld(canvas, opts = {}) {
   let skyT = null, skyF = null;
   /* the drawn rings, no wider than this GPU's textures can be */
   const RN = Math.min(8192, gl.getParameter(gl.MAX_TEXTURE_SIZE));
-  const ringT = tex(RN, 1, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, ringProfile(RN), gl.CLAMP_TO_EDGE);
+  let ringT = tex(RN, 1, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, ringProfile(RN), gl.CLAMP_TO_EDGE);
   mip(ringT);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
@@ -616,25 +623,22 @@ export function createWorld(canvas, opts = {}) {
   /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
   const loadMap = fetchOnce(MAP)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => {
-      albT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(albT);
-      SW = img.width; SH = img.height; img.close?.();
-    }));
+    .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); });
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const loadRings = fetchOnce(RINGS)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
-    .then((img) => inTurn(() => {
-      gl.bindTexture(gl.TEXTURE_2D, ringT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(ringT); img.close?.();
-    }), (e) => console.warn("orbit: the rings are drawn, not photographed", e));
+    /* (in a texture of its own, the drawn rings' let go once it is in) */
+    .then((img) => banded(img, "rings", gl.CLAMP_TO_EDGE).then((t) => { gl.deleteTexture(ringT); ringT = t; }),
+      (e) => console.warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
   const loadMoon = fetchOnce(MOON)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => { moonT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(moonT); img.close?.(); }),
+    .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
   let galT = null;
   const loadGalaxy = fetchOnce(GALAXY)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => inTurn(() => { galT = tex(img.width, img.height, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); mip(galT); img.close?.(); }),
+    .then((img) => banded(img, "galaxy").then((t) => { galT = t; }),
       (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
   /* without the photograph: the galaxy painted, a strip a frame */
   const jobs = [];
