@@ -56,7 +56,7 @@ No browser is named in the rules. The names only explain where a machine lands.
 | Desktop, RTX 3080 | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 2, compiles under the ring |
 | Laptop 14", Ryzen 7 4700U with integrated Radeon, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 0 or 1 without the world planets: decided by the probe before the uploads |
 | Laptop, same | Firefox | install 1.6 s, flight 3.1 s, door 0.4 + 0.7 s, planets 0.24, galaxy 0.18: 6.2 s of compiles, each a stall; lean 11 ms, rich 23 ms, world planets 11.9 ms (halved) | 0 |
-| Phone (WebKit) | Safari | not yet measured | ? |
+| iPhone 13 Pro Max, 428x926 at 3x (drawn at 2x) | Safari 26 | WebGL2, float targets, compiles in background (~145 ms each); lean 5 ms, rich 6 ms at 0.48 Mpx; uploads in single-digit ms; frames at 30 a second during the test (Low Power Mode?) | 2 |
 
 Readiness measured on 8 October 2026 (cold, private window), after the ordering work: desktop Edge ways in 5.3 s,
 button 6.0 s; desktop Firefox 8.7 s / 9.3 s (before compiles were moved under the ring); laptop Edge 8.6 s / 9.5 s;
