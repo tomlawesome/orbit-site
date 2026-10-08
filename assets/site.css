@@ -200,8 +200,11 @@ body.loading #door .lockup .glyph .runner{opacity:1;animation:runner 1.8s cubic-
 @keyframes draw-ring{from{stroke-dasharray:100 100;stroke-dashoffset:100;animation-timing-function:cubic-bezier(.45,0,.2,1)}99.9%{stroke-dasharray:100 100;stroke-dashoffset:0}to{stroke-dasharray:none;stroke-dashoffset:0}}
 #door .lockup .name{opacity:0;transform:translateY(8px);filter:blur(6px);transition:opacity 1.1s ease .7s,transform 1.3s cubic-bezier(.2,.7,.2,1) .7s,filter 1.1s ease .7s}
 body.lit #door .lockup .name{opacity:1;transform:none;filter:none}
-#door .lockup .planets{opacity:0;transition:opacity 1.3s ease 1.6s}
-body.lit #door .lockup .planets{opacity:1}
+/* the planets come in by their pictures, never by their container or their anchor: an element mid-fade is flattened
+   with everything inside it into one layer under the ring, and the near planets and the gold one would come up
+   behind the ring and jump in front of it as the fade ended */
+#door .lockup .planet .body,#door .lockup .trdot{opacity:0;transition:opacity 1.3s ease 1.6s}
+body.lit #door .lockup .planet .body,body.lit #door .lockup .trdot{opacity:1}
 #door .dsky{opacity:0;transition:opacity 1.2s ease}
 #door.shown .dsky{opacity:1}
 .loginchrome .lockup .glyph{grid-area:1/1;line-height:0}
@@ -665,7 +668,7 @@ body.dispersing .transport{opacity:0}
 .planet:hover .body,.planet:focus-visible .body{transform:translate(-50%,-50%) scale(1.24);box-shadow:0 0 6px var(--c)}
 .planet:hover .halo,.planet:focus-visible .halo{border-color:var(--c)}
 .planet:hover .tag,.planet:focus-visible .tag{color:var(--c)}
-body.launching #door .planets,body.showwarp #door .planets{opacity:0;transition:opacity .3s}
+body.launching #door .planet .body,body.showwarp #door .planet .body,body.launching #door .planet .tag,body.showwarp #door .planet .tag,body.launching #door .trdot,body.showwarp #door .trdot{opacity:0;transition:opacity .3s}
 /* the one line beneath the sunrise, and the way it opens */
 
 /* ══ THE LANDINGS: the ring the mark wears, with a section's bodies on it ══ */
@@ -1174,7 +1177,7 @@ body.departing #installpad.formed{z-index:37}
 #installpad.formed .back,#installpad.formed .home,#installpad.formed .doorfoot,#installpad.formed .scrim{opacity:1;transition:opacity .9s ease}
 #installpad.forming .orbitgl{transition:none}
 /* while the camera leaves, the door keeps only its sky and its sunrise; the planet that was clicked is the canvas's now */
-body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen),
+body.departing #door .lockup>:not(.planets),body.departing #door .doorfoot,body.departing #door .trdot,body.departing #door .planet:not(.chosen) .body,body.departing #door .planet:not(.chosen) .tag,
 body.departing #door .planet.chosen .tag,body.departing #door .planet.chosen .halo{opacity:0;transition:opacity .7s ease}
 /* the dot holds still, swells and glows as the camera finds it, then gives way to the planet coming up through it */
 body.departing #door .planet.chosen .spin{animation-play-state:paused}
