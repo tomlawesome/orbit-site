@@ -133,3 +133,15 @@ Tried, October 2026:
 - A custom domain behind something like Cloudflare would add brotli, HTTP/3 and control over cache headers.
   - GitHub fixes `max-age` at 10 minutes. `sw.js` already keeps pictures for 36 hours on returning visits.
 - Worth doing for the address and for control, not for a noticeable speed change.
+
+## The live door's Earth with dawn.py's clouds (8 October 2026, `?door3d` only, and the flight's Earth)
+
+- The Earth (voyage.js, shared by the door and the flight) now has dawn.py's cloud slab marched through the low air
+  (under 15 km: a step every 6 km on rays that reach the ground, at most 40; every 4 km on rays that skim the limb,
+  at most 160), the sun's light read from a table made as dawn.py makes it (sunTable, about 20–30 ms of script once),
+  and finer maps about the door's view (lights, clouds, land).
+- Measured in headless Chromium (SwiftShader) at 1440×900, deviceScaleFactor 2, the door's program alone
+  (2880×648 drawn): about 2.5 s a frame, against 0.57 s for the same drawing before the clouds (and 0.15 s for the
+  committed door, which drew 1633×367). Most of it is the low air's march with the clouds in it; SwiftShader runs
+  the clouds' branch on every step whether or not a pixel needs it, so on a GPU the share is smaller. Not yet
+  measured on a GPU; the door's clock asks for twenty frames a second.
