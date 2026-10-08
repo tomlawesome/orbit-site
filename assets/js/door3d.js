@@ -10,9 +10,12 @@
  * its glows (which stay as they are): where the Earth is, it covers them; above the limb its air is added to them.
  * One pass, no targets, a slow clock (the motion is slow: twenty frames a second carries it), and nothing at all
  * while the door is not shown. Made as a chore (chores.js), after the door's reveal; the picture stays until then.
+ *
+ * Drawn at the screen's own density (to 2×), then measured once, after the first frame: if a frame takes more than
+ * 40 ms here (20 a second, with room), the density comes down by the square root of the excess (to half), and stays.
  */
 import { chore, fetchOnce, note } from "./chores.js";
-import { SCENE_HEAD, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture } from "./voyage.js";
+import { SCENE_HEAD, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip } from "./voyage.js";
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -56,8 +59,10 @@ export function liveDoor(world) {
   if (!gl) return null;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
-  /* the pictures down the wire at once; only putting them on the GPU waits its turn */
-  const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN"];
+  /* the pictures down the wire at once; only putting them on the GPU waits its turn. The sharpest lights at the
+     sharpness this screen shows (theStrip: the flight then draws the same) */
+  const strip = theStrip();
+  const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN", "lightsS"];
   for (const k of keys) fetchOnce(TEX[k]).catch(() => {});
 
   const shader = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
@@ -105,14 +110,15 @@ export function liveDoor(world) {
   const vao = gl.createVertexArray();
 
   /* the band the Earth fills: the frame's y 640..1000 (as the picture is laid), at the door's own scale */
-  let W = 0, H = 0, s = 1, top = 0, px = 1;
+  /* scale: the share of the screen's density drawn; 1 until the one measure (measure, below) says otherwise */
+  let W = 0, H = 0, s = 1, top = 0, px = 1, scale = 1;
   function resize() {
     const r = world.getBoundingClientRect();
     W = r.width || innerWidth; H = r.height || innerHeight; s = Math.max(W / 1600, H / 1000);
     top = Math.max(0, H - 360 * s);
-    const bh = H - top, dpr = Math.min(devicePixelRatio || 1, 2);
-    /* at the screen's own density (the cities are points, the limb a line), up to about 3 million pixels */
-    px = Math.min(dpr, Math.sqrt(3e6 / Math.max(1, W * bh)));
+    const bh = H - top;
+    /* at the screen's own density (the cities are points, the limb a line), unless the machine cannot keep up */
+    px = Math.min(devicePixelRatio || 1, 2) * scale;
     canvas.width = Math.max(1, Math.round(W * px)); canvas.height = Math.max(1, Math.round(bh * px));
     Object.assign(canvas.style, { top: `${top}px`, height: `${bh}px`, bottom: "auto" });
     dirty = true;
@@ -149,13 +155,14 @@ export function liveDoor(world) {
     gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, 0);
     gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
     gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
-    gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0); gl.uniform1f(u.uAniso, anisoK);
+    gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
+    gl.uniform4f(u.uStripBox, ...strip.box); gl.uniform1f(u.uHasS, maps.lightsS ? 1 : 0);
     gl.uniform2f(u.uSunPt, W / 2, ly(920)); gl.uniform2f(u.uFade, ly(640), 60 * s);
     gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 110) * 6.2832 + 3.1416));
     const bind = (unit, tx, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
     bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
     bind(3, maps.euro || blank, u.uEuro); bind(4, maps.lightsN || blank, u.uLightsN); bind(5, maps.cloudsN || blank, u.uCloudsN);
-    bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT);
+    bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT); bind(8, maps.lightsS || blank, u.uLightsS);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     dirty = false;
   }
@@ -173,9 +180,23 @@ export function liveDoor(world) {
   }
   const wake = () => { if (!raf && prog) raf = requestAnimationFrame(tick); };
 
+  /* the one measure, after the first frame: three frames, each waited for (a pixel read back, as voyage.js's calibrate
+     does), the last two timed (the first may still be finishing the driver's work); over budget, drawn coarser, once */
+  const BUDGET = 40;
+  function measure() {
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    try {
+      const ms = [];
+      for (let i = 0; i < 3; i++) { const t0 = performance.now(); dirty = true; draw(); sync(); ms.push(performance.now() - t0); }
+      const mean = (ms[1] + ms[2]) / 2;
+      if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); }
+      note(`door: ${Math.round(mean)} ms a frame, drawn at ${Math.round(px * 100) / 100}×`, since);
+    } catch { /* drawn as it is */ }
+  }
+
   /* made in turn, after the door's reveal: the program, then each map; shown once the first whole frame is drawn */
   const ready = chore(() => { const p = make(); return compiled(p).then(() => p); }, 60, "door")
-    .then((p) => chore(() => finish(p), 60, "door"))
+    .then((p) => chore(() => { finish(p); note("door: shaders compiled", since); }, 60, "door"))
     .then(() => Promise.all(keys.map(load)))
     .then(() => chore(() => {
       world.querySelector(".wl.earth")?.after(canvas);
@@ -185,6 +206,7 @@ export function liveDoor(world) {
       note("door: live", since);
       wake();
     }, 60, "door"))
+    .then(() => chore(measure, 60, "door"))
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });
   document.addEventListener("visibilitychange", wake);

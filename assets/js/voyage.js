@@ -29,6 +29,21 @@ export const TEX = {
   /* finer, about where the door looks (NEAR) */
   lightsN: IMG("door/lights-near.webp"), cloudsN: IMG("door/clouds-near.webp"), dayN: IMG("door/land-near.webp"),
 };
+/* the live door, while it is tried (?door3d; the same test main.js makes): only then is the strip below drawn */
+export const DOOR3D = /[?&]door3d\b/.test(location.search);
+/* the sharpest lights, the 500 m Black Marble over the door's own ground (tools/doorcrop.py), at the sharpness the
+   device can show: its band's width in device pixels (D) picks one of three, so a small screen fetches 0.6 MB, not 1.8 */
+export function lightsStrip(W, dpr) {
+  const D = W * Math.min(dpr, 2), ppd = D < 1600 ? 120 : D < 2600 ? 180 : 240;
+  return { url: IMG(`door/lights-strip-${ppd}.webp`), box: [0, 20, 40, 56], ppd };
+}
+/* chosen once a page view, by whichever (the door or the flight) loads its maps first, and kept: the two draw the same
+   strip, so the click's handoff from one to the other does not change the cities */
+let strip = null;
+export function theStrip() {
+  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); TEX.lightsS = strip.url; }
+  return strip;
+}
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
@@ -36,7 +51,7 @@ export const EURO = [2, 24, 38, 55];
 /* the near maps (lights, clouds, land) cover lon -25..45, lat 28..66: all the door's ground can turn to in a while */
 export const NEAR = [-25, 45, 28, 66];
 /* the maps that cover a box, not the whole Earth: they do not wrap */
-export const BOXED = ["euro", "lightsN", "cloudsN", "dayN"];
+export const BOXED = ["euro", "lightsN", "cloudsN", "dayN", "lightsS"];
 const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /* the sun's light through the air, as tools/dawn.py tables it: from a height (0..110 km, finer low down) under the
@@ -86,8 +101,11 @@ uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSu
 uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
 /* the finer maps about where the door looks (lights, clouds, land: which are there, uHasN), the box they cover; the
-   cloud slab's strength (0: none); how far the anisotropic filter reaches (1: there is none) */
-uniform sampler2D uLightsN, uCloudsN, uDayN; uniform vec4 uNearBox, uHasN; uniform float uCloudK, uAniso;
+   cloud slab's strength (0: none) */
+uniform sampler2D uLightsN, uCloudsN, uDayN; uniform vec4 uNearBox, uHasN; uniform float uCloudK;
+/* the sharpest lights, over the door's own ground (lightsStrip; ?door3d only): the box they cover, and whether they
+   are there */
+uniform sampler2D uLightsS; uniform vec4 uStripBox; uniform float uHasS;
 /* the sun's light through the air (sunTable) */
 uniform sampler2D uSunT;
 uniform mat3 uSkyM; uniform float uStarA, uDens;
@@ -222,7 +240,7 @@ vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c
 float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(1.0+g*g-2.0*g*c,1.5)); }
 
 /* the maps come in tiers: the whole Earth; a box about where the door looks, finer (uNearBox: lon0, lon1, lat0, lat1);
-   and, for the lights, Europe, finest (uEuroBox). Each box's map takes over from the one beneath across a margin
+   and, for the lights, Europe, finer (uEuroBox), then the door's own ground, finest (uStripBox). Each box's map takes over from the one beneath across a margin
    inside its edges (degrees), so no seam shows as the ground turns. g is (lon, lat) in degrees */
 const vec4 WORLD=vec4(-180.0,180.0,-90.0,90.0);
 float inBox(vec2 g,vec4 b,float m){ return smoothstep(0.0,m,min(min(g.x-b.x,b.y-g.x),min(g.y-b.z,b.w-g.y))); }
@@ -242,13 +260,17 @@ vec3 crisp(sampler2D t,vec2 uv,vec2 ga,vec2 gb){
   return textureGrad(t,(floor(p)+f+0.5)/sz,ga,gb).rgb;
 }
 vec3 lightsAt(vec2 g,vec2 ga,vec2 gb){
+  float wS=uHasS>0.5?inBox(g,uStripBox,1.0):0.0;
   float wE=uHas.y>0.5?inBox(g,uEuroBox,1.0):0.0, wN=uHasN.x>0.5?inBox(g,uNearBox,2.0):0.0;
   vec3 c=vec3(0.0);
-  if(wE<1.0){
-    if(wN<1.0&&uHas.x>0.5) c=textureGrad(uLights,boxUV(g,WORLD),boxD(ga,WORLD),boxD(gb,WORLD)).rgb;
-    if(wN>0.0) c=mix(c,crisp(uLightsN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)),wN);
+  if(wS<1.0){
+    if(wE<1.0){
+      if(wN<1.0&&uHas.x>0.5) c=textureGrad(uLights,boxUV(g,WORLD),boxD(ga,WORLD),boxD(gb,WORLD)).rgb;
+      if(wN>0.0) c=mix(c,crisp(uLightsN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)),wN);
+    }
+    if(wE>0.0) c=mix(c,crisp(uEuro,boxUV(g,uEuroBox),boxD(ga,uEuroBox),boxD(gb,uEuroBox)),wE);
   }
-  if(wE>0.0) c=mix(c,crisp(uEuro,boxUV(g,uEuroBox),boxD(ga,uEuroBox),boxD(gb,uEuroBox)),wE);
+  if(wS>0.0) c=mix(c,crisp(uLightsS,boxUV(g,uStripBox),boxD(ga,uStripBox),boxD(gb,uStripBox)),wS);
   return pow(c,vec3(2.2));
 }
 vec3 landAt(vec2 g,vec2 ga,vec2 gb){
@@ -292,7 +314,7 @@ vec3 surface(vec3 P,vec3 rd,float w){
   vec2 g=lonlat(Q);
   /* the pixel's footprint (w: its width at this distance, Earth radii), as degrees of (lon, lat), turned with the
      ground: its width across the line of sight, on both axes. Along it the ground is seen slantwise and the footprint
-     is longer, but read so (and gathered by the anisotropic filter, uAniso) the cities smear down the screen; the
+     is longer, but read so (and gathered by the anisotropic filter) the cities smear down the screen; the
      picture reads them point by point, and so is this, as sharp */
   vec3 ac=normalize(cross(rd,P)), al=normalize(rd-dot(rd,P)*P);
   float k=1.0;
@@ -870,14 +892,15 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
     })).catch(() => { /* drawn without it */ });
-  const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null;
   function warm() {
     if (!warming) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
-      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load)])
+      /* the strip only where the door is live (the same one the door draws: theStrip) */
+      if (DOOR3D) theStrip();
+      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN", ...(DOOR3D ? ["lightsS"] : [])].map(load)])
         .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
@@ -1020,7 +1043,8 @@ export function createVoyage(under) {
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
       gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
       gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
-      gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0); gl.uniform1f(u.uAniso, anisoK);
+      gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
+      gl.uniform4f(u.uStripBox, ...(strip ? strip.box : [0, 0, 0, 0])); gl.uniform1f(u.uHasS, DOOR3D && maps.lightsS ? 1 : 0);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
       /* how thick the field is: the door's sparse sky at rest, filling in as the flight gathers speed */
       { const q = Math.min(1, Math.max(0, (Math.abs(s.v) - 0.03) / 0.6)); gl.uniform1f(u.uDens, q * q * (3 - 2 * q)); }
@@ -1045,6 +1069,7 @@ export function createVoyage(under) {
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
       bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
       bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
+      bind(11, (DOOR3D && maps.lightsS) || blank, u.uLightsS);
       /* the docs' flight: the Milky Way, and the constellations lighting */
       const cs = s.cstars || [], n = Math.min(64, cs.length);
       if (n) {
