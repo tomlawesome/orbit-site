@@ -26,21 +26,28 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
-**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, the service worker's precache list against the files that exist), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import-docs` (schedule-only, decision (a)), `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
+**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, the service worker's precache list against the files that exist), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import_docs` (schedule-only, commits to `main`), `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
 
 **Step 2 — import.** Owner creates `ai/orbit-site` with GitLab's GitHub importer (repo, branches, issues, labels). The agent cannot: the importer needs a GitHub token handed to GitLab. Milestone `M1 — Foundation on GitLab` is created on GitLab afterwards (the agent credential cannot create milestones on GitHub).
 
-**Step 3 — owner settings on GitLab.** Default branch `dev`; `dev`, `preview`/`main` protected (decision (b)); pipelines must succeed; merge commits; delete source branch on merge; a push mirror to `ssh://git@github.com/tomlawesome/orbit-site.git`, protected branches only, keep divergent refs, with the GitLab-generated key added on GitHub as a write deploy key (as orbit-launcher). Pipeline schedules: nightly `IMPORT_DOCS=true`, weekly `RENOVATE=true`; `RENOVATE_TOKEN` Masked + Protected.
+**Step 3 — owner settings on GitLab.** Default branch `dev`; `dev` and `main` protected; pipelines must succeed; merge commits; delete source branch on merge; a push mirror to `ssh://git@github.com/tomlawesome/orbit-site.git`, protected branches only, keep divergent refs, with the GitLab-generated key added on GitHub as a write deploy key (as orbit-launcher). Pipeline schedules: nightly `IMPORT_DOCS=true` on `main`, weekly `RENOVATE=true` on `dev`. Variables, Masked + Protected: `RENOVATE_TOKEN`; `ORBIT_SITE_PUSH_TOKEN`, a project access token (role Developer, scope `write_repository`) whose bot user is added to `main`'s allowed-to-push list.
 
 **Step 4 — disable the reverse writer, then prove the mirror.** Delete `.github/workflows/import-docs.yml` in the first GitLab MR (the GitLab job replaces it), merge something small, watch it reach GitHub and Pages redeploy.
 
 **Step 5 — prune GitHub.** Issues off on GitHub (tracker is GitLab), `codeql.yml` added (`javascript`, `actions`), repository settings per the new-project skill's GitHub reference. Update orbit's `AGENTS.md` line about orbit-site (sibling project: report, do not edit from here).
 
-## Decisions for the owner
+## Decisions (owner, 2026-10-08)
 
-- **(a) Where the nightly docs import commits.** Options: `dev`, so imported docs go live at the next promotion; or `main` directly through a project access token the owner allows to push, so docs stay nightly-fresh as today. The second keeps today's behaviour but gives `main` a second committer inside GitLab; it is still one host, so the one-writer rule holds.
-- **(b) Branch flow.** The shared `dev -> preview -> main`, or `dev -> main` as orbit-base-image does. `preview` would only mean something if it deployed somewhere a human looks at before `main`; GitHub Pages serves one branch.
-- **(c) Licence.** None in the repo. Orbit is AGPL-3.0; the site carries NASA/ESA imagery under their own terms (see #1).
+- **(a) The import commits to `main`** through a project access token the owner allows to push (1b): docs stay nightly-fresh. One host, so one writer.
+- **(b) `dev -> main`, no `preview`** (2b): Pages serves one branch; a `preview` would deploy nowhere.
+- **(c) A noncommercial licence of the owner's own** that leaves third-party terms intact (3): `LICENSE`, adapted from birdcage's, with the NASA and ESA/Gaia terms named. **To be read and ratified by the owner**; the draft is an agent's.
+- **(d) The GitHub token stays narrow** (4, recommendation accepted by default): after the import nothing is filed or pushed on GitHub by hand, so orbit-site is not added to the agent's GitHub token. This plan and the step-1 branch go to GitLab after the import.
+
+### As they were put
+
+- (a) Where the nightly docs import commits. Options: `dev`, so imported docs go live at the next promotion; or `main` directly through a project access token the owner allows to push, so docs stay nightly-fresh as today. The second keeps today's behaviour but gives `main` a second committer inside GitLab; it is still one host, so the one-writer rule holds.
+- (b) Branch flow. The shared `dev -> preview -> main`, or `dev -> main` as orbit-base-image does. `preview` would only mean something if it deployed somewhere a human looks at before `main`; GitHub Pages serves one branch.
+- (c) Licence. None in the repo. Orbit is AGPL-3.0; the site carries NASA/ESA imagery under their own terms (see #1).
 
 ## Done when
 

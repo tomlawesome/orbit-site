@@ -1,0 +1,94 @@
+Orbit Site Noncommercial Licence, version 1.0
+
+Copyright (c) 2026 Tom Lawson. All rights reserved.
+
+This is a published website whose source is visible, not open source.
+Permission is to view the site as published, and nothing more, except as
+section 1 says. The pictures and the text it carries from other people
+keep their own terms (section 4).
+
+
+1. WHAT YOU MAY DO
+
+Anyone may visit the site as published and read it, free of charge.
+
+An individual person may make the copies their browser needs to do so,
+and may read the source to see how the site is made.
+
+
+2. WHAT YOU MAY NOT DO
+
+You may not:
+
+  (a) copy, modify, adapt, translate or build anything derived from the
+      site's own code, design, text or pictures;
+
+  (b) publish, host, mirror, distribute, sell or otherwise supply the
+      site or any part of it to anyone else, whether modified or not;
+
+  (c) use the site or any part of it in a product or a service, paid or
+      unpaid;
+
+  (d) sublicense it, or pass any permission to anyone else;
+
+  (e) remove or alter this licence, the copyright notice or a credit.
+
+A company, firm, partnership or other business, a government or any part
+of one, and any organisation funded by the state, have no permission
+under section 1(b) at all, whether or not they charge anyone for
+anything. A registered charity is treated as an individual person.
+
+
+3. PARTS THAT CARRY THEIR OWN TERMS
+
+The site carries pictures and text licensed by their own authors under
+their own terms, which govern those parts; several allow more than this
+licence does. Nothing here restricts any right you hold under them.
+
+  - Imagery from NASA (the Black Marble and Blue Marble, Cassini's
+    Jupiter and Saturn, the LRO/LOLA Moon, the Deep Star Maps) is in the
+    public domain, with credit to NASA, NASA/JPL/Space Science Institute
+    and NASA's Scientific Visualization Studio as README.md gives it.
+  - The Deep Star Maps include Gaia DR2 data (ESA/Gaia/DPAC), licensed
+    CC BY-NC 3.0 IGO: https://creativecommons.org/licenses/by-nc/3.0/igo/
+  - The docs under assets/docs/ are imported from the Orbit repositories
+    and carry Orbit's licence (AGPL-3.0).
+  - The import and test tools depend on marked (MIT), sharp (Apache-2.0)
+    and playwright (Apache-2.0); none of them is served to a visitor.
+
+Where a part's terms entitle you to its source, ask the copyright holder
+and you will be given it.
+
+
+4. COMMERCIAL USE, AND EVERYTHING ELSE
+
+Licences to copy, modify, host or build on the site are available. Ask
+the copyright holder.
+
+
+5. ENDING
+
+Your permission ends automatically if you break this licence. It ends
+immediately, without notice, and you must stop and destroy your copies.
+The copyright holder may grant permission again in writing.
+
+
+6. NO WARRANTY
+
+The site is provided "as is", without warranty of any kind, express or
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement.
+
+
+7. NO LIABILITY
+
+In no event shall the copyright holder be liable for any claim, damages
+or other liability, whether in an action of contract, tort or otherwise,
+arising from, out of or in connection with the site or its use.
+
+
+8. NO OTHER RIGHTS
+
+This licence grants no rights other than those written above. No patent
+licence is granted. No trade mark licence is granted. "Orbit" and the
+Orbit mark are the copyright holder's.
