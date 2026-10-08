@@ -28,12 +28,25 @@ What is written, into --out:
     (assets/img/flight/europe-lights.webp) still lies on top of it.
   - land-near.webp: the Blue Marble Next Generation (December 2004, with
     topography and bathymetry) at its own 15 px a degree (1050×570).
+  - lights-strip-240.webp, -180, -120: the Black Marble 2016 lights at
+    500 m, over the ground the door actually shows with a little room round
+    it, the sharpest tier of all (the Europe crop's 93 px a degree reads
+    coarse on a large screen):
+
+      STRIP = lon 0 … 20, lat 40 … 56
+
+    The 240 is the source's own pixels (4800×3840, not resampled); the 180
+    (3600×2880) and the 120 (2400×1920) are brought down from it with a
+    Lanczos filter. Three, because one page view loads only one: the
+    device's band width (its width × its density, voyage.js: lightsStrip)
+    picks the one it can show, and a small screen does not fetch the 240.
 
 Imagery (NASA Earth Observatory; credit NASA):
   https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud.W.2001210.21600x21600.png   (lon -180 … 0)
   https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud.E.2001210.21600x21600.png   (lon 0 … 180)
   https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg
   https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg
+  https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_C1.jpg   (500 m: lon 0 … 90, lat 90 … 0)
 
 Each cloud hemisphere is a 211 MB PNG. Where the disk will not hold both,
 give one at a time with --strips: the script keeps the cut strip there (a
@@ -44,7 +57,9 @@ given, so the result is the same as with both at once:
   python3 tools/doorcrop.py --clouds-e cloud.E.png --strips S \\
       --lights BlackMarble_2016_3km.jpg --land world.topo.bathy.200412.3x5400x2700.jpg \\
       --out assets/img/door
+  python3 tools/doorcrop.py --lights-500m BlackMarble_2016_C1.jpg --out assets/img/door
 
+(the 500 m tile is a 59 MB JPEG, 21600×21600: about 1.4 GB once decoded.)
 (pip install pillow, with WebP.)
 """
 import argparse, os, sys
@@ -56,14 +71,18 @@ NEAR = (-25, 45, 28, 66)                  # lon0, lon1, lat0, lat1
 CLOUD_PPD, CLOUD_OUT_PPD = 120, 48        # the source's px a degree; what is written
 LIGHTS_PPD = 37.5                         # BlackMarble_2016_3km.jpg: 13500×6750
 LAND_PPD = 15                             # world.topo.bathy …3x5400x2700.jpg
+STRIP = (0, 20, 40, 56)                   # lon0, lon1, lat0, lat1: the door's own ground, with room
+STRIP_PPD = 240                           # BlackMarble_2016_C1.jpg: 21600×21600 over lon 0..90, lat 90..0
+STRIP_OUT = (240, 180, 120)               # what is written: the device picks one (voyage.js: lightsStrip)
 
 ap = argparse.ArgumentParser(description="Cut the door's near patch of Earth from NASA's maps.")
 ap.add_argument("--clouds-w", help="cloud.W.2001210.21600x21600.png (lon -180..0, lat 90..-90)")
 ap.add_argument("--clouds-e", help="cloud.E.2001210.21600x21600.png (lon 0..180, lat 90..-90)")
 ap.add_argument("--strips", help="a directory to keep each hemisphere's cut strip in, and take it from when that hemisphere is not given")
 ap.add_argument("--lights", help="BlackMarble_2016_3km.jpg (13500×6750, the whole world)")
+ap.add_argument("--lights-500m", help="BlackMarble_2016_C1.jpg (21600×21600, lon 0..90, lat 0..90)")
 ap.add_argument("--land", help="world.topo.bathy.200412.3x5400x2700.jpg (the whole world)")
-ap.add_argument("--out", default="assets/img/door", help="where the *-near.webp go")
+ap.add_argument("--out", default="assets/img/door", help="where the *-near.webp and lights-strip-*.webp go")
 args = ap.parse_args()
 
 lon0, lon1, lat0, lat1 = NEAR
@@ -129,3 +148,15 @@ if args.land:
         sys.exit(f"{args.land}: {im.size}, not the 5400×2700 Blue Marble")
     box = ((lon0 + 180) * LAND_PPD, (90 - lat1) * LAND_PPD, (lon1 + 180) * LAND_PPD, (90 - lat0) * LAND_PPD)
     save(im.convert("RGB").crop(box), "land-near.webp", 75)
+
+# the strip: the 500 m lights on the source's own pixels (240 px a degree: every edge falls on one), then brought down
+if args.lights_500m:
+    im = Image.open(args.lights_500m)
+    if im.size != (90 * STRIP_PPD, 90 * STRIP_PPD):
+        sys.exit(f"{args.lights_500m}: {im.size}, not the 500 m Black Marble tile C1")
+    a, b, c, d = STRIP
+    full = im.convert("RGB").crop((a * STRIP_PPD, (90 - d) * STRIP_PPD, b * STRIP_PPD, (90 - c) * STRIP_PPD))
+    del im
+    for ppd in STRIP_OUT:
+        out = full if ppd == STRIP_PPD else full.resize(((b - a) * ppd, (d - c) * ppd), Image.LANCZOS)
+        save(out, f"lights-strip-{ppd}.webp", 82)

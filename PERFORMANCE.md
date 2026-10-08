@@ -145,3 +145,10 @@ Tried, October 2026:
   committed door, which drew 1633×367). Most of it is the low air's march with the clouds in it; SwiftShader runs
   the clouds' branch on every step whether or not a pixel needs it, so on a GPU the share is smaller. Not yet
   measured on a GPU; the door's clock asks for twenty frames a second.
+- 8 October 2026, later: the sharpest lights, the 500 m Black Marble over the door's own ground (lon 0–20, lat
+  40–56), in three tiers of which a page view fetches one, picked by the band's width in device pixels (width ×
+  density, to 2×): under 1600 the 120 px a degree (0.62 MB), under 2600 the 180 (1.17 MB), else the 240 (1.80 MB);
+  `?door3d` only, the flight drawing the same one. The door's 3-million-pixel cap is gone: it draws at the screen's
+  density (to 2×), times three frames once after its first, and over 40 ms a frame comes down by the square root of
+  the excess (to half), for the rest of the page view. SwiftShader (software rendering: relative only) at 1440×900,
+  deviceScaleFactor 2: 2.9–3.3 s a frame at 2880×648, so it drew at 1×; at 1200×800, 1×: 0.7 s, drawn at 0.5×.
