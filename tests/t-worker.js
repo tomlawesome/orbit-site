@@ -52,20 +52,32 @@ export async function run(host) {
     out.push(line("page's longest frame gap, worker idle, no WebGL on the page", `${worst(gaps)} ms`));
     webgl = true; gaps = []; draws = []; await window_(500);
     out.push(line("page's longest frame gap, worker idle, the page drawing WebGL too", `${worst(gaps)} ms (its draw ${worst(draws)} ms)`));
+    /* a context of the page's own, for the cache question below */
+    const page = context();
     for (const [label, src] of [["probe (2k chars)", PROBE], ["door rich (real)", sceneHead({ slab: true, door: true }) + DOOR_MAIN], ["flight rich head (real)", sceneHead({ slab: true }) + FLIGHT_MAIN]]) {
       /* twice: the page drawing only its dot (2D), then its WebGL triangle too */
+      let same = null;
       for (const withGl of [false, true]) {
         webgl = withGl; gaps = []; draws = [];
         await window_(120);
         gaps = []; draws = [];
+        same = salted(src);
         const t0 = performance.now();
-        const r = await ask({ src: salted(src) });
+        const r = await ask({ src: same });
         const wall = performance.now() - t0;
         await window_(100);
-        if (r.error) { out.push(line(label, `failed in the worker: ${r.error}`)); break; }
+        if (r.error) { out.push(line(label, `failed in the worker: ${r.error}`)); same = null; break; }
         out.push(line(`${label}, page ${withGl ? "drawing WebGL too" : "drawing 2D only"}`, `compiled in the worker in ${round(r.ms)} ms; meanwhile the page's longest frame gap ${worst(gaps)} ms${withGl ? `, its WebGL draw at most ${worst(draws)} ms` : ""}, over ${round(wall)} ms`));
       }
+      /* the cache question: the very source the worker just compiled, compiled again on the page: does the GPU
+         process remember it (a few ms), or compile it all over again (hundreds)? */
+      if (same && page.gl) {
+        webgl = false;
+        try { const pr = program(page.gl, same, { salt: false }); out.push(line(`${label}, the same source compiled on the page after the worker`, `${round(pr.ms)} ms${pr.ms < 60 ? " (remembered: a worker can warm the page's compiles)" : " (compiled again: no shared cache)"}`)); page.gl.deleteProgram(pr.p); }
+        catch (e) { out.push(line(`${label}, on the page after the worker`, `failed: ${e.message}`)); }
+      }
     }
+    if (page.gl) release(page.gl);
     out.push(line("the eye's verdict", "did the CSS spinner (left) pause during the compiles? did the dot (middle)? say which, and in which phase"));
   } catch (e) { if (e.message !== "stop") out.push(line("error", e.message)); }
   on = false; w.terminate();
