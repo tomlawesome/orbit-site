@@ -387,6 +387,11 @@ void main(){
 
 /* the scene's own functions, for the live door (door3d.js), which draws only its Earth */
 export const SCENE_HEAD = SCENE.slice(0, SCENE.indexOf("void main(){"));
+/* the live door's Earth (door3d.js), once it is drawn: the flight takes up its turn, its clouds, its sun and its air,
+   so it starts from the very frame the door shows, and comes back to it */
+let door = null;
+export const followDoor = (st) => { door = st; };
+export const doorIsLive = () => !!door;
 
 /* what lies over the rush: the Earth, the moon, the star, the docs' constellations, the shock's light. A program of
    its own, drawn over the first and blended by how much of it still shows through (alpha), so the sum is exactly the
@@ -661,6 +666,7 @@ export function createVoyage(under) {
 
   /* the maps: asked for a little after the page is up, each used as soon as it has come */
   const maps = {};
+  const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
      chore of its own (chores.js): never all at once */
   const inTurn = (fn) => chore(fn, 60, "flight");
@@ -671,6 +677,8 @@ export function createVoyage(under) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
+      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "euro" ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
@@ -815,8 +823,10 @@ export function createVoyage(under) {
       gl.uniform2f(u.uVP, s.vp[0], s.vp[1]); gl.uniform1f(u.uSpeed, s.v); gl.uniform1f(u.uRmax, s.rmax);
       gl.uniform4fv(u.uOff, off); gl.uniform4fv(u.uLen, len); gl.uniform3fv(u.uTint, s.tint);
       gl.uniform3f(u.uCirc, w ? w.cx : 0, w ? w.cy : 0, w ? w.R : 1); gl.uniform1f(u.uEarthA, w ? w.alpha : 0); gl.uniform1f(u.uD, D);
-      gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, cam.S);
-      gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(s.spinM || ID3)); gl.uniform1f(u.uCloudOff, s.cloudOff || 0); gl.uniform1f(u.uAirK, s.airK ?? 1);
+      gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, door?.sun || cam.S);
+      gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(door?.spinM || ID3)); gl.uniform1f(u.uCloudOff, door?.cloudOff || 0);
+      /* the door's air at the door (its glows carry the rest), the flight's own as the world falls away */
+      { const k = door ? Math.min(1, Math.max(0, (w ? w.c : 1) / 0.35)) : 1; gl.uniform1f(u.uAirK, door ? door.air + (1 - door.air) * k * k * (3 - 2 * k) : 1); }
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
       gl.uniform4f(u.uEuroBox, ...EURO);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
