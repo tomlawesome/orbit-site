@@ -16,11 +16,13 @@
  * the sphere traced in it). Made as chores (chores.js), after the door's reveal; the pictures stay until the first
  * frame, and stay for good if anything fails. Nothing is drawn while the door is not shown.
  *
- * The install's giant and the information's red world are drawn here only until their own world draws them (install.js:
- * doorPlanets, which says so with html[data-worldplanets]), so a dive goes on from the very frame on the door; the
- * docs' moon is drawn here all along.
+ * The install's giant and the information's red world are never drawn here under ?door3d, not even before their own
+ * world draws them (install.js: doorPlanets, which says so with html[data-worldplanets]): this sphere's rings, bright
+ * and shadowless, visibly dimmed and took a shadow when the world took over, whereas their pictures, baked from that
+ * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
+ * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note } from "./chores.js";
+import { chore, fetchOnce, note, COMPILES_ASIDE } from "./chores.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -94,8 +96,12 @@ const KINDS = { docs: 0, install: 1, info: 2 };
 /* the install's ring, tilted this far from its orbit's plane (degrees) */
 const RING_TILT = 24;
 
-/* the planets their own world now draws on the door (install.js: doorPlanets): not drawn here */
-const taken = (id) => (document.documentElement.dataset.worldplanets || "").split(" ").includes(id);
+/* the planets their own world draws on the door (install.js: doorPlanets): not drawn here. Under ?door3d the install's
+   and the information's are theirs from the first frame, before their worlds are live (their pictures stand in until
+   then); html[data-worldplanets] stays what says so from then on */
+const DOOR3D = /[?&]door3d\b/.test(location.search);
+const OWN = DOOR3D ? ["install", "info"] : [];
+const taken = (id) => OWN.includes(id) || (document.documentElement.dataset.worldplanets || "").split(" ").includes(id);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
 
@@ -288,9 +294,11 @@ export function mountPlanets(door) {
   addEventListener("resize", () => { at = ""; wake(); });
 
   /* made in turn, after the door's reveal: both programs, then each map into both, then the layers laid either side
-     of the ring and the clock started; the pictures go once the first frame is drawn (draw) */
-  const ready = chore(() => { layers.forEach(make); return Promise.all(layers.map(compiled)); }, 60, "door")
-    .then(() => chore(() => { layers.forEach(finish); note("planets: shaders compiled", since); }, 60, "door"))
+     of the ring and the clock started; the pictures go once the first frame is drawn (draw). Where the browser compiles
+     on the page's own thread (chores.js: COMPILES_ASIDE false), the programs are "compile" chores, done first of all */
+  const [crest, ctag] = COMPILES_ASIDE ? [60, "door"] : [20, "compile"];
+  const ready = chore(() => { layers.forEach(make); return Promise.all(layers.map(compiled)); }, crest, ctag)
+    .then(() => chore(() => { layers.forEach(finish); note("planets: shaders compiled", since); }, crest, ctag))
     .then(() => Promise.all(bitmaps.map((b) => b.then(({ key, bm }) => chore(() => upload(key, bm), 60, "door")))))
     .then(() => chore(() => {
       glyph.before(far.canvas); glyph.after(near.canvas);
@@ -299,7 +307,7 @@ export function mountPlanets(door) {
     .catch(fail);
 
   /* for the test only: where each planet is drawn (css px, the viewport's), worked out now as a frame would */
-  if (/[?&]door3d\b/.test(location.search)) {
+  if (DOOR3D) {
     window.__planets3d = {
       positions: () => {
         measure();

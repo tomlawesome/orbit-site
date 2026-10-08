@@ -22,7 +22,7 @@
  * the reader's pack, PACK is the only object that changes.
  */
 import { createVoyage, fetchVoyage, doorIsLive } from "./voyage.js";
-import { note } from "./chores.js";
+import { chore, note, COMPILES_ASIDE } from "./chores.js";
 import { seededRng } from "./sky.js";
 
 /**
@@ -1145,11 +1145,16 @@ export function createFlight(canvas, options = {}) {
       if (!warmed) {
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
         /* its pictures asked for, and its world made (its shaders set compiling in the background), at once; what it then
-           puts on the GPU waits its turn as chores (voyage.js) */
+           puts on the GPU waits its turn as chores (voyage.js). Where the browser compiles on the page's own thread
+           (COMPILES_ASIDE false), the world is made as a chore ("compile", first of all, after the door's painted
+           reveal; hurried with the flight's own), its shaders looked at in the same chore (voyage.js: made) */
         if (!options.plain) fetchVoyage();
-        const made = options.plain ? Promise.resolve() : Promise.resolve().then(() => {
+        const make = () => {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
-        });
+          return voyage?.made;
+        };
+        const made = options.plain ? Promise.resolve() : COMPILES_ASIDE ? Promise.resolve().then(() => { make(); })
+          : chore(make, 20, ["compile", "flight"]).then(() => {}, () => {});
         compiled = made.then(() => voyage?.made);
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });

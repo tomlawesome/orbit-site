@@ -10,23 +10,41 @@
  * When a journey is chosen, what that journey still needs is done straight away (hurry), a frame between each piece,
  * hidden in the journey's opening; everything else is put off until the journey is under way (the chores are
  * tagged by what they ready: "flight", "docs", "install", "info"), so nothing it does not need stalls it. The
- * measures (frames timed to fit the drawing to the machine: "measure") are never hurried.
+ * measures (frames timed to fit the drawing to the machine: "measure") are never hurried, and the live door's wait
+ * for the queue to be at rest (quiet) before they time anything. Where the browser compiles shaders on the page's
+ * own thread (COMPILES_ASIDE false), every compile is a chore tagged "compile", and those go before all the rest.
  */
 const queue = [];
-let open = false, running = false, want = null, until = 0, wake = 0;
+let open = false, running = false, want = null, until = 0, wake = 0, started = 0;
+
+/* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
+   every compile freezes the page for as long as it takes, so each is a chore tagged "compile", done first of all once
+   the painted part of the door's reveal is over (ORDER), while only the compositor moves anything. Asked of a context
+   made for the purpose and let go at once (Safari keeps only a few). &mainthread: as if it did not (to try the Firefox
+   path in another browser) */
+export const COMPILES_ASIDE = (() => {
+  try {
+    if (/[?&]mainthread\b/.test(location.search)) return false;
+    const gl = document.createElement("canvas").getContext("webgl2"); if (!gl) return true;
+    const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return ok;
+  } catch { return true; }
+})();
 /* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 120 }) : setTimeout(fn, 30));
-/* the order the rest are done in, when no journey has been chosen: the journeys first (a visitor can do nothing until
+/* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
+   freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so), then the journeys (a visitor can do nothing until
    one is ready), then the live door (door3d.js: its picture is already on screen), the measures, and last of all
    the rich clouds, which nothing waits for */
-const ORDER = ["install", "flight", "docs", "info", "", "door", "measure", "rich"];
-const rank = (tag) => { const i = ORDER.indexOf(tag); return i < 0 ? ORDER.length : i; };
+const ORDER = ["compile", "install", "flight", "docs", "info", "", "door", "measure", "rich"];
+/* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
+const tags = (tag) => [].concat(tag);
+const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
 
 function pump() {
   if (running || !queue.length) return;
   const now = performance.now();
   /* what the chosen journey needs, first */
-  let i = want ? queue.findIndex((j) => want.includes(j.tag)) : -1;
+  let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => want.includes(t))) : -1;
   const hurried = i >= 0;
   if (!hurried) {
     if (!open) return;
@@ -38,6 +56,7 @@ function pump() {
   running = true;
   const run = () => {
     const [job] = queue.splice(Math.min(i, queue.length - 1), 1);
+    started++;
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
@@ -63,6 +82,26 @@ export function hurryChores(tags, opening = 6000) {
   until = Math.max(until, performance.now() + opening);
   open = true; pump();
 }
+
+/** the queue at rest: resolves once nothing is queued or running, and has stayed so for two animation frames, with
+    calm(): whether it still is, and no chore has run since (a measure spread over frames asks at its end, and starts
+    again if not) */
+/* (the measures time the drawing alone: a chore beside them, an upload or a compile, is time that is not the
+   drawing's, and a false measure lowers the drawing for the rest of the page view) */
+export function quiet() {
+  return new Promise((resolve) => {
+    let at = -1, frames = 0;
+    const look = () => {
+      if (running || queue.length) { at = -1; frames = 0; }
+      else if (at !== started) { at = started; frames = 0; }
+      else if (++frames >= 2) { const was = started; resolve(() => !running && !queue.length && started === was); return; }
+      requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  });
+}
+/* for the test only (?door3d): the queue as it is now */
+try { if (/[?&]door3d\b/.test(location.search)) window.__chores = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open }); } catch { /* not a page */ }
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
 const fetched = new Map();

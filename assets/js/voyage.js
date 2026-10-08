@@ -766,12 +766,17 @@ export const doorIsLive = () => !!door;
 /* the flight's RICH Earth, asked for by the door once it has kept its own rich one (door3d.js), so the click's
    handoff does not change the clouds: made in the flight's context as the door's chores, and drawn only once it is
    made (until then, and where it cannot be, the lean one). Resolves when it is ready */
-let richMake = null, richAsk = null, richOK = false;
+let richMake = null, richAsk = null, richOK = false, richCompile = null;
 const richWaiting = [];
 export function wantRich() {
   if (!richAsk) richAsk = new Promise((resolve) => { const go = () => resolve(richMake()); if (richMake) go(); else richWaiting.push(go); });
   return richAsk;
 }
+/* where the browser compiles on the page's own thread (chores.js: COMPILES_ASIDE false), the rich program is compiled
+   with the rest, first of all (chores: "compile"), whether or not it is ever drawn, so its freeze is never under a
+   live loop: asked for by the door's own rich compile (door3d.js), and drawn only once the door has gone rich
+   (wantRich). Without a flight's world (not made, or not yet), nothing */
+export function compileRich() { return richCompile ? richCompile() : Promise.resolve(false); }
 export const richReady = () => richOK;
 
 /* what lies over the rush: the Earth, the moon, the star, the docs' constellations, the shock's light. A program of
@@ -1040,12 +1045,15 @@ export function createVoyage(under) {
 
   /* the rich Earth (wantRich, above): its program, as the lean one is made (compiled, finish), and the cities' glow its
      clouds take from below (cityGlow), once the lights have come; drawn only when both are done */
-  let richMade = null;
+  let richMade = null, richProg = null;
+  /* its program alone (tag: the chores', "door" when asked for by wantRich, "compile" by compileRich), made once */
+  const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => { const pr = program(sceneHead({ slab: true }) + OVER_MAIN); return compiled([pr]).then(() => pr); }, tag === "compile" ? 20 : 60, tag)
+    .then((pr) => chore(() => { finish(pr); P.overRich = pr; return true; }, tag === "compile" ? 20 : 60, tag))));
+  richCompile = () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
   richMake = () => richMade || (richMade = made.then((good) => {
     if (!good) return false;
     warm();
-    const prog = chore(() => { const pr = program(sceneHead({ slab: true }) + OVER_MAIN); return compiled([pr]).then(() => pr); }, 60, "door")
-      .then((pr) => chore(() => { finish(pr); P.overRich = pr; }, 60, "door"));
+    const prog = richProgram("door");
     const glow = loaded.then(() => chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "door"));
     return Promise.all([prog, glow]).then(() => (richOK = !!(P.overRich && glowT)));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));

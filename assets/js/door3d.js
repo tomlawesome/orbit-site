@@ -17,9 +17,15 @@
  * the flight then asked to draw the same from the handoff on; otherwise the lean one stays, and if even that takes
  * more than 40 ms the density comes down by the square root of the excess (to half), and stays. To try them:
  * &rich (the rich one whatever the lean one took; still measured), &lean (never the rich one).
+ *
+ * Each measure waits for the chores to be at rest (chores.js: quiet), so it times the drawing alone, not an upload or
+ * a compile beside it. Where the browser compiles on the page's own thread (COMPILES_ASIDE false), both weights (and
+ * the flight's rich one: voyage.js, compileRich) are compiled first of all, with every other compile, once the door's
+ * painted reveal is over (chores: "compile"), so no compile ever freezes a live loop; the rich one is still drawn only
+ * if the ladder keeps it.
  */
-import { chore, fetchOnce, note } from "./chores.js";
-import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich } from "./voyage.js";
+import { chore, fetchOnce, note, quiet, COMPILES_ASIDE } from "./chores.js";
+import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
 const LOADED = performance.now();
@@ -224,25 +230,30 @@ export function liveDoor(world) {
   const at = () => Math.round(px * 100) / 100;
   /* a weight made: its program asked for, waited for (in the background where the browser can), and finished. Said:
      how long it waited its turn (the first), and how long the making itself took */
+  /* (where compiles freeze the page, both are "compile" chores, first of all; the rich one asks for the flight's rich
+     one in its turn, so that is queued with them) */
   const compile = (slab) => {
-    const name = slab ? "rich" : "lean";
+    const name = slab ? "rich" : "lean", up = !COMPILES_ASIDE;
     let took = 0;
     return chore(() => {
       const t0 = performance.now();
       if (!slab) note(`door: compile waited ${Math.round(t0 - LOADED)} ms`, since);
+      if (slab && up) compileRich();
       const p = make(slab);
       return compiled(p).then(() => { took = performance.now() - t0; return p; });
-    }, 60, slab ? "rich" : "door")
+    }, up ? 20 : 60, up ? "compile" : slab ? "rich" : "door")
       .then((p) => chore(() => {
         const t0 = performance.now(), pr = finish(p);
         note(`door: ${name} compiled ${Math.round(took + performance.now() - t0)} ms`, since);
         return pr;
-      }, 60, "door"));
+      }, up ? 20 : 60, up ? "compile" : "door"));
   };
   /* the ladder, after the lean weight's first frame: measured; with room (or &rich), the rich weight made, measured
      and kept if it keeps to the budget (&rich: kept whatever), the flight then asked for the same; else the lean one,
      coarser if it must be */
-  function ladder() {
+  /* (each measure taken once the chores are at rest: quiet) */
+  async function ladder() {
+    await quiet();
     let lean;
     try { lean = measure(); } catch { return; /* drawn as it is */ }
     const up = !LEAN && (RICH || lean <= ROOM);
@@ -251,8 +262,8 @@ export function liveDoor(world) {
     if (!up) return;
     /* (not waited for here: its chores come after this one) */
     chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "rich")
-      .then(() => compile(true))
-      .then((rich) => chore(() => {
+      .then(() => richEarly || compile(true))
+      .then((rich) => quiet().then(() => {
         const was = prog;
         prog = rich;
         let mean = Infinity;
@@ -265,7 +276,7 @@ export function liveDoor(world) {
           prog = was; dirty = true; wake();
           note(`door: rich ${Math.round(mean)} ms a frame, over ${BUDGET}: back to lean`, since);
         }
-      }, 60, "rich"))
+      }))
       .catch((e) => { console.warn("orbit: the door stays lean", e); });
   }
 
@@ -284,8 +295,12 @@ export function liveDoor(world) {
       note("door: live (lean)", since);
       wake();
     }, 60, "door"))
-    .then(() => chore(ladder, 60, "door"))
+    .then(ladder)
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); });
+  /* the rich weight, where compiles freeze the page: asked for at once, after the lean one (and kept only if the
+     ladder keeps it); elsewhere when the ladder asks */
+  const richEarly = COMPILES_ASIDE ? null : compile(true);
+  richEarly?.catch(() => { /* the ladder says so, if it gets that far */ });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });
   document.addEventListener("visibilitychange", wake);
   /* the door coming back (its class or its hidden flag changing) starts the clock again */
