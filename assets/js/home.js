@@ -531,11 +531,6 @@ export function mountHome(skyCams) {
   /* from another household, back to yours; from yours, back to the dawn (main.js says how) */
   $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });
-  /* a tap anywhere but a side drawer, or what opens one, closes the side drawers that are open */
-  document.addEventListener("pointerdown", (e) => {
-    if (!$(".drawer.open") || e.target.closest(".drawer, #inbox-orb, [data-open-drawer], #account, #account-orb")) return;
-    $$(".drawer.open").forEach((d) => openDrawer(d.id, false));
-  });
   /* a tap anywhere else, or a scroll, lets the callout go */
   document.addEventListener("pointerdown", (e) => { if (armedBody && !e.target.closest(".body-link") && !e.target.closest("#body-callout")) hideBodyCallout(); });
   addEventListener("scroll", () => { if (armedBody) hideBodyCallout(); }, { passive: true });
