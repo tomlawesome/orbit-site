@@ -230,7 +230,8 @@ body.lit #door .lockup .planets{opacity:1}
   letter-spacing:.04em;text-decoration:none;display:inline-block;line-height:normal;
   box-shadow:0 0 28px rgba(216,180,90,.22);opacity:0;transform:translateY(10px);
   transition:opacity 1.2s ease 1.25s,transform 1.2s cubic-bezier(.2,.7,.2,1) 1.25s,filter .35s ease,box-shadow .3s ease}
-body.lit .gate{opacity:1;transform:none}
+/* the gate shows once the flight is ready to begin (main.js: openWays), not before */
+body.lit.ready-flight .gate{opacity:1;transform:none}
 .gate:hover{filter:brightness(1.08)}
 .gate.flash{filter:brightness(1.25);box-shadow:0 0 0 6px rgba(216,180,90,.22),0 0 60px rgba(216,180,90,.6)}
 .doorfoot{position:absolute;left:0;right:0;bottom:22px;z-index:3;text-align:center;font:10.5px var(--mono);
@@ -1317,3 +1318,9 @@ html[data-worldplanets~=install] #door .planet[data-section=install] .body::befo
 html[data-worldplanets~=install] #door .planet[data-section=install].chosen .body::before,
 html[data-worldplanets~=info] #door .planet[data-section=info] .body::before,
 html[data-worldplanets~=info] #door .planet[data-section=info].chosen .body::before{opacity:0;transition:none}
+
+/* ══ THE WAYS IN open as each journey is readied (main.js: openWays) ═══════════════════════════════════════════════
+   a planet shows from the first but takes no click, and shows no label, until its journey can begin */
+#door .planet:not(.ready){pointer-events:none;cursor:default}
+#door .planet:not(.ready) .tag{opacity:0}
+#door .planet .tag{transition:opacity .8s ease}
