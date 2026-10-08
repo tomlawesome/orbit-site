@@ -16,9 +16,10 @@ const queue = [];
 let open = false, running = false, want = null, until = 0, wake = 0;
 /* a pause between frames, but never waited on long: while the door moves the browser may rarely call a moment idle */
 const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCallback(fn, { timeout: 250 }) : setTimeout(fn, 30));
-/* the order the rest are done in, when no journey has been chosen: the live door (door3d.js) first, then the likeliest
-   journeys, the measures last */
-const ORDER = ["door", "install", "flight", "docs", "info", "", "measure"];
+/* the order the rest are done in, when no journey has been chosen: the journeys first (a visitor can do nothing until
+   one is ready), then the live door (door3d.js: its picture is already on screen), the measures, and last of all
+   the rich clouds, which nothing waits for */
+const ORDER = ["install", "flight", "docs", "info", "", "door", "measure", "rich"];
 const rank = (tag) => { const i = ORDER.indexOf(tag); return i < 0 ? ORDER.length : i; };
 
 function pump() {

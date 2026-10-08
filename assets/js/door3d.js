@@ -222,7 +222,7 @@ export function liveDoor(world) {
       if (!slab) note(`door: compile waited ${Math.round(t0 - LOADED)} ms`, since);
       const p = make(slab);
       return compiled(p).then(() => { took = performance.now() - t0; return p; });
-    }, 60, "door")
+    }, 60, slab ? "rich" : "door")
       .then((p) => chore(() => {
         const t0 = performance.now(), pr = finish(p);
         note(`door: ${name} compiled ${Math.round(took + performance.now() - t0)} ms`, since);
@@ -240,7 +240,7 @@ export function liveDoor(world) {
     note(`door: lean ${Math.round(lean)} ms a frame, drawn at ${at()}×`, since);
     if (!up) return;
     /* (not waited for here: its chores come after this one) */
-    chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "door")
+    chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "rich")
       .then(() => compile(true))
       .then((rich) => chore(() => {
         const was = prog;
@@ -255,7 +255,7 @@ export function liveDoor(world) {
           prog = was; dirty = true; wake();
           note(`door: rich ${Math.round(mean)} ms a frame, over ${BUDGET}: back to lean`, since);
         }
-      }, 60, "door"))
+      }, 60, "rich"))
       .catch((e) => { console.warn("orbit: the door stays lean", e); });
   }
 
