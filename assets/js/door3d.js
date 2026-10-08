@@ -12,7 +12,7 @@
  * while the door is not shown. Made as a chore (chores.js), after the door's reveal; the picture stays until then.
  */
 import { chore, fetchOnce, note } from "./chores.js";
-import { SCENE_HEAD, TEX, EURO, doorCamera } from "./voyage.js";
+import { SCENE_HEAD, TEX, EURO, doorCamera, followDoor } from "./voyage.js";
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -110,12 +110,14 @@ export function liveDoor(world) {
   /* the frame's y (laid bottom-up, xMidYMax, as every door layer is) in the band's own css pixels */
   const ly = (y) => H - (1000 - y) * s - top;
 
-  /* the door's turn, kept so the flight can take it up (spinM, cloudOff) */
-  const state = { spinM: [1, 0, 0, 0, 1, 0, 0, 0, 1], cloudOff: 0, t: 0 };
-  let t0 = 0;
-  function draw(now) {
+  /* the door's turn, kept so the flight takes it up where it is (voyage.js: followDoor) */
+  const state = { spinM: [1, 0, 0, 0, 1, 0, 0, 0, 1], cloudOff: 0, sun: null, air: AIR };
+  /* the door's own clock (s): it runs only while the door is shown, so a journey away and back finds the Earth
+     just as it was left, and the flight's last frame and the door's first are the same */
+  let clock = 0;
+  function draw() {
     if (!prog) return;
-    const t = reduced ? 0 : (now - t0) / 1000;
+    const t = reduced ? 0 : clock;
     const cam = doorCamera(SUN + (reduced ? 0 : 0.03 * Math.sin((t / 47) * 6.2832) + 0.012 * Math.sin((t / 17) * 6.2832 + 1.3)));
     /* the ground turned about the camera's own vertical: the horizon slides to the right, the stars drift to the left */
     const Z = [-cam.B[6], -cam.B[7], -cam.B[8]], a = (t / TURN) * 6.2832, c = Math.cos(a), sn = Math.sin(a), k = 1 - c;
@@ -124,7 +126,7 @@ export function liveDoor(world) {
       Z[0] * Z[1] * k - Z[2] * sn, c + Z[1] * Z[1] * k, Z[2] * Z[1] * k + Z[0] * sn,
       Z[0] * Z[2] * k + Z[1] * sn, Z[1] * Z[2] * k - Z[0] * sn, c + Z[2] * Z[2] * k,
     ];
-    state.spinM = M; state.cloudOff = t * CLOUD; state.t = t;
+    state.spinM = M; state.cloudOff = t * CLOUD; state.sun = cam.S;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(prog); gl.bindVertexArray(vao);
     gl.uniform2f(u.uRes, canvas.width, canvas.height); gl.uniform1f(u.uPx, canvas.width / W);
@@ -144,13 +146,14 @@ export function liveDoor(world) {
   }
 
   /* the clock: twenty frames a second while the door is shown and the page is seen; nothing otherwise */
-  let raf = 0, last = 0;
+  let raf = 0, last = 0, prev = 0;
   const door = world.closest("#door");
   const shown = () => !document.hidden && door && !door.hidden && getComputedStyle(door).opacity !== "0";
   function tick(now) {
     raf = 0;
-    if (!shown()) return;
-    if (dirty || (!reduced && now - last >= 48)) { last = now; draw(now); }
+    if (!shown()) { prev = 0; return; }
+    clock += prev ? Math.min(now - prev, 100) / 1000 : 0; prev = now;
+    if (dirty || (!reduced && now - last >= 48)) { last = now; draw(); }
     if (!reduced) raf = requestAnimationFrame(tick);
   }
   const wake = () => { if (!raf && prog) raf = requestAnimationFrame(tick); };
@@ -161,8 +164,9 @@ export function liveDoor(world) {
     .then(() => Promise.all(keys.map(load)))
     .then(() => chore(() => {
       world.querySelector(".wl.earth")?.after(canvas);
-      resize(); t0 = performance.now(); draw(t0);
+      resize(); draw();
       requestAnimationFrame(() => world.classList.add("live"));
+      followDoor(state);
       note("door: live", since);
       wake();
     }, 60, "door"))

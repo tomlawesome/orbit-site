@@ -21,7 +21,7 @@
  * climbing into is not yet yours to have chosen. If it is ever asked to wear
  * the reader's pack, PACK is the only object that changes.
  */
-import { createVoyage, fetchVoyage } from "./voyage.js";
+import { createVoyage, fetchVoyage, doorIsLive } from "./voyage.js";
 import { note } from "./chores.js";
 import { seededRng } from "./sky.js";
 
@@ -726,7 +726,8 @@ export function createFlight(canvas, options = {}) {
 
     /* how much of the door's own Earth is still in the picture: all of it at the start, gone before the world has
        shrunk enough to show the picture's edges */
-    const ea = pal.hasSun && earth && earth.complete && earth.naturalWidth ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
+    /* (none when the door's Earth is live, door3d.js: the voyage's is then that very Earth, turned as the door left it) */
+    const ea = pal.hasSun && earth && earth.complete && earth.naturalWidth && !(voyage && doorIsLive()) ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
 
     /* with the voyage, the Earth, its air and its limb are drawn there, on this same circle; only the door's
        picture is laid over it here, while it lasts */
