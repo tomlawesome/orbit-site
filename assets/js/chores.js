@@ -162,8 +162,8 @@ export function noteChores(when) {
   const wall = firstAt ? performance.now() - firstAt : 0;
   /* (the soft chores ran inside the held time: counted once, as running) */
   note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, of which ${softN} soft chores (${Math.round(softMs)} ms) during the reveal, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - Math.max(0, held - softMs) - empty))} ms, over ${Math.round(wall)}`);
-  /* each one: tag, waited/ran */
-  note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
+  /* each one: tag, waited/ran (?door3d only: a long line) */
+  if (COUNTING) note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
 }
 /* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went) */

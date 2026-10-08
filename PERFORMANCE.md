@@ -431,6 +431,14 @@ Tried, October 2026:
   door's eight maps took 50-220 frames to go in after the reveal, and a click before the flight's maps were in
   waited a frame a band.
 
+- Measured on the laptop in Firefox, level 0, mains, the same evening: compiles done at 5.0 s and 3.9 s (two runs),
+  install ready 8.5 and 8.1 s, the flight 9.3 and 8.9 s, from 13.9 and 14.9 s at the start of the day. The reveal
+  ran 92-95 bands; its longest frame gap 50 ms in the second run. In the first run one band of the lights map took
+  1012 ms (Firefox warning: a texture made empty is cleared on its first partial upload, "this may be slow"); the
+  second run cleared every texture in 0-1 ms. Not reproduced; the upload note now says how long the first band's
+  bitmap took to come and how long its copy took, so a repeat can be read. A filled allocation (zeros up front) was
+  tried and not kept: 50-100 ms a big map on the page thread, worse than the 1 ms clear in the common case.
+
 ## The ladder (8 October 2026)
 
 - Why: the live door (`?door3d`) is beautiful on a fast GPU with a background compiler, and costs a slow machine
