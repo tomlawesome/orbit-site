@@ -46,10 +46,14 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
       return t;
     }, 60, tag);
   }
-  let t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0;
+  let t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
+  /* (seen once on the laptop in Firefox and not again: a first band of 1012 ms, with the browser's warning that a
+     texture made empty is cleared on its first partial upload; every other run cleared in 0-1 ms. Said with the
+     bands: how long the first band's own bitmap took to come and how long its copy took, to tell a deferred decode
+     from a slow clear if it is ever seen again) */
   /* a band's own bitmap, cut from the picture (off the page's thread) */
   const cut = (y) => {
-    const n = Math.min(rows, h - y), p = createImageBitmap(bitmap, 0, y, w, n, CUT).then((bm) => ({ y, n, bm }));
+    const n = Math.min(rows, h - y), c0 = performance.now(), p = createImageBitmap(bitmap, 0, y, w, n, CUT).then((bm) => { if (!y) firstCut = performance.now() - c0; return { y, n, bm }; });
     /* (a cut that fails is said where it is waited for, not before) */
     p.catch(() => {});
     return p;
@@ -74,7 +78,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
         const end = band.y + band.n;
         next = end < h ? cut(end) : null;
         const ms = await put(band);
-        if (!bands++) rows = ms > SLOW ? Math.min(h, Math.max(FEWEST, rows >> 1)) : ms < FAST ? Math.min(h, rows * 2) : rows;
+        if (!bands++) { firstBand = ms; rows = ms > SLOW ? Math.min(h, Math.max(FEWEST, rows >> 1)) : ms < FAST ? Math.min(h, rows * 2) : rows; }
         longest = Math.max(longest, ms);
         if (!next) break;
       }
@@ -84,7 +88,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     } finally {
       if (!keep) bitmap.close?.();
     }
-    if (SAY) note(`upload: ${name} ${w}x${h} in ${bands} bands, longest ${longest.toFixed(1)} ms`);
+    if (SAY) note(`upload: ${name} ${w}x${h} in ${bands} bands, longest ${longest.toFixed(1)} ms (the first: cut ${firstCut.toFixed(0)} ms, copied ${firstBand.toFixed(1)})`);
     drawable?.(t);
     return t;
   })();
