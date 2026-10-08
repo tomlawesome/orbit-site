@@ -148,7 +148,7 @@ body.showdawn #door{pointer-events:none}
 @keyframes recede{from{transform:translateX(calc(-1 * var(--tile,1600px)))}to{transform:translateX(0)}}
 @keyframes skytwinkle{from{opacity:1}to{opacity:.55}}
 /* first light: dawn breaks once on load, exactly as the login does it */
-.dawnlayer{opacity:0;transition:opacity 3s ease}
+.dawnlayer{opacity:0;transition:opacity 2s ease}
 body.lit .dawnlayer{opacity:1}
 .rim{opacity:0;transition:opacity 2.2s ease .3s}
 body.lit .rim{opacity:1}
@@ -157,16 +157,16 @@ body.lit .shimmer{opacity:.9}
 /* the Earth: each picture fades in when it has arrived, and the sun comes up with the first light; the drawn limb under it is the stand-in until then */
 #door .earth image{opacity:0;transition:opacity 1.2s ease}
 #door .earth image.in{opacity:1}
-#door .earth .up.in{opacity:0;transition:opacity 4.5s cubic-bezier(.4,0,.3,1) .3s}
+#door .earth .up.in{opacity:0;transition:opacity 2.2s cubic-bezier(.4,0,.3,1) .3s}
 body.lit #door .earth .up.in{opacity:1}
 #door .world.earthy .limb .rim{opacity:0}
 @keyframes sweep{to{stroke-dashoffset:-100}}
-.sunpt{opacity:0;transition:opacity 3.2s ease .5s}
+.sunpt{opacity:0;transition:opacity 2.1s ease .4s}
 body.lit .sunpt{opacity:1}
 .world .breath{animation:breathe-world 9s ease-in-out infinite alternate;will-change:opacity}
 @keyframes breathe-world{from{opacity:.84}to{opacity:1}}
 @keyframes breathe-sun{from{opacity:.8}to{opacity:1}}
-.rays{transform-origin:var(--ox,50%) var(--oy,92%);opacity:0;transform:scale(1,.55);transition:opacity 3.4s ease .4s,transform 4s cubic-bezier(.2,.7,.2,1) .4s}
+.rays{transform-origin:var(--ox,50%) var(--oy,92%);opacity:0;transform:scale(1,.55);transition:opacity 2.2s ease .3s,transform 2.6s cubic-bezier(.2,.7,.2,1) .3s}
 body.lit .rays{opacity:1;transform:scale(1,1)}
 /* the fans are pictures rotating, so each rides its own compositing layer */
 .rays .sway1{transform-origin:var(--ox,50%) var(--oy,92%);will-change:transform;animation:sway1 41s ease-in-out infinite alternate}
@@ -236,7 +236,7 @@ body.lit.ready-flight .gate{opacity:1;transform:none}
 .gate:hover{filter:brightness(1.08)}
 .gate.flash{filter:brightness(1.25);box-shadow:0 0 0 6px rgba(216,180,90,.22),0 0 60px rgba(216,180,90,.6)}
 .doorfoot{position:absolute;left:0;right:0;bottom:22px;z-index:3;text-align:center;font:10.5px var(--mono);
-  letter-spacing:.14em;text-transform:uppercase;color:#7c8699;opacity:0;transition:opacity 1.4s ease 2.1s;padding:0 16px}
+  letter-spacing:.14em;text-transform:uppercase;color:#7c8699;opacity:0;transition:opacity 1.2s ease 1.5s;padding:0 16px}
 body.lit .doorfoot{opacity:1}
 .doorfoot a{color:#a6b0c8}
 .doorfoot a:hover{color:#d8b45a}
