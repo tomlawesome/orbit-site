@@ -95,6 +95,7 @@ be short enough to paste from one: a friend with a Mac should be able to open th
 |---|---|---|
 | Compile, Firefox (each a stall): probe 2k / door lean 16k / door rich / flight head 28k / flight rich | 199 / 279 / 439 / 346 / 537 ms | 317 / 457 / 772 / 583 / 934 ms |
 | Compile, Edge (background, same programs) | 200 / 286 / 450 / 398 / 543 ms | 308 / 421 / 1039 / 777 / 1393 ms |
+| Trivial program / probe rolled | not yet measured | 8-13 / 129 ms (Firefox); 9-13 / 124 ms (Edge) |
 | Draw at this band (0.83 Mpx): probe ms per Mpx / door lean / door rich | 9-13 / 1.7-2.0 / 4.7-4.8 ms | 40-48 / 9.6-12.7 / 22-24 ms |
 | Upload 4096x2048 with mipmaps | ~50 ms | ~70-130 ms |
 | Stall of the page for the rich compile, Firefox | 445 ms | 520 ms |
@@ -108,15 +109,16 @@ frame gaps of 20 ms either side; 40 Mbit/s. Two Safari habits to design for: the
 first is warm-up to be discounted; and "mipmaps 0 ms" every time means they are built lazily, on first use, so the
 first draw of a real shader carries ~100 ms there (which the unseen proving draw absorbs, as it should).
 
-**The finding: a program costs ~200-300 ms to compile whatever its size.** The 2k-character probe takes 199 ms on
-the desktop and 317 on the laptop; the 16k door shader 279/457; the 28k flight head 346/583. Size adds a little
-(about 0.01 ms a character, more for loops); the count of programs is the cost. That is where the Firefox totals
-came from: the flight is five programs (scene, overlay, two bloom passes, film), the install world several, the
-live door four (lean, rich, the cloud field pass, the glow pass) and the planets compile their one program twice
-(two canvases). Edge pays the same durations in the background.
+**The finding: a program's fixed cost is ~10 ms; the rest is its size once unrolled.** A trivial program compiles
+in 8-13 ms on the laptop. Direct3D's compiler unrolls every loop whose count it can see, and that unrolled size is
+the cost: the 2k-character probe takes 315 ms with its loops countable and 129 ms with them rolled (a uniform, always
+0, added to each count), in Firefox and in Edge, drawing at the same speed. The count of programs mattered only for
+the ~10 ms each and for the contention when many compile in the background at once. The site's shaders are full of
+fixed-count loops, so the rich door's 770 ms and the flight head's 998 ms were mostly unrolling (PERFORMANCE.md).
 
-**What it implies, before any ladder:** fewer programs, same picture. (Status as of 8 October 2026; see
-PERFORMANCE.md, "Fewer programs, same picture".)
+**What it implied, before the loops were measured:** fewer programs, same picture. (Status as of 8 October 2026; see
+PERFORMANCE.md. Built on the belief above that the count was the cost; the count turned out to cost ~10 ms a program,
+so this bought little on Windows, and the rolled loops are what bought the compile time.)
 - **Done.** The flight's two bloom passes and film become one program with a mode switch (saves two compiles). The
   install/information world's the same (two more).
 - **Done.** The live door compiles rich only, when the probe says rich fits; lean only otherwise (saves one). Between
@@ -133,7 +135,8 @@ PERFORMANCE.md, "Fewer programs, same picture".)
 On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.
 
 **Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Mac 0.20), rich ≈ 0.3-0.55 (the Mac 0.32, the PCs 0.45-0.55); a compile ≈ the
-probe's compile time plus ~0.01 ms a character (loop-heavy code ~1.5x). Firefox's GPU name is made up ("GTX 980",
+probe's compile time scaled by the shader's rolled size (the per-character rule from before the loops were rolled no
+longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is made up ("GTX 980",
 "R9 200 Series"); Edge's is real.
 
 ## Open questions

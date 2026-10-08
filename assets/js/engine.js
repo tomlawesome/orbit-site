@@ -23,7 +23,7 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, COMPILES_ASIDE } from "./chores.js";
+import { chore, note, noteChores, COMPILES_ASIDE } from "./chores.js";
 import { seededRng } from "./sky.js";
 
 /**
@@ -1163,7 +1163,7 @@ export function createFlight(canvas, options = {}) {
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
         compiled = made.then(() => voyage?.made).then((ok) => (COMPILES_ASIDE ? ok : Promise.resolve(voyage?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });
+        warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
       }
       return warmed;
     },

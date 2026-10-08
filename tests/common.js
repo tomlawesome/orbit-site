@@ -15,13 +15,14 @@ export const release = (gl) => { try { gl.getExtension("WEBGL_lose_context")?.lo
 export const sync = (gl) => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 
 /* a program, compiled and linked, timed to the moment its link status is known (which waits for the compile, in
-   the background or on this thread alike); a salt in the source keeps the browser's shader cache out of it */
-export function program(gl, fsrc, { salt = true } = {}) {
+   the background or on this thread alike); a salt in the source keeps the browser's shader cache out of it. vert: its
+   own vertex shader, if it is not the full-screen triangle (VERT) */
+export function program(gl, fsrc, { salt = true, vert = VERT } = {}) {
   /* the salt is code, not a comment: Safari hashes the source without its comments, and answered the second probe
      from its cache in 3 ms */
   const src = salt ? fsrc.replace(/out vec4 o;/, `out vec4 o; const float SALT=${Math.random().toFixed(6)};`).replace(/o=vec4\(([^;]*)\);\s*}\s*$/, (m, inner) => `o=vec4(${inner})+vec4(SALT*1e-6); }`) : fsrc;
   const t0 = performance.now();
-  const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, VERT); gl.compileShader(vs);
+  const vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vert); gl.compileShader(vs);
   const fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, src); gl.compileShader(fs);
   const p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
   const ok = gl.getProgramParameter(p, gl.LINK_STATUS);

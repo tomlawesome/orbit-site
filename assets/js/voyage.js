@@ -182,7 +182,10 @@ export function cityGlow(gl, prog, lights, w, h, lightsN, blank) {
 const UNIFORMS = [
   ["common", `uniform vec2 uRes; uniform float uPx, uTime;
 /* which of the RICH programs' passes is drawn in place of the scene (0: none; PARTS.passes) */
-uniform int uPass;`],
+uniform int uPass;
+/* added to every loop's count, and never set: 0, as every uniform is after linking, but a count the compiler cannot
+   know, so it keeps the loops rolled (Direct3D unrolls every loop it can count, and that is most of its compile) */
+uniform int uZ;`],
   ["streaks", `uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;`],
   ["earth", `uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
@@ -225,13 +228,13 @@ float vnoise(vec3 p){
   return mix(mix(mix(hash13(i),hash13(i+vec3(1,0,0)),f.x),mix(hash13(i+vec3(0,1,0)),hash13(i+vec3(1,1,0)),f.x),f.y),
              mix(mix(hash13(i+vec3(0,0,1)),hash13(i+vec3(1,0,1)),f.x),mix(hash13(i+vec3(0,1,1)),hash13(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
-float fbm3(vec3 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=0.5; } return s; }
+float fbm3(vec3 p){ float s=0.0,a=0.5; for(int i=0;i<5+uZ;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=0.5; } return s; }
 
 `,
   sky: `/* ── the sky ── */
 vec3 stars(vec3 d,float f){
   vec3 c=vec3(0.0); float pxA=1.0/f;
-  for(int i=0;i<3;i++){
+  for(int i=0;i<3+uZ;i++){
     float fi=float(i), sc=(i==0?24.0:i==1?80.0:240.0);
     vec3 g=d*sc, id=floor(g);
     float h1=hash13(id+fi*31.0), h2=hash13(id.yzx+fi*17.0+5.0), h3=hash13(id.zxy+fi*13.0+11.0);
@@ -262,7 +265,7 @@ vec3 sky(vec2 css){
    the brightest with a fine cross; flaring as it lights and settling to the page's own */
 vec3 ignite(vec2 css){
   vec3 acc=vec3(0.0); float H=uRes.y/uPx, reach=H*0.14;
-  for(int i=0;i<64;i++){
+  for(int i=0;i<64+uZ;i++){
     if(i>=uCN) break;
     vec4 st=uCS[i]; if(st.w<=0.001) continue;
     vec2 d=css-st.xy; float r2=dot(d,d); if(r2>reach*reach) continue;
@@ -282,12 +285,12 @@ vec3 streaks(vec2 css){
   vec2 p=css-uVP; float r=length(p); if(r<6.0) return vec3(0.0);
   float a=atan(p.y,p.x), u=log(r);
   vec3 acc=vec3(0.0);
-  for(int i=0;i<4;i++){
+  for(int i=0;i<4+uZ;i++){
     float z=0.35+0.22*float(i);
     float N=floor(520.0+520.0*float(i));
     float sct=a/TAU*N, s0=floor(sct);
     float du=0.62, off=uOff[i], len=uLen[i];
-    for(int k=0;k<2;k++){
+    for(int k=0;k<2+uZ;k++){
       float s=s0+float(k)-(fract(sct)<0.5?1.0:0.0);
       float hs=hash12(vec2(s,float(i)*7.0));
       float aj=(s+0.5+0.6*(hash12(vec2(s,3.1+float(i)))-0.5))/N*TAU;
@@ -297,7 +300,7 @@ vec3 streaks(vec2 css){
       float w=(0.45+1.5*near*z)/uPx*uPx;
       if(perp>w*4.0) continue;
       float uu=u-off-hs*du; float cell=floor(uu/du);
-      for(int j=0;j<2;j++){
+      for(int j=0;j<2+uZ;j++){
         float cj=cell+float(j);
         float hc=hash13(vec3(s,cj,float(i)));
         if(hc>0.15*mix(0.12,1.0,uDens)) continue;
@@ -492,7 +495,7 @@ vec3 earth(vec2 css,out float cover){
     float ak=ground?1.0:uAirK;
     /* the high air: on the way down, and out again (kept apart, and laid behind the low air at the end) */
     vec3 LC=vec3(0.0), TC=vec3(1.0);
-    for(int i=0;i<22;i++){
+    for(int i=0;i<22+uZ;i++){
       if(i>=nA+nC) break;
       bool back=i>=nA;
       float a0=back?lb:t0, ds=((back?t1:la)-a0)/float(back?nC:nA);
@@ -507,7 +510,7 @@ vec3 earth(vec2 css,out float cover){
     /* (a skimming ray's steps are where its neighbours' are, not jittered: the tops it finds are then the same from one
        pixel to the next, a clean edge, not a ragged one) */
     float ds=(lb-la)/float(max(nB,1)), jb=ground?j:0.5;
-    for(int i=0;i<64;i++){
+    for(int i=0;i<64+uZ;i++){
       if(i>=nB) break;
       float t=la+ds*(float(i)+jb);
       vec3 x=ro+rd*t, ext, Ts;
@@ -558,7 +561,7 @@ vec3 earthAA(vec2 css,out float cover){
   int n=abs(k)<0.5?2:1;
   vec2 nv=vec2(d.x,-d.y)/max(l,1e-6), lim=css-nv*(1.0-l)*uCirc.z;
   vec3 acc=vec3(0.0); float cv=0.0;
-  for(int i=0;i<2;i++){
+  for(int i=0;i<2+uZ;i++){
     if(i>=n) break;
     float c; vec3 e=earth(n==1?css:lim+nv*((float(i)-0.5)*0.6/uPx),c);
     float w=n==1?1.0:i==0?k+0.5:0.5-k;
@@ -573,7 +576,7 @@ vec3 nebula(vec2 css,out float dust){
   dust=0.0; if(uNeb<=0.001) return vec3(0.0);
   vec2 p=css-uVP; float r=length(p), a=atan(p.y,p.x), u=log(max(r,1.0));
   vec3 acc=vec3(0.0);
-  for(int i=0;i<2;i++){
+  for(int i=0;i<2+uZ;i++){
     float k=i==0?1.5:3.1, sp=i==0?1.0:0.62;
     vec3 q=vec3(cos(a)*k,sin(a)*k,(u-uNebOff*sp)*k*0.85+float(i)*13.0);
     float f=fbm3(q);
@@ -612,7 +615,7 @@ vec4 moon(vec2 css){
      level of detail for the whole disc (its texels across a pixel, at the centre), worked out once here: a read that
      found its own level from its neighbours would have the compiler copy the loop out twelve times over */
   float lod=log2(max(1.0,float(textureSize(uMoonT,0).x)/(TAU*uMoonS.z*uPx)));
-  for(int i=0;i<12;i++) acc+=moonAt(css+uMoonV*((float(i)+0.5)/12.0-0.5),lod);
+  for(int i=0;i<12+uZ;i++) acc+=moonAt(css+uMoonV*((float(i)+0.5)/12.0-0.5),lod);
   return acc/12.0*uMoonS.w;
 }
 
@@ -649,7 +652,7 @@ vec3 arrival(vec2 css){
   vec3 ccol=mix(mix(vec3(1.0,0.93,0.8),vec3(1.0,0.66,0.32),smoothstep(0.0,1.6,lr)),vec3(0.62,0.42,0.9),smoothstep(1.8,3.6,lr));
   c+=ccol*stream*pow(Rd/max(r,Rd),1.7)*2.6*lum*smoothstep(Rd*0.98,Rd*1.05,r);
   /* the ciliary glare: hair-fine rays of every length about the core, two sets, fringed with colour at their tips */
-  for(int k=0;k<2;k++){
+  for(int k=0;k<2+uZ;k++){
     float N=k==0?211.0:137.0, sa=a/TAU*N+float(k)*0.37, id=floor(sa);
     float h1=hash12(vec2(id,float(k)*7.0)), h2=hash12(vec2(id+3.0,float(k)*13.0));
     float perp=abs(fract(sa)-0.5)*(TAU/N)*r;
@@ -659,7 +662,7 @@ vec3 arrival(vec2 css){
     c+=tip*exp(-perp*perp/0.45)*exp(-t*2.2)*smoothstep(Rd*0.6,Rd*1.4,r)*(0.25+h2*1.4)*1.6*lum;
   }
   /* the diffraction spikes: six, banded, dispersed (each colour reaching its own length, the red the furthest) */
-  for(int k=0;k<3;k++){
+  for(int k=0;k<3+uZ;k++){
     float an=0.52+float(k)*PI/3.0;
     vec2 ax=vec2(cos(an),sin(an));
     float al=abs(dot(p,ax)), pe=abs(dot(p,vec2(-ax.y,ax.x)));
@@ -879,6 +882,8 @@ void main(){ if(uMode==0) o=down(); else if(uMode==1) o=up(); else o=film(); }`;
 const GAL = `#version 300 es
 precision highp float;
 uniform vec2 uRes; uniform vec3 uCamP; uniform mat3 uCamR; uniform float uF, uTime, uGain;
+/* 0, never set: its march's count unknown to the compiler, so not unrolled (uZ, the scene's) */
+uniform int uZ;
 out vec4 o;
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float vnoise(vec3 p){
@@ -927,7 +932,7 @@ void main(){
   if(t1<=t0){ o=vec4(0.0); return; }
   float span=t1-t0, jit=hash13(vec3(uv,fract(uTime)*97.0));
   vec3 col=vec3(0.0); float T=1.0, t=t0;
-  for(int i=0;i<52;i++){
+  for(int i=0;i<52+uZ;i++){
     float dt=clamp(t*0.085,0.006,span/34.0+0.004);
     float ts=t+dt*jit;
     if(ts>t1||T<0.015) break;
@@ -964,6 +969,8 @@ const STARF = `#version 300 es
 precision highp float;
 uniform float uPts; in vec3 vC; out vec4 o;
 void main(){ vec2 d=gl_PointCoord-0.5; float a=uPts>0.5?exp(-dot(d,d)*14.0):1.0; o=vec4(vC*a,1.0); }`;
+/* the rush's program and the galaxy's, as sources, for the tests (tests/t-compile.js) */
+export const SOURCES = { scene: SCENE, galaxy: GAL };
 /* the galaxy's stars, made once: most in the disc and thickest along the arms, some in the bulge, and a cloud of
    them about the place the flight comes to rest, so there are stars close by to pass */
 const REST = [0.56, 0, 0];

@@ -20,6 +20,9 @@ in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
 
 /* simplex noise (Gustavson / McEwan), fbm, and a few helpers */
 const NOISE = `
+/* added to every loop's count, and never set: 0, as every uniform is after linking, but a count the compiler cannot
+   know, so it keeps the loops rolled (Direct3D unrolls every loop it can count, and that is most of its compile) */
+uniform int uZ;
 vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
 vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
 vec4 permute(vec4 x){return mod289(((x*34.0)+10.0)*x);}
@@ -45,8 +48,8 @@ float snoise(vec3 v){
   return 105.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
 }
 const mat3 ROT=mat3(0.00,0.80,0.60,-0.80,0.36,-0.48,-0.60,-0.48,0.64);
-float fbm(vec3 p,int oct){float s=0.0,a=0.5;for(int i=0;i<12;i++){if(i>=oct)break;s+=a*snoise(p);p=ROT*p*2.02;a*=0.5;}return s;}
-float ridged(vec3 p,int oct){float s=0.0,a=0.5,w=1.0;for(int i=0;i<12;i++){if(i>=oct)break;float n=1.0-abs(snoise(p));n*=n;n*=w;w=clamp(n*1.8,0.0,1.0);s+=a*n;p=ROT*p*2.03;a*=0.5;}return s;}
+float fbm(vec3 p,int oct){float s=0.0,a=0.5;for(int i=0;i<12+uZ;i++){if(i>=oct)break;s+=a*snoise(p);p=ROT*p*2.02;a*=0.5;}return s;}
+float ridged(vec3 p,int oct){float s=0.0,a=0.5,w=1.0;for(int i=0;i<12+uZ;i++){if(i>=oct)break;float n=1.0-abs(snoise(p));n*=n;n*=w;w=clamp(n*1.8,0.0,1.0);s+=a*n;p=ROT*p*2.03;a*=0.5;}return s;}
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 vec3 srgb(int r,int g,int b){return pow(vec3(r,g,b)/255.0,vec3(2.2));}
 const float PI=3.14159265, TAU=6.28318531;
@@ -134,7 +137,7 @@ float ringAt(vec3 X,float lod){
 
 vec3 stars(vec3 d,float dens){
   vec3 c=vec3(0.0); float pxA=1.0/uFocal;
-  for(int i=0;i<4;i++){
+  for(int i=0;i<4+uZ;i++){
     float fi=float(i), sc=(i==0?18.0:i==1?60.0:i==2?190.0:520.0);
     vec3 g=d*sc, id=floor(g);
     float h1=hash13(id+fi*31.0), h2=hash13(id.yzx+fi*17.0+5.0), h3=hash13(id.zxy+fi*13.0+11.0), h4=hash13(id+vec3(7.0,3.0,1.0)+fi);
@@ -278,7 +281,7 @@ vec3 dust(vec3 ro,vec3 rd,float tMax){
   vec3 tN=(cell+max(st,0.0)-p)/rd;
   vec3 acc=vec3(0.0);
   float ph=dot(rd,uSun), g=0.65, hg=(1.0-g*g)/pow(1.0+g*g-2.0*g*ph,1.5);
-  for(int i=0;i<30;i++){
+  for(int i=0;i<30+uZ;i++){
     if(i>=uDustN)break;
     float t0=min(tN.x,min(tN.y,tN.z))*CS;
     float h=hash13(cell);
@@ -329,7 +332,7 @@ void main(){
      ray's nearest miss of it, against a pixel's width out there), so the edge does not crawl as the camera drifts.
      Each surface is still shaded once at most (the shader is compiled at the click on a first visit: kept lean) */
   float cov=0.0; vec4 EM=vec4(0.0); vec3 Pm=vec3(0.0);
-  for(int k=0;k<2;k++){
+  for(int k=0;k<2+uZ;k++){
     vec4 M=k==0?uMoon:uMoon2; if(M.w<=0.0)continue;
     vec3 oc=M.xyz-ro; float b=dot(oc,rd); if(b<=0.0)continue;
     vec3 nr=oc-rd*b; float c=clamp((M.w-length(nr))*uFocal/b+0.5,0.0,1.0);
@@ -346,7 +349,7 @@ void main(){
     vec3 s=vec3(0.0); float od=0.0;
     vec3 ls=normalize(squash(uSun));
     float rsh=1.0-0.6*ringAt(ro+rd*(0.5*(t0+t1)),7.0)*uRingK;
-    for(int i=0;i<N;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
+    for(int i=0;i<N+uZ;i++){ vec3 x=ro+rd*(t0+ds*(float(i)+0.5)); vec3 qx=squash(x); float h=max(length(qx)-1.0,0.0);
       /* the haze is lit by how high the sun stands over it: it fades through dusk, no hard edge */
       float up=dot(normalize(qx),ls); float lit=smoothstep(-0.07,0.2,up);
       float dR=exp(-h/HR)*ds; od+=dR; s+=dR*lit*exp(-BR*od); }
@@ -370,6 +373,8 @@ void main(){
 #endif
   o=vec4(max(col,0.0),alpha);
 }`;
+/* the shot and its vertex shader, as sources, for the tests (tests/t-compile.js) */
+export const RENDER_SRC = RENDER, RENDER_VERT = VERT;
 
 /* after the scene, one program in three ways (uMode): 0, BLOOM down a chain of halves (13 taps; the first keeps only
    the bright); 1, and back up (a tent); 2, THE FILM: the light and its bloom, tone-mapped (AgX), a breath of vignette
@@ -378,6 +383,8 @@ const POST = `#version 300 es
 precision highp float;
 uniform int uMode;
 uniform sampler2D uSrc, uHdr, uBloom; uniform vec2 uTexel, uOut, uPart, uRes, uBlurC; uniform float uFirst, uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
+/* 0, never set: the blur's count unknown to the compiler, so not unrolled (uZ, NOISE's) */
+uniform int uZ;
 out vec4 o;
 vec3 s(vec2 uv){ vec3 c=texture(uSrc,min(uv*uPart,uPart-uTexel*0.5)).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-1.3,0.0)/max(l,1e-4); } return c; }
 vec4 down(){
@@ -422,7 +429,7 @@ vec3 lens(vec2 uv){
   vec3 c=vec3(HC(uv+r*f).r,HC(uv).g,HC(uv-r*f).b);
   if(uBlur>0.5){
     vec2 dir=(uv-uBlurC/uRes); vec2 stp=dir*(uBlur/max(length(dir*uRes),1.0))/7.0;
-    vec3 acc=c; for(int i=1;i<8;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(H(u2+r*f).r,H(u2).g,H(u2-r*f).b); }
+    vec3 acc=c; for(int i=1;i<8+uZ;i++){ vec2 u2=uv-stp*float(i); acc+=vec3(H(u2+r*f).r,H(u2).g,H(u2-r*f).b); }
     c=acc/8.0;
   }
   return c;

@@ -17,6 +17,8 @@
  */
 const queue = [];
 let open = false, compiling = false, running = false, want = null, until = 0, wake = 0, started = 0, openedAt = 0;
+/* where the chores' time goes (noteChores): waiting for an idle moment, running, and the first one's start */
+let waited = 0, ran = 0, firstAt = 0;
 
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
@@ -59,13 +61,15 @@ function pump() {
     if (!open && tags(queue[i].tag)[0] !== "compile") return;
   }
   running = true;
+  const asked = performance.now();
   const run = () => {
     const [job] = queue.splice(Math.min(i, queue.length - 1), 1);
     started++;
+    const t0 = performance.now(); waited += t0 - asked; if (!firstAt) firstAt = t0;
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
-      running = false;
+      running = false; ran += performance.now() - t0;
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
          so nothing heavy sits right beside them); hurried, still a frame */
       if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.tag === "measure" ? job.rest : Math.min(job.rest, 20)));
@@ -118,6 +122,12 @@ export function fetchOnce(url) {
   return fetched.get(url);
 }
 
+/** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as
+    running), waiting for an idle moment to start (idle), and the rest (the rests between, and nothing queued) */
+export function noteChores(when) {
+  const wall = firstAt ? performance.now() - firstAt : 0;
+  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms for idle, ${Math.round(Math.max(0, wall - ran - waited))} ms resting or empty, over ${Math.round(wall)}`);
+}
 /* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went) */
 export function note(what, since = 0) {
