@@ -80,7 +80,9 @@ name), `compile` (the probe shader and the real door and flight Earth shaders, s
 `draw` (the probe at 512x512 for ms per million pixels, then the real lean and rich door shaders at this screen's own
 band with maps of noise so every path runs), `upload` (maps of the site's sizes put on the GPU with their mipmaps),
 `stall` (a spinner turns while the rich shader compiles: the frame gaps, and the eye's verdict on the spinner), and
-`network` (two of the maps fetched fresh). Numbers from each device go into the table above.
+`network` (two of the maps fetched fresh). Numbers from each device go into the table above. A laptop's power state changes everything: the 4700U on battery
+compiled the probe in 315 ms and drew the rich door at 24 ms a frame, on mains 197 ms and 11 ms. Say which when
+pasting a run, and compare runs in the same state only (or against the probe in the same run).
 
 A readout page (`?probe` in the address) that runs the probe and prints its report on the screen as well as the
 console (phones have no console to hand), as copyable text: browser class, screen, extensions, compile ms, ms per
@@ -95,7 +97,7 @@ be short enough to paste from one: a friend with a Mac should be able to open th
 |---|---|---|
 | Compile, Firefox (each a stall): probe 2k / door lean 16k / door rich / flight head 28k / flight rich | 199 / 279 / 439 / 346 / 537 ms | 317 / 457 / 772 / 583 / 934 ms |
 | Compile, Edge (background, same programs) | 200 / 286 / 450 / 398 / 543 ms | 308 / 421 / 1039 / 777 / 1393 ms |
-| Trivial program / probe rolled | not yet measured | 8-13 / 129 ms (Firefox); 9-13 / 124 ms (Edge) |
+| Trivial program / probe rolled (the real shaders: no gain, see below) | not yet measured | 8-13 / 129 ms (Firefox); 9-13 / 124 ms (Edge) |
 | Draw at this band (0.83 Mpx): probe ms per Mpx / door lean / door rich | 9-13 / 1.7-2.0 / 4.7-4.8 ms | 40-48 / 9.6-12.7 / 22-24 ms |
 | Upload 4096x2048 with mipmaps | ~50 ms | ~70-130 ms |
 | Stall of the page for the rich compile, Firefox | 445 ms | 520 ms |
@@ -109,12 +111,14 @@ frame gaps of 20 ms either side; 40 Mbit/s. Two Safari habits to design for: the
 first is warm-up to be discounted; and "mipmaps 0 ms" every time means they are built lazily, on first use, so the
 first draw of a real shader carries ~100 ms there (which the unseen proving draw absorbs, as it should).
 
-**The finding: a program's fixed cost is ~10 ms; the rest is its size once unrolled.** A trivial program compiles
-in 8-13 ms on the laptop. Direct3D's compiler unrolls every loop whose count it can see, and that unrolled size is
-the cost: the 2k-character probe takes 315 ms with its loops countable and 129 ms with them rolled (a uniform, always
-0, added to each count), in Firefox and in Edge, drawing at the same speed. The count of programs mattered only for
-the ~10 ms each and for the contention when many compile in the background at once. The site's shaders are full of
-fixed-count loops, so the rich door's 770 ms and the flight head's 998 ms were mostly unrolling (PERFORMANCE.md).
+**The finding, corrected twice: a program's fixed cost is ~10 ms; the rest grows faster than its size, and it is not
+the loops.** A trivial program compiles in 8-13 ms on the laptop. The 2k-character probe takes 315 ms with its loops
+countable and 129 ms with them rolled (a uniform, always 0, in each count), drawing at the same speed: true of the
+probe, whose cost is one nested loop. Done to every loop in the site's shaders (8 October, measured the same day
+against the unchanged probe in the same run), the real shaders gained nothing: the rich door 2.4x the probe before,
+2.5x after; the flight head 3.2x and 3.0x. Taken out again. What is known to hold: a big shader costs more than its
+parts (the flight's effects, measured one at a time, add to more than the whole), so splitting a program saves time
+and merging costs it, and the only lever left on a slow compiler is less code before the door (the ladder).
 
 **What it implied, before the loops were measured:** fewer programs, same picture. (Status as of 8 October 2026; see
 PERFORMANCE.md. Built on the belief above that the count was the cost; the count turned out to cost ~10 ms a program,
