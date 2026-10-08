@@ -12,36 +12,41 @@
  * while the door is not shown. Made as a chore (chores.js), after the door's reveal; the picture stays until then.
  */
 import { chore, fetchOnce, note } from "./chores.js";
-import { SCENE_HEAD, TEX, EURO, doorCamera, followDoor } from "./voyage.js";
+import { SCENE_HEAD, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture } from "./voyage.js";
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
 
 const FRAG = SCENE_HEAD + `
-/* where the sun comes up on the limb (css px), and how strongly its first light shows there */
-uniform vec2 uSunPt; uniform float uFirst;
+/* where the sun comes up on the limb (css px), and how strongly its first light shows there; where the band's top
+   fades in (css px: its start, its length) */
+uniform vec2 uSunPt, uFade; uniform float uFirst;
 void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
-  float cov; vec3 e=earth(css,cov);
+  float cov; vec3 e=earthAA(css,cov);
   /* the first light: a bead of the sun along the limb, shimmering as the air over it moves */
   float s=uCirc.z/3000.0;
   vec2 p=css-uSunPt;
   float along=exp(-pow(p.x/(150.0*s),2.0)), across=exp(-pow((p.y+1.5*s)/(2.2*s+0.7),2.0));
   float sh=0.75+0.5*vnoise(vec3(p.x/(9.0*s),uTime*0.3,1.3))*vnoise(vec3(p.x/(23.0*s)+4.0,uTime*0.13,7.1));
   e+=vec3(1.0,0.66,0.4)*along*across*sh*uFirst*0.7;
-  /* the flight's film, without its bloom or grain (the door has its own grain) */
-  vec3 c=1.0-exp(-max(e,0.0)*0.35);
-  float l=dot(c,vec3(0.2126,0.7152,0.0722)); c=max(mix(vec3(l),c,1.08),0.0);
+  /* the picture's own film (dawn.py: tonemap, --expo 0.35), faded in over the band's top as the picture is */
+  float f=clamp((css.y-uFade.x)/uFade.y,0.0,1.0);
+  vec3 c=(1.0-exp(-max(e,0.0)*0.35))*f*f*(3.0-2.0*f);
+  /* and laid over the door's sky as the picture is: where the Earth is it covers the sky; above the limb its air is
+     a light over it, as opaque as it is bright (premultiplied) */
+  float a=clamp(max(cov,max(c.r,max(c.g,c.b))*(1.0-cov)),0.0,1.0);
+  c=a>1e-4?min(c/a,1.0):vec3(0.0);
   c=pow(c,vec3(1.0/2.2))+(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)/255.0;
-  /* premultiplied: the disc covers what is behind it; the air over the limb adds to it */
-  o=vec4(c,cov);
+  o=vec4(c*a,a);
 }`;
 
 /* the ground turns once in this long (s: five hours, all but still), the clouds drift a quarter of a degree a minute
    over it, the sun rises and sinks a little (degrees under the horizon) */
 const TURN = 18000, CLOUD = 1 / 360 / 240, SUN = 0.15;
-/* the air's own light, as a share of the flight's: the door's glows beneath already carry most of it */
-const AIR = 0.28;
+/* the air's light over the limb, against the flight's: the door has shown its two pictures one over the other
+   (dawn-pre under dawn), and their air adds up to this much more (fitted against them) */
+const AIR = 1.4;
 
 export function liveDoor(world) {
   const canvas = document.createElement("canvas");
@@ -52,11 +57,11 @@ export function liveDoor(world) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
   /* the pictures down the wire at once; only putting them on the GPU waits its turn */
-  const keys = ["lights", "euro", "clouds", "day"];
+  const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN"];
   for (const k of keys) fetchOnce(TEX[k]).catch(() => {});
 
   const shader = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
-  let prog = null, u = {};
+  let prog = null, u = {}, sunTex = null;
   const maps = {};
   const make = () => {
     const p = gl.createProgram();
@@ -68,10 +73,15 @@ export function liveDoor(world) {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "door3d: no program");
     const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
+    sunTex = sunTexture(gl);
     prog = p;
   };
   const par = gl.getExtension("KHR_parallel_shader_compile");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+  const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
+  /* a map not (yet) there is drawn without: black in its place, and its flag down (uHas, uHasN) */
+  const blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, blank);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   const compiled = (p) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
     const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
@@ -85,12 +95,13 @@ export function liveDoor(world) {
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       /* the ground is seen almost edge on: without this the cities blur into the coarsest maps */
-      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "euro" ? gl.CLAMP_TO_EDGE : gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
-    }, 60, "door"));
+    }, 60, "door"))
+    .catch(() => { /* drawn without it */ });
   const vao = gl.createVertexArray();
 
   /* the band the Earth fills: the frame's y 640..1000 (as the picture is laid), at the door's own scale */
@@ -100,8 +111,8 @@ export function liveDoor(world) {
     W = r.width || innerWidth; H = r.height || innerHeight; s = Math.max(W / 1600, H / 1000);
     top = Math.max(0, H - 360 * s);
     const bh = H - top, dpr = Math.min(devicePixelRatio || 1, 2);
-    /* the night is soft; the cities are points: three quarters of the screen's density, and no more than 0.6 million pixels */
-    px = Math.min(dpr * 0.75, Math.sqrt(6e5 / Math.max(1, W * bh)));
+    /* at the screen's own density (the cities are points, the limb a line), up to about 3 million pixels */
+    px = Math.min(dpr, Math.sqrt(3e6 / Math.max(1, W * bh)));
     canvas.width = Math.max(1, Math.round(W * px)); canvas.height = Math.max(1, Math.round(bh * px));
     Object.assign(canvas.style, { top: `${top}px`, height: `${bh}px`, bottom: "auto" });
     dirty = true;
@@ -136,11 +147,15 @@ export function liveDoor(world) {
     gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, cam.S);
     gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(M)); gl.uniform1f(u.uCloudOff, state.cloudOff);
     gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, 0);
-    gl.uniform4f(u.uEuroBox, ...EURO);
-    gl.uniform2f(u.uSunPt, W / 2, ly(920));
+    gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
+    gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
+    gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0); gl.uniform1f(u.uAniso, anisoK);
+    gl.uniform2f(u.uSunPt, W / 2, ly(920)); gl.uniform2f(u.uFade, ly(640), 60 * s);
     gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 110) * 6.2832 + 3.1416));
     const bind = (unit, tx, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
-    bind(0, maps.lights, u.uLights); bind(1, maps.day, u.uDay); bind(2, maps.clouds, u.uClouds); bind(3, maps.euro, u.uEuro);
+    bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
+    bind(3, maps.euro || blank, u.uEuro); bind(4, maps.lightsN || blank, u.uLightsN); bind(5, maps.cloudsN || blank, u.uCloudsN);
+    bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     dirty = false;
   }

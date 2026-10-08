@@ -26,12 +26,53 @@ const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
   euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"), moon: IMG("install/moon.webp"),
+  /* finer, about where the door looks (NEAR) */
+  lightsN: IMG("door/lights-near.webp"), cloudsN: IMG("door/clouds-near.webp"), dayN: IMG("door/land-near.webp"),
 };
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 export const EURO = [2, 24, 38, 55];
+/* the near maps (lights, clouds, land) cover lon -25..45, lat 28..66: all the door's ground can turn to in a while */
+export const NEAR = [-25, 45, 28, 66];
+/* the maps that cover a box, not the whole Earth: they do not wrap */
+export const BOXED = ["euro", "lightsN", "cloudsN", "dayN"];
 const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+/* the sun's light through the air, as tools/dawn.py tables it: from a height (0..110 km, finer low down) under the
+   sun's elevation there (-12..90 degrees, finest about the horizon, where it changes fastest), the air the light
+   crosses on its way in, as three columns (molecules, haze, ozone; Earth radii), which the shader turns into colour.
+   Where the Earth is in the way, more air than any light gets through. Made once, for the door and the flight both */
+let sunTab = null;
+export function sunTable() {
+  if (sunTab) return sunTab;
+  const NE = 210, NH = 64, N = 48, R = 6371, TOP = 110, RA = R + TOP, out = new Float32Array(NE * NH * 4);
+  for (let j = 0; j < NH; j++) {
+    const h = TOP * (j / (NH - 1)) ** 2, r0 = R + h;
+    for (let i = 0; i < NE; i++) {
+      const e = i < 20 ? -12 + i * 0.5 : i < 180 ? -2 + (i - 20) * 0.05 : 6 + ((i - 180) * 84) / 29;
+      const mu = Math.sin((e * Math.PI) / 180), b = r0 * mu, o = (j * NE + i) * 4;
+      if (mu < 0 && b * b - (r0 * r0 - R * R) > 0) { out[o] = out[o + 1] = out[o + 2] = 1; continue; }
+      const top = -b + Math.sqrt(Math.max(b * b - (r0 * r0 - RA * RA), 0)), dt = top / N;
+      let cr = 0, cm = 0, co = 0;
+      for (let k = 0; k < N; k++) {
+        const t = (k + 0.5) * dt, z = Math.sqrt(r0 * r0 + t * t + 2 * r0 * t * mu) - R;
+        cr += Math.exp(-z / 8); cm += Math.exp(-z / 1.2); co += Math.max(0, 1 - Math.abs(z - 25) / 15);
+      }
+      out[o] = (cr * dt) / R; out[o + 1] = (cm * dt) / R; out[o + 2] = (co * dt) / R;
+    }
+  }
+  return (sunTab = { w: NE, h: NH, data: out });
+}
+/** the table as a texture on a context (half floats, which every WebGL2 filters) */
+export function sunTexture(gl) {
+  const { w, h, data } = sunTable(), t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -44,6 +85,11 @@ uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSu
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
 uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
+/* the finer maps about where the door looks (lights, clouds, land: which are there, uHasN), the box they cover; the
+   cloud slab's strength (0: none); how far the anisotropic filter reaches (1: there is none) */
+uniform sampler2D uLightsN, uCloudsN, uDayN; uniform vec4 uNearBox, uHasN; uniform float uCloudK, uAniso;
+/* the sun's light through the air (sunTable) */
+uniform sampler2D uSunT;
 uniform mat3 uSkyM; uniform float uStarA, uDens;
 uniform float uBloom, uPre; uniform vec2 uBloomPt;
 uniform vec4 uMoonS; uniform vec2 uMoonV; uniform float uMoonSpin; uniform sampler2D uMoonT;
@@ -153,82 +199,223 @@ vec3 streaks(vec2 css){
   return acc;
 }
 
-/* ── the Earth ── */
-float chapman(float X,float h,float c){
-  float cc=sqrt(X+h), ce=cc*exp(-h);
-  if(c>=0.0) return ce/(cc*c+1.0);
-  float x0=sqrt(1.0-c*c)*(X+h), c0=sqrt(x0);
-  return 2.0*c0*exp(X-x0)-ce/(1.0-cc*c);
-}
+/* ── the Earth (tools/dawn.py, its picture the measure of this: the same air, clouds, ground and lights) ── */
 const vec3 BR=vec3(36.95,86.38,210.9);      /* Rayleigh, per Earth radius */
 const float HR=8.0/6371.0, BM=25.46, BMX=28.0, HM=1.2/6371.0, RA=1.0+100.0/6371.0;
 const vec3 BO=vec3(0.650,1.881,0.085)*6371.0e-3*0.6;
 const vec3 SUNL=vec3(1.0,0.96,0.90)*20.0;
-vec3 tauSun(float hh,float mu){
-  /* the Earth in the way: no sun */
-  float hz=-sqrt(max(0.0,1.0-1.0/((1.0+hh)*(1.0+hh))));
-  if(mu<hz) return vec3(1e4);
-  return BR*HR*chapman(1.0/HR,hh/HR,mu)+BMX*HM*chapman(1.0/HM,hh/HM,mu)+BO*0.012*chapman(1.0/(15.0/6371.0),max(hh-0.0039,0.0)/(15.0/6371.0),mu);
+/* a quarter moon high behind the camera: what shows the night's clouds and land */
+const vec3 MOONL=vec3(0.55,0.62,0.78)*0.0045;
+/* the cloud slab (km): its foot and its tallest tops (dawn.py's CL0, CL1), and the low air it stands in, which a ray
+   is marched through finely, the clouds with it */
+const float KM=1.0/6371.0, CL0=1.0, CL1=11.0, LOW=15.0;
+/* the sun's light reaching a height (Earth radii) under the sun's elevation there (its sine): read from the table
+   of the air it crosses (sunTable, below; the Earth in the way, none) */
+vec3 sunT(float hh,float mu){
+  float e=clamp(degrees(asin(clamp(mu,-1.0,1.0))),-12.0,90.0);
+  float i=e<-2.0?(e+12.0)*2.0:e<6.0?20.0+(e+2.0)*20.0:180.0+(e-6.0)*(29.0/84.0);
+  float k=sqrt(clamp(hh*(6371.0/110.0),0.0,1.0))*63.0;
+  vec3 c=textureLod(uSunT,vec2((i+0.5)/210.0,(k+0.5)/64.0),0.0).rgb;
+  return exp(-(BR*c.r+BMX*c.g+BO*c.b));
 }
 vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c; if(d<0.0) return vec2(-1.0); d=sqrt(d); return vec2(-b-d,-b+d); }
-vec3 surface(vec3 P,vec3 rd,out float ca){
-  vec3 Q=uSpinM*P;
-  float lat=asin(clamp(Q.z,-1.0,1.0)), lon=atan(Q.y,Q.x);
-  vec2 uv=vec2(lon/TAU+0.5,0.5-lat/PI);
-  float mu=dot(P,uSun);
-  vec3 lights=uHas.x>0.5?pow(texture(uLights,uv).rgb,vec3(2.2)):vec3(0.0);
-  float dlat=degrees(lat), dlon=degrees(lon);
-  if(uHas.y>0.5&&dlon>uEuroBox.x&&dlon<uEuroBox.y&&dlat>uEuroBox.z&&dlat<uEuroBox.w){
-    vec2 eu=vec2((dlon-uEuroBox.x)/(uEuroBox.y-uEuroBox.x),(uEuroBox.w-dlat)/(uEuroBox.w-uEuroBox.z));
-    float edge=min(min(eu.x,1.0-eu.x),min(eu.y,1.0-eu.y));
-    lights=mix(lights,pow(texture(uEuro,eu).rgb,vec3(2.2)),smoothstep(0.0,0.06,edge));
+float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(1.0+g*g-2.0*g*c,1.5)); }
+
+/* the maps come in tiers: the whole Earth; a box about where the door looks, finer (uNearBox: lon0, lon1, lat0, lat1);
+   and, for the lights, Europe, finest (uEuroBox). Each box's map takes over from the one beneath across a margin
+   inside its edges (degrees), so no seam shows as the ground turns. g is (lon, lat) in degrees */
+const vec4 WORLD=vec4(-180.0,180.0,-90.0,90.0);
+float inBox(vec2 g,vec4 b,float m){ return smoothstep(0.0,m,min(min(g.x-b.x,b.y-g.x),min(g.y-b.z,b.w-g.y))); }
+vec2 boxUV(vec2 g,vec4 b){ return vec2((g.x-b.x)/(b.y-b.x),(b.w-g.y)/(b.w-b.z)); }
+vec2 boxD(vec2 d,vec4 b){ return vec2(d.x/(b.y-b.x),-d.y/(b.w-b.z)); }
+/* the level of a map that blurs it by about deg degrees */
+float lodAt(sampler2D t,vec4 b,float deg){ return log2(max(deg*float(textureSize(t,0).x)/(b.y-b.x),1.0)); }
+/* the lights and the land on the ground, read over the pixel's footprint there (ga, gb: its two axes, degrees): the
+   anisotropic filter gathers along the long one; the level comes from the short one, so the cities seen almost edge
+   on stay points, as the picture's are, and do not blur into the coarse levels */
+/* a map read where it is seen larger than its texels: each texel kept crisp to within a pixel at its edges, not
+   smeared over the pixels between (the lights' map is coarser than the picture's, which reads a finer one point by
+   point); where it is seen smaller, as it is */
+vec3 crisp(sampler2D t,vec2 uv,vec2 ga,vec2 gb){
+  vec2 sz=vec2(textureSize(t,0)), m=1.0/max(max(abs(ga),abs(gb))*sz,vec2(1e-4));
+  vec2 p=uv*sz-0.5, f=clamp((fract(p)-0.5)*max(m,1.0)+0.5,0.0,1.0);
+  return textureGrad(t,(floor(p)+f+0.5)/sz,ga,gb).rgb;
+}
+vec3 lightsAt(vec2 g,vec2 ga,vec2 gb){
+  float wE=uHas.y>0.5?inBox(g,uEuroBox,1.0):0.0, wN=uHasN.x>0.5?inBox(g,uNearBox,2.0):0.0;
+  vec3 c=vec3(0.0);
+  if(wE<1.0){
+    if(wN<1.0&&uHas.x>0.5) c=textureGrad(uLights,boxUV(g,WORLD),boxD(ga,WORLD),boxD(gb,WORLD)).rgb;
+    if(wN>0.0) c=mix(c,crisp(uLightsN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)),wN);
   }
-  float cl=uHas.z>0.5?texture(uClouds,uv+vec2(uCloudOff,0.0)).r:0.0; ca=smoothstep(0.22,0.85,cl);
-  vec3 alb=uHas.z>0.5?pow(texture(uDay,uv).rgb,vec3(2.2)):vec3(0.06,0.07,0.1);
-  /* the sun on the ground and on the cloud tops, through the air above them */
-  vec3 Ts=exp(-tauSun(0.0,mu)), Tc=exp(-tauSun(8.0/6371.0,mu));
-  float lit=smoothstep(-0.02,0.06,mu)*max(mu,0.0)+0.02*smoothstep(-0.05,0.02,mu);
-  float clit=smoothstep(-0.04,0.05,mu)*max(mu+0.03,0.0);
-  /* the twilight sky's own light, and a little moonlight */
-  vec3 tw=vec3(0.25,0.35,0.7)*0.35*exp(min(mu,0.0)*28.0)*step(mu,0.15)+vec3(0.55,0.62,0.78)*0.018;
-  vec3 ground=alb*(SUNL*0.4*Ts*lit/PI+tw);
-  vec3 cloud=vec3(0.85)*(SUNL*0.3*Tc*clit/PI+tw*1.3);
-  float night=1.0-smoothstep(-0.12,0.02,mu);
-  vec3 c=mix(ground,cloud,ca)+lights*0.9*night*(1.0-0.8*ca)+lights*0.12*night*ca;
-  return c;
+  if(wE>0.0) c=mix(c,crisp(uEuro,boxUV(g,uEuroBox),boxD(ga,uEuroBox),boxD(gb,uEuroBox)),wE);
+  return pow(c,vec3(2.2));
+}
+vec3 landAt(vec2 g,vec2 ga,vec2 gb){
+  if(uHas.z<0.5) return vec3(0.004,0.005,0.01);
+  float wN=uHasN.z>0.5?inBox(g,uNearBox,2.0):0.0;
+  vec3 c=vec3(0.0);
+  if(wN<1.0) c=textureGrad(uDay,boxUV(g,WORLD),boxD(ga,WORLD),boxD(gb,WORLD)).rgb;
+  if(wN>0.0) c=mix(c,textureGrad(uDayN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)).rgb,wN);
+  return pow(c,vec3(2.2));
+}
+/* the city lights' glow on the undersides of the clouds over them: the lights blurred (dawn.py: GLOW). A map's levels
+   average it before its 2.2 curve, which loses the bright points' share: given back where it is used (measured
+   against dawn.py's own) */
+vec3 glowAt(vec2 g){
+  const float B=0.09;
+  float wN=uHasN.x>0.5?inBox(g,uNearBox,2.0):0.0;
+  vec3 c=vec3(0.0);
+  if(wN<1.0) c=textureLod(uLights,boxUV(g,WORLD),lodAt(uLights,WORLD,B)).rgb;
+  if(wN>0.0) c=mix(c,textureLod(uLightsN,boxUV(g,uNearBox),lodAt(uLightsN,uNearBox,B)).rgb,wN);
+  return pow(c,vec3(2.2));
+}
+/* the cloud cover where a step of the march is (drifting over the ground), read at the step's own footprint (fd,
+   degrees): as it is (x), and softened (y: dawn.py blurs its map for the height the tops stand to, so masses of cloud
+   rise as masses; here a coarser level of the same map). Each remapped as dawn.py does */
+vec2 coverAt(vec2 g,float fd){
+  const float SOFT=0.16;
+  g.x=mod(g.x+uCloudOff*360.0+180.0,360.0)-180.0;
+  float wN=uHasN.y>0.5?inBox(g,uNearBox,2.0):0.0;
+  vec2 c=vec2(0.0);
+  if(wN<1.0){ vec2 uv=boxUV(g,WORLD); c=vec2(textureLod(uClouds,uv,lodAt(uClouds,WORLD,fd)).r,textureLod(uClouds,uv,lodAt(uClouds,WORLD,max(fd,SOFT))).r); }
+  if(wN>0.0){ vec2 uv=boxUV(g,uNearBox); c=mix(c,vec2(textureLod(uCloudsN,uv,lodAt(uCloudsN,uNearBox,fd)).r,textureLod(uCloudsN,uv,lodAt(uCloudsN,uNearBox,max(fd,SOFT))).r),wN); }
+  return clamp((c-0.2)/0.8,0.0,1.0);
+}
+/* (lon, lat) in degrees of a point on the turned ground, and its east and north there */
+vec2 lonlat(vec3 Q){ return degrees(vec2(atan(Q.y,Q.x),asin(clamp(Q.z,-1.0,1.0)))); }
+
+/* the ground: the cities, and the land as the twilight sky and the moon show it (dawn.py's ground, exactly); by day,
+   as the flight climbs into the sunlit crescent, the sun on it too, through the air above, and the cities fade */
+vec3 surface(vec3 P,vec3 rd,float w){
+  vec3 Q=uSpinM*P;
+  vec2 g=lonlat(Q);
+  /* the pixel's footprint (w: its width at this distance, Earth radii), as degrees of (lon, lat), turned with the
+     ground: its width across the line of sight, on both axes. Along it the ground is seen slantwise and the footprint
+     is longer, but read so (and gathered by the anisotropic filter, uAniso) the cities smear down the screen; the
+     picture reads them point by point, and so is this, as sharp */
+  vec3 ac=normalize(cross(rd,P)), al=normalize(rd-dot(rd,P)*P);
+  float k=1.0;
+  vec3 E=normalize(vec3(-Q.y,Q.x,0.0)+vec3(1e-6,0.0,0.0)), N=cross(Q,E);
+  float cl=max(length(Q.xy),0.01);
+  vec3 a=uSpinM*ac*w, b=uSpinM*al*w*k;
+  vec2 ga=degrees(vec2(dot(a,E)/cl,dot(a,N))), gb=degrees(vec2(dot(b,E)/cl,dot(b,N)));
+  float mu=dot(P,uSun), es=degrees(asin(clamp(mu,-1.0,1.0)));
+  float tw=exp(-abs(max(es,-30.0))/2.0);
+  vec3 sky=vec3(0.25,0.35,0.7)*0.35*tw+vec3(1.0,0.55,0.3)*0.6*tw*tw*tw+MOONL*4.0;
+  vec3 sun=SUNL*0.4*sunT(0.0,mu)*max(mu,0.0)/PI;
+  return lightsAt(g,ga,gb)*0.9*(1.0-smoothstep(0.0,0.12,mu))+landAt(g,ga,gb)*(sky+sun);
+}
+/* the air at a point of the march: its light toward the camera (the sun's, scattered; the rest of the lit sky's, a
+   little, blue; and the airglow, oxygen's faint green in a thin shell 95 km up) and its extinction; and the sun's light
+   reaching it (Ts) */
+vec3 airAt(vec3 x,float pr,float pm,out vec3 ext,out vec3 Ts){
+  float r=length(x), hh=r-1.0, hk=hh*6371.0, ms=dot(x/r,uSun);
+  float dr=exp(-hh/HR), dm=exp(-hh/HM), dz=max(0.0,1.0-abs(hk-25.0)/15.0);
+  ext=BR*dr+BMX*dm+BO*dz;
+  Ts=sunT(hh,ms);
+  return ((BR*dr*pr+BM*dm*pm)*Ts*SUNL+BR*dr*SUNL*0.012*exp(min(ms,0.0)*38.0)
+          +vec3(0.35,1.0,0.45)*(0.7e-4*6371.0)*exp(-0.5*pow((hk-95.0)/2.2,2.0)));
 }
 vec3 earth(vec2 css,out float cover){
   cover=0.0;
   vec2 d=vec2(css.x-uCirc.x,uCirc.y-css.y)/uCirc.z;
   float F=sqrt(uD*uD-1.0);
-  vec3 rd=normalize(uB*vec3(d.x,d.y,F)), ro=-uB[2]*uD;
+  vec3 v=vec3(d,F), rd=normalize(uB*v), ro=-uB[2]*uD;
+  /* a pixel's width, as an angle */
+  float pa=1.0/(uCirc.z*uPx*length(v));
   vec3 L=vec3(0.0), T=vec3(1.0);
-  vec2 ta=sph(ro,rd,RA), tg=sph(ro,rd,1.0);
+  vec2 ta=sph(ro,rd,RA), tg=sph(ro,rd,1.0), tl=sph(ro,rd,1.0+LOW*KM);
   bool ground=tg.x>0.0;
   float t1=ground?tg.x:ta.y;
   if(ta.y>0.0){
     float t0=max(ta.x,0.0);
-    const int N=16; float ds=(t1-t0)/float(N);
+    /* the march, in up to three stretches: down to the low air; through it, finely, the clouds with it (a step every
+       6 km or so, as many as 40; for a ray that skims it, missing the ground, a step every 4 km, as many as 160: there
+       are few of them, and their clouds are the tops breaking the horizon); and out of it again. A ray that never
+       comes so low is marched in one, as coarsely: its air is thin and even. The low air has a loop of its own, so
+       the clouds' work is only ever done there */
+    bool low=tl.y>0.0;
+    float la=low?max(tl.x,t0):t1, lb=low?(ground?tg.x:tl.y):t1;
+    int nA=low?6:16, nB=low?int(clamp(ceil((lb-la)/((ground?6.0:4.0)*KM)),6.0,ground?40.0:160.0)):0, nC=low&&!ground?6:0;
     float j=0.5+0.6*(hash13(vec3(gl_FragCoord.xy,uTime*31.0))-0.5);
-    float mv=dot(rd,uSun), pr=3.0/(16.0*PI)*(1.0+mv*mv), g=0.8, pm=(1.0-g*g)/(4.0*PI*pow(1.0+g*g-2.0*g*mv,1.5));
-    for(int i=0;i<N;i++){
-      vec3 x=ro+rd*(t0+ds*(float(i)+j)); float r=length(x), hh=r-1.0;
-      float dr=exp(-hh/HR), dm=exp(-hh/HM);
-      vec3 ext=BR*dr+BMX*dm;
-      vec3 Tsun=exp(-tauSun(hh,dot(x/r,uSun)));
-      vec3 ins=(BR*dr*pr+BM*dm*pm)*Tsun*SUNL+BR*dr*SUNL*0.012*exp(min(dot(x/r,uSun),0.0)*38.0);
-      vec3 st=exp(-ext*ds);
-      L+=T*ins*(1.0-st)/max(ext,vec3(1e-6))*uAirK; T*=st;
+    float mv=dot(rd,uSun), pr=3.0/(16.0*PI)*(1.0+mv*mv), pm=hg(mv,0.8);
+    /* the air's light over the ground as it is; over the limb, as strong as asked (uAirK: the door's own) */
+    float ak=ground?1.0:uAirK;
+    /* the high air: on the way down, and out again (kept apart, and laid behind the low air at the end) */
+    vec3 LC=vec3(0.0), TC=vec3(1.0);
+    for(int i=0;i<22;i++){
+      if(i>=nA+nC) break;
+      bool back=i>=nA;
+      float a0=back?lb:t0, ds=((back?t1:la)-a0)/float(back?nC:nA);
+      vec3 x=ro+rd*(a0+ds*(float(back?i-nA:i)+j)), ext, Ts;
+      vec3 ins=airAt(x,pr,pm,ext,Ts)*ak;
+      vec3 st=exp(-ext*ds), dl=ins*(1.0-st)/max(ext,vec3(1e-6));
+      if(back){ LC+=TC*dl; TC*=st; } else { L+=T*dl; T*=st; }
     }
+    /* the low air, and the clouds in it; their own phase mostly forward, a little back */
+    vec3 csunK=SUNL*((0.7*hg(mv,0.6)+0.3*hg(mv,-0.2))*4.0*PI*0.08+0.02);
+    /* (a skimming ray's steps are where its neighbours' are, not jittered: the tops it finds are then the same from one
+       pixel to the next, a clean edge, not a ragged one) */
+    float ds=(lb-la)/float(max(nB,1)), jb=ground?j:0.5;
+    for(int i=0;i<160;i++){
+      if(i>=nB) break;
+      float t=la+ds*(float(i)+jb);
+      vec3 x=ro+rd*t, ext, Ts;
+      vec3 ins=airAt(x,pr,pm,ext,Ts)*ak;
+      float r=length(x), hk=(r-1.0)*6371.0;
+      /* dawn.py's slab, standing up from the cover as thick as it is dense */
+      if(uCloudK>0.0&&hk>CL0&&hk<CL1+2.6){
+        vec3 up=x/r; float ms=dot(up,uSun);
+        vec2 g=lonlat(uSpinM*up);
+        vec2 cc=coverAt(g,degrees(t*pa));
+        float c=cc.x, cs=cc.y;
+        float top=CL0+0.8+(CL1-CL0-0.8)*pow(cs,1.1)*(0.55+0.45*c)+1.6*c*c;
+        float e=clamp((top-hk)/(0.6+1.6*cs),0.0,1.0);
+        float cd=c*e*e*(3.0-2.0*e)*clamp((hk-CL0)/0.6,0.0,1.0)*0.6*6371.0*uCloudK;
+        if(cd>0.0){
+          /* lit by the sun through the air (their tops catch it first), by the twilight sky, from below by the
+             cities' glow, and by the moon */
+          float hn=clamp((hk-CL0)/(CL1-CL0),0.0,1.0);
+          vec3 cl=Ts*csunK*(0.35+0.65*hn)
+                 +vec3(0.22,0.32,0.6)*0.5*exp(clamp(degrees(asin(clamp(ms,-1.0,1.0))),-20.0,0.0)/2.2)
+                 +glowAt(g)*vec3(1.6,1.5,1.3)*0.6*(1.0-hn)*(1.0-hn)
+                 +MOONL*(0.5+0.5*hn);
+          ins+=cd*cl; ext+=vec3(cd);
+        }
+      }
+      vec3 st=exp(-ext*ds);
+      L+=T*ins*(1.0-st)/max(ext,vec3(1e-6)); T*=st;
+    }
+    L+=T*LC; T*=TC;
   }
   if(ground){
-    float ca; vec3 P=ro+rd*tg.x;
-    L+=T*surface(P,rd,ca);
+    vec3 P=ro+rd*tg.x;
+    L+=T*surface(P,rd,tg.x*pa);
     /* the edge of the disc, smoothed over a pixel */
     cover=clamp((1.0-length(d))*uCirc.z*uPx+0.5,0.0,1.0);
   }
   /* (the sun itself is the flight's own glow, which matches the door's; this lens would stretch it) */
   return L;
+}
+
+/* the Earth, its limb smoothed: the ground is there or it is not, so a pixel the limb crosses is seen twice, its
+   ground a little inside the limb and its air a little outside, each taking the share of the pixel it covers (a
+   nearly level edge would otherwise step from pixel to pixel); everywhere else, once. One loop, so the Earth is
+   compiled once */
+vec3 earthAA(vec2 css,out float cover){
+  vec2 d=vec2(css.x-uCirc.x,uCirc.y-css.y)/uCirc.z;
+  float l=length(d), k=(1.0-l)*uCirc.z*uPx;
+  int n=abs(k)<0.5?2:1;
+  vec2 nv=vec2(d.x,-d.y)/max(l,1e-6), lim=css-nv*(1.0-l)*uCirc.z;
+  vec3 acc=vec3(0.0); float cv=0.0;
+  for(int i=0;i<2;i++){
+    if(i>=n) break;
+    float c; vec3 e=earth(n==1?css:lim+nv*((float(i)-0.5)*0.6/uPx),c);
+    float w=n==1?1.0:i==0?k+0.5:0.5-k;
+    acc+=e*w; cv+=n==1?c:0.0;
+  }
+  cover=n==1?cv:k+0.5; return acc;
 }
 
 /* ── the passage: a nebula streaming past, two depths of it about the way ahead ── */
@@ -404,7 +591,7 @@ const OVER = SCENE.slice(0, SCENE.indexOf("void main(){")) + `void main(){
      is added (S), so the blend gives beneath*T+S */
   float T=1.0; vec3 S=vec3(0.0);
   if(uEarthA>0.0){
-    float cov; vec3 e=earth(css,cov); float a=cov*uEarthA;
+    float cov; vec3 e=earthAA(css,cov); float a=cov*uEarthA;
     T*=1.0-a; S=S*(1.0-a)+e*uEarthA;
   }
   vec4 mo=moon(css); T*=1.0-mo.a; S=S*(1.0-mo.a)+mo.rgb;
@@ -679,17 +866,18 @@ export function createVoyage(under) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
       if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "euro" ? gl.CLAMP_TO_EDGE : gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t;
     })).catch(() => { /* drawn without it */ });
+  const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null;
   function warm() {
     if (!warming) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
-      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon"].map(load)])
+      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load)])
         .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
@@ -735,6 +923,8 @@ export function createVoyage(under) {
     lastDraw = 0;
   }
   const blank = tex(1, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  /* the sun's table, made with the first frame that wants it */
+  let sunTex = null;
 
   const cam = doorCamera();
   /* gq: the galaxy's own drawing size, as a part of the frame's (measured in calibrate, so it costs about 5 ms) */
@@ -828,7 +1018,9 @@ export function createVoyage(under) {
       /* the door's air at the door (its glows carry the rest), the flight's own as the world falls away */
       { const k = door ? Math.min(1, Math.max(0, (w ? w.c : 1) / 0.35)) : 1; gl.uniform1f(u.uAirK, door ? door.air + (1 - door.air) * k * k * (3 - 2 * k) : 1); }
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
-      gl.uniform4f(u.uEuroBox, ...EURO);
+      gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
+      gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
+      gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0); gl.uniform1f(u.uAniso, anisoK);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
       /* how thick the field is: the door's sparse sky at rest, filling in as the flight gathers speed */
       { const q = Math.min(1, Math.max(0, (Math.abs(s.v) - 0.03) / 0.6)); gl.uniform1f(u.uDens, q * q * (3 - 2 * q)); }
@@ -851,6 +1043,8 @@ export function createVoyage(under) {
       gl.uniform1f(u.uBloom, s.bloom || 0); gl.uniform2f(u.uBloomPt, s.bloomPt?.[0] ?? W / 2, s.bloomPt?.[1] ?? H / 2);
       bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
+      bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
+      bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
       /* the docs' flight: the Milky Way, and the constellations lighting */
       const cs = s.cstars || [], n = Math.min(64, cs.length);
       if (n) {
