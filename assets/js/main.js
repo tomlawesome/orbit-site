@@ -18,9 +18,11 @@ const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
 /* the live door, while it is tried (?door3d): the Earth under the door drawn as it is (door3d.js), not a picture */
 const DOOR3D = /[?&]door3d\b/.test(location.search);
 let liveDoor = null;
-/* and its planets drawn as worlds, lit by that sunrise (planets3d.js), with it */
+/* and its planets drawn as worlds, lit by that sunrise (planets3d.js), with it; the install's and the information's
+   then by their own world, once it is ready, so a dive goes on from the frame on the door (install.js: doorPlanets) */
 const liveDoorOf = () => {
-  import("./planets3d.js").then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e));
+  import("./planets3d.js").then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
+    .then(() => PADS.install.ring.doorPlanets($("#door"))).catch((e) => console.warn("orbit: no world planets", e));
   return import("./door3d.js").then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
 };
 if (MAINTENANCE) {

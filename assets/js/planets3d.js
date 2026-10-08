@@ -15,6 +15,10 @@
  * over them, as the anchors are. Each is its own WebGL2 context with the same small program (a quad round each disc,
  * the sphere traced in it). Made as chores (chores.js), after the door's reveal; the pictures stay until the first
  * frame, and stay for good if anything fails. Nothing is drawn while the door is not shown.
+ *
+ * The install's giant and the information's red world are drawn here only until their own world draws them (install.js:
+ * doorPlanets, which says so with html[data-worldplanets]), so a dive goes on from the very frame on the door; the
+ * docs' moon is drawn here all along.
  */
 import { chore, fetchOnce, note } from "./chores.js";
 
@@ -90,6 +94,8 @@ const KINDS = { docs: 0, install: 1, info: 2 };
 /* the install's ring, tilted this far from its orbit's plane (degrees) */
 const RING_TILT = 24;
 
+/* the planets their own world now draws on the door (install.js: doorPlanets): not drawn here */
+const taken = (id) => (document.documentElement.dataset.worldplanets || "").split(" ").includes(id);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
 
@@ -216,7 +222,7 @@ export function mountPlanets(door) {
     const s = Math.max(innerWidth / 1600, innerHeight / 1000), sunX = innerWidth / 2, sunY = innerHeight - (1000 - 920) * s;
     const u = size / 200, list = [];
     for (const p of planets) {
-      if (p.chosen || (!p.pole && !poleOf(p))) continue;
+      if (p.chosen || taken(p.id) || (!p.pole && !poleOf(p))) continue;
       const w = where(p);
       if (w) list.push([p, w]);
     }
@@ -271,7 +277,8 @@ export function mountPlanets(door) {
     document.documentElement.classList.remove("planets3d");
   }
 
-  /* a dive takes its planet: the picture comes back for the swell and this one is not drawn, until it is set down */
+  /* a dive takes its planet: the picture comes back for the swell and this one is not drawn, until it is set down
+     (not the two the world draws itself: their own canvases go on into the dive, site.css) */
   for (const p of planets) new MutationObserver(() => { p.chosen = p.a.classList.contains("chosen"); wake(); }).observe(p.a, { attributes: true, attributeFilter: ["class"] });
   new MutationObserver(wake).observe(door, { attributes: true, attributeFilter: ["class", "hidden"] });
   new MutationObserver(wake).observe(document.body, { attributes: true, attributeFilter: ["class"] });
@@ -294,7 +301,7 @@ export function mountPlanets(door) {
     window.__planets3d = {
       positions: () => {
         measure();
-        return planets.map((p) => { const w = where(p); return w && { section: p.id, x: w.x, y: w.y, r: w.r, z: w.z, side: w.k > 1 ? "near" : "far", drawn: live && !p.chosen }; });
+        return planets.map((p) => { const w = where(p); return w && { section: p.id, x: w.x, y: w.y, r: w.r, z: w.z, side: w.k > 1 ? "near" : "far", drawn: live && !p.chosen && !taken(p.id) }; });
       },
     };
   }

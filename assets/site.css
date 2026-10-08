@@ -1300,3 +1300,20 @@ body.departing #door .lockup canvas.planets3d{opacity:0;transition:opacity .7s e
    goes to has its picture back at once, for the swell, and loses it again once it is set down */
 html.planets3d #door .planet .body::before{opacity:0;transition:opacity .6s}
 html.planets3d #door .planet.chosen .body::before{opacity:1;transition:none}
+/* ══ THE WORLD'S OWN PLANETS (?door3d, install.js: doorPlanets): the install's and the information's planets drawn on
+   the door by the world each dives into, each in a small canvas of its own at its place on the orbit, behind the ring
+   or before it as the anchors go (pads.js: z-index 1 and 5), so a dive goes on from the very frame on the door ══ */
+#door .lockup canvas.worldplanet{position:absolute;left:0;top:0;pointer-events:none;z-index:1}
+#door .lockup canvas.worldplanet.near{z-index:5}
+/* not drawn since the door was last left: nothing stale is shown, and it is back on the door's first frame */
+#door .lockup canvas.worldplanet.away{opacity:0}
+body.launching #door .lockup canvas.worldplanet,body.showwarp #door .lockup canvas.worldplanet{opacity:0;transition:opacity .3s}
+body.departing #door .lockup canvas.worldplanet{opacity:0;transition:opacity .7s ease}
+/* the planet a dive goes to stays as it is until the shot's first frame is up over it (the same frame), then goes as
+   the rest do */
+body.departing #door .lockup>canvas.worldplanet.held{opacity:1;transition:none}
+/* and their pictures are not brought back for the swell: the world swells the planet itself */
+html[data-worldplanets~=install] #door .planet[data-section=install] .body::before,
+html[data-worldplanets~=install] #door .planet[data-section=install].chosen .body::before,
+html[data-worldplanets~=info] #door .planet[data-section=info] .body::before,
+html[data-worldplanets~=info] #door .planet[data-section=info].chosen .body::before{opacity:0;transition:none}
