@@ -178,8 +178,11 @@ export function level() {
   else if (!got.ok) { lvl = 0; why = "no WebGL2, or no probe"; }
   else if (quiet) { lvl = 0; why = "reduced motion"; }
   else if (navigator.connection?.saveData) { lvl = 0; why = "save-data"; }
-  else if (!got.background) { lvl = 0; why = `compiles stall the page; probe ${Math.round(got.compileMs)} ms`; }
   else if (p.lean > LEAN_MAX) { lvl = 0; why = `lean predicted ${Math.round(p.lean)} ms of ${LEAN_MAX}`; }
+  /* compiles on the page's thread: the lean live door, and only once every journey is ready (lateDoor: the still door
+     first, on the quick path, its compile a short stall on the still door after the ways in are open); never the
+     rich one there (its weight, and the flight's rich Earth with it, would be two more such stalls) */
+  else if (!got.background) { lvl = 1; why = `compiles stall the page; probe ${Math.round(got.compileMs)} ms: lean, after the ways in`; }
   else if (p.rich <= BUDGET) { lvl = 2; why = `predicted ${Math.round(p.rich)} ms of ${BUDGET}, background compiles`; }
   else { lvl = 1; why = `rich predicted ${Math.round(p.rich)} ms of ${BUDGET}, lean ${Math.round(p.lean)}`; }
   note(`level ${lvl}: ${NAMES[lvl]} (${why})`);
@@ -187,6 +190,9 @@ export function level() {
 }
 /** whether the door is live here: ?door3d, and level 1 or 2 (after the probe has resolved) */
 export const liveDoor = () => DOOR3D && level() >= 1;
+/** and whether it comes late: nothing of it compiled or drawn until every journey is ready (where compiles stall the
+    page: the still door first, the live one after the ways in are open) */
+export const lateDoor = () => liveDoor() && !!got && !got.background;
 
 /* the door's weight, chosen once a page view, after the probe (door3d.js draws it; voyage.js compiles the flight's
    Earth to match, so the click's handoff does not change the clouds), and said with why. By the level: 1, the lean
