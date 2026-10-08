@@ -13,8 +13,10 @@
  *
  * Two canvases, one either side of the ring: the far half of each orbit under the ring and the name, the near half
  * over them, as the anchors are. Each is its own WebGL2 context with the same small program (a quad round each disc,
- * the sphere traced in it). Made as chores (chores.js), after the door's reveal; the pictures stay until the first
- * frame, and stay for good if anything fails. Nothing is drawn while the door is not shown.
+ * the sphere traced in it). Made as chores (chores.js), after the door's painted reveal (main.js: liveDoorOf); the
+ * pictures stay until the first frame, and stay for good if anything fails. Nothing is drawn while the door is not
+ * shown. Where the browser compiles on the page's own thread (chores.js: COMPILES_ASIDE false), the two contexts and
+ * their programs are made sooner, at the page's start (compilePlanets), under the first light's ring.
  *
  * The install's giant and the information's red world are never drawn here under ?door3d, not even before their own
  * world draws them (install.js: doorPlanets, which says so with html[data-worldplanets]): this sphere's rings, bright
@@ -105,40 +107,28 @@ const taken = (id) => OWN.includes(id) || (document.documentElement.dataset.worl
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
 
-export function mountPlanets(door) {
+/* the two layers, each its own context with the program compiled in it, made once (null where they cannot be): where
+   compiles freeze the page, at the page's start (compilePlanets), so the programs are "compile" chores done under the
+   first light's ring; elsewhere by mountPlanets, after the reveal, as "door" chores in their turn. Said: how long the
+   compiles took (their own time, not the wait for their turn) */
+let made;
+const MAP_W = 1024;
+function layersOf(door) {
+  if (made !== undefined) return made;
   const lockup = door?.querySelector(".lockup"), glyph = door?.querySelector("#login-glyph"), box = door?.querySelector(".planets");
   /* the plain door's planets are turned about the ring, not placed on it: nothing here to read */
-  if (!lockup || !glyph || !box || !document.documentElement.classList.contains("rich")) return null;
+  if (!lockup || !glyph || !box || !document.documentElement.classList.contains("rich")) return (made = null);
   const since = performance.now();
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  /* the very pictures the worlds use (world.js: picturesOf), so each comes down the wire once; brought down to a size
-     a planet thirty pixels across can use as they are decoded, off the page's thread */
-  const small = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800;
-  const MAPS = {
-    install: new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
-    docs: new URL("../img/install/moon.webp", import.meta.url).href,
-  };
-  const MAP_W = 1024;
-  const bitmaps = Object.keys(MAPS).map((key) => fetchOnce(MAPS[key])
-    .then((b) => createImageBitmap(b, { resizeWidth: MAP_W, resizeHeight: MAP_W / 2, resizeQuality: "high", colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((bm) => ({ key, bm })));
-  bitmaps.forEach((p) => p.catch(() => {}));
-
-  const planets = [...door.querySelectorAll(".planet")].map((a) => ({
-    a, id: a.dataset.section, kind: KINDS[a.dataset.section] ?? 2, spin: a.querySelector(".spin"), body: a.querySelector(".body"),
-    dur: parseFloat(getComputedStyle(a).getPropertyValue("--dur")) || 60, bs: 0, pole: null, e1: null, chosen: a.classList.contains("chosen"),
-  }));
-
   /* the two layers: the same program in each, nothing shared */
   const layer = (side) => {
     const canvas = document.createElement("canvas");
     canvas.className = `planets3d ${side}`;
     canvas.setAttribute("aria-hidden", "true");
     const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" });
-    return gl && { canvas, gl, prog: null, sh: [], u: {}, maps: {}, vao: gl.createVertexArray(), par: gl.getExtension("KHR_parallel_shader_compile") };
+    return gl && { canvas, gl, prog: null, sh: [], u: {}, maps: {}, vao: null, par: gl.getExtension("KHR_parallel_shader_compile") };
   };
   const far = layer("far"), near = layer("near");
-  if (!far || !near) { console.warn("orbit: the planets stay pictures (no WebGL2)"); return null; }
+  if (!far || !near) { console.warn("orbit: the planets stay pictures (no WebGL2)"); return (made = null); }
   const layers = [far, near];
 
   const make = (L) => {
@@ -161,6 +151,51 @@ export function mountPlanets(door) {
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); L.u[a.name] = gl.getUniformLocation(p, a.name); }
     L.prog = p;
   };
+  /* both programs, then each finished (where the browser compiles on the page's own thread, "compile" chores, done
+     first of all) */
+  const [crest, ctag] = COMPILES_ASIDE ? [60, "door"] : [20, "compile"];
+  let took = 0;
+  const ready = chore(() => { const t0 = performance.now(); layers.forEach(make); return Promise.all(layers.map(compiled)).then(() => { took = performance.now() - t0; }); }, crest, ctag)
+    .then(() => chore(() => {
+      const t0 = performance.now();
+      layers.forEach(finish);
+      note(`planets: shaders compiled in ${Math.round(took + performance.now() - t0)} ms`, since);
+    }, crest, ctag));
+  return (made = { lockup, glyph, box, far, near, layers, ready });
+}
+/** where the browser compiles on the page's own thread (COMPILES_ASIDE false), asked for at the page's start (main.js):
+    the programs compiled under the first light's ring; resolves when they are (main.js holds the door until then).
+    Elsewhere, nothing */
+export function compilePlanets(door) {
+  if (COMPILES_ASIDE) return Promise.resolve();
+  return layersOf(door)?.ready ?? Promise.resolve();
+}
+
+export function mountPlanets(door) {
+  const L0 = layersOf(door);
+  if (!L0) return null;
+  const { lockup, glyph, box, far, near, layers } = L0;
+  const since = performance.now();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* the very pictures the worlds use (world.js: picturesOf), so each comes down the wire once; brought down to a size
+     a planet thirty pixels across can use as they are decoded, off the page's thread */
+  const small = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800;
+  const MAPS = {
+    install: new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
+    docs: new URL("../img/install/moon.webp", import.meta.url).href,
+  };
+  const bitmaps = Object.keys(MAPS).map((key) => fetchOnce(MAPS[key])
+    .then((b) => createImageBitmap(b, { resizeWidth: MAP_W, resizeHeight: MAP_W / 2, resizeQuality: "high", colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then((bm) => ({ key, bm })));
+  bitmaps.forEach((p) => p.catch(() => {}));
+  /* each layer's vertex array, made here, after the reveal (nothing of the GPU's is touched before it but the compile) */
+  for (const L of layers) L.vao = L.gl.createVertexArray();
+
+  const planets = [...door.querySelectorAll(".planet")].map((a) => ({
+    a, id: a.dataset.section, kind: KINDS[a.dataset.section] ?? 2, spin: a.querySelector(".spin"), body: a.querySelector(".body"),
+    dur: parseFloat(getComputedStyle(a).getPropertyValue("--dur")) || 60, bs: 0, pole: null, e1: null, chosen: a.classList.contains("chosen"),
+  }));
+
   /* one map to both layers */
   const upload = (key, bm) => {
     for (const { gl, maps } of layers) {
@@ -293,12 +328,10 @@ export function mountPlanets(door) {
   document.addEventListener("visibilitychange", wake);
   addEventListener("resize", () => { at = ""; wake(); });
 
-  /* made in turn, after the door's reveal: both programs, then each map into both, then the layers laid either side
-     of the ring and the clock started; the pictures go once the first frame is drawn (draw). Where the browser compiles
-     on the page's own thread (chores.js: COMPILES_ASIDE false), the programs are "compile" chores, done first of all */
-  const [crest, ctag] = COMPILES_ASIDE ? [60, "door"] : [20, "compile"];
-  const ready = chore(() => { layers.forEach(make); return Promise.all(layers.map(compiled)); }, crest, ctag)
-    .then(() => chore(() => { layers.forEach(finish); note("planets: shaders compiled", since); }, crest, ctag))
+  /* made in turn, after the door's painted reveal: both programs (layersOf; already compiled under the first light's
+     ring where compiles freeze the page), then each map into both, then the layers laid either side of the ring and
+     the clock started; the pictures go once the first frame is drawn (draw) */
+  const ready = L0.ready
     .then(() => Promise.all(bitmaps.map((b) => b.then(({ key, bm }) => chore(() => upload(key, bm), 60, "door")))))
     .then(() => chore(() => {
       glyph.before(far.canvas); glyph.after(near.canvas);

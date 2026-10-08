@@ -11,7 +11,7 @@
  * had). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
  *
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
- *   { gl, made, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
+ *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
 import { chore, fetchOnce } from "./chores.js";
 
@@ -535,6 +535,10 @@ export function createWorld(canvas, opts = {}) {
      once they are done (made), so making them never holds the door up; bake() waits for them */
   const par = gl.getExtension("KHR_parallel_shader_compile");
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  /* how long the compiles took (ms, compileMs), from the first asked for to the last link status read: the page's
+     own time where they freeze it (Firefox), the background's elsewhere */
+  const t0 = performance.now();
+  let took = 0;
   const vs = compile(gl.VERTEX_SHADER, VERT);
   const program = (src) => {
     const p = gl.createProgram(), fs = compile(gl.FRAGMENT_SHADER, src); gl.attachShader(p, vs); gl.attachShader(p, fs);
@@ -561,6 +565,7 @@ export function createWorld(canvas, opts = {}) {
     const done = () => {
       try {
         all.forEach(ready);
+        took = performance.now() - t0;
         resolve(true);
       } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
@@ -732,6 +737,7 @@ export function createWorld(canvas, opts = {}) {
   return {
     gl, bake, draw, resize, finish, made, lookOf,
     get baked() { return baked; },
+    get compileMs() { return took; },
     lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };
 }

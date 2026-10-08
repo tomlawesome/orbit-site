@@ -9,9 +9,11 @@
  * Only the Earth and its air are drawn, in the band at the foot of the door they fill, over the door's own sky and
  * its glows (which stay as they are): where the Earth is, it covers them; above the limb its air is added to them.
  * One pass, no targets, a slow clock (the motion is slow: twenty frames a second carries it), and nothing at all
- * while the door is not shown. Made as a chore (chores.js), after the door's reveal; the picture stays until then.
+ * while the door is not shown. Made as chores (chores.js), after the door's painted reveal (main.js: liveDoorOf);
+ * the picture stays until then.
  *
- * Drawn at the screen's own density (to 2×), and in two weights, the lean first (voyage.js: sceneHead): the clouds a
+ * Drawn at the screen's own density (to 2×), and in two weights, the lean first (voyage.js: sceneHead, the Earth's
+ * part alone: door, so its compile does not carry the whole flight's code it never runs): the clouds a
  * flat cover on the ground. Measured once, after its first frame: with room to spare (10 ms a frame or less) the rich
  * one is made (dawn.py's cloud slab), measured the same way, and kept if it keeps to 40 ms (20 a second, with room),
  * the flight then asked to draw the same from the handoff on; otherwise the lean one stays, and if even that takes
@@ -20,12 +22,12 @@
  *
  * Each measure waits for the chores to be at rest (chores.js: quiet), so it times the drawing alone, not an upload or
  * a compile beside it. Where the browser compiles on the page's own thread (COMPILES_ASIDE false), both weights (and
- * the flight's rich one: voyage.js, compileRich) are compiled first of all, with every other compile, once the door's
- * painted reveal is over (chores: "compile"), so no compile ever freezes a live loop; the rich one is still drawn only
- * if the ladder keeps it.
+ * the flight's rich one: voyage.js, compileRich) are compiled at the page's start (compileDoor), with every other
+ * compile, under the first light's ring, which main.js holds until they are done (chores: "compile"), so no compile
+ * ever freezes the reveal or a live loop; the rich one is still drawn only if the ladder keeps it.
  */
 import { chore, fetchOnce, note, quiet, COMPILES_ASIDE } from "./chores.js";
-import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
+import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich, passPrograms } from "./voyage.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
 const LOADED = performance.now();
@@ -57,7 +59,7 @@ void main(){
   c=pow(c,vec3(1.0/2.2))+(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)/255.0;
   o=vec4(c*a,a);
 }`;
-const FRAG = (slab) => sceneHead({ slab }) + MAIN;
+const FRAG = (slab) => sceneHead({ slab, door: true }) + MAIN;
 
 /* the ground turns once in this long (s: three hours and twenty minutes, all but still), the clouds drift a quarter of a degree a minute
    over it, the sun rises and sinks a little (degrees under the horizon) */
@@ -66,11 +68,70 @@ const TURN = 12000, CLOUD = 1 / 360 / 240, SUN = 0.15;
    (dawn-pre under dawn), and their air adds up to this much more (fitted against them) */
 const AIR = 1.4;
 
-export function liveDoor(world) {
+/* the door's canvas and context, made once: at the page's start where compiles freeze the page (compileDoor, for its
+   programs to be compiled under the first light's ring), else by liveDoor. Nothing is put on its GPU until liveDoor */
+let ctx = null;
+function context() {
+  if (ctx) return ctx;
   const canvas = document.createElement("canvas");
   canvas.className = "wl live";
   canvas.setAttribute("aria-hidden", "true");
   const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" });
+  return (ctx = { canvas, gl, par: gl?.getExtension("KHR_parallel_shader_compile") || null, weights: {}, richFlight: null });
+}
+const shader = (gl, type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+const make = (gl, slab) => {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl, gl.VERTEX_SHADER, VERT)); gl.attachShader(p, shader(gl, gl.FRAGMENT_SHADER, FRAG(slab)));
+  gl.linkProgram(p);
+  return p;
+};
+const finish = (gl, p) => {
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "door3d: no program");
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS), u = {};
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+};
+const compiled = (gl, par, p) => new Promise((resolve) => {
+  if (!par) { resolve(); return; }
+  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
+  poll();
+});
+/* a weight made, once: its program asked for, waited for (in the background where the browser can), and finished.
+   Said: how long it waited its turn (the first), and how long the making itself took (since: the clock the console's
+   lines are read against) */
+/* (where compiles freeze the page, both are "compile" chores, first of all; the rich one asks for the flight's rich
+   one in its turn, so that is queued with them; and each makes the program of the pass it needs, voyage.js:
+   passPrograms, the clouds' field with the lean one, the cities' glow with the rich) */
+function weight(slab, since) {
+  const c = context(), { gl, par } = c, name = slab ? "rich" : "lean", up = !COMPILES_ASIDE;
+  if (c.weights[name]) return c.weights[name];
+  let took = 0;
+  return (c.weights[name] = chore(() => {
+    const t0 = performance.now();
+    if (!slab) note(`door: compile waited ${Math.round(t0 - LOADED)} ms`, since);
+    if (slab && up) c.richFlight = compileRich();
+    const p = make(gl, slab);
+    if (up) passPrograms(gl, slab);
+    return compiled(gl, par, p).then(() => { took = performance.now() - t0; return p; });
+  }, up ? 20 : 60, up ? "compile" : slab ? "rich" : "door")
+    .then((p) => chore(() => {
+      const t0 = performance.now(), pr = finish(gl, p);
+      note(`door: ${name} compiled ${Math.round(took + performance.now() - t0)} ms`, since);
+      return pr;
+    }, up ? 20 : 60, up ? "compile" : "door")));
+}
+/** where the browser compiles on the page's own thread (COMPILES_ASIDE false), asked for at the page's start
+    (main.js): both weights queued as "compile" chores, and with the rich one the flight's rich one, done under the
+    first light's ring; resolves once all three are compiled, and main.js holds the door until then. Only the context
+    and the programs: the maps, the canvas and the loop are liveDoor's, after the reveal. Elsewhere, nothing */
+export function compileDoor() {
+  if (COMPILES_ASIDE || !context().gl) return Promise.resolve();
+  return Promise.all([weight(false, LOADED), weight(true, LOADED)]).then(() => ctx.richFlight);
+}
+
+export function liveDoor(world) {
+  const { canvas, gl } = context();
   if (!gl) return null;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
@@ -81,34 +142,14 @@ export function liveDoor(world) {
   const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN", "lightsS"];
   for (const k of keys) fetchOnce(TEX[k]).catch(() => {});
 
-  const shader = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
   /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept) */
   let prog = null, sunTex = null, glowT = null;
   const maps = {}, dims = {}, fields = {};
-  const make = (slab) => {
-    const p = gl.createProgram();
-    gl.attachShader(p, shader(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, FRAG(slab)));
-    gl.linkProgram(p);
-    return p;
-  };
-  const finish = (p) => {
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "door3d: no program");
-    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS), u = {};
-    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
-    if (!sunTex) sunTex = sunTexture(gl);
-    return { p, u };
-  };
-  const par = gl.getExtension("KHR_parallel_shader_compile");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* a map not (yet) there is drawn without: black in its place, and its flag down (uHas, uHasN) */
   const blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, blank);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-  const compiled = (p) => new Promise((resolve) => {
-    if (!par) { resolve(); return; }
-    const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
-    poll();
-  });
   /* a map put on the GPU (each as load does it; the sharper strip, too: sharpStrip) */
   const upload = (key, bm) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -161,6 +202,8 @@ export function liveDoor(world) {
   let clock = 0;
   function draw() {
     if (!prog) return;
+    /* the sun table, put on the GPU with the first frame (not with the compile, which may come before the reveal) */
+    if (!sunTex) sunTex = sunTexture(gl);
     const u = prog.u;
     const t = reduced ? 0 : clock;
     const cam = doorCamera(SUN + (reduced ? 0 : 0.03 * Math.sin((t / 110) * 6.2832) + 0.012 * Math.sin((t / 41) * 6.2832 + 1.3)));
@@ -228,26 +271,8 @@ export function liveDoor(world) {
   /* over budget, drawn coarser, once */
   const coarser = (mean) => { if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); } };
   const at = () => Math.round(px * 100) / 100;
-  /* a weight made: its program asked for, waited for (in the background where the browser can), and finished. Said:
-     how long it waited its turn (the first), and how long the making itself took */
-  /* (where compiles freeze the page, both are "compile" chores, first of all; the rich one asks for the flight's rich
-     one in its turn, so that is queued with them) */
-  const compile = (slab) => {
-    const name = slab ? "rich" : "lean", up = !COMPILES_ASIDE;
-    let took = 0;
-    return chore(() => {
-      const t0 = performance.now();
-      if (!slab) note(`door: compile waited ${Math.round(t0 - LOADED)} ms`, since);
-      if (slab && up) compileRich();
-      const p = make(slab);
-      return compiled(p).then(() => { took = performance.now() - t0; return p; });
-    }, up ? 20 : 60, up ? "compile" : slab ? "rich" : "door")
-      .then((p) => chore(() => {
-        const t0 = performance.now(), pr = finish(p);
-        note(`door: ${name} compiled ${Math.round(took + performance.now() - t0)} ms`, since);
-        return pr;
-      }, up ? 20 : 60, up ? "compile" : "door"));
-  };
+  /* a weight: made (weight, above), or already made under the first light's ring (compileDoor) */
+  const compile = (slab) => weight(slab, since);
   /* the ladder, after the lean weight's first frame: measured; with room (or &rich), the rich weight made, measured
      and kept if it keeps to the budget (&rich: kept whatever), the flight then asked for the same; else the lean one,
      coarser if it must be */
@@ -297,8 +322,8 @@ export function liveDoor(world) {
     }, 60, "door"))
     .then(ladder)
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); });
-  /* the rich weight, where compiles freeze the page: asked for at once, after the lean one (and kept only if the
-     ladder keeps it); elsewhere when the ladder asks */
+  /* the rich weight, where compiles freeze the page: asked for at once, after the lean one (already made at the
+     page's start: compileDoor; kept only if the ladder keeps it); elsewhere when the ladder asks */
   const richEarly = COMPILES_ASIDE ? null : compile(true);
   richEarly?.catch(() => { /* the ladder says so, if it gets that far */ });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });

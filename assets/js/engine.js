@@ -1138,7 +1138,8 @@ export function createFlight(canvas, options = {}) {
 
   let warmed = null, warmedDocs = null, compiled = null;
   return {
-    /* when the flight's shaders are compiled (after warm has made its world) */
+    /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
+       galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
@@ -1146,8 +1147,9 @@ export function createFlight(canvas, options = {}) {
         if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
         /* its pictures asked for, and its world made (its shaders set compiling in the background), at once; what it then
            puts on the GPU waits its turn as chores (voyage.js). Where the browser compiles on the page's own thread
-           (COMPILES_ASIDE false), the world is made as a chore ("compile", first of all, after the door's painted
-           reveal; hurried with the flight's own), its shaders looked at in the same chore (voyage.js: made) */
+           (COMPILES_ASIDE false), the world is made as a chore ("compile", queued at once and run under the first
+           light's ring, before the door is lit; hurried with the flight's own), its shaders looked at in the same
+           chore (voyage.js: made) */
         if (!options.plain) fetchVoyage();
         const make = () => {
           try { voyage = createVoyage(canvas); voyage?.resize(W || innerWidth, H || innerHeight); } catch (e) { voyage = null; }
@@ -1155,7 +1157,7 @@ export function createFlight(canvas, options = {}) {
         };
         const made = options.plain ? Promise.resolve() : COMPILES_ASIDE ? Promise.resolve().then(() => { make(); })
           : chore(make, 20, ["compile", "flight"]).then(() => {}, () => {});
-        compiled = made.then(() => voyage?.made);
+        compiled = made.then(() => voyage?.made).then((ok) => (COMPILES_ASIDE ? ok : Promise.resolve(voyage?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });
       }

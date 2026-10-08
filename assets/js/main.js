@@ -10,7 +10,7 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
-import { openChores, hurryChores, COMPILES_ASIDE } from "./chores.js";
+import { openChores, openCompiles, hurryChores, COMPILES_ASIDE } from "./chores.js";
 
 const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
@@ -19,11 +19,14 @@ const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
 const DOOR3D = /[?&]door3d\b/.test(location.search);
 let liveDoor = null;
 /* and its planets drawn as worlds, lit by that sunrise (planets3d.js), with it; the install's and the information's
-   then by their own world, once it is ready, so a dive goes on from the frame on the door (install.js: doorPlanets) */
+   then by their own world, once it is ready, so a dive goes on from the frame on the door (install.js: doorPlanets).
+   Both asked for at the page's start, so where compiles freeze the page their programs can be compiled under the first
+   light's ring (compileFirst); made live once the door's painted reveal is over (liveDoorOf) */
+const door3d = DOOR3D ? import("./door3d.js") : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
 const liveDoorOf = () => {
-  import("./planets3d.js").then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
+  planets3d.then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
     .then(() => PADS.install.ring.doorPlanets($("#door"))).catch((e) => console.warn("orbit: no world planets", e));
-  return import("./door3d.js").then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
+  return door3d.then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
 };
 if (MAINTENANCE) {
   /* the message, if the attribute gives one ("Launching soon"); "Back shortly" if not */
@@ -64,15 +67,16 @@ const startDawn = () => { loadEarth(); dawnRasters.start(); };
    so the door never drops a frame for it. On a connection that asks to save data, nothing is
    fetched until it is wanted. The pictures are kept by the site's cache (sw.js). */
 const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
-let warmingAll = null, compiledAll = null;
+let warmingAll = null, compiledAll = null, doorCompiled = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (MAINTENANCE) return (warmingAll = Promise.resolve());
   if (navigator.connection?.saveData) { openWays(["install", "docs", "info"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page; where the browser compiles on the page's own thread,
-     the compiles are chores too, the first done: chores.js, COMPILES_ASIDE); the work each then needs on the GPU is
-     queued as chores (chores.js) in this order, and done a piece at a time once the door has come up */
+     the compiles are chores too, asked for at the page's start and done under the ring: compileFirst); the work each
+     then needs on the GPU is queued as chores (chores.js) in this order, and done a piece at a time once the door's
+     painted reveal is over */
   const all = [
     PADS.install.ring.prepare?.(),     /* 1. the install (the likeliest first journey) */
     journey.warm(),                    /* 2. the demo (and the docs' flight, which is the same flight's world) */
@@ -88,10 +92,11 @@ function warmJourneys() {
   settled(all[1]).then(() => openWays([], true));
   Promise.all([settled(all[1]), settled(all[2]), settled(journey.warmDocs())]).then(() => openWays(["docs"]));
   settled(PADS.info.world?.baked ?? all[3]).then(() => openWays(["info"]));
-  /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are (some
-     browsers compile on the page's own thread, and the page stands still meanwhile: better behind the running ring
-     than on the door) */
-  compiledAll = Promise.all([PADS.install.ring.compiled, journey.compiled()].map((p) => Promise.resolve(p).catch(() => {})));
+  /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are. Where
+     the browser compiles on the page's own thread, every one of them, the docs' galaxy's and the live door's too
+     (engine.js: compiled; compileFirst), and on every visit: the page stands still while each compiles, better behind
+     the running ring than on the door's reveal */
+  compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
   return warmingAll;
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
@@ -180,10 +185,22 @@ function hideAll() {
 /* a first visit: nothing of the site's kept in this browser yet (sw.js keeps the pictures for 36 hours) */
 const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-seen"); localStorage.setItem("orbit-site-seen", String(Date.now())); return !seen || Date.now() - +seen > 36 * 3600e3; } catch { return true; } })();
 let doorLitOnce = false;
-/* whether this browser compiles shaders in the background (chores.js: COMPILES_ASIDE). Where it does not, the page
-   stands still while a shader compiles, so every compile is a chore, all of them done first once the door's painted
-   reveal is over, while only the compositor moves anything */
+/* whether this browser compiles shaders in the background (chores.js: COMPILES_ASIDE). Where it does not (Firefox),
+   the page stands still while a shader compiles, and even the compositor's animations stall (measured), so every
+   compile is a chore, all of them asked for at the page's start and done under the first light's ring, which runs
+   on until they are (showDoor: waitCompiled), the "compile" chores alone let run before the rest (openCompiles); the
+   reveal then plays with nothing of the GPU's on the page's thread. Done after the reveal instead, they cost some 3 s
+   on the ways in, and the drifting stars still hitched three times (Firefox, measured) */
 const compilesAside = MAINTENANCE || COMPILES_ASIDE;
+if (!compilesAside) openCompiles();
+/* every compile, queued now: the journeys' (warmJourneys: the install's world, the flight's, the docs' galaxy) and the
+   live door's two weights and its planets' (door3d.js: compileDoor; planets3d.js: compilePlanets), whose canvases,
+   maps and loops still wait for the reveal (liveDoorOf) */
+function compileFirst() {
+  if (DOOR3D) doorCompiled = Promise.all([door3d.then((m) => m.compileDoor()), planets3d.then((m) => m.compilePlanets($("#door")))])
+    .catch((e) => console.warn("orbit: the live door's compiles failed", e));
+  warmJourneys();
+}
 function showDoor() {
   journey.reset(); hideAll(); current = "door"; done();
   $("#gate").classList.remove("flash");
@@ -202,9 +219,11 @@ function showDoor() {
     : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
+  if (firstLight && !compilesAside) compileFirst();
   /* the ring runs on a first visit until the shaders are compiled too (in the background). Where they would stop the
-     page they are not compiled until the painted reveal is over (chores: "compile"), so the ring cannot wait for them */
-  const waitCompiled = !MAINTENANCE && firstLight && firstVisit && compilesAside;
+     page, on every visit: they are compiled under it, and the door is lit only once they are (never past 8 s: a
+     compile that fails or hangs never holds the door) */
+  const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !compilesAside);
   /* a first visit's first light is always at least a lap of the ring */
   const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
   let here = false;
@@ -214,15 +233,16 @@ function showDoor() {
     if (!waitCompiled) here = true;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       warmJourneys();
-      if (waitCompiled) within(compiledAll, 9000).then(() => { here = true; });
+      if (waitCompiled) within(compiledAll, compilesAside ? 9000 : 8000).then(() => { here = true; });
     }));
   });
   let lit = false;
-  /* the chores (the GPU's share of readying the journeys) begin the moment the reveal's painted part has finished:
-     what only moves or fades is carried by the compositor, and nothing on the page's thread can stutter it, but what
-     is painted (the ring's stroke drawing in, the name's blur clearing, anything inside an SVG) is drawn on the
-     page's own thread, and a chore under it stutters it. So each such animation is waited for, by its own end, not
-     by a guess. A journey chosen sooner has its own chores done at once (hurryChores) */
+  /* the chores (the GPU's share of readying the journeys: uploads, bakes, first draws, the live door) begin the moment
+     the reveal's painted part has finished, on every browser: what only moves or fades is carried by the compositor,
+     and nothing on the page's thread can stutter it, but what is painted (the ring's stroke drawing in, the name's
+     blur clearing, anything inside an SVG) is drawn on the page's own thread, and a chore under it stutters it. So
+     each such animation is waited for, by its own end, not by a guess. A journey chosen sooner has its own chores
+     done at once (hurryChores) */
   const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
   const painted = (a) => {
     try {
@@ -244,10 +264,9 @@ function showDoor() {
       const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
       (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
     }));
-    warmJourneys(); if (DOOR3D) liveDoorOf();
-    /* the chores begin at once where the browser compiles shaders in the background; where it compiles on the page's
-       own thread (Firefox) they wait for the painted part of the door's reveal, which they would stutter */
-    if (compilesAside) openChores(); else drawn().then(() => openChores()); }); };
+    warmJourneys();
+    /* (the live door too: its canvas and its context's first textures are the GPU's, so they wait with the rest) */
+    drawn().then(() => { openChores(); if (DOOR3D) liveDoorOf(); }); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
