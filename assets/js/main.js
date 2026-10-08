@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { probe, level } from "./capability.js";
+import { probe, level, lateDoor } from "./capability.js";
 import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -34,6 +34,11 @@ const doorLive = () => probe().then(() => DOOR3D && level() >= 1);
    door has been measured and shown (door3d.js: doorMeasured), so the door's measure is its own, not theirs beside it */
 const door3d = DOOR3D ? import("./door3d.js") : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
 const liveDoorOf = () => {
+  /* late (capability.js: where compiles stall the page): nothing of it until every journey is ready, the ways in open */
+  if (lateDoor() && warmingAll) return warmingAll.then(() => { note("door: the journeys are ready, the live door may begin"); return startLiveDoor(); });
+  return startLiveDoor();
+};
+const startLiveDoor = () => {
   const measured = door3d.then((m) => m.doorMeasured, () => null);
   planets3d.then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
     .then(() => PADS.install.ring.doorPlanets($("#door"), measured)).catch((e) => console.warn("orbit: no world planets", e));

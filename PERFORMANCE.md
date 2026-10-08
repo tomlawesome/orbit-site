@@ -538,3 +538,13 @@ they can be replayed side by side at their own addresses (they combine):
   wall, and only less code before the door shortens it.
 - `?ring=stop`: the ring ends the moment the work is done; the drawn ring takes over from where the runner is.
 - `?ring=rush`: the runner speeds up (x3) to finish its lap within about half a second.
+
+## The live door late, where compiles stall the page (8 October 2026)
+
+The owner's third option: on a page-thread compiler the still door comes up on the quick path (nothing of the live
+door under the ring, nothing during the reveal), the journeys get ready behind it, and only once every way in is
+open does the live door begin: its lean weight and the planets' programs as "door" chores then (each a short stall
+on the still door, where yesterday's stalls lived), its maps in bands, its first frame proved unseen, then shown.
+Never the rich weight there (its own compile and the flight's rich Earth would be two more stalls). The level line
+reads `level 1: live lean (compiles stall the page; …: lean, after the ways in)`; `door: the journeys are ready, the
+live door may begin` marks the moment. `?level=0` keeps the still door, `?level=2` the rich one late, to compare.

@@ -26,7 +26,7 @@
  */
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { uploadBanded } from "./upload.js";
-import { liveDoor } from "./capability.js";
+import { liveDoor, lateDoor } from "./capability.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -160,7 +160,7 @@ function layersOf(door) {
   };
   /* both programs, then each finished (where the browser compiles on the page's own thread, "compile" chores, done
      first of all) */
-  const [crest, ctag] = COMPILES_ASIDE ? [60, "door"] : [20, "compile"];
+  const [crest, ctag] = COMPILES_ASIDE || lateDoor() ? [60, "door"] : [20, "compile"];
   let took = 0;
   const ready = chore(() => { const t0 = performance.now(); layers.forEach(make); return Promise.all(layers.map(compiled)).then(() => { took = performance.now() - t0; }); }, crest, ctag)
     .then(() => chore(() => {
@@ -175,7 +175,7 @@ function layersOf(door) {
     the programs compiled under the first light's ring; resolves when they are (main.js holds the door until then).
     Elsewhere, nothing */
 export function compilePlanets(door) {
-  if (COMPILES_ASIDE) return Promise.resolve();
+  if (COMPILES_ASIDE || lateDoor()) return Promise.resolve();
   return layersOf(door)?.ready ?? Promise.resolve();
 }
 

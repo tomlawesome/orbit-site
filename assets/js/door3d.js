@@ -39,7 +39,7 @@
  */
 import { chore, fetchOnce, note, quiet, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { sceneHead, PASS_SWITCH, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
-import { probe, theDoorWeight, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
+import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
 import { uploadBanded } from "./upload.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
@@ -127,7 +127,9 @@ let measuredNow = null;
 export const doorMeasured = new Promise((resolve) => { measuredNow = resolve; });
 probe().then(() => { if (!doorIsLiveHere()) measuredNow(); }, () => measuredNow());
 function weight(slab, since) {
-  const c = context(), { gl, par } = c, name = slab ? "rich" : "lean", up = !COMPILES_ASIDE;
+  /* (up: compiled under the ring, where compiles stall the page; not when the door comes late, capability.js: then a
+     "door" chore after the journeys, a stall on the still door once the ways in are open) */
+  const c = context(), { gl, par } = c, name = slab ? "rich" : "lean", up = !COMPILES_ASIDE && !lateDoor();
   if (c.weights[name]) return c.weights[name];
   const first = !asked++;
   let took = 0;
@@ -153,6 +155,7 @@ function weight(slab, since) {
 export function compileDoor() {
   if (COMPILES_ASIDE || !context().gl) return Promise.resolve();
   return probe().then(() => {
+    if (lateDoor()) return;
     const w = theDoorWeight();
     return Promise.all(w === "lean" ? [weight(false, LOADED)] : w === "rich" ? [weight(true, LOADED)] : [weight(false, LOADED), weight(true, LOADED)]);
   }).then(() => ctx.richFlight);
