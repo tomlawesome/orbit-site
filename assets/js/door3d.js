@@ -202,7 +202,7 @@ export function liveDoor(world) {
 
   /* a measure, after a weight's first frame: three frames, each waited for (a pixel read back, as voyage.js's
      calibrate does), the last two timed (the first may still be finishing the driver's work); their mean (ms) */
-  const BUDGET = 40, ROOM = 10;
+  const BUDGET = 40, ROOM = 16;
   function measure() {
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     const ms = [];
