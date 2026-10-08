@@ -18,7 +18,9 @@
 const queue = [];
 let open = false, compiling = false, running = false, want = null, until = 0, wake = 0, started = 0, openedAt = 0;
 /* where the chores' time goes (noteChores): waiting for an idle moment, running, and the first one's start */
-let waited = 0, ran = 0, firstAt = 0, empty = 0, emptyAt = 0;
+let waited = 0, ran = 0, firstAt = 0, empty = 0, emptyAt = 0, held = 0, heldAt = 0;
+/* and each chore: its tag, how long it waited to start, how long it ran (ms) */
+const record = [];
 
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
@@ -53,13 +55,13 @@ function pump() {
   let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => want.includes(t))) : -1;
   const hurried = i >= 0;
   if (!hurried) {
-    if (!open && !compiling) return;
+    if (!open && !compiling) { if (!heldAt) heldAt = now; return; }
     /* the rest waits until the journey has had its opening */
     if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     i = 0;
     for (let k = 1; k < queue.length; k++) if (rank(queue[k].tag) < rank(queue[i].tag)) i = k;
     /* before open, a compile or nothing ("compile" ranks first, so if there is one, this is it) */
-    if (!open && tags(queue[i].tag)[0] !== "compile") return;
+    if (!open && tags(queue[i].tag)[0] !== "compile") { if (!heldAt) heldAt = now; return; }
   }
   running = true;
   const asked = performance.now();
@@ -67,10 +69,11 @@ function pump() {
     const [job] = queue.splice(Math.min(i, queue.length - 1), 1);
     started++;
     const t0 = performance.now(); waited += t0 - asked; if (!firstAt) firstAt = t0;
+    const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0 }; record.push(rec);
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
-      running = false; ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
+      running = false; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
          so nothing heavy sits right beside them); hurried, still a frame */
       if (hurried) requestAnimationFrame(() => setTimeout(pump, 0)); else requestAnimationFrame(() => setTimeout(pump, job.tag === "measure" ? job.rest : Math.min(job.rest, 20)));
@@ -85,7 +88,7 @@ export function chore(fn, rest = 60, tag = "") {
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag }); pump(); });
 }
 /* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
-export function openChores() { if (!open) openedAt = performance.now(); open = true; pump(); }
+export function openChores() { if (!open) openedAt = performance.now(); if (heldAt) { held += performance.now() - heldAt; heldAt = 0; } open = true; pump(); }
 /* the page has started, where compiles freeze it (main.js, COMPILES_ASIDE false): the "compile" chores may run now,
    while the first light's ring runs, and nothing else until openChores */
 export function openCompiles() { compiling = true; pump(); }
@@ -129,7 +132,9 @@ export function fetchOnce(url) {
     pictures still coming, or decoding), and the rests between */
 export function noteChores(when) {
   const wall = firstAt ? performance.now() - firstAt : 0;
-  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - empty))} ms, over ${Math.round(wall)}`);
+  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - held - empty))} ms, over ${Math.round(wall)}`);
+  /* each one: tag, waited/ran */
+  note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
 }
 /* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went) */
