@@ -118,11 +118,10 @@ export function mountRasters(world, groups, prefix) {
 }
 
 /* ══ THE JOURNEY (the app's Flight.svelte, without the framework) ═══════
-   The canvas between the dawn and the sky, the mark that leaves the lockup
-   and rides to the centre of the screen, and the name written once on the
-   void. The surfaces are the host's; this only says WHEN, in the body-class
+   The canvas between the dawn and the sky, and the name written once on the
+   void; the door's ring stays in the door and goes as it goes. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, FAR_T0, FAR_T1, DEEP_SKIP, deepGrowth, deepTilt } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP } from "./engine.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -159,7 +158,7 @@ export function docsFlight(chart) {
   return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart };
 }
 export { UP, DOWN };
-import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, MARK_ARRIVE, MARK_RIDE_UP, MARK_RIDE_DOWN, T, D } from "./timeline.js";
+import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
 
@@ -192,7 +191,7 @@ function journeyClock() {
   };
 }
 
-export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {} }) {
+export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const clock = journeyClock();
   const engine = createFlight(canvas, { now: clock.now });
   addEventListener("resize", () => engine.resize());
@@ -200,142 +199,14 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
   const body = document.body;
   let cancelTimeline = () => {};
 
-  function flip(from, toLeft, toTop, toWidth, toHeight, ms) {
-    const dx = (from.left + from.width / 2) - (toLeft + toWidth / 2);
-    const dy = (from.top + from.height / 2) - (toTop + toHeight / 2);
-    const sx = from.width / toWidth, sy = from.height / toHeight;
-    mark.style.transition = "opacity .4s ease";
-    mark.animate([{ transform: `translate(${dx}px,${dy}px) scale(${sx},${sy})` }, { transform: "none" }],
-      { duration: ms, easing: "cubic-bezier(.35,0,.2,1)", fill: "none" });
-  }
-  function liftMark(srcSvg, toY, size, ms) {
-    if (!srcSvg) return;
-    const r = srcSvg.getBoundingClientRect();
-    const left = innerWidth / 2 - size / 2, top = toY - size / 2;
-    mark.style.transition = "none";
-    mark.style.left = `${r.left}px`; mark.style.top = `${r.top}px`; mark.style.width = `${r.width}px`; mark.style.height = `${r.height}px`;
-    mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
-    srcSvg.style.visibility = "hidden";
-    mark.style.left = `${left}px`; mark.style.top = `${top}px`; mark.style.width = `${size}px`; mark.style.height = `${size}px`;
-    flip(r, left, top, size, size, ms);
-  }
-  /* the docs' flight: the mark is not gathered up, it becomes the galaxy. Face on, as the galaxy is first seen, its
-     ring grows with the galaxy, exactly (engine.js: deepGrowth), and tilts with it as the camera swings down across
-     the disc (deepTilt), its rim as the camera rushes in, and thins away as it goes past the frame; its gold planet
-     glides to the centre and gives itself to the galaxy's core */
-  const tiltAt = (tu) => `rotateX(${((deepTilt(tu) * 180) / Math.PI).toFixed(2)}deg)`;
-  function dissolveMark() {
-    for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
-    const svg = mark.querySelector("svg"), [ring, , gold] = svg ? svg.querySelectorAll("circle") : [];
-    const rate = flight.profile.rate || 1, H = innerHeight;
-    const tu0 = Math.max(FAR_T0, (T.markOut / rate - T.warp / rate) * rate), span = Math.max(1, FAR_T1 - tu0), dur = span / rate;
-    if (!ring || reduced) { mark.classList.remove("on"); mark.classList.add("dissolve"); return; }
-    ring.style.vectorEffect = "non-scaling-stroke";
-    const frames = [];
-    for (let i = 0; i <= 12; i++) {
-      const k = deepGrowth(tu0 + (span * i) / 12, H) / deepGrowth(tu0, H);
-      frames.push({ offset: i / 12, transform: `scale(${k.toFixed(4)})`, opacity: Math.max(0, Math.min(1, 1 - (k - 1.15) / 1.6)) * 0.85 });
-    }
-    const box = { transformOrigin: "100px 100px", transformBox: "view-box" };
-    Object.assign(ring.style, box); Object.assign(gold.style, { transformBox: "view-box", transformOrigin: "163px 63.5px" });
-    const a1 = ring.animate(frames, { duration: dur, easing: "linear", fill: "forwards" });
-    svg.animate(frames.map((fr, i) => ({ offset: fr.offset, transform: tiltAt(tu0 + (span * i) / 12) })), { duration: dur, easing: "linear", fill: "forwards" });
-    gold.animate([
-      { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
-      { transform: "translate(-63px, 36.5px) scale(.9)", opacity: 1, offset: 0.55 },
-      { transform: "translate(-63px, 36.5px) scale(1.6)", opacity: 0 },
-    ], { duration: Math.min(dur, 620), easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
-    /* gone at its last frame (no fade back through its first look), and set straight only once it is out of sight */
-    a1.finished.then(() => {
-      mark.style.transition = "none"; mark.classList.remove("on");
-      setTimeout(() => { for (const el of [ring, gold, svg]) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; } mark.style.transition = ""; }, 120);
-    }).catch(() => {});
-  }
-  /* coming back out of the docs' galaxy, the same thing backwards: as the galaxy shrinks to the size of the mark's ring
-     its rim gathers into the ring, tilted as the galaxy lies, and the gold planet comes out of the core to its place;
-     then the mark rides home to the door, levelling as it goes */
-  function condenseMark(rate) {
-    const svg = mark.querySelector("svg"), [ring, , gold] = svg ? svg.querySelectorAll("circle") : [];
-    if (!ring || reduced) return;
-    const size = MARK_ARRIVE, left = innerWidth / 2 - size / 2, top = innerHeight / 2 - size / 2, H = innerHeight;
-    mark.style.transition = "none";
-    Object.assign(mark.style, { left: `${left}px`, top: `${top}px`, width: `${size}px`, height: `${size}px` });
-    mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
-    ring.style.vectorEffect = "non-scaling-stroke";
-    Object.assign(ring.style, { transformOrigin: "100px 100px", transformBox: "view-box" });
-    Object.assign(gold.style, { transformBox: "view-box", transformOrigin: "163px 63.5px" });
-    const tuA = FAR_T1, tuB = T.markOut - T.warp, span = tuA - tuB;
-    const dur = span / (UPDUR / DOWNDUR) / rate;
-    const frames = [];
-    for (let i = 0; i <= 12; i++) {
-      const k = deepGrowth(tuA - (span * i) / 12, H) / deepGrowth(tuB, H);
-      frames.push({ offset: i / 12, transform: `scale(${k.toFixed(4)})`, opacity: Math.max(0, Math.min(1, 1 - (k - 1.15) / 1.6)) * 0.85 });
-    }
-    ring.animate(frames, { duration: dur, easing: "linear", fill: "forwards" });
-    svg.animate(frames.map((fr, i) => ({ offset: fr.offset, transform: tiltAt(tuA - (span * i) / 12) })), { duration: dur, easing: "linear", fill: "forwards" });
-    gold.animate([
-      { transform: "translate(-63px, 36.5px) scale(1.6)", opacity: 0 },
-      { transform: "translate(-63px, 36.5px) scale(.9)", opacity: 1, offset: 0.45 },
-      { transform: "translate(0px, 0px) scale(1)", opacity: 1 },
-    ], { duration: Math.max(dur, 420), easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
-  }
-  function settleMark() {
-    const svg = mark.querySelector("svg"); if (!svg) return;
-    for (const el of svg.querySelectorAll("circle")) { el.getAnimations().forEach((x) => x.cancel()); el.style.vectorEffect = ""; }
-    svg.style.transform = "";
-  }
-  /* the other flights: the mark is flown through. As the climb comes up to speed the ring opens past the edges of the
-     screen, a thin hoop the camera goes through, tipping a little as the climb steepens, and the gold planet sweeps
-     by close and is gone; the dawn's mark is set back behind it, unseen */
-  function flyThroughMark() {
-    for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
-    const svg = mark.querySelector("svg"), circles = svg ? [...svg.querySelectorAll("circle")] : [];
-    if (!circles.length || reduced) { dropMark(); return; }
-    const rate = flight.profile.rate || 1, dur = 760 / rate, timing = { duration: dur, easing: "cubic-bezier(.5,0,.9,.5)", fill: "forwards" };
-    circles[0].style.vectorEffect = "non-scaling-stroke";
-    const lean = flight.profile.vpX > 0.6 ? "rotateY(14deg)" : flight.profile.vpX < 0.4 ? "rotateY(-14deg)" : "rotateX(-16deg)";
-    const anims = circles.map((c) => {
-      Object.assign(c.style, { transformOrigin: "100px 100px", transformBox: "view-box" });
-      return c.animate([{ transform: "scale(1)", opacity: 1 }, { transform: "scale(2.4)", opacity: 1, offset: 0.5 }, { transform: "scale(9)", opacity: 0 }], timing);
-    });
-    anims.push(svg.animate([{ transform: "none" }, { transform: lean }], timing));
-    anims[0].finished.then(() => {
-      mark.style.transition = "none"; mark.classList.remove("on");
-      setTimeout(() => { anims.forEach((x) => x.cancel()); circles[0].style.vectorEffect = ""; mark.style.transition = ""; }, 120);
-    }).catch(() => {});
-  }
-  function dropMark() {
-    mark.classList.remove("on"); mark.classList.add("collapse");
-    for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
-  }
-  function landMark(glyph) {
-    /* from the docs' galaxy the mark is already at the centre, full size (condenseMark); otherwise it comes from a point */
-    const condensed = descent.from?.ending === "chart" && mark.classList.contains("on") && !reduced;
-    const from = condensed ? mark.getBoundingClientRect() : { left: innerWidth / 2 - 18, top: innerHeight / 2 - 18, width: 36, height: 36 };
-    if (condensed) {
-      const svg = mark.querySelector("svg");
-      svg?.animate([{ transform: tiltAt(T.markOut - T.warp) }, { transform: "rotateX(0deg)" }], { duration: MARK_RIDE_DOWN / (descent.rate || 1), easing: "cubic-bezier(.35,0,.2,1)", fill: "forwards" })
-        .finished.then(() => { svg.getAnimations().forEach((x) => x.cancel()); settleMark(); }).catch(() => {});
-    } else {
-      mark.style.transition = "none";
-      mark.style.left = `${from.left}px`; mark.style.top = `${from.top}px`; mark.style.width = "36px"; mark.style.height = "36px";
-      mark.classList.remove("collapse", "dissolve"); mark.classList.add("on");
-    }
-    if (!glyph) return;
-    const g = glyph.getBoundingClientRect();
-    glyph.style.visibility = "hidden";
-    mark.style.left = `${g.left}px`; mark.style.top = `${g.top}px`; mark.style.width = `${g.width}px`; mark.style.height = `${g.height}px`;
-    flip(from, g.left, g.top, g.width, g.height, MARK_RIDE_DOWN / (descent.rate || 1));
-  }
-  let flight = { profile: UP, glyph: dawnGlyph, on: {} };
+  let flight = { profile: UP, on: {} };
   const ascentStep = (act) => {
     switch (act) {
       case "arming": body.classList.add("arming"); break;
       case "warp": body.classList.add("showwarp"); engine.start(flight.profile); break;
-      case "mark": body.classList.remove("arming"); liftMark(flight.glyph(), innerHeight * 0.5, MARK_ARRIVE, MARK_RIDE_UP / (flight.profile.rate || 1)); break;
+      /* the door's ring is not lifted out of it: it goes as the door goes, as on the install's and the information's shots */
+      case "mark": body.classList.remove("arming"); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
-      /* on the docs' flight the mark is not gathered up: its ring becomes the galaxy, so it dissolves into it */
-      case "markOut": if (flight.profile.ending === "chart") dissolveMark(); else flyThroughMark(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
       case "land": body.classList.remove("showwarp", "launching"); body.classList.add("bare"); (flight.on.land ?? on.land)?.(); break;
@@ -343,7 +214,6 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     }
   };
   let descent = { onto: "dusk", from: null, on: {} };
-  const landingGlyph = () => (descent.onto === "dawn" ? dawnGlyph() : duskGlyph());
   const descentStep = (act) => {
     switch (act) {
       case "withdraw": body.classList.remove("instrument"); body.classList.add("withdrawing"); break;
@@ -353,10 +223,7 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
       case "dusk": body.classList.add(descent.onto === "dawn" ? "showdawn" : "showdusk"); (descent.on.surface ?? on.dusk)?.(); break;
-      case "condense": condenseMark(descent.rate || 1); break;
-      case "markIn": landMark(landingGlyph()); break;
       case "warpOut": body.classList.remove("showwarp"); break;
-      case "markHome": { mark.classList.remove("on"); const g = landingGlyph(); if (g) g.style.visibility = ""; break; }
       case "farewell": body.classList.add("farewell"); (descent.on.farewell ?? on.farewell)?.(); break;
     }
   };
@@ -364,25 +231,22 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     cancelTimeline(); cancelTimeline = () => {};
     engine.clear();
     body.classList.remove(...CLASSES);
-    mark.classList.remove("on", "collapse", "dissolve"); name.classList.remove("on");
+    name.classList.remove("on");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
-  /* fly: any profile, from any surface's glyph, to whichever landing `on` describes */
-  function fly(profile, { title = "", subtitle = "", glyph = dawnGlyph, on: hooks = {}, ready = null } = {}) {
+  /* fly: any profile, to whichever landing `on` describes */
+  function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null } = {}) {
     cancelTimeline();
     body.classList.remove(...CLASSES, "holding");
-    flight = { profile, glyph, on: hooks };
-    /* which way the flight goes, for the mark's tilt into it */
-    mark.dataset.way = profile.ending === "chart" ? "deep" : (profile.vpX ?? 0.5) > 0.6 ? "right" : (profile.vpX ?? 0.5) < 0.4 ? "left" : "up";
+    flight = { profile, on: hooks };
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
     let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1);
-    /* not yet ready: the journey still starts at once, but its opening is the mark lifting to the centre (which needs
-       nothing drawn), and the clock holds just before the flight's canvas comes up until what it draws is ready */
+    /* not yet ready: the journey still starts at once, and the clock holds just before the flight's canvas comes up
+       until what it draws is ready */
     if (ready && !reduced) {
       const warp = beats.find((b) => b.act === "warp")?.at ?? 0;
-      beats = beats.map((b) => (b.act === "mark" ? { ...b, at: Math.min(b.at, Math.max(0, warp - 80)) } : b));
       body.classList.add("holding");
       clock.holdAt(Math.max(0, warp - 10), ready.finally(() => body.classList.remove("holding")));
     }
@@ -397,13 +261,10 @@ export function createJourney({ canvas, mark, name, dawnGlyph, duskGlyph, on = {
     let beats = descentBeats();
     /* out of the docs' galaxy: under way at once. The page lets go as the flight comes up beneath it (the same sky,
        so the one becomes the other), and the flight starts past its still first part, the camera already drawing
-       back; everything after comes sooner by as much. The ring gathers out of the galaxy's rim as it shrinks
-       (condense), then rides home a little later */
+       back; everything after comes sooner by as much */
     if (from?.ending === "chart") {
       const warp = 300, shift = D.warp - warp + DEEP_SKIP_T;
-      const at = (tu) => warp + DOWNDUR * (1 - tu / UPDUR) - DEEP_SKIP_T;
       beats = beats.map((b) => (b.act === "withdraw" ? b : b.act === "disperse" ? { ...b, at: 240 } : b.act === "warp" ? { ...b, at: warp } : { ...b, at: Math.max(warp + 60, b.at - shift) }));
-      beats = [...beats.map((b) => (b.act === "markIn" ? { ...b, at: Math.max(b.at, at(T.markOut - T.warp) + 60) } : b)), { at: at(FAR_T1), act: "condense" }];
     }
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate), descentStep, clock);
   }
