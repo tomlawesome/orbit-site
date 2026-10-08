@@ -92,8 +92,101 @@ export function sunTexture(gl) {
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
 
-const SCENE = `#version 300 es
+/* the RICH Earth's fields, made on the GPU once a context, each by one pass, so the slab's march reads one texel a
+   step where it read three. cloudField, from a clouds map at its own size: the cover (r) and the cover softened (g:
+   dawn.py blurs its map for the height the tops stand to, so masses of cloud rise as masses; here, as the march read
+   it before, the level of the map that blurs it by 0.16 degrees), each remapped as dawn.py does; and how high the
+   tops stand (b: km over the slab's foot, as a share of the most they can, 12.6; the march's TOPS) */
+const FIELD = `#version 300 es
 precision highp float;
+uniform sampler2D uSrc; uniform vec4 uBox; out vec4 o;
+const float CL0=1.0, CL1=11.0, TOPS=CL1+2.6-CL0;
+void main(){
+  vec2 sz=vec2(textureSize(uSrc,0));
+  float c=texelFetch(uSrc,ivec2(gl_FragCoord.xy),0).r;
+  float s=textureLod(uSrc,gl_FragCoord.xy/sz,log2(max(0.16*sz.x/(uBox.y-uBox.x),1.0))).r;
+  c=clamp((c-0.2)/0.8,0.0,1.0); s=clamp((s-0.2)/0.8,0.0,1.0);
+  float top=CL0+0.8+(CL1-CL0-0.8)*pow(s,1.1)*(0.55+0.45*c)+1.6*c*c;
+  o=vec4(c,s,(top-CL0)/TOPS,1.0);
+}`;
+/* cityGlow: the lights as the glow under the clouds took them (the whole Earth's, the near box's over it), each read
+   at the level that averages it to a texel here: an eighth of the whole Earth's map, so the march reads it once a
+   step, and only where there is cloud. Kept before the 2.2 curve, as the maps are */
+const GLOWF = `#version 300 es
+precision highp float;
+uniform sampler2D uLights, uLightsN; uniform vec4 uNearBox; uniform float uHasN; uniform vec2 uOut; out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy/uOut, g=vec2(-180.0+360.0*uv.x,90.0-180.0*uv.y);
+  float B=360.0/uOut.x, m=min(min(g.x-uNearBox.x,uNearBox.y-g.x),min(g.y-uNearBox.z,uNearBox.w-g.y));
+  float wN=uHasN>0.5?smoothstep(0.0,2.0,m):0.0;
+  vec3 c=vec3(0.0);
+  if(wN<1.0) c=textureLod(uLights,uv,log2(max(B*float(textureSize(uLights,0).x)/360.0,1.0))).rgb;
+  if(wN>0.0){
+    vec2 n=vec2((g.x-uNearBox.x)/(uNearBox.y-uNearBox.x),(uNearBox.w-g.y)/(uNearBox.w-uNearBox.z));
+    c=mix(c,textureLod(uLightsN,n,log2(max(B*float(textureSize(uLightsN,0).x)/(uNearBox.y-uNearBox.x),1.0))).rgb,wN);
+  }
+  o=vec4(c,1.0);
+}`;
+/* the whole Earth, as a box (the fields' and the glow's) */
+const WORLD = [-180, 180, -90, 90];
+/* the two passes' programs, made once a context (small: made at once, not in the background) */
+const passProgs = new WeakMap();
+function passProgram(gl, key, src) {
+  let m = passProgs.get(gl);
+  if (!m) passProgs.set(gl, (m = {}));
+  if (!m[key]) {
+    const sh = (type, text) => { const o = gl.createShader(type); gl.shaderSource(o, text); gl.compileShader(o); return o; };
+    const p = gl.createProgram(), fs = sh(gl.FRAGMENT_SHADER, src);
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, fs); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || gl.getShaderInfoLog(fs) || `orbit: no ${key}`);
+    m[key] = p;
+  }
+  return m[key];
+}
+/* one pass into a texture of its own (RGBA8; levels made after, if asked), the context left as the draws expect it */
+function passInto(gl, prog, w, h, { repeat = false, levels = false } = {}, setup) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  gl.disable(gl.BLEND); gl.disable(gl.SCISSOR_TEST); gl.viewport(0, 0, w, h);
+  gl.useProgram(prog); gl.bindVertexArray(null); setup(); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(f);
+  if (levels) {
+    gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  }
+  return t;
+}
+/** the slab's field of a clouds map (its texture, its size; the whole Earth's, which wraps, or the near box's) */
+export function cloudField(gl, src, w, h, near) {
+  const p = passProgram(gl, "field", FIELD);
+  return passInto(gl, p, w, h, { repeat: !near, levels: true }, () => {
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.uniform1i(gl.getUniformLocation(p, "uSrc"), 0); gl.uniform4f(gl.getUniformLocation(p, "uBox"), ...(near ? NEAR : WORLD));
+  });
+}
+/** the cities' glow, from the lights there are (the whole Earth's map, its size; the near box's, if it has come) */
+export function cityGlow(gl, lights, w, h, lightsN, blank) {
+  const p = passProgram(gl, "glow", GLOWF), gw = Math.max(1, Math.round(w / 8)), gh = Math.max(1, Math.round(h / 8));
+  return passInto(gl, p, gw, gh, { repeat: true }, () => {
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lights || blank);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, lightsN || blank);
+    gl.uniform1i(gl.getUniformLocation(p, "uLights"), 0); gl.uniform1i(gl.getUniformLocation(p, "uLightsN"), 1);
+    gl.uniform4f(gl.getUniformLocation(p, "uNearBox"), ...NEAR); gl.uniform1f(gl.getUniformLocation(p, "uHasN"), lightsN ? 1 : 0);
+    gl.uniform2f(gl.getUniformLocation(p, "uOut"), gw, gh);
+  });
+}
+
+/* the scene's functions, in two weights (a ladder: the door draws the lean one first, and the rich one only if this
+   machine has room for it). LEAN (slab false): the clouds a flat cover on the ground, lit as the ground is, as the
+   Earth was before the slab; the cheapest Earth, and what the flight draws unless the door has gone rich. RICH (slab
+   true): dawn.py's cloud slab, marched through the low air from the fields made once a context (cloudField, cityGlow) */
+export function sceneHead({ slab = false } = {}) {
+  return `#version 300 es
+${slab ? "#define SLAB 1\n" : ""}precision highp float;
 uniform vec2 uRes; uniform float uPx, uTime;
 uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;
 uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
@@ -103,6 +196,8 @@ uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
 /* the finer maps about where the door looks (lights, clouds, land: which are there, uHasN), the box they cover; the
    cloud slab's strength (0: none) */
 uniform sampler2D uLightsN, uCloudsN, uDayN; uniform vec4 uNearBox, uHasN; uniform float uCloudK;
+/* the slab's fields, one a clouds map (global, near: cloudField), and the cities' glow (cityGlow); RICH only */
+uniform sampler2D uCloudF, uCloudFN, uGlow;
 /* the sharpest lights, over the door's own ground (lightsStrip; ?door3d only): the box they cover, and whether they
    are there */
 uniform sampler2D uLightsS; uniform vec4 uStripBox; uniform float uHasS;
@@ -281,29 +376,34 @@ vec3 landAt(vec2 g,vec2 ga,vec2 gb){
   if(wN>0.0) c=mix(c,textureGrad(uDayN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)).rgb,wN);
   return pow(c,vec3(2.2));
 }
-/* the city lights' glow on the undersides of the clouds over them: the lights blurred (dawn.py: GLOW). A map's levels
-   average it before its 2.2 curve, which loses the bright points' share: given back where it is used (measured
-   against dawn.py's own) */
-vec3 glowAt(vec2 g){
-  const float B=0.09;
-  float wN=uHasN.x>0.5?inBox(g,uNearBox,2.0):0.0;
-  vec3 c=vec3(0.0);
-  if(wN<1.0) c=textureLod(uLights,boxUV(g,WORLD),lodAt(uLights,WORLD,B)).rgb;
-  if(wN>0.0) c=mix(c,textureLod(uLightsN,boxUV(g,uNearBox),lodAt(uLightsN,uNearBox,B)).rgb,wN);
-  return pow(c,vec3(2.2));
-}
-/* the cloud cover where a step of the march is (drifting over the ground), read at the step's own footprint (fd,
-   degrees): as it is (x), and softened (y: dawn.py blurs its map for the height the tops stand to, so masses of cloud
-   rise as masses; here a coarser level of the same map). Each remapped as dawn.py does */
-vec2 coverAt(vec2 g,float fd){
-  const float SOFT=0.16;
+#ifdef SLAB
+/* the city lights' glow on the undersides of the clouds over them: the lights blurred (dawn.py: GLOW), made once a
+   context (cityGlow) and read here once a step, where there is cloud. Kept as the maps keep it, before its 2.2 curve:
+   the averaging loses the bright points' share, given back where it is used (measured against dawn.py's own) */
+vec3 glowAt(vec2 g){ return pow(textureLod(uGlow,boxUV(g,WORLD),0.0).rgb,vec3(2.2)); }
+/* the slab where a step of the march is (the clouds drifting over the ground), from the field made once a clouds map
+   (cloudField), read at the step's own footprint (fd, degrees): the cover (x) and the cover softened (y), each remapped
+   as dawn.py does, and how high the tops stand (z, km). One texel a step; two only across the near box's margin */
+const float TOPS=CL1+2.6-CL0;
+vec3 slabAt(vec2 g,float fd){
   g.x=mod(g.x+uCloudOff*360.0+180.0,360.0)-180.0;
   float wN=uHasN.y>0.5?inBox(g,uNearBox,2.0):0.0;
-  vec2 c=vec2(0.0);
-  if(wN<1.0){ vec2 uv=boxUV(g,WORLD); c=vec2(textureLod(uClouds,uv,lodAt(uClouds,WORLD,fd)).r,textureLod(uClouds,uv,lodAt(uClouds,WORLD,max(fd,SOFT))).r); }
-  if(wN>0.0){ vec2 uv=boxUV(g,uNearBox); c=mix(c,vec2(textureLod(uCloudsN,uv,lodAt(uCloudsN,uNearBox,fd)).r,textureLod(uCloudsN,uv,lodAt(uCloudsN,uNearBox,max(fd,SOFT))).r),wN); }
-  return clamp((c-0.2)/0.8,0.0,1.0);
+  vec3 f=vec3(0.0);
+  if(wN<1.0) f=textureLod(uCloudF,boxUV(g,WORLD),lodAt(uCloudF,WORLD,fd)).rgb;
+  if(wN>0.0) f=mix(f,textureLod(uCloudFN,boxUV(g,uNearBox),lodAt(uCloudFN,uNearBox,fd)).rgb,wN);
+  return vec3(f.xy,CL0+f.z*TOPS);
 }
+#else
+/* LEAN: the cloud cover on the ground itself (drifting over it), read over the pixel's footprint as the land is */
+float coverAt(vec2 g,vec2 ga,vec2 gb){
+  if(uCloudK<=0.0) return 0.0;
+  g.x=mod(g.x+uCloudOff*360.0+180.0,360.0)-180.0;
+  float wN=uHasN.y>0.5?inBox(g,uNearBox,2.0):0.0, c=0.0;
+  if(wN<1.0) c=textureGrad(uClouds,boxUV(g,WORLD),boxD(ga,WORLD),boxD(gb,WORLD)).r;
+  if(wN>0.0) c=mix(c,textureGrad(uCloudsN,boxUV(g,uNearBox),boxD(ga,uNearBox),boxD(gb,uNearBox)).r,wN);
+  return c;
+}
+#endif
 /* (lon, lat) in degrees of a point on the turned ground, and its east and north there */
 vec2 lonlat(vec3 Q){ return degrees(vec2(atan(Q.y,Q.x),asin(clamp(Q.z,-1.0,1.0)))); }
 
@@ -326,7 +426,14 @@ vec3 surface(vec3 P,vec3 rd,float w){
   float tw=exp(-abs(max(es,-30.0))/2.0);
   vec3 sky=vec3(0.25,0.35,0.7)*0.35*tw+vec3(1.0,0.55,0.3)*0.6*tw*tw*tw+MOONL*4.0;
   vec3 sun=SUNL*0.4*sunT(0.0,mu)*max(mu,0.0)/PI;
-  return lightsAt(g,ga,gb)*0.9*(1.0-smoothstep(0.0,0.12,mu))+landAt(g,ga,gb)*(sky+sun);
+  vec3 c=landAt(g,ga,gb)*(sky+sun), li=lightsAt(g,ga,gb)*0.9*(1.0-smoothstep(0.0,0.12,mu));
+#ifndef SLAB
+  /* LEAN: the clouds a flat cover over the ground, lit as the ground is (as the Earth was before the slab), and the
+     cities under them dimmed */
+  float ca=smoothstep(0.22,0.85,coverAt(g,ga,gb));
+  c=mix(c,vec3(0.85)*(sky+sun),ca); li*=1.0-0.8*ca;
+#endif
+  return li+c;
 }
 /* the air at a point of the march: its light toward the camera (the sun's, scattered; the rest of the lit sky's, a
    little, blue; and the airglow, oxygen's faint green in a thin shell 95 km up) and its extinction; and the sun's light
@@ -347,19 +454,26 @@ vec3 earth(vec2 css,out float cover){
   /* a pixel's width, as an angle */
   float pa=1.0/(uCirc.z*uPx*length(v));
   vec3 L=vec3(0.0), T=vec3(1.0);
-  vec2 ta=sph(ro,rd,RA), tg=sph(ro,rd,1.0), tl=sph(ro,rd,1.0+LOW*KM);
+  vec2 ta=sph(ro,rd,RA), tg=sph(ro,rd,1.0);
   bool ground=tg.x>0.0;
   float t1=ground?tg.x:ta.y;
   if(ta.y>0.0){
     float t0=max(ta.x,0.0);
+#ifdef SLAB
     /* the march, in up to three stretches: down to the low air; through it, finely, the clouds with it (a step every
-       6 km or so, as many as 40; for a ray that skims it, missing the ground, a step every 4 km, as many as 160: there
+       8 km or so, as many as 24; for a ray that skims it, missing the ground, a step every 6 km, as many as 64: there
        are few of them, and their clouds are the tops breaking the horizon); and out of it again. A ray that never
-       comes so low is marched in one, as coarsely: its air is thin and even. The low air has a loop of its own, so
-       the clouds' work is only ever done there */
-    bool low=tl.y>0.0;
+       comes so low, or never down among the cloud tops, is marched in one, as coarsely: its air is thin and even. The
+       low air has a loop of its own, so the clouds' work is only ever done there */
+    vec2 tl=sph(ro,rd,1.0+LOW*KM), tt=sph(ro,rd,1.0+(CL0+TOPS)*KM);
+    bool low=tl.y>0.0&&tt.y>0.0;
+#else
+    /* LEAN: no slab, so no low air of its own: every ray marched in one, as a ray that never comes low is */
+    const bool low=false;
+    vec2 tl=vec2(0.0);
+#endif
     float la=low?max(tl.x,t0):t1, lb=low?(ground?tg.x:tl.y):t1;
-    int nA=low?6:16, nB=low?int(clamp(ceil((lb-la)/((ground?6.0:4.0)*KM)),6.0,ground?40.0:160.0)):0, nC=low&&!ground?6:0;
+    int nA=low?6:16, nB=low?int(clamp(ceil((lb-la)/((ground?8.0:6.0)*KM)),6.0,ground?24.0:64.0)):0, nC=low&&!ground?6:0;
     float j=0.5+0.6*(hash13(vec3(gl_FragCoord.xy,uTime*31.0))-0.5);
     float mv=dot(rd,uSun), pr=3.0/(16.0*PI)*(1.0+mv*mv), pm=hg(mv,0.8);
     /* the air's light over the ground as it is; over the limb, as strong as asked (uAirK: the door's own) */
@@ -375,30 +489,30 @@ vec3 earth(vec2 css,out float cover){
       vec3 st=exp(-ext*ds), dl=ins*(1.0-st)/max(ext,vec3(1e-6));
       if(back){ LC+=TC*dl; TC*=st; } else { L+=T*dl; T*=st; }
     }
+#ifdef SLAB
     /* the low air, and the clouds in it; their own phase mostly forward, a little back */
     vec3 csunK=SUNL*((0.7*hg(mv,0.6)+0.3*hg(mv,-0.2))*4.0*PI*0.08+0.02);
     /* (a skimming ray's steps are where its neighbours' are, not jittered: the tops it finds are then the same from one
        pixel to the next, a clean edge, not a ragged one) */
     float ds=(lb-la)/float(max(nB,1)), jb=ground?j:0.5;
-    for(int i=0;i<160;i++){
+    for(int i=0;i<64;i++){
       if(i>=nB) break;
       float t=la+ds*(float(i)+jb);
       vec3 x=ro+rd*t, ext, Ts;
       vec3 ins=airAt(x,pr,pm,ext,Ts)*ak;
       float r=length(x), hk=(r-1.0)*6371.0;
-      /* dawn.py's slab, standing up from the cover as thick as it is dense */
-      if(uCloudK>0.0&&hk>CL0&&hk<CL1+2.6){
-        vec3 up=x/r; float ms=dot(up,uSun);
+      /* dawn.py's slab, standing up from the cover as thick as it is dense; nothing more done where there is none */
+      if(uCloudK>0.0&&hk>CL0&&hk<CL0+TOPS){
+        vec3 up=x/r;
         vec2 g=lonlat(uSpinM*up);
-        vec2 cc=coverAt(g,degrees(t*pa));
-        float c=cc.x, cs=cc.y;
-        float top=CL0+0.8+(CL1-CL0-0.8)*pow(cs,1.1)*(0.55+0.45*c)+1.6*c*c;
-        float e=clamp((top-hk)/(0.6+1.6*cs),0.0,1.0);
-        float cd=c*e*e*(3.0-2.0*e)*clamp((hk-CL0)/0.6,0.0,1.0)*0.6*6371.0*uCloudK;
-        if(cd>0.0){
+        vec3 f=slabAt(g,degrees(t*pa));
+        float c=f.x, cs=f.y, top=f.z;
+        if(c>0.0&&top>hk){
+          float e=clamp((top-hk)/(0.6+1.6*cs),0.0,1.0);
+          float cd=c*e*e*(3.0-2.0*e)*clamp((hk-CL0)/0.6,0.0,1.0)*0.6*6371.0*uCloudK;
           /* lit by the sun through the air (their tops catch it first), by the twilight sky, from below by the
              cities' glow, and by the moon */
-          float hn=clamp((hk-CL0)/(CL1-CL0),0.0,1.0);
+          float hn=clamp((hk-CL0)/(CL1-CL0),0.0,1.0), ms=dot(up,uSun);
           vec3 cl=Ts*csunK*(0.35+0.65*hn)
                  +vec3(0.22,0.32,0.6)*0.5*exp(clamp(degrees(asin(clamp(ms,-1.0,1.0))),-20.0,0.0)/2.2)
                  +glowAt(g)*vec3(1.6,1.5,1.3)*0.6*(1.0-hn)*(1.0-hn)
@@ -409,6 +523,7 @@ vec3 earth(vec2 css,out float cover){
       vec3 st=exp(-ext*ds);
       L+=T*ins*(1.0-st)/max(ext,vec3(1e-6)); T*=st;
     }
+#endif
     L+=T*LC; T*=TC;
   }
   if(ground){
@@ -562,8 +677,11 @@ vec2 shockBend(vec2 css,out float ring){
   ring=g*fade;
   return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
+`;
+}
 
-void main(){
+/* the rush, beneath: the sky, the galaxy, the streaks, the nebula (its Earth is OVER's) */
+const SCENE = sceneHead() + `void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; vec2 bent=shockBend(css,ring);
   vec3 c=sky(bent);
@@ -594,19 +712,29 @@ void main(){
   o=vec4(c,1.0);
 }`;
 
-/* the scene's own functions, for the live door (door3d.js), which draws only its Earth */
-export const SCENE_HEAD = SCENE.slice(0, SCENE.indexOf("void main(){"));
+/* the scene's own functions, LEAN, for whatever draws only its Earth (door3d.js asks sceneHead for its two weights) */
+export const SCENE_HEAD = sceneHead();
 /* the live door's Earth (door3d.js), once it is drawn: the flight takes up its turn, its clouds, its sun and its air,
    so it starts from the very frame the door shows, and comes back to it */
 let door = null;
 export const followDoor = (st) => { door = st; };
 export const doorIsLive = () => !!door;
+/* the flight's RICH Earth, asked for by the door once it has kept its own rich one (door3d.js), so the click's
+   handoff does not change the clouds: made in the flight's context as the door's chores, and drawn only once it is
+   made (until then, and where it cannot be, the lean one). Resolves when it is ready */
+let richMake = null, richAsk = null, richOK = false;
+const richWaiting = [];
+export function wantRich() {
+  if (!richAsk) richAsk = new Promise((resolve) => { const go = () => resolve(richMake()); if (richMake) go(); else richWaiting.push(go); });
+  return richAsk;
+}
+export const richReady = () => richOK;
 
 /* what lies over the rush: the Earth, the moon, the star, the docs' constellations, the shock's light. A program of
    its own, drawn over the first and blended by how much of it still shows through (alpha), so the sum is exactly the
    one program it was: two halves compile in well under the time the whole did (Firefox, measured: 0.8 s and 1.05 s,
    against 2.9 s), the page's freeze the shorter by a second */
-const OVER = SCENE.slice(0, SCENE.indexOf("void main(){")) + `void main(){
+const OVER_MAIN = `void main(){
   vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; shockBend(css,ring);
   /* each layer over: what was beneath times (1-a), plus its own light. Kept as how much shows through (T) and what
@@ -627,6 +755,9 @@ const OVER = SCENE.slice(0, SCENE.indexOf("void main(){")) + `void main(){
   }
   o=vec4(S,1.0-T);
 }`;
+/* drawn LEAN, always made with the rest (a shorter compile, Firefox's the longest); RICH made only when the door has
+   gone rich (wantRich), and drawn only once it is made */
+const OVER = SCENE_HEAD + OVER_MAIN;
 
 const DOWN = `#version 300 es
 precision highp float;
@@ -863,6 +994,19 @@ export function createVoyage(under) {
   if (par) makeGal();
   const vao = gl.createVertexArray();
 
+  /* the rich Earth (wantRich, above): its program, as the lean one is made (compiled, finish), and the cities' glow its
+     clouds take from below (cityGlow), once the lights have come; drawn only when both are done */
+  let richMade = null;
+  richMake = () => richMade || (richMade = made.then((good) => {
+    if (!good) return false;
+    warm();
+    const prog = chore(() => { const pr = program(sceneHead({ slab: true }) + OVER_MAIN); return compiled([pr]).then(() => pr); }, 60, "door")
+      .then((pr) => chore(() => { finish(pr); P.overRich = pr; }, 60, "door"));
+    const glow = loaded.then(() => chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "door"));
+    return Promise.all([prog, glow]).then(() => (richOK = !!(P.overRich && glowT)));
+  }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
+  richWaiting.splice(0).forEach((go) => go());
+
   const tex = (w, h, fmt, f, type, data = null) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, f, type, data);
@@ -874,7 +1018,8 @@ export function createVoyage(under) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return { t, f, w, h }; };
 
   /* the maps: asked for a little after the page is up, each used as soon as it has come */
-  const maps = {};
+  const maps = {}, dims = {}, fields = {};
+  let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
      chore of its own (chores.js): never all at once */
@@ -890,17 +1035,22 @@ export function createVoyage(under) {
       if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      maps[key] = t;
+      maps[key] = t; dims[key] = [bm.width, bm.height];
+      /* a clouds map's slab field, made with it (cloudField), where the flight can be asked for its rich Earth */
+      if (DOOR3D && (key === "clouds" || key === "cloudsN")) {
+        try { fields[key] = cloudField(gl, t, bm.width, bm.height, key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
+      }
     })).catch(() => { /* drawn without it */ });
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
-  let warming = null;
+  let warming = null, loaded = null;
   function warm() {
     if (!warming) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
       /* the strip only where the door is live (the same one the door draws: theStrip) */
       if (DOOR3D) theStrip();
-      warming = Promise.all([made, ...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN", ...(DOOR3D ? ["lightsS"] : [])].map(load)])
+      loaded = Promise.all(["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN", ...(DOOR3D ? ["lightsS"] : [])].map(load));
+      warming = Promise.all([made, loaded])
         .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
@@ -1070,6 +1220,7 @@ export function createVoyage(under) {
       bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
       bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
       bind(11, (DOOR3D && maps.lightsS) || blank, u.uLightsS);
+      bind(12, fields.clouds || blank, u.uCloudF); bind(13, fields.cloudsN || blank, u.uCloudFN); bind(14, glowT || blank, u.uGlow);
       /* the docs' flight: the Milky Way, and the constellations lighting */
       const cs = s.cstars || [], n = Math.min(64, cs.length);
       if (n) {
@@ -1085,7 +1236,7 @@ export function createVoyage(under) {
     pass(P.scene, hdr.f, CW, CH, sceneU);
     /* and what lies over it (OVER, above), blended by how much of the first still shows through */
     gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
-    pass(P.over, hdr.f, CW, CH, sceneU);
+    pass(door?.rich && richOK ? P.overRich : P.over, hdr.f, CW, CH, sceneU);
     gl.disable(gl.BLEND);
     /* the galaxy's stars, added into the same light before the bloom: streaks, then their points */
     if (g3 && starVao) {

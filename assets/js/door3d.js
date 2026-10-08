@@ -11,16 +11,24 @@
  * One pass, no targets, a slow clock (the motion is slow: twenty frames a second carries it), and nothing at all
  * while the door is not shown. Made as a chore (chores.js), after the door's reveal; the picture stays until then.
  *
- * Drawn at the screen's own density (to 2×), then measured once, after the first frame: if a frame takes more than
- * 40 ms here (20 a second, with room), the density comes down by the square root of the excess (to half), and stays.
+ * Drawn at the screen's own density (to 2×), and in two weights, the lean first (voyage.js: sceneHead): the clouds a
+ * flat cover on the ground. Measured once, after its first frame: with room to spare (10 ms a frame or less) the rich
+ * one is made (dawn.py's cloud slab), measured the same way, and kept if it keeps to 40 ms (20 a second, with room),
+ * the flight then asked to draw the same from the handoff on; otherwise the lean one stays, and if even that takes
+ * more than 40 ms the density comes down by the square root of the excess (to half), and stays. To try them:
+ * &rich (the rich one whatever the lean one took; still measured), &lean (never the rich one).
  */
 import { chore, fetchOnce, note } from "./chores.js";
-import { SCENE_HEAD, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip } from "./voyage.js";
+import { sceneHead, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, cloudField, cityGlow, wantRich } from "./voyage.js";
+
+/* when this was loaded: how long the first compile then waited its turn is said (note) */
+const LOADED = performance.now();
+const RICH = /[?&]rich\b/.test(location.search), LEAN = /[?&]lean\b/.test(location.search);
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
 
-const FRAG = SCENE_HEAD + `
+const MAIN = `
 /* where the sun comes up on the limb (css px), and how strongly its first light shows there; where the band's top
    fades in (css px: its start, its length) */
 uniform vec2 uSunPt, uFade; uniform float uFirst;
@@ -43,6 +51,7 @@ void main(){
   c=pow(c,vec3(1.0/2.2))+(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)/255.0;
   o=vec4(c*a,a);
 }`;
+const FRAG = (slab) => sceneHead({ slab }) + MAIN;
 
 /* the ground turns once in this long (s: three hours and twenty minutes, all but still), the clouds drift a quarter of a degree a minute
    over it, the sun rises and sinks a little (degrees under the horizon) */
@@ -66,20 +75,21 @@ export function liveDoor(world) {
   for (const k of keys) fetchOnce(TEX[k]).catch(() => {});
 
   const shader = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
-  let prog = null, u = {}, sunTex = null;
-  const maps = {};
-  const make = () => {
+  /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept) */
+  let prog = null, sunTex = null, glowT = null;
+  const maps = {}, dims = {}, fields = {};
+  const make = (slab) => {
     const p = gl.createProgram();
-    gl.attachShader(p, shader(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, FRAG));
+    gl.attachShader(p, shader(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, FRAG(slab)));
     gl.linkProgram(p);
     return p;
   };
   const finish = (p) => {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "door3d: no program");
-    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS), u = {};
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
-    sunTex = sunTexture(gl);
-    prog = p;
+    if (!sunTex) sunTex = sunTexture(gl);
+    return { p, u };
   };
   const par = gl.getExtension("KHR_parallel_shader_compile");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
@@ -104,7 +114,11 @@ export function liveDoor(world) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      maps[key] = t;
+      maps[key] = t; dims[key] = [bm.width, bm.height];
+      /* a clouds map's slab field, made with it, for the rich weight (voyage.js: cloudField) */
+      if (key === "clouds" || key === "cloudsN") {
+        try { fields[key] = cloudField(gl, t, bm.width, bm.height, key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
+      }
     }, 60, "door"))
     .catch(() => { /* drawn without it */ });
   const vao = gl.createVertexArray();
@@ -128,12 +142,14 @@ export function liveDoor(world) {
   const ly = (y) => H - (1000 - y) * s - top;
 
   /* the door's turn, kept so the flight takes it up where it is (voyage.js: followDoor) */
-  const state = { spinM: [1, 0, 0, 0, 1, 0, 0, 0, 1], cloudOff: 0, sun: null, air: AIR };
+  /* (rich: the door has kept its rich weight, so the flight draws the same once it has made it: voyage.js, wantRich) */
+  const state = { spinM: [1, 0, 0, 0, 1, 0, 0, 0, 1], cloudOff: 0, sun: null, air: AIR, rich: false };
   /* the door's own clock (s): it runs only while the door is shown, so a journey away and back finds the Earth
      just as it was left, and the flight's last frame and the door's first are the same */
   let clock = 0;
   function draw() {
     if (!prog) return;
+    const u = prog.u;
     const t = reduced ? 0 : clock;
     const cam = doorCamera(SUN + (reduced ? 0 : 0.03 * Math.sin((t / 110) * 6.2832) + 0.012 * Math.sin((t / 41) * 6.2832 + 1.3)));
     /* the ground turned about the camera's own vertical: the horizon slides to the right, the stars drift to the left */
@@ -145,7 +161,7 @@ export function liveDoor(world) {
     ];
     state.spinM = M; state.cloudOff = t * CLOUD; state.sun = cam.S;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.useProgram(prog); gl.bindVertexArray(vao);
+    gl.useProgram(prog.p); gl.bindVertexArray(vao);
     gl.uniform2f(u.uRes, canvas.width, canvas.height); gl.uniform1f(u.uPx, canvas.width / W);
     gl.uniform1f(u.uTime, t % 1000);
     gl.uniform3f(u.uCirc, W / 2, ly(3920), 3000 * s);
@@ -163,6 +179,7 @@ export function liveDoor(world) {
     bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
     bind(3, maps.euro || blank, u.uEuro); bind(4, maps.lightsN || blank, u.uLightsN); bind(5, maps.cloudsN || blank, u.uCloudsN);
     bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT); bind(8, maps.lightsS || blank, u.uLightsS);
+    bind(9, fields.clouds || blank, u.uCloudF); bind(10, fields.cloudsN || blank, u.uCloudFN); bind(11, glowT || blank, u.uGlow);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     dirty = false;
   }
@@ -180,33 +197,79 @@ export function liveDoor(world) {
   }
   const wake = () => { if (!raf && prog) raf = requestAnimationFrame(tick); };
 
-  /* the one measure, after the first frame: three frames, each waited for (a pixel read back, as voyage.js's calibrate
-     does), the last two timed (the first may still be finishing the driver's work); over budget, drawn coarser, once */
-  const BUDGET = 40;
+  /* a measure, after a weight's first frame: three frames, each waited for (a pixel read back, as voyage.js's
+     calibrate does), the last two timed (the first may still be finishing the driver's work); their mean (ms) */
+  const BUDGET = 40, ROOM = 10;
   function measure() {
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-    try {
-      const ms = [];
-      for (let i = 0; i < 3; i++) { const t0 = performance.now(); dirty = true; draw(); sync(); ms.push(performance.now() - t0); }
-      const mean = (ms[1] + ms[2]) / 2;
-      if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); }
-      note(`door: ${Math.round(mean)} ms a frame, drawn at ${Math.round(px * 100) / 100}×`, since);
-    } catch { /* drawn as it is */ }
+    const ms = [];
+    for (let i = 0; i < 3; i++) { const t0 = performance.now(); dirty = true; draw(); sync(); ms.push(performance.now() - t0); }
+    return (ms[1] + ms[2]) / 2;
+  }
+  /* over budget, drawn coarser, once */
+  const coarser = (mean) => { if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); } };
+  const at = () => Math.round(px * 100) / 100;
+  /* a weight made: its program asked for, waited for (in the background where the browser can), and finished. Said:
+     how long it waited its turn (the first), and how long the making itself took */
+  const compile = (slab) => {
+    const name = slab ? "rich" : "lean";
+    let took = 0;
+    return chore(() => {
+      const t0 = performance.now();
+      if (!slab) note(`door: compile waited ${Math.round(t0 - LOADED)} ms`, since);
+      const p = make(slab);
+      return compiled(p).then(() => { took = performance.now() - t0; return p; });
+    }, 60, "door")
+      .then((p) => chore(() => {
+        const t0 = performance.now(), pr = finish(p);
+        note(`door: ${name} compiled ${Math.round(took + performance.now() - t0)} ms`, since);
+        return pr;
+      }, 60, "door"));
+  };
+  /* the ladder, after the lean weight's first frame: measured; with room (or &rich), the rich weight made, measured
+     and kept if it keeps to the budget (&rich: kept whatever), the flight then asked for the same; else the lean one,
+     coarser if it must be */
+  function ladder() {
+    let lean;
+    try { lean = measure(); } catch { return; /* drawn as it is */ }
+    const up = !LEAN && (RICH || lean <= ROOM);
+    if (!up) coarser(lean);
+    note(`door: lean ${Math.round(lean)} ms a frame, drawn at ${at()}×`, since);
+    if (!up) return;
+    /* (not waited for here: its chores come after this one) */
+    chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "door")
+      .then(() => compile(true))
+      .then((rich) => chore(() => {
+        const was = prog;
+        prog = rich;
+        let mean = Infinity;
+        try { mean = measure(); } catch { /* not kept */ }
+        if (RICH || mean <= BUDGET) {
+          coarser(mean);
+          state.rich = true; wantRich();
+          note(`door: live (rich) ${Math.round(mean)} ms a frame${mean > BUDGET ? `, drawn at ${at()}×` : ""}`, since);
+        } else {
+          prog = was; dirty = true; wake();
+          note(`door: rich ${Math.round(mean)} ms a frame, over ${BUDGET}: back to lean`, since);
+        }
+      }, 60, "door"))
+      .catch((e) => { console.warn("orbit: the door stays lean", e); });
   }
 
-  /* made in turn, after the door's reveal: the program, then each map; shown once the first whole frame is drawn */
-  const ready = chore(() => { const p = make(); return compiled(p).then(() => p); }, 60, "door")
-    .then((p) => chore(() => { finish(p); note("door: shaders compiled", since); }, 60, "door"))
+  /* made in turn, after the door's reveal: the lean weight, then each map; shown once the first whole frame is drawn;
+     then the ladder */
+  const ready = compile(false)
+    .then((p) => { prog = p; })
     .then(() => Promise.all(keys.map(load)))
     .then(() => chore(() => {
       world.querySelector(".wl.earth")?.after(canvas);
       resize(); draw();
       requestAnimationFrame(() => world.classList.add("live"));
       followDoor(state);
-      note("door: live", since);
+      note("door: live (lean)", since);
       wake();
     }, 60, "door"))
-    .then(() => chore(measure, 60, "door"))
+    .then(() => chore(ladder, 60, "door"))
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });
   document.addEventListener("visibilitychange", wake);

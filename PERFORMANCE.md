@@ -152,3 +152,33 @@ Tried, October 2026:
   density (to 2×), times three frames once after its first, and over 40 ms a frame comes down by the square root of
   the excess (to half), for the rest of the page view. SwiftShader (software rendering: relative only) at 1440×900,
   deviceScaleFactor 2: 2.9–3.3 s a frame at 2880×648, so it drew at 1×; at 1200×800, 1×: 0.7 s, drawn at 0.5×.
+
+## The Earth's march cheaper, and a ladder: lean first, rich if affordable (8 October 2026)
+
+- Measured on an RTX 3080 (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
+  about 10 ms a million pixels: far too heavy for a mid-range GPU.
+- The slab's march now reads one texel a step instead of three. Each clouds map (global, near) gets a field, made
+  once per context by a pass right after the map is put on the GPU (voyage.js: cloudField; RGBA8 at the map's own
+  size, with its levels). The field holds the cover remapped as dawn.py does, the same from the level that blurs it
+  by 0.16 degrees (its soft cover), and the tops' height. The height is stored as a share of 12.6 km over the slab's
+  foot, the most a top can stand: (CL1 - CL0) would clip the tallest. Across the near box's margin the march reads
+  both fields and mixes them, as it did the maps. The cities' glow under the clouds is a texture of its own
+  (cityGlow: the whole Earth's lights and the near box's, at an eighth of the whole Earth's map). The march reads it
+  once a step, and only where there is cloud. The flight makes the fields only under `?door3d`, the only place it
+  can draw the rich Earth.
+- Steps: a ray that reaches the ground, one every 8 km, at most 24 (was 6 km, 40); a ray that skims the limb, one
+  every 6 km, at most 64 (was 4 km, 160); jitter kept. A ray that never comes down among the cloud tops (13.6 km)
+  skips the low air's march.
+- The ladder is `sceneHead({ slab })`, in two weights:
+  - LEAN: the clouds a flat cover on the ground, lit as the ground is, the cities dimmed under them. The door draws
+    it first, and the flight always compiles it, so the default site's flight is back to flat clouds and a shorter
+    compile.
+  - RICH: the slab. The door measures lean (three frames, the mean of the last two). At 10 ms or less it makes rich as
+    a chore and measures it, and keeps it at 40 ms or less, asking the flight for the same (voyage.js: wantRich).
+    The flight draws lean until its own rich program is made. Otherwise the door stays lean, drawn coarser if over
+    40 ms, as before.
+  - `&rich` forces rich (still measured); `&lean` forbids it.
+- SwiftShader (software rendering: relative only), 1440×900, deviceScaleFactor 2, band 2880×648: lean 1.1 s a frame
+  in one load (then stepped to 1×) and 2.0 s in another; rich (forced) 3.3 s; the committed slab 3.3 s. Other runs
+  shared the machine, so the noise is about 2×. SwiftShader also pays for every branch on every step, so it shows
+  little of the fields' saving. Still to be measured on the RTX 3080.
