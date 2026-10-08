@@ -521,7 +521,8 @@ Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
    the live one, the classic flight Earth there, everything proved unseen before it shows, and the door's measure taken
    before the world planets start drawing (it read 37 ms beside them, 16 alone). Thresholds from the data of 1-4.
 6. **What the ring waits for.** Today every compile. On background compilers the door's own programs and the galaxy
-   could come after the reveal; on Firefox they cannot, and the still door is the answer there. Decided after 5.
+   could come after the reveal; on Firefox they cannot, and the still door is the answer there (in: "The live door
+   late"). The way past that on Firefox is the worker (below): compiles that stall nothing the eye sees.
 7. **The smoothness pass.** The frame gaps around the sharp strip's fade, the world planets' drop to half scale, the
    870 ms gap the stall test caught after uploads: measured with the first-second lines, fixed one cause at a time.
 8. **The planets in one context.** Deferred: small saving, real structural risk, last.
@@ -548,3 +549,33 @@ on the still door, where yesterday's stalls lived), its maps in bands, its first
 Never the rich weight there (its own compile and the flight's rich Earth would be two more stalls). The level line
 reads `level 1: live lean (compiles stall the page; …: lean, after the ways in)`; `door: the journeys are ready, the
 live door may begin` marks the moment. `?level=0` keeps the still door, `?level=2` the rich one late, to compare.
+
+## The worker, measured (8 October 2026)
+
+The question: on Firefox, whose compiles run on the page's thread, can a worker take them, so that the ring and the
+reveal stay smooth and the compiles need not all be under the ring? The `worker` test (tests/worker.js,
+tests/t-worker.js) compiles the probe, the rich door and the flight's head in a worker on an OffscreenCanvas while
+the page runs a CSS spinner (the compositor), a 2D dot (the page's frames) and a WebGL triangle (a page canvas), and
+the eye says what paused. Confirmed with the Firefox Profiler and Edge's performance panel. The numbers are in
+CAPABILITIES.md ("A worker's compile"); what they mean:
+
+- **Firefox: yes, with two conditions.** The compositor and the page's frames stay smooth through every compile
+  (16.7 ms gaps, the profiler's compositor track unbroken). A page canvas drawing WebGL during a worker compile stalls
+  for the compile's length, and a worker's compile warms nothing for the page (no shared cache: the same source costs
+  the full price again on the page). So the flight, the worlds and the live door have to be compiled *and drawn* in
+  the worker, on canvases handed over from the page (`transferControlToOffscreen`), and the live Earth may only begin
+  after the last compile. The still door, the orbits and the ring are 2D and the compositor's, and stay on the page.
+- **Edge: no.** A worker's compile stalls the page and the spinner whatever the worker does, while Edge's own page
+  compiles, polled, stall nothing; and Edge shares its program cache across contexts, so the page path it has is
+  already the smooth one. Edge, Chrome and Safari keep the page path.
+- **The two tries before the answer:** the first test read pixels back in the page's loop, which was itself the
+  stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
+  process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).
+
+**The build, if funded:** the flight (voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
+state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;
+measures taken there; the live door late and in the worker too (the door's own canvas handed over when its journeys
+are ready). Verified pixel-identical against the page path, in Edge, before the switch is made for Firefox only
+(`!background` from the probe). Two to three builds. What it buys on the laptop in Firefox: the ring no longer waits
+for compiles it cannot hide, so the targets above (ring 4 s, ways in 7 s) come within reach, and the "door" chores'
+short stalls on the still door go.
