@@ -22,7 +22,7 @@ Uploads during the door's reveal are bounded per frame: one band of a picture, u
 | Signal | How good | When known | Used for |
 |---|---|---|---|
 | Screen size, pixel ratio, window size | exact | 0 s | map tier (lights strip 120/180/240 px a degree), drawing density |
-| Whether shaders compile in the background (`KHR_parallel_shader_compile`) or on the page's thread (Firefox) | exact | 0 s | where compiles may happen: anywhere (background) or only under the ring (page thread: a compile stalls everything, the compositor's animations included) |
+| Whether shaders compile in the background (`KHR_parallel_shader_compile`) or on the page's thread (Firefox) | exact | 0 s | where compiles may happen: anywhere (background) or only under the ring (page thread: a compile stalls everything, the compositor's animations included); or, on the page thread, in a worker (see "A worker's compile", below) |
 | WebGL2, float render targets, anisotropic filtering | exact | 0 s | whether the live door is possible at all |
 | Reduced motion, save-data, battery saver (where exposed) | exact where present | 0 s | still door; no sharp strip |
 | GPU name (vague on Firefox), memory class (Chrome/Edge only), cores (capped) | hints only | 0 s | tie-breakers, never a decision |
@@ -150,6 +150,23 @@ so this bought little on Windows, and the rolled loops are what bought the compi
   it is "both", never where it is lean.
 On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.
 
+**A worker's compile (8 October, the `worker` test, laptop on mains).** A WebGL2 context in a worker (OffscreenCanvas)
+compiles the same sources as the page does: Firefox probe 175 / rich door 455 / flight head 525 ms, Edge about the
+same. What the page feels meanwhile differs by browser, and the answer settles the design for each:
+- *Firefox.* While the worker compiles, the compositor's animations (a CSS spinner, the ring) and the page's own
+  frames (2D canvas, DOM) stay perfectly smooth: 16.7 ms gaps through every compile, the Firefox Profiler's
+  Compositor and Renderer tracks unbroken. But any WebGL the page draws during the compile stalls for the compile's
+  length (the GPU process serves one at a time; the page's canvas cannot present): 433 and 517 ms gaps with a triangle
+  on the page. And the worker's compile warms nothing: the same source compiled on the page afterwards costs the
+  full 184 / 476 / 532 ms (no shared program cache). So on Firefox a worker only helps if everything WebGL is compiled
+  *and drawn* in the worker, and the page draws no WebGL of its own while a compile is running.
+- *Edge.* A worker's compile stalls the page's frames and the spinner for the compile's length, polling the
+  completion flag or not (150-517 ms gaps; by eye both stalled), while the page's own compiles, polled, stall nothing.
+  And its GPU process shares one program cache across contexts: the same source on the page afterwards costs 3 / 8 /
+  11 ms. So on Edge the worker is no use for smoothness (the page path already has it) and only a cache-warmer, which
+  the page's background compiles already are. Edge keeps the page path.
+- *Safari, Chrome:* not measured; both compile in the background on the page, so the question is Firefox's.
+
 **Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Mac 0.20), rich ≈ 0.3-0.55 (the Mac 0.32, the PCs 0.45-0.55); a compile ≈ the
 probe's compile time scaled by the shader's rolled size (the per-character rule from before the loops were rolled no
 longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is made up ("GTX 980",
@@ -157,6 +174,8 @@ longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is m
 
 ## Open questions
 
+- Whether the worker design (everything WebGL compiled and drawn in a worker on Firefox, the live door after the
+  last compile) is built; the test says it would make the ring and the reveal smooth through every compile there.
 - Whether level 1 on a weak GPU keeps the world planets (two world draws a frame) or only the spheres.
 - Calibration of the probe against the real shaders: four points (the 3080, the 4700U's Radeon, the phone, the Mac);
   rich's ratio spreads 0.3-0.55, so the real rich measure, unseen, stays the gate and the probe only decides whether
