@@ -68,7 +68,7 @@ let warmingAll = null, compiledAll = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (MAINTENANCE) return (warmingAll = Promise.resolve());
-  if (navigator.connection?.saveData) return (warmingAll = Promise.resolve());
+  if (navigator.connection?.saveData) { openWays(["install", "docs", "info"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page); the work each then needs on the GPU is queued as
      chores (chores.js) in this order, and done a piece at a time once the door has come up */
@@ -79,12 +79,30 @@ function warmJourneys() {
     PADS.info.world?.prepare?.(),      /* 4. the information's world */
   ];
   warmingAll = Promise.all(all.map((p) => Promise.resolve(p).catch(() => {})));
+  /* each way in opens as its journey is readied (or has failed, and goes as it can): the planets show from the
+     first but take no click until then, and the gate is not shown at all */
+  const settled = (p) => Promise.resolve(p).catch(() => {});
+  settled(all[0]).then(() => openWays(["install"]));
+  settled(all[1]).then(() => openWays([], true));
+  Promise.all([settled(all[1]), settled(all[2])]).then(() => openWays(["docs"]));
+  settled(all[3]).then(() => openWays(["info"]));
   /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are (some
      browsers compile on the page's own thread, and the page stands still meanwhile: better behind the running ring
      than on the door) */
   compiledAll = Promise.all([PADS.install.ring.compiled, journey.compiled()].map((p) => Promise.resolve(p).catch(() => {})));
   return warmingAll;
 }
+/* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
+   shows once the flight is */
+function openWays(ids, gate = false) {
+  for (const id of ids) { const p = $(`#door .planet[data-section="${id}"]`); if (!p) continue; p.classList.add("ready"); p.removeAttribute("tabindex"); p.removeAttribute("aria-disabled"); }
+  if (gate) { document.body.classList.add("ready-flight"); $("#gate").disabled = false; }
+}
+/* until then */
+for (const p of document.querySelectorAll("#door .planet")) { p.setAttribute("tabindex", "-1"); p.setAttribute("aria-disabled", "true"); }
+/* (a planet not yet ready takes no click, from a pointer, the keyboard or a script: its link does not fire) */
+$("#door .planets")?.addEventListener("click", (e) => { const a = e.target.closest(".planet"); if (a && !a.classList.contains("ready")) { e.preventDefault(); e.stopPropagation(); } }, true);
+if (!MAINTENANCE) $("#gate").disabled = true;
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 const duskRasters = mountRasters($("#dusk .world"), {}, "dusk");
