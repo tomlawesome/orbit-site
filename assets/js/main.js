@@ -96,7 +96,12 @@ function warmJourneys() {
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
    shows once the flight is */
+let planetsIn = Promise.resolve();
 function openWays(ids, gate = false) {
+  /* never before the planets themselves are in: a label that came before its planet would read as the other way round */
+  planetsIn.then(() => openNow(ids, gate));
+}
+function openNow(ids, gate) {
   for (const id of ids) { const p = $(`#door .planet[data-section="${id}"]`); if (!p) continue; p.classList.add("ready"); p.removeAttribute("tabindex"); p.removeAttribute("aria-disabled"); }
   if (gate) { document.body.classList.add("ready-flight"); $("#gate").disabled = false; }
 }
@@ -233,7 +238,13 @@ function showDoor() {
       return Promise.all(ends.map((a) => a.finished.catch(() => {})));
     } catch { return Promise.resolve(); }
   };
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); if (DOOR3D) liveDoorOf();
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
+    /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
+    planetsIn = new Promise((r) => requestAnimationFrame(() => {
+      const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
+      (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
+    }));
+    warmJourneys(); if (DOOR3D) liveDoorOf();
     /* the chores begin at once where the browser compiles shaders in the background; where it compiles on the page's
        own thread (Firefox) they wait for the painted part of the door's reveal, which they would stutter */
     if (compilesAside) openChores(); else drawn().then(() => openChores()); }); };
