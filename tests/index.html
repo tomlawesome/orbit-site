@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbit — machine tests</title>
+  <meta name="robots" content="noindex" />
+  <style>
+    :root{color-scheme:dark}
+    body{margin:0;padding:16px;background:#0a0c14;color:#e4e7f2;font:14px/1.5 system-ui,sans-serif}
+    h1{font-size:18px;margin:0 0 4px}
+    p{margin:0 0 12px;color:#9aa2b8}
+    .row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+    button{font:600 13px system-ui,sans-serif;color:#0a0c14;background:#d8b45a;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+    button.quiet{background:#2a3044;color:#e4e7f2}
+    button:disabled{opacity:.5}
+    pre{white-space:pre-wrap;word-break:break-word;background:#11141f;border:1px solid #262b3a;border-radius:10px;padding:12px;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:60px;margin:0 0 12px}
+    #spin{min-height:0}
+  </style>
+</head>
+<body>
+  <h1>Orbit — machine tests</h1>
+  <p>Small tests, one task each, so a machine and browser can tell us what they can carry. Run all, then Copy, and send the text.</p>
+  <div class="row">
+    <button id="all">Run all</button>
+    <button id="copy" class="quiet" disabled>Copy</button>
+  </div>
+  <div class="row" id="each"></div>
+  <div id="spin"></div>
+  <pre id="out">Ready.</pre>
+  <script type="module">
+    const TESTS = ["machine", "compile", "draw", "upload", "stall", "network"];
+    const out = document.getElementById("out"), each = document.getElementById("each"), copy = document.getElementById("copy"), all = document.getElementById("all"), spin = document.getElementById("spin");
+    let text = "";
+    const head = () => `orbit tests · ${new Date().toISOString()} · ${location.href}\n`;
+    async function one(name) {
+      const t0 = performance.now();
+      let lines;
+      try { const m = await import(`./t-${name}.js`); lines = await m.run(spin); }
+      catch (e) { lines = [`error: ${e.message}`]; }
+      return `\n[${name}] (${Math.round(performance.now() - t0)} ms)\n  ` + lines.join("\n  ") + "\n";
+    }
+    async function runAll(names) {
+      all.disabled = true; copy.disabled = true; text = head(); out.textContent = text + "\nrunning…";
+      for (const n of names) { out.textContent = text + `\nrunning ${n}…`; text += await one(n); out.textContent = text; }
+      all.disabled = false; copy.disabled = false;
+    }
+    all.addEventListener("click", () => runAll(TESTS));
+    for (const n of TESTS) { const b = document.createElement("button"); b.className = "quiet"; b.textContent = n; b.addEventListener("click", () => runAll([n])); each.appendChild(b); }
+    copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1200); } catch { out.focus(); } });
+  </script>
+</body>
+</html>

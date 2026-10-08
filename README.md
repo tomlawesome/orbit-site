@@ -58,6 +58,7 @@ Remove the attribute and the whole site is back as it was.
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
 | `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the probe at 0 s, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
+| `tests/` | The machine tests (`tests/index.html`): six small pages, one task each (what the browser says of the machine; shader compile times, the real Earth shaders included; draw speed at this screen's band; map upload times; whether a compile stalls the page; the line's speed), with a runner that runs them all and copies one report. Open on any device, Run all, Copy, send the text |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#docs/<source>` and
 `#docs/<source>/<heading>` open a page of the docs; `#key` and `#inbox`
