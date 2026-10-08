@@ -45,14 +45,22 @@ compiled twice (salted, two programs) and the second is the one timed, since a f
 the probe is skipped altogether (the console says `stored` instead of `fresh`). Only a probe that worked is kept.
 `doorWeight()` turns it into the door's weight: the rich Earth predicted at ms per Mpx × the band's Mpx × 0.55,
 "rich" at 24 ms or less, "both" (lean first, rich tried by the ladder) at 40 or less, "lean" above; no probe, "both".
+`level()` turns it into the level (the ladder, below), once a page view, and the console says which and why on every
+page: `level 0: still (compiles stall the page; probe 197 ms)`, `level 2: live rich (predicted 12 ms of 40, background
+compiles)`. `liveDoor()` is the one test every module asks: `?door3d`, and level 1 or 2.
 
 ## The ladder
 
 | Level | What ships | Proof required, in order |
 |---|---|---|
-| **0 Still** | the baked door (`assets/img/door/dawn.webp`, 3200x720 from the NASA sources: static Earth, static clouds, high fidelity) and its picture planets; the flight with its classic Earth (the lighter, pre-slab shader); the dives and planets as before the live door | none: the floor, always ready |
-| **1 Live lean** | the live Earth with flat clouds, turning slowly; sphere and world planets; the flight's richer Earth (for the handoff); near maps and the small lights strip | WebGL2 with float targets; the level's compiles fit the ring budget (predicted from the probe); the probe's ms per million pixels, scaled to the band, says lean <= 16 ms a frame, *before* the big maps are fetched; the real lean frames unseen <= 16 ms; the world planets' cost unseen |
-| **2 Live rich** | the cloud slab (dawn.py's physics); the device's sharp lights strip, faded in | the rich compile also fits the ring budget; rich frames unseen <= 40 ms |
+| **0 Still** | the baked door (`assets/img/door/dawn.webp`, 3200x720 from the NASA sources: static Earth, static clouds, high fidelity) and its picture planets; the flight with its classic Earth (the lighter, pre-slab shader); the dives and planets as before the live door | none: the floor, always ready. Chosen where there is no WebGL2 or the probe failed; with reduced motion or save-data; where shaders compile on the page's thread (the probe's `background` false: each compile stalls the page, so the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on every later compile); or where the probe predicts a lean frame over 16 ms. Nothing of the live door is compiled or made |
+| **1 Live lean** | the live Earth with flat clouds, turning slowly; sphere and world planets; the flight's lean Earth (the rich one never compiled); near maps, the small lights strip and the device's own faded in | compiles in the background; the probe's ms per million pixels, scaled to the band, predicts lean <= 16 ms a frame and rich over 40, *before* the maps are fetched; then the first lean frame drawn unseen and measured (drawn coarser, to half, if over 40 ms) before it is shown; the world planets start only once that measure is taken |
+| **2 Live rich** | the cloud slab (dawn.py's physics); the device's sharp lights strip, faded in | as 1, with the rich predicted <= 40 ms; the weight then by the same prediction (`doorWeight`): the rich alone at 24 ms or less, its first frames drawn unseen and measured, kept at 40 (coarser first, to half), else the lean one made and shown instead; "both" at 40 or less, the lean shown first as at 1 and the rich tried after (that measure is on the shown canvas) |
+
+`?level=0`, `?level=1` or `?level=2` in the address overrides the rule (the console then says `level 2: live rich
+(?level=2)`); at level 2 `&rich` and `&lean` still force the weight, at level 1 the weight is lean whatever they say.
+While the live door is tried it is drawn only with `?door3d`: without it every level ships the still door, and the
+level line is all that changes.
 
 Continuous knobs inside a level, all by measure: drawing density (down to 0.5x), the world planets at half scale,
 the lights strip tier by screen.
@@ -64,9 +72,9 @@ No browser is named in the rules. The names only explain where a machine lands.
 | Machine | Browser | Probe-equivalent facts | Level |
 |---|---|---|---|
 | Desktop, RTX 3080, 3840x2160 at 1.5x | Edge | compiles in background; lean 13-16 ms at 3.3 Mpx | 2 |
-| Desktop, RTX 3080 | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 2, compiles under the ring |
-| Laptop 14", Ryzen 7 4700U with integrated Radeon, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 0 or 1 without the world planets: decided by the probe before the uploads |
-| Laptop, same | Firefox | install 1.6 s, flight 3.1 s, door 0.4 + 0.7 s, planets 0.24, galaxy 0.18: 6.2 s of compiles, each a stall; lean 11 ms, rich 23 ms, world planets 11.9 ms (halved) | 0 |
+| Desktop, RTX 3080 | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 0: compiles stall the page (`?level=2` shows the live door) |
+| Laptop 14", Ryzen 7 4700U with integrated Radeon, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 1 or 2 by the prediction; its runs predicted the rich at 23-25 ms of 40: 2 |
+| Laptop, same | Firefox | install 1.6 s, flight 3.1 s, door 0.4 + 0.7 s, planets 0.24, galaxy 0.18: 6.2 s of compiles, each a stall; lean 11 ms, rich 23 ms, world planets 11.9 ms (halved) | 0: compiles stall the page |
 | iPhone 13 Pro Max, 428x926 at 3x (drawn at 2x) | Safari 26 | WebGL2, float targets, compiles in background (130-170 ms each); lean 3.3 ms, rich 5.7 ms at 0.48 Mpx; uploads in tens of ms; frames at 30 a second during the test (Low Power Mode?) | 2 |
 | MacBook, Apple GPU (Apple silicon), 1512x982 at 2x, 8 cores | Safari 26 | compiles in background (150-167 ms each; the very first compile of the context 503 ms, see below); probe 10.2 ms per Mpx, as fast as the 3080; lean 4.3 ms, rich 6.7 ms at 2.06 Mpx; uploads 5-47 ms; frame gaps 20 ms around the rich compile | 2, the most headroom measured |
 
@@ -88,7 +96,7 @@ the GPU in bands as the site does, against whole: 0 bytes apart is the pass),
 compiled the probe in 315 ms and drew the rich door at 24 ms a frame, on mains 197 ms and 11 ms. Say which when
 pasting a run, and compare runs in the same state only (or against the probe in the same run).
 
-A readout page (`?probe` in the address) that runs the probe and prints its report on the screen as well as the
+A readout page (`?probe` in the address; not built yet, the console's lines are the readout for now) that runs the probe and prints its report on the screen as well as the
 console (phones have no console to hand), as copyable text: browser class, screen, extensions, compile ms, ms per
 million pixels, the level chosen and why, and then the real measures as they come. The same lines are printed on the
 normal door (`orbit · …`). Devices to hand: the desktop (Edge, Firefox), the laptop (Edge, Firefox), one WebKit phone;
@@ -149,7 +157,6 @@ longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is m
 
 ## Open questions
 
-- The exact ring budget (how many seconds of compiles a visitor will wait on a first visit before the door): 2.5 s?
 - Whether level 1 on a weak GPU keeps the world planets (two world draws a frame) or only the spheres.
 - Calibration of the probe against the real shaders: four points (the 3080, the 4700U's Radeon, the phone, the Mac);
   rich's ratio spreads 0.3-0.55, so the real rich measure, unseen, stays the gate and the probe only decides whether
