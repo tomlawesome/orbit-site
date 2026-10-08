@@ -57,6 +57,7 @@ Remove the attribute and the whole site is back as it was.
 | `.github/workflows/import-docs.yml` | Runs the import every night and on request, and commits what changed |
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
+| `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the probe at 0 s, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#docs/<source>` and
 `#docs/<source>/<heading>` open a page of the docs; `#key` and `#inbox`
