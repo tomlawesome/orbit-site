@@ -255,7 +255,8 @@ export function mountPlanets(door) {
 
   /* the clock: every frame while the door is shown and the page is seen; nothing otherwise */
   let raf = 0, started = false;
-  const shown = () => !document.hidden && !door.hidden && getComputedStyle(door).opacity !== "0";
+  /* and not once a journey begins (launching, departing): the worlds hold still under the flight or the dive's blur */
+  const shown = () => !document.hidden && !door.hidden && !/\b(launching|departing|showwarp)\b/.test(document.body.className) && getComputedStyle(door).opacity !== "0";
   function tick(now) {
     raf = 0;
     if (failed || !shown()) return;

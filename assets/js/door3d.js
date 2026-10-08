@@ -187,7 +187,10 @@ export function liveDoor(world) {
   /* the clock: twenty frames a second while the door is shown and the page is seen; nothing otherwise */
   let raf = 0, last = 0, prev = 0;
   const door = world.closest("#door");
-  const shown = () => !document.hidden && door && !door.hidden && getComputedStyle(door).opacity !== "0";
+  /* and not from the moment a journey begins (the flight draws its own Earth from this one's state; a dive blurs the
+     door): the last frame stays as a still, so nothing of the door's costs while the journey comes up */
+  const away = () => /\b(launching|departing|showwarp)\b/.test(document.body.className);
+  const shown = () => !document.hidden && door && !door.hidden && !away() && getComputedStyle(door).opacity !== "0";
   function tick(now) {
     raf = 0;
     if (!shown()) { prev = 0; return; }

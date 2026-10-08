@@ -1187,8 +1187,10 @@ html.rich body.departing #door .planet.chosen .body{box-shadow:none;filter:brigh
 body.racking #door .dsky,body.racking #door .world{filter:blur(10px) brightness(.55)}
 /* covered by the world's own sky: not drawn at all */
 body.covered #door{visibility:hidden}
-/* under the flight, the door's slow loops wait */
-body.showwarp #door .dsky svg,body.showwarp #door .rays svg,body.showwarp #door .world .breath{animation-play-state:paused}
+/* under the flight, and under a dive's blur (racking: a blur redone every frame anything beneath it moves), the
+   door's slow loops wait */
+body.showwarp #door .dsky svg,body.showwarp #door .rays svg,body.showwarp #door .world .breath,
+body.racking #door .dsky svg,body.racking #door .rays svg,body.racking #door .world .breath{animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){body.racking #door .dsky,body.racking #door .world{filter:brightness(.55)}}
 body.departing #door .loginchrome{pointer-events:none}
 
