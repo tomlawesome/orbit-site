@@ -637,7 +637,7 @@ export function wirePlanets(door, onGo) {
     planets.forEach(({ body, tag, rb }, i) => {
       const o = orbits3d[i], at = o.anims[0] ? o.anims[0].currentTime : o.t0;
       o.anims.forEach((x) => x.cancel());
-      const spinK = [], bodyK = [], tagK = [], zK = [];
+      const spinK = [], bodyK = [], tagK = [], zK = [], sides = [];
       let prev = null, side = null;
       for (let j = 0; j <= STEPS; j++) {
         const offset = j / STEPS, [X, Y, z, k] = project(onEllipse(o.o, anomaly(o.o, offset * Math.PI * 2)), o.T, o.N), zr = z / (o.o.a * (1 + o.o.e) * Math.sin(o.T));
@@ -656,8 +656,16 @@ export function wirePlanets(door, onGo) {
         const w = widths[i] || 0, left = cx + tx + (ax / 100) * w, right = left + w;
         if (left < 8) tx += 8 - left; else if (right > innerWidth - 8) tx -= right - (innerWidth - 8);
         tagK.push({ offset, transform: `translate(calc(${tx.toFixed(1)}px + ${ax.toFixed(1)}%), calc(${ty.toFixed(1)}px + ${ay.toFixed(1)}%))` });
-        const sd = z < 0 ? 1 : 5;
-        if (sd !== side) { zK.push({ offset, zIndex: sd }); side = sd; }
+        /* which side of the ring it is drawn on: behind the ring's plane, under it; before, over it. The change is
+           held while the world overlaps the ring's stroke, so it never jumps from under to over in one frame (it
+           changes just before it reaches the stroke, or just after it has left it) */
+        sides.push({ offset, want: z < 0 ? 1 : 5, clear: Math.abs(Math.hypot(x, y) / u - 72) > (o.bs / 2) * k + 7 });
+      }
+      /* run twice over, so the side at the lap's end is the side at its start (the held changes settle on the first lap) */
+      for (let pass = 0; pass < 2; pass++) for (const st of sides) {
+        if (side === null) side = st.want;
+        else if (st.want !== side && st.clear) side = st.want;
+        if (pass === 1 && (zK.length === 0 || zK[zK.length - 1].zIndex !== side)) zK.push({ offset: st.offset, zIndex: side });
       }
       /* the side held flat between its changes */
       const zSteps = [];

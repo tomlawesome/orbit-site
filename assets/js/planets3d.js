@@ -189,10 +189,11 @@ export function mountPlanets(door) {
   function where(p) {
     const t = getComputedStyle(p.spin).transform;
     if (!t || t === "none" || !size) return null;
-    const m = new DOMMatrixReadOnly(t), k = m.a, u = size / 200;
+    const cs = getComputedStyle(p.spin), m = new DOMMatrixReadOnly(t), k = m.a, u = size / 200;
     if (!(k > 0)) return null;
     if (!p.bs) p.bs = parseFloat(getComputedStyle(p.body).getPropertyValue("--bs")) || 15;
-    return { dx: m.e, dy: m.f, x: cx + m.e, y: cy + m.f, k, z: DEPTH * (1 - 1 / k), r: (p.bs / 2) * k * u };
+    /* near: on the side over the ring, as the orbit has put its anchor (its z-index, pads.js) */
+    return { dx: m.e, dy: m.f, x: cx + m.e, y: cy + m.f, k, z: DEPTH * (1 - 1 / k), r: (p.bs / 2) * k * u, near: cs.zIndex === "5" };
   }
   /* each orbit's plane, once, from its own lap (the keyframes pads.js made): two places a quarter apart, unprojected,
      span it (the focus is the ring's centre). The worlds turn about its normal; the giant's ring is tipped from it,
@@ -233,7 +234,8 @@ export function mountPlanets(door) {
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
     }
     for (const [p, w] of list) {
-      const { gl, canvas, u: U, maps, prog, vao } = w.k > 1 ? near : far;
+      /* on the side the orbit has put its anchor (pads.js holds the change while the world overlaps the ring's stroke) */
+      const { gl, canvas, u: U, maps, prog, vao } = w.near ? near : far;
       gl.useProgram(prog); gl.bindVertexArray(vao);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       const R = w.r * px;
@@ -301,7 +303,7 @@ export function mountPlanets(door) {
     window.__planets3d = {
       positions: () => {
         measure();
-        return planets.map((p) => { const w = where(p); return w && { section: p.id, x: w.x, y: w.y, r: w.r, z: w.z, side: w.k > 1 ? "near" : "far", drawn: live && !p.chosen && !taken(p.id) }; });
+        return planets.map((p) => { const w = where(p); return w && { section: p.id, x: w.x, y: w.y, r: w.r, z: w.z, side: w.near ? "near" : "far", drawn: live && !p.chosen && !taken(p.id) }; });
       },
     };
   }
