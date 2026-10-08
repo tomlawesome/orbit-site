@@ -18,7 +18,11 @@ const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
 /* the live door, while it is tried (?door3d): the Earth under the door drawn as it is (door3d.js), not a picture */
 const DOOR3D = /[?&]door3d\b/.test(location.search);
 let liveDoor = null;
-const liveDoorOf = () => import("./door3d.js").then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
+/* and its planets drawn as worlds, lit by that sunrise (planets3d.js), with it */
+const liveDoorOf = () => {
+  import("./planets3d.js").then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e));
+  return import("./door3d.js").then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
+};
 if (MAINTENANCE) {
   /* the message, if the attribute gives one ("Launching soon"); "Back shortly" if not */
   const words = document.documentElement.getAttribute("data-maintenance")?.trim();

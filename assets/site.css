@@ -1284,3 +1284,17 @@ html[data-maintenance] #door .notice .d i:nth-child(2){animation-delay:.35s}
 html[data-maintenance] #door .notice .d i:nth-child(3){animation-delay:.7s}
 @keyframes noticedot{0%,100%{opacity:.2}30%,55%{opacity:1}}
 @media (prefers-reduced-motion:reduce){html[data-maintenance] #door .notice .d i{animation:none;opacity:.7}}
+
+/* ══ THE PLANETS, LIVE (?door3d, planets3d.js): the three worlds drawn as lit spheres on two canvases the script lays
+   either side of the ring, a square round its centre: the far halves of the orbits under the ring and the name, the
+   near halves over them, as the anchors go (pads.js: z-index 1 and 5). They come and go as the planets do ══ */
+#door .lockup canvas.planets3d{position:absolute;inset:0;pointer-events:none}
+#door .lockup canvas.planets3d.far{z-index:1}
+#door .lockup canvas.planets3d.near{z-index:5}
+body.launching #door .lockup canvas.planets3d,body.showwarp #door .lockup canvas.planets3d{opacity:0;transition:opacity .3s}
+body.departing #door .lockup canvas.planets3d{opacity:0;transition:opacity .7s ease}
+/* once they are drawn the pictures give way (on the picture itself, the body's ::before: the body is still what the
+   dives measure and swell); the anchor, its halo and its name stay, and still answer the pointer. The planet a dive
+   goes to has its picture back at once, for the swell, and loses it again once it is set down */
+html.planets3d #door .planet .body::before{opacity:0;transition:opacity .6s}
+html.planets3d #door .planet.chosen .body::before{opacity:1;transition:none}
