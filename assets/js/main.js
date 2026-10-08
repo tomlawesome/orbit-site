@@ -124,10 +124,9 @@ for (const [id, pad] of Object.entries(PADS)) {
 /* the worlds dived into (the install's, the information's): the shot is the world's */
 const shotOf = (pad) => pad.world || pad.ring;
 let current = null;   /* "door" | "home" | a pad id */
-const visibleGlyph = () => (current === "home" ? $("#dial") : current && PADS[current] ? PADS[current].el.querySelector(".ring") : $("#login-glyph svg"));
 
 const journey = createJourney({
-  canvas: $("#warp"), mark: $("#flightmark"), name: $("#launchname"),
+  canvas: $("#warp"), name: $("#launchname"),
   dawnGlyph: () => $("#login-glyph svg"), duskGlyph: () => $("#dusk-glyph svg"),
   on: {
     /* the descent from the sky: it disperses, and the dusk comes up under the cooling dawn */
@@ -340,7 +339,7 @@ function flyNow(id, ready = null) {
   const carry = docsChart;
   pad.flown = id === "docs" ? docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } }) : pad.profile;
   journey.fly(pad.flown, {
-    title: sec.title, subtitle: sec.subtitle, glyph: visibleGlyph, ready,
+    title: sec.title, subtitle: sec.subtitle, ready,
     on: {
       release: leaveCurrent,
       /* the docs are ready to read as the sky lands; the others wait for their instrument */
@@ -394,7 +393,7 @@ function launchNow(ready = null) {
     name: o.name,
     bodies: o.items.filter((it) => it.status === "active").map((it) => { const p = law.dialPlacement(law.daysBetween(new Date(new Date().setHours(0, 0, 0, 0)), it.dueDate)); const r = 22 + Math.min(1, Math.max(0, (p.radius - 40) / 140)) * 58; return [Math.cos(p.angle) * r, Math.sin(p.angle) * r, SEC[o.sections.find((sc) => sc.id === it.section)?.accent] || "#8fb8ff", 3.2]; }),
   }));
-  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", glyph: visibleGlyph, ready, on: {
+  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { if (!history.state?.orbit) history.replaceState(null, "", " "); } catch { /* fine */ } },
     settled() { done(); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
