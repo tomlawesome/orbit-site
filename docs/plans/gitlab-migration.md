@@ -22,11 +22,15 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 - **The docs import is the only automation**, and it is a committer. It moves to GitLab as a scheduled pipeline; which branch it commits to is decision (a) below.
 - No existing GitLab project to rename: the GitHub importer creates `ai/orbit-site` directly.
 
+## Progress
+
+- 2026-10-08: imported by the owner as `ai/orbit-site` (project id 57). Every branch at the same commit as GitHub, issues #1 and #2, all 10 labels. Nothing else writes GitHub's `main` (the session that pushed to it is archived).
+
 ## Plan
 
 Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
-**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, the service worker's precache list against the files that exist), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import_docs` (schedule-only, commits to `main`), `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
+**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, every file the pages name exists), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import_docs` (schedule-only, commits to `main`), `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
 
 **Step 2 — import.** Owner creates `ai/orbit-site` with GitLab's GitHub importer (repo, branches, issues, labels). The agent cannot: the importer needs a GitHub token handed to GitLab. Milestone `M1 — Foundation on GitLab` is created on GitLab afterwards (the agent credential cannot create milestones on GitHub).
 

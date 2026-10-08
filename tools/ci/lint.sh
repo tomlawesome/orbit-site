@@ -7,16 +7,16 @@ cd "$(dirname "$0")/../.."
 fail=0
 
 echo "== modules parse"
-for f in sw.js assets/js/*.js tools/*.mjs tools/ci/*.mjs; do
+for f in sw.js assets/js/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
   node --experimental-default-type=module --check "$f" 2>/dev/null \
     || node --check "$f" || { echo "   $f does not parse"; fail=1; }
 done
 
 echo "== every local src/href in the pages exists"
-for page in index.html install.html 404.html; do
+for page in index.html install.html 404.html tests/index.html; do
   grep -o -E '(src|href)="[^"#?:]+"' "$page" | sed -E 's/^[a-z]+="//; s/"$//' | sort -u | while read -r ref; do
     case "$ref" in /*|data:*) continue ;; esac
-    [ -e "$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
+    [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
   done || fail=1
 done
 
