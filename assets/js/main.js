@@ -241,11 +241,13 @@ function showDoor() {
      page, on every visit: they are compiled under it, and the door is lit only once they are (never past 8 s: a
      compile that fails or hangs never holds the door) */
   const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !compilesAside);
-  /* to see, each at its own address (the owner compares them): ?ring=stop, the ring ends the moment the work is done
-     and the drawn ring takes over from where the runner is; ?ring=rush, the runner speeds up (x3) to finish its lap
-     within about half a second; ?open=early, where compiles are in the background, every chore and the ways in from
-     the moment the door is lit, not from the reveal's end (as before 8 October) */
-  const RING = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] || "", OPEN_EARLY = /[?&]open=early\b/.test(location.search) && compilesAside;
+  /* where compiles are in the background, every chore and the ways in run from the moment the door is lit, not from
+     the reveal's end (chosen by eye on the laptop in Edge, 8 October, against the held reveal and the two ring
+     endings; ?open=late holds them to the reveal's end, to compare). Where a compile stalls the page (Firefox), held
+     as before. To see, each at its own address: ?ring=stop, the ring ends the moment the work is done and the drawn
+     ring takes over from where the runner is; ?ring=rush, the runner speeds up (x3) to finish its lap within about
+     half a second */
+  const RING = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] || "", OPEN_EARLY = compilesAside && !/[?&]open=late\b/.test(location.search);
   let arrived = () => {};
   /* a first visit's first light is always at least a lap of the ring */
   const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
@@ -299,7 +301,7 @@ function showDoor() {
     const go = () => { openChores(); if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); };
     if (OPEN_EARLY) go();
     drawn().then(() => {
-      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (open=early)" : ""}`); }
+      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (the chores open with the reveal)" : " (held to the reveal's end)"}`); }
       if (!OPEN_EARLY) go();
     }); }); };
   within(critical, 250).then(() => {

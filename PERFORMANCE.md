@@ -531,7 +531,10 @@ Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 On a warm visit in Edge on the laptop all the work is done by 1.2 s and the ways in open at 3.9 s: the ring finishing
 its lap and the reveal, with the ways in held to its end, are the floor. Three changes to that, each behind a flag so
 they can be replayed side by side at their own addresses (they combine):
-- `?open=early`: where compiles are in the background, every chore and the ways in from the moment the door is lit,
-  not the reveal's end (as before 8 October; the reveal's gap line says whether it stayed smooth).
+- Where compiles are in the background, every chore and the ways in from the moment the door is lit, not the reveal's
+  end (as before 8 October; the reveal's gap line says whether it stayed smooth). **Chosen**, by eye on the laptop in
+  Edge, over the held reveal and both ring endings: now the default there; `?open=late` holds them, to compare. On
+  Firefox the hold stays (a chore mid-reveal is a stall), and none of the three helped there: its ring is the compile
+  wall, and only less code before the door shortens it.
 - `?ring=stop`: the ring ends the moment the work is done; the drawn ring takes over from where the runner is.
 - `?ring=rush`: the runner speeds up (x3) to finish its lap within about half a second.
