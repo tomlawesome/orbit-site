@@ -30,6 +30,17 @@ export const DAWN = {
       '<path d="M 800 924 L 646 404 L 680 390 Z"/><path d="M 800 924 L 962 560 L 928 544 Z"/><path d="M 800 924 L 404 610 L 448 574 Z"/><path d="M 800 924 L 1200 596 L 1156 562 Z"/></g>',
   },
   sunpt: { defs: F_B6L, body: '<circle cx="800" cy="919" r="20" fill="#fffdf6" filter="url(#b6l)"/>' },
+  /* the sun's three glows, which the door drew live: eight-bit radial
+     gradients with nothing to break their steps, so they rang about the sun;
+     drawn here, they are dithered with the rest */
+  sun: {
+    defs: '<radialGradient id="sun-core" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffff"/><stop offset="15%" stop-color="#fff6e2" stop-opacity=".9"/><stop offset="30%" stop-color="#ffedc2" stop-opacity=".6"/><stop offset="45%" stop-color="#ffe9c4" stop-opacity=".34"/><stop offset="60%" stop-color="#ffe4b8" stop-opacity=".16"/><stop offset="75%" stop-color="#ffe0b0" stop-opacity=".06"/><stop offset="90%" stop-color="#ffe0b0" stop-opacity=".015"/><stop offset="100%" stop-color="#ffe0b0" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="sun-mid" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f8c95e" stop-opacity=".55"/><stop offset="30%" stop-color="#f4c048" stop-opacity=".3"/><stop offset="60%" stop-color="#f0b429" stop-opacity=".1"/><stop offset="82%" stop-color="#f0b429" stop-opacity=".025"/><stop offset="100%" stop-color="#f0b429" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="sun-wide" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#e2772b" stop-opacity=".3"/><stop offset="55%" stop-color="#c2571f" stop-opacity=".12"/><stop offset="100%" stop-opacity="0"/></radialGradient>',
+    body: '<circle cx="800" cy="922" r="520" fill="url(#sun-wide)"/>' +
+      '<circle cx="800" cy="922" r="240" fill="url(#sun-mid)"/>' +
+      '<circle cx="800" cy="920" r="86" fill="url(#sun-core)"/>',
+  },
 };
 
 const F_DB6 = '<filter id="d-b6" filterUnits="userSpaceOnUse" x="-40" y="-40" width="1680" height="1080"><feGaussianBlur stdDeviation="6"/></filter>';
@@ -54,7 +65,9 @@ export const DUSK = {
 /* The heavily blurred groups carry no edge a second device pixel could
    sharpen, so they are drawn at CSS resolution; only the thin ones (the sun's
    core, the dusk's rim) are drawn at device resolution. */
-const SOFT = new Set(["zod", "sway1", "sway2", "glow", "belt", "afterglow"]);
+/* (the sun's glows too: their core is sharp-ish, but eighty-six units wide,
+   not two) */
+const SOFT = new Set(["zod", "sway1", "sway2", "glow", "belt", "afterglow", "sun"]);
 /* and the softest of them — nothing in them narrower than a 12-unit blur —
    at half of that, which a blur that wide cannot tell apart */
 const SOFTEST = new Set(["zod", "sway1", "sway2", "glow", "belt"]);
@@ -71,13 +84,70 @@ async function rasterise(key, svg, w, h) {
   const img = await decodeSvg(svg);
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
-  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+  const ctx = canvas.getContext("2d"), deep = deepContext(w, h) ?? ctx;
+  deep.drawImage(img, 0, 0, w, h);
+  await dither(deep, ctx, w, h, key);
   /* encoded off the main thread where the browser allows it, so the page
      keeps answering while the light lands */
   const blob = await new Promise((r) => { try { canvas.toBlob(r, "image/png"); } catch { r(null); } });
   const url = blob ? URL.createObjectURL(blob) : canvas.toDataURL("image/png");
   cache.set(key, url);
   return url;
+}
+/* A gradient as soft as these spans a few levels over hundreds of pixels, and
+   eight bits draw each level as a flat ring. Noise added to rings already
+   drawn leaves each ring's level where it was, so the group is drawn where
+   the browser can into a half-float canvas, which keeps the ramp between the
+   levels, and brought down to eight bits here with triangular noise of a
+   level either way (the sum of two uniforms, less one): the rings become
+   grain too fine to see, and nothing is added on average, so the glow's
+   colour stays where it was. Where there is no such canvas the eight-bit
+   drawing is dithered as it is, which grains the rings' edges and no more.
+   Seeded by place and key, so a group dithers the same way on every draw;
+   alpha is only rounded, and the empty pixels are left alone. A large
+   picture is done in bands with a breath between each, so the page keeps
+   answering. */
+const hash = (x, y, seed) => {
+  let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ seed;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+  return (h ^ (h >>> 15)) >>> 0;
+};
+const seedOf = (key) => { let h = 0x811c9dc5; for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 0x01000193); return h; };
+function deepContext(w, h) {
+  try {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { colorType: "float16" });
+    return ctx?.getContextAttributes?.().colorType === "float16" ? ctx : null;
+  } catch { return null; }
+}
+async function dither(src, out, w, h, key) {
+  const seed = seedOf(key);
+  const rows = w * h > 4e6 ? Math.max(1, Math.floor(1e6 / w)) : h;
+  for (let y0 = 0; y0 < h; y0 += rows) {
+    const n = Math.min(rows, h - y0);
+    let im;
+    try { im = src.getImageData(0, y0, w, n, src === out ? undefined : { pixelFormat: "rgba-float16" }); } catch { im = src.getImageData(0, y0, w, n); }
+    const s = im.data, k = s instanceof Uint8ClampedArray ? 1 : 255;
+    const res = k === 1 ? im : new ImageData(w, n), d = res.data;
+    for (let y = 0, i = 0; y < n; y++) for (let x = 0; x < w; x++, i += 4) {
+      const a = Math.round(s[i + 3] * k);
+      d[i + 3] = a;
+      if (!a) continue;
+      const r = hash(x, y0 + y, seed), t = (r & 0xffff) / 0x10000 + (r >>> 16) / 0x10000 - 1;
+      /* the canvas keeps colour premultiplied, and a glow this faint is a few
+         percent opaque: a level of straight colour would round away on the
+         way back in, so the level is the one that shows, a level of colour
+         times alpha (the clamped array clamps for us) */
+      const f = (s[i + 3] * k) / 255, u = 255 / a;
+      d[i] = Math.round(s[i] * k * f + t) * u;
+      d[i + 1] = Math.round(s[i + 1] * k * f + t) * u;
+      d[i + 2] = Math.round(s[i + 2] * k * f + t) * u;
+    }
+    out.putImageData(res, 0, y0);
+    if (y0 + rows < h) await new Promise((r) => setTimeout(r, 0));
+  }
 }
 const frame = (defs, body, w, h) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 1600 1000"><defs>${defs}</defs>${body}</svg>`;

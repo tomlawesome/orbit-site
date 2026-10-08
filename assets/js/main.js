@@ -7,7 +7,7 @@ import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
 import * as law from "./law.js";
-import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./flight.js";
+import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, DAWN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 import { openChores, hurryChores } from "./chores.js";
@@ -41,8 +41,9 @@ mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
 mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
 /* each surface's glows are drawn the first time it is shown, after its first
    frame is on screen, so the picture is up before the work behind it starts */
-/* the glows are pictures now (tools/glows.cjs): mountRasters only keeps the rays turning about the sunrise point */
-const dawnRasters = mountRasters($("#door .world"), {}, "dawn");
+/* the glows are pictures now (tools/glows.cjs), all but the sun's own: drawn here, per size, dithered, so its dark
+   gradient does not step into rings (flight.js: rasterise); and mountRasters keeps the rays turning about the sunrise point */
+const dawnRasters = mountRasters($("#door .world"), { sun: DAWN.sun }, "dawn");
 /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
 function loadEarth() {
   const world = $("#door .world");
