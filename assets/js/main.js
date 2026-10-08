@@ -241,6 +241,12 @@ function showDoor() {
      page, on every visit: they are compiled under it, and the door is lit only once they are (never past 8 s: a
      compile that fails or hangs never holds the door) */
   const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !compilesAside);
+  /* to see, each at its own address (the owner compares them): ?ring=stop, the ring ends the moment the work is done
+     and the drawn ring takes over from where the runner is; ?ring=rush, the runner speeds up (x3) to finish its lap
+     within about half a second; ?open=early, where compiles are in the background, every chore and the ways in from
+     the moment the door is lit, not from the reveal's end (as before 8 October) */
+  const RING = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] || "", OPEN_EARLY = /[?&]open=early\b/.test(location.search) && compilesAside;
+  let arrived = () => {};
   /* a first visit's first light is always at least a lap of the ring */
   const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
   let here = false;
@@ -250,7 +256,7 @@ function showDoor() {
     if (!waitCompiled) here = true;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       warmJourneys();
-      if (waitCompiled) within(compiledAll, compilesAside ? 9000 : 8000).then(() => { here = true; });
+      if (waitCompiled) within(compiledAll, compilesAside ? 9000 : 8000).then(() => { here = true; arrived(); });
     }));
   });
   let lit = false;
@@ -290,9 +296,11 @@ function showDoor() {
     }));
     warmJourneys();
     /* (the live door too: its canvas and its context's first textures are the GPU's, so they wait with the rest) */
+    const go = () => { openChores(); if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); };
+    if (OPEN_EARLY) go();
     drawn().then(() => {
-      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms`); }
-      openChores(); if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); });
+      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (open=early)" : ""}`); }
+      if (!OPEN_EARLY) go();
     }); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
@@ -305,6 +313,13 @@ function showDoor() {
       if (enough || laps >= 7) { ring?.removeEventListener("animationiteration", lap); light(); }
     };
     ring?.addEventListener("animationiteration", lap);
+    /* ?ring=stop: lit the moment the work is done; ?ring=rush: the runner's lap finished at three times its pace */
+    arrived = () => {
+      if (lit || !ring) return;
+      if (RING === "stop") { ring.removeEventListener("animationiteration", lap); note("ring: stopped where it was"); light(); }
+      else if (RING === "rush") { try { ring.getAnimations().forEach((a) => { a.playbackRate = 3; }); note("ring: rushed to the lap's end"); } catch { /* the lap as it is */ } }
+    };
+    if (here) arrived();
     /* without the animation (reduced motion), just the pieces */
     if (!ring || getComputedStyle(ring).animationName === "none") within(critical, 8000).then(light);
     setTimeout(light, 13000);
