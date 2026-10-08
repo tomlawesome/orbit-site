@@ -20,7 +20,8 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
-import { chore, fetchOnce, note, COMPILES_ASIDE } from "./chores.js";
+import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
+import { theDoorWeight } from "./capability.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
@@ -130,73 +131,23 @@ export function sunTexture(gl) {
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
 
-/* the RICH Earth's fields, made on the GPU once a context, each by one pass, so the slab's march reads one texel a
-   step where it read three. cloudField, from a clouds map at its own size: the cover (r) and the cover softened (g:
-   dawn.py blurs its map for the height the tops stand to, so masses of cloud rise as masses; here, as the march read
-   it before, the level of the map that blurs it by 0.16 degrees), each remapped as dawn.py does; and how high the
-   tops stand (b: km over the slab's foot, as a share of the most they can, 12.6; the march's TOPS) */
-const FIELD = `#version 300 es
-precision highp float;
-uniform sampler2D uSrc; uniform vec4 uBox; out vec4 o;
-const float CL0=1.0, CL1=11.0, TOPS=CL1+2.6-CL0;
-void main(){
-  vec2 sz=vec2(textureSize(uSrc,0));
-  float c=texelFetch(uSrc,ivec2(gl_FragCoord.xy),0).r;
-  float s=textureLod(uSrc,gl_FragCoord.xy/sz,log2(max(0.16*sz.x/(uBox.y-uBox.x),1.0))).r;
-  c=clamp((c-0.2)/0.8,0.0,1.0); s=clamp((s-0.2)/0.8,0.0,1.0);
-  float top=CL0+0.8+(CL1-CL0-0.8)*pow(s,1.1)*(0.55+0.45*c)+1.6*c*c;
-  o=vec4(c,s,(top-CL0)/TOPS,1.0);
-}`;
-/* cityGlow: the lights as the glow under the clouds took them (the whole Earth's, the near box's over it), each read
-   at the level that averages it to a texel here: an eighth of the whole Earth's map, so the march reads it once a
-   step, and only where there is cloud. Kept before the 2.2 curve, as the maps are */
-const GLOWF = `#version 300 es
-precision highp float;
-uniform sampler2D uLights, uLightsN; uniform vec4 uNearBox; uniform float uHasN; uniform vec2 uOut; out vec4 o;
-void main(){
-  vec2 uv=gl_FragCoord.xy/uOut, g=vec2(-180.0+360.0*uv.x,90.0-180.0*uv.y);
-  float B=360.0/uOut.x, m=min(min(g.x-uNearBox.x,uNearBox.y-g.x),min(g.y-uNearBox.z,uNearBox.w-g.y));
-  float wN=uHasN>0.5?smoothstep(0.0,2.0,m):0.0;
-  vec3 c=vec3(0.0);
-  if(wN<1.0) c=textureLod(uLights,uv,log2(max(B*float(textureSize(uLights,0).x)/360.0,1.0))).rgb;
-  if(wN>0.0){
-    vec2 n=vec2((g.x-uNearBox.x)/(uNearBox.y-uNearBox.x),(uNearBox.w-g.y)/(uNearBox.w-uNearBox.z));
-    c=mix(c,textureLod(uLightsN,n,log2(max(B*float(textureSize(uLightsN,0).x)/(uNearBox.y-uNearBox.x),1.0))).rgb,wN);
-  }
-  o=vec4(c,1.0);
-}`;
 /* the whole Earth, as a box (the fields' and the glow's) */
 const WORLD = [-180, 180, -90, 90];
-/* the two passes' programs, made once a context (small: made at once, not in the background) */
-const passProgs = new WeakMap();
-function passProgram(gl, key, src) {
-  let m = passProgs.get(gl);
-  if (!m) passProgs.set(gl, (m = {}));
-  if (!m[key]) {
-    const sh = (type, text) => { const o = gl.createShader(type); gl.shaderSource(o, text); gl.compileShader(o); return o; };
-    const p = gl.createProgram(), fs = sh(gl.FRAGMENT_SHADER, src);
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, fs); gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || gl.getShaderInfoLog(fs) || `orbit: no ${key}`);
-    m[key] = p;
-  }
-  return m[key];
-}
-/* where compiles freeze the page (chores.js: COMPILES_ASIDE false), a pass's program is made with the rest, under the
-   first light's ring (the door's weights, door3d.js; the flight's world and its rich Earth, below), not when its first
-   pass is drawn after the reveal: the field's with the lean Earth, the glow's with the rich one */
-export function passPrograms(gl, rich) {
-  try { passProgram(gl, rich ? "glow" : "field", rich ? GLOWF : FIELD); } catch { /* said again when the pass is drawn */ }
-}
-/* one pass into a texture of its own (RGBA8; levels made after, if asked), the context left as the draws expect it */
-function passInto(gl, prog, w, h, { repeat = false, levels = false } = {}, setup) {
+/* one of the RICH Earth's two passes (PARTS.passes: uPass 1, the clouds' field; 2, the cities' glow), drawn by the rich
+   program itself (prog: { p, u }, finished) into a texture of its own (RGBA8; levels made after, if asked), the context
+   left as the draws expect it, uPass back to 0 */
+function passInto(gl, prog, mode, w, h, { repeat = false, levels = false } = {}, setup) {
   const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  /* (not left bound: the rich program reads maps on every unit, and the texture drawn into must not be one of them) */
+  gl.bindTexture(gl.TEXTURE_2D, null);
   const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
   gl.disable(gl.BLEND); gl.disable(gl.SCISSOR_TEST); gl.viewport(0, 0, w, h);
-  gl.useProgram(prog); gl.bindVertexArray(null); setup(); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(prog.p); gl.bindVertexArray(null); gl.uniform1i(prog.u.uPass, mode); setup(prog.u); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.uniform1i(prog.u.uPass, 0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(f);
   if (levels) {
     gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D);
@@ -204,23 +155,24 @@ function passInto(gl, prog, w, h, { repeat = false, levels = false } = {}, setup
   }
   return t;
 }
-/** the slab's field of a clouds map (its texture, its size; the whole Earth's, which wraps, or the near box's) */
-export function cloudField(gl, src, w, h, near) {
-  const p = passProgram(gl, "field", FIELD);
-  return passInto(gl, p, w, h, { repeat: !near, levels: true }, () => {
+/** the slab's field of a clouds map (its texture, its size; the whole Earth's, which wraps, or the near box's), drawn
+    by a rich program (prog: { p, u }) */
+export function cloudField(gl, prog, src, w, h, near) {
+  return passInto(gl, prog, 1, w, h, { repeat: !near, levels: true }, (u) => {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src);
-    gl.uniform1i(gl.getUniformLocation(p, "uSrc"), 0); gl.uniform4f(gl.getUniformLocation(p, "uBox"), ...(near ? NEAR : WORLD));
+    gl.uniform1i(u.uSrc, 0); gl.uniform4f(u.uBox, ...(near ? NEAR : WORLD));
   });
 }
-/** the cities' glow, from the lights there are (the whole Earth's map, its size; the near box's, if it has come) */
-export function cityGlow(gl, lights, w, h, lightsN, blank) {
-  const p = passProgram(gl, "glow", GLOWF), gw = Math.max(1, Math.round(w / 8)), gh = Math.max(1, Math.round(h / 8));
-  return passInto(gl, p, gw, gh, { repeat: true }, () => {
+/** the cities' glow, from the lights there are (the whole Earth's map, its size; the near box's, if it has come), drawn
+    by a rich program (prog: { p, u }) */
+export function cityGlow(gl, prog, lights, w, h, lightsN, blank) {
+  const gw = Math.max(1, Math.round(w / 8)), gh = Math.max(1, Math.round(h / 8));
+  return passInto(gl, prog, 2, gw, gh, { repeat: true }, (u) => {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lights || blank);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, lightsN || blank);
-    gl.uniform1i(gl.getUniformLocation(p, "uLights"), 0); gl.uniform1i(gl.getUniformLocation(p, "uLightsN"), 1);
-    gl.uniform4f(gl.getUniformLocation(p, "uNearBox"), ...NEAR); gl.uniform1f(gl.getUniformLocation(p, "uHasN"), lightsN ? 1 : 0);
-    gl.uniform2f(gl.getUniformLocation(p, "uOut"), gw, gh);
+    gl.uniform1i(u.uLights, 0); gl.uniform1i(u.uLightsN, 1);
+    gl.uniform4f(u.uNearBox, ...NEAR); gl.uniform4f(u.uHasN, lightsN ? 1 : 0, 0, 0, 0);
+    gl.uniform2f(u.uOut, gw, gh);
   });
 }
 
@@ -228,7 +180,9 @@ export function cityGlow(gl, lights, w, h, lightsN, blank) {
    flight declares them all, in the order they always came in, so its source is what it was). uSky and uEarthA ride on
    the Earth's lines, as they always did: declared, and unread by the door, they cost it nothing */
 const UNIFORMS = [
-  ["common", `uniform vec2 uRes; uniform float uPx, uTime;`],
+  ["common", `uniform vec2 uRes; uniform float uPx, uTime;
+/* which of the RICH programs' passes is drawn in place of the scene (0: none; PARTS.passes) */
+uniform int uPass;`],
   ["streaks", `uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;`],
   ["earth", `uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
@@ -740,6 +694,42 @@ vec2 shockBend(vec2 css,out float ring){
   return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
 `,
+  passes: `/* ── the RICH Earth's fields, drawn by its own program once a context (uPass 1, 2: cloudField, cityGlow), each into a
+   texture of its own, so the slab's march reads one texel a step where it read three ── */
+uniform sampler2D uSrc; uniform vec4 uBox; uniform vec2 uOut;
+/* the field of a clouds map, at the map's own size: the cover (r) and the cover softened (g: dawn.py blurs its map for
+   the height the tops stand to, so masses of cloud rise as masses; here, as the march read it before, the level of the
+   map that blurs it by 0.16 degrees), each remapped as dawn.py does; and how high the tops stand (b: km over the slab's
+   foot, as a share of the most they can, TOPS) */
+vec4 fieldPass(){
+  vec4 o;
+  vec2 sz=vec2(textureSize(uSrc,0));
+  float c=texelFetch(uSrc,ivec2(gl_FragCoord.xy),0).r;
+  float s=textureLod(uSrc,gl_FragCoord.xy/sz,log2(max(0.16*sz.x/(uBox.y-uBox.x),1.0))).r;
+  c=clamp((c-0.2)/0.8,0.0,1.0); s=clamp((s-0.2)/0.8,0.0,1.0);
+  float top=CL0+0.8+(CL1-CL0-0.8)*pow(s,1.1)*(0.55+0.45*c)+1.6*c*c;
+  o=vec4(c,s,(top-CL0)/TOPS,1.0);
+  return o;
+}
+/* the cities' glow: the lights as the glow under the clouds took them (the whole Earth's, the near box's over it),
+   each read at the level that averages it to a texel here: an eighth of the whole Earth's map, so the march reads it
+   once a step, and only where there is cloud. Kept before the 2.2 curve, as the maps are (the near lights there or
+   not: uHasN.x) */
+vec4 glowPass(){
+  vec4 o;
+  vec2 uv=gl_FragCoord.xy/uOut, g=vec2(-180.0+360.0*uv.x,90.0-180.0*uv.y);
+  float B=360.0/uOut.x, m=min(min(g.x-uNearBox.x,uNearBox.y-g.x),min(g.y-uNearBox.z,uNearBox.w-g.y));
+  float wN=uHasN.x>0.5?smoothstep(0.0,2.0,m):0.0;
+  vec3 c=vec3(0.0);
+  if(wN<1.0) c=textureLod(uLights,uv,log2(max(B*float(textureSize(uLights,0).x)/360.0,1.0))).rgb;
+  if(wN>0.0){
+    vec2 n=vec2((g.x-uNearBox.x)/(uNearBox.y-uNearBox.x),(uNearBox.w-g.y)/(uNearBox.w-uNearBox.z));
+    c=mix(c,textureLod(uLightsN,n,log2(max(B*float(textureSize(uLightsN,0).x)/(uNearBox.y-uNearBox.x),1.0))).rgb,wN);
+  }
+  o=vec4(c,1.0);
+  return o;
+}
+`,
 };
 const FLIGHT = ["common", "sky", "ignite", "streaks", "earth", "nebula", "moon", "arrival", "shock"], DOOR = ["common", "earth"];
 
@@ -748,10 +738,11 @@ const FLIGHT = ["common", "sky", "ignite", "streaks", "earth", "nebula", "moon",
    Earth was before the slab; the cheapest Earth, and what the flight draws unless the door has gone rich. RICH (slab
    true): dawn.py's cloud slab, marched through the low air from the fields made once a context (cloudField, cityGlow).
    door: the Earth alone (DOOR, above), for the live door */
+/* (RICH: its two passes with it, PARTS.passes, which its main draws in place of the scene when asked: PASS_SWITCH) */
 export function sceneHead({ slab = false, door = false } = {}) {
-  const want = door ? DOOR : FLIGHT;
+  const want = [...(door ? DOOR : FLIGHT), ...(slab ? ["passes"] : [])];
   return `#version 300 es
-${slab ? "#define SLAB 1\n" : ""}precision highp float;
+${slab ? "#define SLAB 1\n#define HAS_PASSES 1\n" : ""}precision highp float;
 ${UNIFORMS.filter(([part]) => !door || want.includes(part)).map(([, u]) => u).join("\n")}
 ${want.map((part) => PARTS[part]).join("")}`;
 }
@@ -797,7 +788,8 @@ export const followDoor = (st) => { door = st; };
 export const doorIsLive = () => !!door;
 /* the flight's RICH Earth, asked for by the door once it has kept its own rich one (door3d.js), so the click's
    handoff does not change the clouds: made in the flight's context as the door's chores, and drawn only once it is
-   made (until then, and where it cannot be, the lean one). Resolves when it is ready */
+   made (until then, and where it cannot be, the lean one). Resolves when it is ready. (Where the door is rich from the
+   first, capability.js, the flight's is too: made with the rest, in place of the lean one, and this resolves at once) */
 let richMake = null, richAsk = null, richOK = false, richCompile = null;
 const richWaiting = [];
 export function wantRich() {
@@ -815,8 +807,14 @@ export const richReady = () => richOK;
    its own, drawn over the first and blended by how much of it still shows through (alpha), so the sum is exactly the
    one program it was: two halves compile in well under the time the whole did (Firefox, measured: 0.8 s and 1.05 s,
    against 2.9 s), the page's freeze the shorter by a second */
+/* a RICH program's first lines (the flight's OVER, the door's main: door3d.js): one of its passes drawn in place of the
+   scene, when asked (uPass: cloudField, cityGlow); a LEAN program has none, and these lines are not there */
+export const PASS_SWITCH = `#ifdef HAS_PASSES
+  if(uPass==1){ o=fieldPass(); return; } if(uPass==2){ o=glowPass(); return; }
+#endif
+`;
 const OVER_MAIN = `void main(){
-  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
+${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   float ring; shockBend(css,ring);
   /* each layer over: what was beneath times (1-a), plus its own light. Kept as how much shows through (T) and what
      is added (S), so the blend gives beneath*T+S */
@@ -836,31 +834,28 @@ const OVER_MAIN = `void main(){
   }
   o=vec4(S,1.0-T);
 }`;
-/* drawn LEAN, always made with the rest (a shorter compile, Firefox's the longest); RICH made only when the door has
-   gone rich (wantRich), and drawn only once it is made */
-const OVER = SCENE_HEAD + OVER_MAIN;
+/* drawn LEAN, made with the rest (a shorter compile, Firefox's the longest); RICH made only when the door has gone
+   rich (wantRich), and drawn only once it is made; or, where the door is rich from the first, RICH in place of the lean */
+const OVER = SCENE_HEAD + OVER_MAIN, OVER_RICH = sceneHead({ slab: true }) + OVER_MAIN;
 
-const DOWN = `#version 300 es
+/* after the scene, one program in three ways (uMode): 0, a step down the bloom's chain (13 taps; the first keeps only
+   the bright); 1, a step back up it (a tent); 2, the film: bloom laid in, the door's own tone curve (so the Earth here
+   is the Earth there), grain */
+const POST = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uTexel, uOut; uniform float uFirst; out vec4 o;
+uniform int uMode;
+uniform sampler2D uSrc, uHdr, uBloom; uniform vec2 uTexel, uOut, uRes; uniform float uFirst, uTime, uExpo; out vec4 o;
+float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 vec3 s(vec2 uv){ vec3 c=texture(uSrc,uv).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-0.9,0.0)/max(l,1e-4); } return c; }
-void main(){ vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
+vec4 down(){ vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 a=s(uv+t*vec2(-2,2)),b=s(uv+t*vec2(0,2)),c=s(uv+t*vec2(2,2)),d=s(uv+t*vec2(-2,0)),e=s(uv),f=s(uv+t*vec2(2,0)),g=s(uv+t*vec2(-2,-2)),h=s(uv+t*vec2(0,-2)),i=s(uv+t*vec2(2,-2)),j=s(uv+t*vec2(-1,1)),k=s(uv+t*vec2(1,1)),l=s(uv+t*vec2(-1,-1)),m=s(uv+t*vec2(1,-1));
-  o=vec4(e*0.125+(a+c+g+i)*0.03125+(b+d+f+h)*0.0625+(j+k+l+m)*0.125,1.0); }`;
-const UPS = `#version 300 es
-precision highp float;
-uniform sampler2D uSrc; uniform vec2 uTexel, uOut; out vec4 o;
-void main(){ vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
+  return vec4(e*0.125+(a+c+g+i)*0.03125+(b+d+f+h)*0.0625+(j+k+l+m)*0.125,1.0); }
+vec4 up(){ vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 r=texture(uSrc,uv).rgb*4.0;
   r+=(texture(uSrc,uv+vec2(-t.x,0)).rgb+texture(uSrc,uv+vec2(t.x,0)).rgb+texture(uSrc,uv+vec2(0,-t.y)).rgb+texture(uSrc,uv+vec2(0,t.y)).rgb)*2.0;
   r+=texture(uSrc,uv-t).rgb+texture(uSrc,uv+t).rgb+texture(uSrc,uv+vec2(t.x,-t.y)).rgb+texture(uSrc,uv+vec2(-t.x,t.y)).rgb;
-  o=vec4(r/16.0,1.0); }`;
-/* the film: bloom laid in, the door's own tone curve (so the Earth here is the Earth there), grain */
-const FILM = `#version 300 es
-precision highp float;
-uniform sampler2D uHdr, uBloom; uniform vec2 uRes; uniform float uTime, uExpo; out vec4 o;
-float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
-void main(){
+  return vec4(r/16.0,1.0); }
+vec4 film(){
   vec2 uv=gl_FragCoord.xy/uRes;
   vec2 r=uv-0.5; float f=0.004*dot(r,r);
   vec3 c=vec3(texture(uHdr,uv+r*f).r,texture(uHdr,uv).g,texture(uHdr,uv-r*f).b);
@@ -870,8 +865,9 @@ void main(){
   c=pow(c,vec3(1.0/2.2));
   float gr=hash13(vec3(gl_FragCoord.xy,floor(uTime*24.0)))+hash13(vec3(gl_FragCoord.yx*1.7,floor(uTime*24.0)+3.0))-1.0;
   c+=gr*0.03*(0.2+3.0*l*(1.0-l))+(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)/255.0;
-  o=vec4(c,1.0);
-}`;
+  return vec4(c,1.0);
+}
+void main(){ if(uMode==0) o=down(); else if(uMode==1) o=up(); else o=film(); }`;
 
 /* ── THE GALAXY, for the docs' flight: a spiral of stars, gas and dust in three dimensions, seen by a camera that
    flies at it from outside, dives into an arm and comes to rest inside the disc looking at the core, where it is the
@@ -1039,9 +1035,9 @@ export function createVoyage(under) {
   /* (when the compiles began: how long they took, to the last link status read, is said once they are done) */
   const t0 = performance.now();
   const vs = shader(gl.VERTEX_SHADER, VERT);
-  const program = (fsrc, vsh = vs) => {
+  const program = (fsrc, vsh = vs, label = "flight") => {
     const p = gl.createProgram(), fs = shader(gl.FRAGMENT_SHADER, fsrc);
-    gl.attachShader(p, vsh); gl.attachShader(p, fs); gl.linkProgram(p);
+    gl.attachShader(p, vsh); gl.attachShader(p, fs); gl.linkProgram(p); linked(label);
     return { p, fs, vsh, u: {} };
   };
   const finish = (pr) => {
@@ -1049,9 +1045,12 @@ export function createVoyage(under) {
     const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
-  const P = { scene: program(SCENE), over: program(OVER), down: program(DOWN), up: program(UPS), film: program(FILM), gal: null, stars: null };
-  /* (the clouds' field, drawn here only where the door is live: its program made now, where compiles freeze the page) */
-  if (DOOR3D && !COMPILES_ASIDE) passPrograms(gl, false);
+  /* the live door's weight (capability.js; ?door3d only, chosen before the flight's world is made: engine.js): "rich",
+     and what lies over the rush is the RICH Earth from the first, in place of the lean one (the door draws the rich
+     from its first frame); "lean", the lean alone, the rich never made; "both" (and without a live door), the lean,
+     and the rich made only if the door goes rich (wantRich) */
+  const weight = DOOR3D ? theDoorWeight() : null, richOnly = weight === "rich";
+  const P = { scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null };
   const compiled = (list) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
     const poll = () => (list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
@@ -1061,47 +1060,71 @@ export function createVoyage(under) {
   const core = Object.values(P).filter(Boolean);
   const made = compiled(core).then(() => {
     try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); }
-    if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms`);
+    if (ok && richOnly) P.overRich = P.over;
+    if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
   });
   /* the docs' galaxy and its stars are wanted by the docs' flight alone, so the flight is not kept waiting for them:
-     where the browser compiles in the background they are asked for now, beside the rest; where it compiles on the
-     page's own thread (Firefox: COMPILES_ASIDE false) they are a "compile" chore of their own, queued now, behind the
-     flight's, so they too are done under the first light's ring (main.js waits for them: engine.js, compiled) */
+     where the browser compiles in the background they are a chore of their own ("galaxy", ranked after the live door
+     and the measures: chores.js), so they are compiled once the door is live, not beside the rest during the reveal
+     (the docs' journey still hurries them: "docs"); where it compiles on the page's own thread (Firefox:
+     COMPILES_ASIDE false) they are a "compile" chore, queued now, behind the flight's, so they too are done under the
+     first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
   const makeGal = () => {
     if (!galMade) {
       const g0 = performance.now();
-      const G = { gal: program(GAL), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV)) };
+      const G = { gal: program(GAL, vs, "galaxy"), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV), "galaxy") };
       galMade = compiled(Object.values(G)).then(() => {
         try {
           Object.values(G).forEach(finish); Object.assign(P, G); galOK = true;
-          note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms`);
+          note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms${counted("galaxy")}`);
         } catch (e) { console.warn("orbit: the docs' galaxy could not be drawn", e); }
       });
     }
     return galMade;
   };
-  const galaxy = COMPILES_ASIDE ? makeGal() : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
+  /* (in the background the chore only starts them and lets the queue go, so the door's measures, which wait for it
+     to be at rest, are not held for a compile that costs the page nothing) */
+  const galaxy = COMPILES_ASIDE ? chore(() => { makeGal(); }, 60, ["galaxy", "docs"]).then(() => galMade).catch(() => {}) : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
   const vao = gl.createVertexArray();
 
-  /* the rich Earth (wantRich, above): its program, as the lean one is made (compiled, finish), and the cities' glow its
-     clouds take from below (cityGlow), once the lights have come; drawn only when both are done */
-  let richMade = null, richProg = null;
-  /* its program alone (tag: the chores', "door" when asked for by wantRich, "compile" by compileRich), made once */
+  /* the rich Earth (wantRich, above): its program (where the door is rich from the first, the overlay itself), the
+     slab's fields of the clouds maps and the cities' glow its clouds take from below, both drawn by that program
+     (cloudField, cityGlow): a field as soon as its map and the program are both there, the glow once every map has
+     come (loaded); drawn only when all are done (richOK) */
+  let richMade = null, richProg = null, allIn = false;
+  const fieldsOf = () => {
+    for (const key of ["clouds", "cloudsN"]) {
+      if (!P.overRich || !maps[key] || fields[key]) continue;
+      try { fields[key] = cloudField(gl, P.overRich, maps[key], ...dims[key], key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
+    }
+  };
+  const richMaps = () => {
+    fieldsOf();
+    if (P.overRich && allIn && !glowT && maps.lights) glowT = cityGlow(gl, P.overRich, maps.lights, ...dims.lights, maps.lightsN, blank);
+    return (richOK = !!(P.overRich && glowT));
+  };
+  /* its program alone, where it is made apart (the door's weight "both"; tag: the chores', "door" when asked for by
+     wantRich, "compile" by compileRich), made once; the fields of the maps already there made with it */
   const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => {
-    const pr = program(sceneHead({ slab: true }) + OVER_MAIN);
-    if (tag === "compile") passPrograms(gl, true);
-    return compiled([pr]).then(() => pr);
+    const r0 = performance.now(), pr = program(OVER_RICH);
+    return compiled([pr]).then(() => ({ pr, r0 }));
   }, tag === "compile" ? 20 : 60, tag)
-    .then((pr) => chore(() => { finish(pr); P.overRich = pr; return true; }, tag === "compile" ? 20 : 60, tag))));
-  richCompile = () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
+    .then(({ pr, r0 }) => chore(() => {
+      finish(pr); P.overRich = pr; fieldsOf();
+      note(`flight: rich Earth compiled in ${Math.round(performance.now() - r0)} ms${counted("flight")}`);
+      return true;
+    }, tag === "compile" ? 20 : 60, tag))));
+  /* rich from the first: made with the rest (made), its fields and glow with the maps (warm); lean: never made */
+  richCompile = richOnly ? () => made
+    : weight === "lean" ? () => Promise.resolve(false)
+    : () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
   richMake = () => richMade || (richMade = made.then((good) => {
-    if (!good) return false;
+    if (!good || weight === "lean") return false;
     warm();
-    const prog = richProgram("door");
-    const glow = loaded.then(() => chore(() => { if (!glowT && maps.lights) glowT = cityGlow(gl, maps.lights, ...dims.lights, maps.lightsN, blank); }, 60, "door"));
-    return Promise.all([prog, glow]).then(() => (richOK = !!(P.overRich && glowT)));
+    if (richOnly) return warming.then(() => richOK);
+    return richProgram("door").then((p) => p && loaded.then(() => chore(richMaps, 60, "door")));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
   richWaiting.splice(0).forEach((go) => go());
 
@@ -1141,10 +1164,8 @@ export function createVoyage(under) {
     .then((bm) => inTurn(() => {
       const t = upload(key, bm);
       maps[key] = t; dims[key] = [bm.width, bm.height];
-      /* a clouds map's slab field, made with it (cloudField), where the flight can be asked for its rich Earth */
-      if (DOOR3D && (key === "clouds" || key === "cloudsN")) {
-        try { fields[key] = cloudField(gl, t, bm.width, bm.height, key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
-      }
+      /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
+      if (key === "clouds" || key === "cloudsN") fieldsOf();
     })).catch(() => { /* drawn without it */ });
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
   let warming = null, warmingDocs = null, loaded = null;
@@ -1159,8 +1180,11 @@ export function createVoyage(under) {
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
-      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(DOOR3D ? [loadStrip()] : [])]);
+      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(DOOR3D ? [loadStrip()] : [])])
+        .then(() => { allIn = true; });
       warming = Promise.all([made, loaded])
+        /* rich from the first: its fields and its glow, before anything is drawn with it */
+        .then(() => richOnly && chore(richMaps, 60, "flight"))
         .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
@@ -1367,13 +1391,16 @@ export function createVoyage(under) {
       gl.uniform1f(u.uPts, 1); gl.drawArrays(gl.POINTS, 0, starN);
       gl.bindVertexArray(null); gl.disable(gl.BLEND);
     }
+    /* the bloom's steps and the film, one program (POST: uMode); a step's other maps read the one it reads, so none of
+       them is ever the target it draws into */
+    const step = (u, mode, from) => { gl.uniform1i(u.uMode, mode); bind(0, from.t, u.uSrc); gl.uniform1i(u.uHdr, 0); gl.uniform1i(u.uBloom, 0); };
     let src = hdr;
-    chain.forEach((c, i) => { pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); }); src = c; });
+    chain.forEach((c, i) => { pass(P.post, c.f, c.w, c.h, (u) => { step(u, 0, src); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); }); src = c; });
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     for (let i = chain.length - 1; i > 0; i--) { const from = chain[i], to = chain[i - 1];
-      pass(P.up, to.f, to.w, to.h, (u) => { bind(0, from.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / from.w, 1 / from.h); gl.uniform2f(u.uOut, to.w, to.h); }); }
+      pass(P.post, to.f, to.w, to.h, (u) => { step(u, 1, from); gl.uniform2f(u.uTexel, 1 / from.w, 1 / from.h); gl.uniform2f(u.uOut, to.w, to.h); }); }
     gl.disable(gl.BLEND);
-    pass(P.film, null, CW, CH, (u) => { bind(0, hdr.t, u.uHdr); bind(1, chain[0].t, u.uBloom); gl.uniform2f(u.uRes, CW, CH);
+    pass(P.post, null, CW, CH, (u) => { gl.uniform1i(u.uMode, 2); bind(0, hdr.t, u.uHdr); bind(1, chain[0].t, u.uBloom); gl.uniform1i(u.uSrc, 0); gl.uniform2f(u.uRes, CW, CH);
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }

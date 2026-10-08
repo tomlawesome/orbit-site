@@ -36,8 +36,9 @@ const idle = (fn) => (typeof requestIdleCallback === "function" ? requestIdleCal
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
    freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
    (a visitor can do nothing until one is ready), then the live door (door3d.js: its picture is already on screen),
-   the measures, and last of all the rich clouds, which nothing waits for */
-const ORDER = ["compile", "install", "flight", "docs", "info", "", "door", "measure", "rich"];
+   the measures, the docs' galaxy where it compiles in the background (voyage.js: after the door is live; the docs'
+   journey still hurries it), and last of all the rich clouds, which nothing waits for */
+const ORDER = ["compile", "install", "flight", "docs", "info", "", "door", "measure", "galaxy", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 const tags = (tag) => [].concat(tag);
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
@@ -122,3 +123,10 @@ export function fetchOnce(url) {
 export function note(what, since = 0) {
   try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
 }
+/* how many programs each part has linked (?door3d only: said in its notes, " (3 programs)", and summed by main.js) */
+const COUNTING = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
+const links = {};
+export function linked(label) { links[label] = (links[label] || 0) + 1; }
+export const counted = (label) => (COUNTING ? ` (${links[label] || 0} program${links[label] === 1 ? "" : "s"})` : "");
+/* all of them so far, and by part ("flight 3, world 2, …") */
+export const programs = () => ({ n: Object.values(links).reduce((a, b) => a + b, 0), by: Object.entries(links).map(([k, v]) => `${k} ${v}`).join(", ") });

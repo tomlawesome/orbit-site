@@ -2,6 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
+import { probe } from "./capability.js";
 import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -10,8 +11,11 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
-import { openChores, openCompiles, hurryChores, COMPILES_ASIDE } from "./chores.js";
+import { openChores, openCompiles, hurryChores, note, programs, COMPILES_ASIDE } from "./chores.js";
 
+/* first of all, before anything else asks the GPU for anything: how fast it is here (capability.js; kept a week), so
+   the live door's weight, and so what is compiled, is known from the start */
+probe();
 const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
 const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
@@ -97,6 +101,11 @@ function warmJourneys() {
      (engine.js: compiled; compileFirst), and on every visit: the page stands still while each compiles, better behind
      the running ring than on the door's reveal */
   compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
+  /* (?door3d) how many programs were compiled before the door: all the ring waits for, and the live door's first
+     weight and its planets' (where compiles are in the background these come after the reveal, still before the door
+     is live) */
+  if (DOOR3D) Promise.all([compiledAll, door3d.then((m) => m.doorFirstCompiled()), planets3d.then((m) => m.planetsCompiled())])
+    .then(() => { const p = programs(); note(`programs compiled before the door: ${p.n} (${p.by})`); }).catch(() => {});
   return warmingAll;
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate

@@ -13,7 +13,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { chore, fetchOnce } from "./chores.js";
+import { chore, fetchOnce, linked } from "./chores.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -371,33 +371,27 @@ void main(){
   o=vec4(max(col,0.0),alpha);
 }`;
 
-/* BLOOM: down a chain of halves (13 taps; the first keeps only the bright), and back up (a tent) */
-const DOWN = `#version 300 es
+/* after the scene, one program in three ways (uMode): 0, BLOOM down a chain of halves (13 taps; the first keeps only
+   the bright); 1, and back up (a tent); 2, THE FILM: the light and its bloom, tone-mapped (AgX), a breath of vignette
+   and grain */
+const POST = `#version 300 es
 precision highp float;
-uniform sampler2D uSrc; uniform vec2 uTexel, uOut, uPart; uniform float uFirst;
+uniform int uMode;
+uniform sampler2D uSrc, uHdr, uBloom; uniform vec2 uTexel, uOut, uPart, uRes, uBlurC; uniform float uFirst, uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
 out vec4 o;
 vec3 s(vec2 uv){ vec3 c=texture(uSrc,min(uv*uPart,uPart-uTexel*0.5)).rgb; if(uFirst>0.5){ float l=max(c.r,max(c.g,c.b)); c*=max(l-1.3,0.0)/max(l,1e-4); } return c; }
-void main(){
+vec4 down(){
   vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 a=s(uv+t*vec2(-2,2)),b=s(uv+t*vec2(0,2)),c=s(uv+t*vec2(2,2)),d=s(uv+t*vec2(-2,0)),e=s(uv),f=s(uv+t*vec2(2,0)),g=s(uv+t*vec2(-2,-2)),h=s(uv+t*vec2(0,-2)),i=s(uv+t*vec2(2,-2)),j=s(uv+t*vec2(-1,1)),k=s(uv+t*vec2(1,1)),l=s(uv+t*vec2(-1,-1)),m=s(uv+t*vec2(1,-1));
-  o=vec4(e*0.125+(a+c+g+i)*0.03125+(b+d+f+h)*0.0625+(j+k+l+m)*0.125,1.0);
-}`;
-const UP = `#version 300 es
-precision highp float;
-uniform sampler2D uSrc; uniform vec2 uTexel, uOut;
-out vec4 o;
-void main(){
+  return vec4(e*0.125+(a+c+g+i)*0.03125+(b+d+f+h)*0.0625+(j+k+l+m)*0.125,1.0);
+}
+vec4 up(){
   vec2 uv=gl_FragCoord.xy/uOut, t=uTexel;
   vec3 r=texture(uSrc,uv).rgb*4.0;
   r+=(texture(uSrc,uv+vec2(-t.x,0)).rgb+texture(uSrc,uv+vec2(t.x,0)).rgb+texture(uSrc,uv+vec2(0,-t.y)).rgb+texture(uSrc,uv+vec2(0,t.y)).rgb)*2.0;
   r+=texture(uSrc,uv-t).rgb+texture(uSrc,uv+t).rgb+texture(uSrc,uv+vec2(t.x,-t.y)).rgb+texture(uSrc,uv+vec2(-t.x,t.y)).rgb;
-  o=vec4(r/16.0,1.0);
-}`;
-/* THE FILM: the light and its bloom, tone-mapped (AgX), a breath of vignette and grain */
-const FILM = `#version 300 es
-precision highp float;
-uniform sampler2D uHdr, uBloom; uniform vec2 uRes, uBlurC, uPart, uTexel; uniform float uTime, uExpo, uBloomK, uBlur, uFringe, uGrain;
-out vec4 o;
+  return vec4(r/16.0,1.0);
+}
 /* the scene is drawn into the corner of its target it is given (uPart of it): read in that, clamped inside it */
 vec4 H(vec2 uv){ return texture(uHdr,min(clamp(uv,vec2(0.0),vec2(1.0))*uPart,uPart-uTexel*0.5)); }
 /* … and, where the scene was drawn smaller than the canvas, read with a sharp bicubic (Catmull-Rom, nine taps) so
@@ -433,7 +427,7 @@ vec3 lens(vec2 uv){
   }
   return c;
 }
-void main(){
+vec4 film(){
   vec2 uv=gl_FragCoord.xy/uRes;
   vec4 h=vec4(HC(uv),H(uv).a);
   h.rgb=lens(uv);
@@ -456,8 +450,9 @@ void main(){
   c+=gr*uGrain*(0.25+3.0*lum*(1.0-lum));
   c+=(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)*(1.5/255.0);
   float a=max(h.a,clamp(max(c.r,max(c.g,c.b)),0.0,1.0)*(1.0-h.a));
-  o=vec4(c,a);
-}`;
+  return vec4(c,a);
+}
+void main(){ if(uMode==0) o=down(); else if(uMode==1) o=up(); else o=film(); }`;
 
 function ringProfile(n) {
   /* the rings, from the inside out: a faint inner ring of plateaus, a broad
@@ -542,7 +537,7 @@ export function createWorld(canvas, opts = {}) {
   const vs = compile(gl.VERTEX_SHADER, VERT);
   const program = (src) => {
     const p = gl.createProgram(), fs = compile(gl.FRAGMENT_SHADER, src); gl.attachShader(p, vs); gl.attachShader(p, fs);
-    gl.bindAttribLocation(p, 0, "p"); gl.linkProgram(p);
+    gl.bindAttribLocation(p, 0, "p"); gl.linkProgram(p); linked("world");
     return { p, fs, u: {} };
   };
   /* in light where the GPU can draw in floats; straight to the screen where it cannot */
@@ -552,7 +547,7 @@ export function createWorld(canvas, opts = {}) {
   const P = {
     sky: null,
     render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
-    down: hdr ? program(DOWN) : null, up: hdr ? program(UP) : null, film: hdr ? program(FILM) : null,
+    post: hdr ? program(POST) : null,
   };
   const ready = (pr) => {
     if (!gl.getProgramParameter(pr.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr.p) || gl.getShaderInfoLog(pr.fs) || gl.getShaderInfoLog(vs));
@@ -714,19 +709,22 @@ export function createWorld(canvas, opts = {}) {
       bind(0, albT, u.uAlb); bind(1, galT || skyT || ringT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
+    /* the bloom's steps and the film, one program (POST: uMode); a step's other maps read the one it reads, so none of
+       them is ever the target it draws into */
+    const step = (u, mode, from) => { gl.uniform1i(u.uMode, mode); bind(0, from.t, u.uSrc); gl.uniform1i(u.uHdr, 0); gl.uniform1i(u.uBloom, 0); };
     let src = hdrT;
     chain.forEach((c, i) => {
-      pass(P.down, c.f, c.w, c.h, (u) => { bind(0, src.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); gl.uniform2f(u.uPart, i === 0 ? kx : 1, i === 0 ? ky : 1); });
+      pass(P.post, c.f, c.w, c.h, (u) => { step(u, 0, src); gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(u.uOut, c.w, c.h); gl.uniform1f(u.uFirst, i === 0 ? 1 : 0); gl.uniform2f(u.uPart, i === 0 ? kx : 1, i === 0 ? ky : 1); });
       src = c;
     });
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     for (let i = chain.length - 1; i > 0; i--) {
       const from = chain[i], to = chain[i - 1];
-      pass(P.up, to.f, to.w, to.h, (u) => { bind(0, from.t, u.uSrc); gl.uniform2f(u.uTexel, 1 / from.w, 1 / from.h); gl.uniform2f(u.uOut, to.w, to.h); });
+      pass(P.post, to.f, to.w, to.h, (u) => { step(u, 1, from); gl.uniform2f(u.uTexel, 1 / from.w, 1 / from.h); gl.uniform2f(u.uOut, to.w, to.h); });
     }
     gl.disable(gl.BLEND);
-    pass(P.film, null, W, H, (u) => {
-      bind(0, hdrT.t, u.uHdr); bind(1, chain[0].t, u.uBloom);
+    pass(P.post, null, W, H, (u) => {
+      gl.uniform1i(u.uMode, 2); bind(0, hdrT.t, u.uHdr); bind(1, chain[0].t, u.uBloom); gl.uniform1i(u.uSrc, 0);
       gl.uniform2f(u.uRes, W, H); gl.uniform2f(u.uPart, kx, ky); gl.uniform2f(u.uTexel, 1 / W, 1 / H);
       gl.uniform1f(u.uTime, v.time % 1000); gl.uniform1f(u.uExpo, v.expo); gl.uniform1f(u.uBloomK, 0.2);
       gl.uniform1f(u.uBlur, v.blur || 0); gl.uniform2fv(u.uBlurC, v.blurC || [W / 2, H / 2]); gl.uniform1f(u.uFringe, v.fringe ?? 0.012); gl.uniform1f(u.uGrain, v.grain ?? 0.028);

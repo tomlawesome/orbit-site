@@ -1,9 +1,11 @@
 /* how fast the GPU draws here: the probe at 512x512 (ms per million pixels), then the door's real lean and rich Earth
    shaders at this screen's own band size, with maps of noise so every path runs (the slab needs clouds to march) */
 import { context, release, program, target, noiseTexture, timeDraws, PROBE, line, round } from "./common.js";
-import { sceneHead, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/js/voyage.js";
+import { sceneHead, PASS_SWITCH, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/js/voyage.js";
 export const name = "draw";
-const DOOR_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
+/* (the rich one draws its own fields and glow first: PASS_SWITCH) */
+const DOOR_MAIN = `void main(){
+${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
 export async function run() {
   const out = [];
   const { gl } = context();
@@ -20,8 +22,10 @@ export async function run() {
   const cw = Math.round(W * px), ch = Math.round(bh * px), ly = (y) => H - (1000 - y) * s - (H - bh);
   out.push(line("door band", `${cw}x${ch} device px (${round((cw * ch) / 1e6, 2)} Mpx) at ${px}x`));
   const cam = doorCamera(), sunT = sunTexture(gl);
-  let fieldG = null, fieldN = null, glow = null;
-  try { fieldG = cloudField(gl, A, 256, 128, false); fieldN = cloudField(gl, A, 256, 128, true); glow = cityGlow(gl, B, 256, 128, B, A); } catch (e) { out.push(line("cloud field/glow", `not made: ${e.message}`)); }
+  /* the rich program first: its own passes make the slab's fields and the cities' glow (voyage.js: cloudField, cityGlow) */
+  let rich = null, richErr = null, fieldG = null, fieldN = null, glow = null;
+  try { rich = program(gl, sceneHead({ slab: true, door: true }) + DOOR_MAIN); } catch (e) { richErr = e; }
+  try { if (rich) { fieldG = cloudField(gl, rich, A, 256, 128, false); fieldN = cloudField(gl, rich, A, 256, 128, true); glow = cityGlow(gl, rich, B, 256, 128, B, A); } } catch (e) { out.push(line("cloud field/glow", `not made: ${e.message}`)); }
   const blank = noiseTexture(gl, 2, 2, 11);
   const set = (u) => {
     gl.uniform2f(u.uRes, cw, ch); gl.uniform1f(u.uPx, cw / W); gl.uniform1f(u.uTime, 1);
@@ -36,7 +40,8 @@ export async function run() {
   };
   for (const [label, slab, budget] of [["door lean (real, this band)", false, 16], ["door rich (real, this band)", true, 40]]) {
     try {
-      const pr = program(gl, sceneHead({ slab, door: true }) + DOOR_MAIN), tg = target(gl, cw, ch);
+      if (slab && !rich) throw richErr;
+      const pr = slab ? rich : program(gl, sceneHead({ slab, door: true }) + DOOR_MAIN), tg = target(gl, cw, ch);
       const r = timeDraws(gl, pr, tg.f, cw, ch, set);
       out.push(line(label, `${round(r.mean, 1)} ms a frame, first ${round(r.first, 1)} (budget ${budget}: ${r.mean <= budget ? "fits" : "too slow"}; frames ${r.all.join(", ")})`));
       gl.deleteProgram(pr.p);
