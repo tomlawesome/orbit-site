@@ -4,6 +4,8 @@
  * probe(): one throwaway context, one small shader of the Earth's kind of arithmetic (PROBE), compiled and timed,
  * then drawn four times into 512x512 and timed: how long a compile takes here, and how fast the GPU draws (ms per
  * million pixels). Kept for a week in this browser (keyed by the browser and the screen), so a later visit skips it.
+ * level(): from that, the level this machine ships (CAPABILITIES.md: the ladder): 0 the still door, 1 the live door
+ * lean, 2 the live door rich; liveDoor(): whether the door is live here (?door3d, and level 1 or 2).
  * doorWeight(): from that, the live door's weight (door3d.js): the rich Earth alone, the lean one alone, or both (the
  * lean first, the rich tried by the ladder), so only what will be drawn is compiled.
  */
@@ -147,17 +149,57 @@ export function doorWeight(W, H, r = got) {
   if (!p) return null;
   return p.rich <= 24 ? "rich" : p.rich <= BUDGET ? "both" : "lean";
 }
+/* the band: the door's world as it is laid out now (the window, where it is not yet) */
+const band = () => {
+  const box = document.querySelector("#door .world")?.getBoundingClientRect();
+  return [box?.width || innerWidth, box?.height || innerHeight];
+};
+
+/* the live door, while it is tried (?door3d; the same test main.js makes) */
+const DOOR3D = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
+/* a lean frame over this (predicted, ms) and the door stays still */
+const LEAN_MAX = 16;
+const NAMES = ["still", "live lean", "live rich"];
+/* the level, chosen once a page view, after the probe, and said with why (CAPABILITIES.md: the ladder). 0, still:
+   no WebGL2 or no probe, reduced motion or save-data, compiles on the page's own thread (each one stalls the page:
+   the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on
+   every later compile), or a lean frame predicted over 16 ms. Else 2, live rich, where the rich is predicted to fit
+   the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which, whatever the probe */
+let lvl = null;
+export function level() {
+  if (lvl !== null) return lvl;
+  /* (asked before the probe has resolved: still, and not kept) */
+  if (!got) return 0;
+  let why;
+  const flag = location.search.match(/[?&]level=([012])\b/)?.[1];
+  const quiet = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
+  const p = predicted(...band());
+  if (flag) { lvl = +flag; why = `?level=${flag}`; }
+  else if (!got.ok) { lvl = 0; why = "no WebGL2, or no probe"; }
+  else if (quiet) { lvl = 0; why = "reduced motion"; }
+  else if (navigator.connection?.saveData) { lvl = 0; why = "save-data"; }
+  else if (!got.background) { lvl = 0; why = `compiles stall the page; probe ${Math.round(got.compileMs)} ms`; }
+  else if (p.lean > LEAN_MAX) { lvl = 0; why = `lean predicted ${Math.round(p.lean)} ms of ${LEAN_MAX}`; }
+  else if (p.rich <= BUDGET) { lvl = 2; why = `predicted ${Math.round(p.rich)} ms of ${BUDGET}, background compiles`; }
+  else { lvl = 1; why = `rich predicted ${Math.round(p.rich)} ms of ${BUDGET}, lean ${Math.round(p.lean)}`; }
+  note(`level ${lvl}: ${NAMES[lvl]} (${why})`);
+  return lvl;
+}
+/** whether the door is live here: ?door3d, and level 1 or 2 (after the probe has resolved) */
+export const liveDoor = () => DOOR3D && level() >= 1;
+
 /* the door's weight, chosen once a page view, after the probe (door3d.js draws it; voyage.js compiles the flight's
-   Earth to match, so the click's handoff does not change the clouds), and said with why. The band is the door's
-   world as it is laid out now (the window, where it is not yet) */
+   Earth to match, so the click's handoff does not change the clouds), and said with why. By the level: 1, the lean
+   alone (the rich never made, whatever &rich says); 2, doorWeight's answer; 0, none (nothing of the live door is made) */
 let chosen = null;
 export function theDoorWeight() {
   if (chosen) return chosen;
   if (!got) return "both";
-  const box = document.querySelector("#door .world")?.getBoundingClientRect();
-  const W = box?.width || innerWidth, H = box?.height || innerHeight, p = predicted(W, H);
+  const L = level();
+  if (L === 0) return null;
+  const [W, H] = band(), p = predicted(W, H);
   const flag = location.search.match(/[?&](rich|lean)\b/)?.[1];
-  chosen = doorWeight(W, H) || "both";
-  note(`door: weight ${chosen} (${flag ? `&${flag}` : p ? `predicted ${Math.round(p.rich)} ms of ${BUDGET} for the rich, ${Math.round(p.lean)} for the lean, at ${p.mpx.toFixed(2)} Mpx` : "no probe"})`);
+  chosen = L === 1 ? "lean" : doorWeight(W, H) || "both";
+  note(`door: weight ${chosen} (${L === 1 ? "level 1" : flag ? `&${flag}` : p ? `predicted ${Math.round(p.rich)} ms of ${BUDGET} for the rich, ${Math.round(p.lean)} for the lean, at ${p.mpx.toFixed(2)} Mpx` : "no probe"})`);
   return chosen;
 }

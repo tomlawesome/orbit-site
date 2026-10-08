@@ -24,6 +24,11 @@
  * comes down by the square root of the excess (to half), and stays. To try them: &rich (the rich one alone, kept
  * whatever it takes; still measured), &lean (the lean one alone).
  *
+ * Proved before it is shown: the first frame is drawn into the canvas while it is still unseen (site.css: canvas.live,
+ * until .world.live), measured there, drawn coarser (or the lean one made) if the measure says so, and only then shown
+ * (doorMeasured: the world planets, install.js, start only after that, so the measure is the door's alone). Made at
+ * all only where the level allows it (capability.js: level 1, the lean alone; 2, the weights above).
+ *
  * Each measure waits for the chores to be at rest (chores.js: quiet), so it times the drawing alone, not an upload or
  * a compile beside it. Where the browser compiles on the page's own thread (COMPILES_ASIDE false), the weights chosen
  * (and with the rich one the flight's: voyage.js, compileRich) are compiled at the page's start (compileDoor), with
@@ -34,7 +39,7 @@
  */
 import { chore, fetchOnce, note, quiet, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { sceneHead, PASS_SWITCH, TEX, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
-import { probe, theDoorWeight, BUDGET } from "./capability.js";
+import { probe, theDoorWeight, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
 import { uploadBanded } from "./upload.js";
 
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
@@ -115,6 +120,12 @@ let asked = 0, compiledFirst = null;
 const firstCompiled = new Promise((resolve) => { compiledFirst = resolve; });
 /** the weight drawn first, compiled (main.js says how many programs were compiled before the door) */
 export const doorFirstCompiled = () => firstCompiled;
+/** the door's first measure taken and its decision made (and so the door shown), or never to be: at once where the
+    door is not live here (level 0, or no ?door3d), has no WebGL2, or fails. The world planets wait for it (install.js:
+    doorPlanets), so the door's measure is not taken beside them */
+let measuredNow = null;
+export const doorMeasured = new Promise((resolve) => { measuredNow = resolve; });
+probe().then(() => { if (!doorIsLiveHere()) measuredNow(); }, () => measuredNow());
 function weight(slab, since) {
   const c = context(), { gl, par } = c, name = slab ? "rich" : "lean", up = !COMPILES_ASIDE;
   if (c.weights[name]) return c.weights[name];
@@ -149,7 +160,7 @@ export function compileDoor() {
 
 export function liveDoor(world) {
   const { canvas, gl } = context();
-  if (!gl) return null;
+  if (!gl) { measuredNow(); return null; }
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
   /* the pictures down the wire at once; only putting them on the GPU waits its turn. The sharpest lights at the
@@ -238,7 +249,20 @@ export function liveDoor(world) {
   /* the door's own clock (s): it runs only while the door is shown, so a journey away and back finds the Earth
      just as it was left, and the flight's last frame and the door's first are the same */
   let clock = 0;
-  function draw() {
+  /* a target of the canvas's size, for a measure taken while the canvas is seen (tryRich): drawn into, never shown */
+  let off = null;
+  const unseen = () => {
+    if (off && off.w === canvas.width && off.h === canvas.height) return off.f;
+    if (off) { gl.deleteTexture(off.t); gl.deleteFramebuffer(off.f); }
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    off = { t, f, w: canvas.width, h: canvas.height };
+    return f;
+  };
+  /* into: a framebuffer to draw into instead of the canvas (a measure of a weight not yet kept, while the canvas is seen) */
+  function draw(into = null) {
     if (!prog) return;
     /* the sun table, put on the GPU with the first frame (not with the compile, which may come before the reveal) */
     if (!sunTex) sunTex = sunTexture(gl);
@@ -253,7 +277,7 @@ export function liveDoor(world) {
       Z[0] * Z[2] * k + Z[1] * sn, Z[1] * Z[2] * k - Z[0] * sn, c + Z[2] * Z[2] * k,
     ];
     state.spinM = M; state.cloudOff = t * CLOUD; state.sun = cam.S;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, into); gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(prog.p); gl.bindVertexArray(vao);
     gl.uniform2f(u.uRes, canvas.width, canvas.height); gl.uniform1f(u.uPx, canvas.width / W);
     gl.uniform1f(u.uTime, t % 1000);
@@ -295,16 +319,20 @@ export function liveDoor(world) {
     if (dirty || (!reduced && now - last >= 48)) { last = now; draw(); }
     if (!reduced) raf = requestAnimationFrame(tick);
   }
-  const wake = () => { if (!raf && prog) raf = requestAnimationFrame(tick); };
+  /* (and only once it is shown: until then the canvas is drawn only to be measured) */
+  let seen = false;
+  const wake = () => { if (!raf && prog && seen) raf = requestAnimationFrame(tick); };
 
   /* a measure, after a weight's first frame: three frames, each waited for (a pixel read back, as voyage.js's
      calibrate does), the last two timed (the first may still be finishing the driver's work); their mean (ms) */
   /* (the budget, 40 ms, is capability.js's, which predicts against it) */
   const ROOM = 16;
-  function measure() {
+  /* (hidden: drawn into the unseen target, so a weight tried while the door is shown is never seen before it is kept) */
+  function measure(hidden = false) {
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-    const ms = [];
-    for (let i = 0; i < 3; i++) { const t0 = performance.now(); dirty = true; draw(); sync(); ms.push(performance.now() - t0); }
+    const into = hidden ? unseen() : null, ms = [];
+    for (let i = 0; i < 3; i++) { const t0 = performance.now(); draw(into); sync(); ms.push(performance.now() - t0); }
+    if (!hidden) dirty = false;
     return (ms[1] + ms[2]) / 2;
   }
   /* over budget, drawn coarser, once */
@@ -312,39 +340,21 @@ export function liveDoor(world) {
   const at = () => Math.round(px * 100) / 100;
   /* a weight: made (weight, above), or already made under the first light's ring (compileDoor) */
   const compile = (slab) => weight(slab, since);
-  /* the ladder, after the first frame. The rich alone: measured; kept, coarser if it must be (&rich: kept whatever);
-     only if even at the coarsest it is over the budget, the lean one made and drawn instead. The lean alone: measured,
-     coarser if it must be. Both: the lean measured; with room, the rich weight made (its fields and glow with it),
-     measured and kept if it keeps to the budget, the flight then asked for the same; else the lean one, coarser if
-     it must be */
+  /* the first measure, of the first frame, unseen, and the decision, before anything is shown. The rich alone: measured;
+     kept, coarser if it must be (&rich: kept whatever); only if even at the coarsest it is over the budget, the lean
+     one made and drawn instead (fell). The lean alone: measured, coarser if it must be. Both: the lean measured; with
+     room, the rich weight is to be tried once the door is shown (up: tryRich); else the lean one, coarser if it must
+     be */
   /* (each measure taken once the chores are at rest: quiet) */
-  async function ladder() {
+  let up = false, fell = false;
+  async function prove() {
     await quiet();
     if (mode === "rich") return richLadder();
     let lean;
     try { lean = measure(); } catch { return; /* drawn as it is */ }
-    const up = mode === "both" && !LEAN && (RICH || lean <= ROOM);
+    up = mode === "both" && !LEAN && (RICH || lean <= ROOM);
     if (!up) coarser(lean);
     note(`door: lean ${Math.round(lean)} ms a frame, drawn at ${at()}×`, since);
-    if (!up) return;
-    /* (not waited for here: its chores come after this one) */
-    compile(true)
-      .then((p) => chore(() => { rich = p; richMaps(); return p; }, 60, "rich"))
-      .then((rich) => quiet().then(() => {
-        const was = prog;
-        prog = rich;
-        let mean = Infinity;
-        try { mean = measure(); } catch { /* not kept */ }
-        if (RICH || mean <= BUDGET) {
-          coarser(mean);
-          state.rich = true; wantRich();
-          note(`door: live (rich) ${Math.round(mean)} ms a frame${mean > BUDGET ? `, drawn at ${at()}×` : ""}`, since);
-        } else {
-          prog = was; dirty = true; wake();
-          note(`door: rich ${Math.round(mean)} ms a frame, over ${BUDGET}: back to lean`, since);
-        }
-      }))
-      .catch((e) => { console.warn("orbit: the door stays lean", e); });
   }
   async function richLadder() {
     let mean;
@@ -362,13 +372,51 @@ export function liveDoor(world) {
     note(`door: rich ${Math.round(floor)} ms a frame even at ${at()}×, over ${BUDGET}: the lean one made instead`, since);
     try {
       prog = await compile(false);
-      state.rich = false; dirty = true; wake();
-      note("door: live (lean), the fallback", since);
+      fell = true; dirty = true;
     } catch (e) { console.warn("orbit: the door stays rich", e); }
+  }
+  /* then shown: the frame as the measure left it (drawn again if it was made coarser), the picture let go, and the
+     flight told to take up this Earth (voyage.js: followDoor; rich from the first, wantRich: the flight draws the same) */
+  function show() {
+    if (dirty) draw();
+    requestAnimationFrame(() => world.classList.add("live"));
+    if (mode === "rich") { state.rich = !fell; wantRich(); }
+    followDoor(state);
+    seen = true;
+    note(`door: live (${mode === "rich" && !fell ? "rich" : "lean"})${fell ? ", the fallback" : ""}`, since);
+    wake();
+  }
+  /* both, with room: once the lean door is shown, the rich weight made (its fields and glow with it), measured and
+     kept if it keeps to the budget, the flight then asked for the same; else the lean one stays */
+  /* (the try is measured unseen, into a target of its own, so the rich frame is never shown before it is kept; and
+     the world planets wait for its decision too: doorMeasured, so the measure is the door's alone) */
+  function tryRich() {
+    if (!up) { measuredNow(); return; }
+    /* (not waited for here: its chores come after this one) */
+    compile(true)
+      .then((p) => chore(() => { rich = p; richMaps(); return p; }, 60, "rich"))
+      .then((rich) => quiet().then(() => {
+        const was = prog;
+        prog = rich;
+        let mean = Infinity;
+        try { mean = measure(true); } catch { /* not kept */ }
+        if (RICH || mean <= BUDGET) {
+          coarser(mean);
+          state.rich = true; wantRich(); dirty = true; wake();
+          note(`door: live (rich) ${Math.round(mean)} ms a frame${mean > BUDGET ? `, drawn at ${at()}×` : ""}`, since);
+        } else {
+          prog = was;
+          note(`door: rich ${Math.round(mean)} ms a frame, over ${BUDGET}: stays lean`, since);
+        }
+      }))
+      .catch((e) => { console.warn("orbit: the door stays lean", e); })
+      .finally(measuredNow);
   }
 
   /* made in turn, after the door's reveal (and the probe: the weights chosen, capability.js): the first weight, then
-     each map; with the rich one, its fields and glow; shown once the first whole frame is drawn; then the ladder */
+     each map; with the rich one, its fields and glow; the first whole frame drawn, unseen, measured and decided on
+     (prove), and only then shown (show); then, with both, the rich tried, unseen; the world planets may start once that
+     is decided (doorMeasured) */
   const ready = probe()
     .then(() => {
       mode = theDoorWeight();
@@ -384,18 +432,15 @@ export function liveDoor(world) {
     .then(() => { if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
     /* the rich weight's fields (those not made with their maps) and the cities' glow, before its first frame */
     .then(() => mode === "rich" && chore(richMaps, 60, "door"))
+    /* the first frame, on the page but unseen (site.css: canvas.live, until .world.live) */
     .then(() => chore(() => {
       world.querySelector(".wl.earth")?.after(canvas);
       resize(); draw();
-      requestAnimationFrame(() => world.classList.add("live"));
-      /* rich from the first: the flight draws the same (voyage.js: its Earth compiled rich to match) */
-      if (mode === "rich") { state.rich = true; wantRich(); }
-      followDoor(state);
-      note(`door: live (${mode === "rich" ? "rich" : "lean"})`, since);
-      wake();
     }, 60, "door"))
-    .then(ladder)
-    .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); });
+    .then(prove)
+    .then(show)
+    .then(tryRich)
+    .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); measuredNow(); });
   addEventListener("resize", () => { if (prog) { resize(); wake(); } });
   document.addEventListener("visibilitychange", wake);
   /* the door coming back (its class or its hidden flag changing) starts the clock again */

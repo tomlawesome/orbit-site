@@ -431,6 +431,64 @@ Tried, October 2026:
   door's eight maps took 50-220 frames to go in after the reveal, and a click before the flight's maps were in
   waited a frame a band.
 
+## The ladder (8 October 2026)
+
+- Why: the live door (`?door3d`) is beautiful on a fast GPU with a background compiler, and costs a slow machine
+  dearly. On the laptop (Ryzen 4700U) in Firefox, where every compile stalls the page, its programs add about 1.1 s
+  to the loading ring: the door 650 ms, the planets 260, and the flight's rich overlay in place of the lean one about
+  400 more. After the reveal its uploads, its first frames and its two live loops run beside the orbits for the rest
+  of the visit: the Earth 16-18 ms a frame at 20 a second, the world planets 13-17 ms, dropped to half scale. The
+  owner's rule (CAPABILITIES.md): find at the page's start the highest level this machine can carry reliably, and ship
+  exactly that.
+- The rule (capability.js: `level()`, after the probe, once a page view):
+  - 0, still: no WebGL2 or no probe; reduced motion or save-data; compiles on the page's thread (the probe's
+    `background` false); or a lean frame predicted over 16 ms.
+  - 2, live rich: compiles in the background and the rich predicted at 40 ms or less. The weight is then
+    `doorWeight`'s, as before: the rich alone at 24 ms or less, both at 40 or less.
+  - 1, live lean: otherwise. The lean weight alone; the rich is never compiled, in the door or the flight.
+  - The page-thread rule is the decision, not a threshold: a Windows Firefox pays about 6 s of compiles under the
+    ring for the journeys alone, on the desktop and the laptop alike. The live door's own compiles could go nowhere
+    but under the ring, and its loops would then run beside a page that stalls on every later compile.
+  - The console says it on every page, with the flag or without: `level 0: still (compiles stall the page; probe
+    197 ms)`, `level 2: live rich (predicted 12 ms of 40, background compiles)`, `level 1: live lean (rich predicted
+    51 ms of 40, lean 14)`.
+- What level 0 removes, against `?door3d` before this build (laptop, Firefox):
+  - From the ring: the door's and the planets' programs and the flight's rich overlay, about 1.1 s.
+  - From the page after it: the door's eight maps and the planets' two maps in each of two contexts, their first
+    frames, the strip's sharp tier, and both loops (the Earth's, the world planets').
+  - Level 0 is exactly the door without the flag: the painted dawn, the picture planets, the flight with its lean
+    Earth (no rich overlay, no sharp strip, no strip at all), the dives from the pictures. Nothing of door3d.js or
+    planets3d.js is compiled or made, though under the flag the modules are still fetched.
+- How it is gated (`liveDoor()`, capability.js: `?door3d` and level 1 or 2; asked only after the probe):
+  - main.js: the door's and the planets' compiles (`compileFirst`, which now waits for the probe, at most its one
+    compile, under a ring already running), `liveDoorOf` at the reveal's end, and the programs-count line.
+  - voyage.js: the door's weight, the strip and its sharp tier, `uHasS`, and the strip's map.
+  - planets3d.js (the planets the worlds draw, `OWN`) and install.js (`doorPlanets`).
+  - engine.js still waits for the probe under the flag before the flight's world is made.
+- Prove before show (door3d.js). The first frame is drawn into the canvas while it is still unseen (site.css: the
+  canvas is at opacity 0 until `.world.live`), measured there (`quiet()` first, then three frames with a read-back),
+  decided on (coarser if over 40 ms; with the rich alone, the rich ladder's rules, down to the lean fallback), and
+  only then shown: the `live` class, `followDoor`, the `door: live (…)` line. So `door: rich N ms a frame, kept, drawn
+  at …` now comes before `door: live (rich)`. With "both", the rich is still tried after the lean is shown.
+- The door measured before the world planets. door3d.js's `doorMeasured` resolves once the first measure and its
+  decision are made (or at once where the door is not live, has no WebGL2, or fails), and install.js's door-planets
+  loop, with its own `door planets … ms a frame` measure, starts only after it. The owner saw the door's rich measure
+  read 37 ms beside the world planets and 16 alone. A dive chosen before then is not held: until their first frame,
+  the dive goes on from the door's picture planet, swelled, as it did before the live door.
+- Flags: `?level=0|1|2` overrides the rule (the owner can see the live door on Firefox with `?level=2`). At level 2
+  `&rich` and `&lean` still force the weight; at level 1 the weight is lean whatever they say.
+- Checked in SwiftShader (1200×800, 1×; correctness only, its timings are not evidence). It has no
+  `KHR_parallel_shader_compile`, so by the rule it is level 0.
+  - `?preview&door3d` against HEAD's `?preview`, with reduced motion and the orbits' infinite animations paused at
+    the same time: 0 pixels of the 1200×800 differ. No `wl live` or `planets3d` context, and neither
+    `html.planets3d` nor `[data-worldplanets]` is set.
+  - `&level=2&rich` against HEAD's `&rich`, and `&level=1` against HEAD's `&lean`, with reduced motion: the live
+    canvas (600×144) differs by 0 pixels both times. The measure line comes before the live line, and `install: door
+    planets live` after both.
+- Added in review: with "both", the rich try is measured unseen (drawn into a target of its own, never the canvas), so
+  a rich frame is never shown and then taken away; and the world planets wait for that decision too (doorMeasured
+  resolves after it), so the rich measure is the door's alone as the lean one is.
+
 ## The plan from here (8 October 2026)
 
 One change a build, each gated by a number from the laptop in Firefox (the worst case we own), with Edge and the
@@ -451,7 +509,7 @@ Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 4. **One context for the door and the flight.** The rich Earth compiled once, its maps uploaded once, the handoff the
    same frame in the same context (which also removes the rich-to-lean fallback caveat). Structural; after the cheap
    ones are measured. Expected ~1 s on the laptop, a cleaner handoff everywhere.
-5. **The capability ladder.** The probe exists. The levels: a still door where the compiler or the GPU cannot carry
+5. **The capability ladder** (in: "The ladder", above). The probe exists. The levels: a still door where the compiler or the GPU cannot carry
    the live one, the classic flight Earth there, everything proved unseen before it shows, and the door's measure taken
    before the world planets start drawing (it read 37 ms beside them, 16 alone). Thresholds from the data of 1-4.
 6. **What the ring waits for.** Today every compile. On background compilers the door's own programs and the galaxy

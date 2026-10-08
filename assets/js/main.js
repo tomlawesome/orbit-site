@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { probe } from "./capability.js";
+import { probe, level } from "./capability.js";
 import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -14,22 +14,29 @@ import { createInstall } from "./install.js";
 import { openChores, openCompiles, openSoft, softRan, hurryChores, note, programs, COMPILES_ASIDE, HOLD_REVEAL } from "./chores.js";
 
 /* first of all, before anything else asks the GPU for anything: how fast it is here (capability.js; kept a week), so
-   the live door's weight, and so what is compiled, is known from the start */
-probe();
+   the live door's weight, and so what is compiled, is known from the start; and from it the level this machine ships
+   (capability.js: level, said in the console on every page) */
+probe().then(() => level());
 const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
 const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
 /* the live door, while it is tried (?door3d): the Earth under the door drawn as it is (door3d.js), not a picture */
 const DOOR3D = /[?&]door3d\b/.test(location.search);
 let liveDoor = null;
+/* and whether it is live here: the flag, and the level the probe allows (1 or 2; at 0 the door stays the painted one,
+   and nothing of door3d.js's or planets3d.js's is compiled or drawn). Resolves once the probe has */
+const doorLive = () => probe().then(() => DOOR3D && level() >= 1);
 /* and its planets drawn as worlds, lit by that sunrise (planets3d.js), with it; the install's and the information's
    then by their own world, once it is ready, so a dive goes on from the frame on the door (install.js: doorPlanets).
    Both asked for at the page's start, so where compiles freeze the page their programs can be compiled under the first
-   light's ring (compileFirst); made live once the door's painted reveal is over (liveDoorOf) */
+   light's ring (compileFirst); made live once the door's painted reveal is over (liveDoorOf). (The modules are fetched
+   under the flag whatever the level; at level 0 nothing of theirs is made.) The world planets start only once the
+   door has been measured and shown (door3d.js: doorMeasured), so the door's measure is its own, not theirs beside it */
 const door3d = DOOR3D ? import("./door3d.js") : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
 const liveDoorOf = () => {
+  const measured = door3d.then((m) => m.doorMeasured, () => null);
   planets3d.then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
-    .then(() => PADS.install.ring.doorPlanets($("#door"))).catch((e) => console.warn("orbit: no world planets", e));
+    .then(() => PADS.install.ring.doorPlanets($("#door"), measured)).catch((e) => console.warn("orbit: no world planets", e));
   return door3d.then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
 };
 if (MAINTENANCE) {
@@ -104,8 +111,8 @@ function warmJourneys() {
   /* (?door3d) how many programs were compiled before the door: all the ring waits for, and the live door's first
      weight and its planets' (where compiles are in the background these come after the reveal, still before the door
      is live) */
-  if (DOOR3D) Promise.all([compiledAll, door3d.then((m) => m.doorFirstCompiled()), planets3d.then((m) => m.planetsCompiled())])
-    .then(() => { const p = programs(); note(`programs compiled before the door: ${p.n} (${p.by})`); }).catch(() => {});
+  if (DOOR3D) doorLive().then((live) => live && Promise.all([compiledAll, door3d.then((m) => m.doorFirstCompiled()), planets3d.then((m) => m.planetsCompiled())])
+    .then(() => { const p = programs(); note(`programs compiled before the door: ${p.n} (${p.by})`); })).catch(() => {});
   return warmingAll;
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
@@ -204,9 +211,10 @@ const compilesAside = MAINTENANCE || COMPILES_ASIDE;
 if (!compilesAside) openCompiles();
 /* every compile, queued now: the journeys' (warmJourneys: the install's world, the flight's, the docs' galaxy) and the
    live door's two weights and its planets' (door3d.js: compileDoor; planets3d.js: compilePlanets), whose canvases,
-   maps and loops still wait for the reveal (liveDoorOf) */
+   maps and loops still wait for the reveal (liveDoorOf). The live door's only once the probe has said the level (at
+   most its one compile, under the ring that is already running), and only at level 1 or 2 */
 function compileFirst() {
-  if (DOOR3D) doorCompiled = Promise.all([door3d.then((m) => m.compileDoor()), planets3d.then((m) => m.compilePlanets($("#door")))])
+  if (DOOR3D) doorCompiled = doorLive().then((live) => live && Promise.all([door3d.then((m) => m.compileDoor()), planets3d.then((m) => m.compilePlanets($("#door")))]))
     .catch((e) => console.warn("orbit: the live door's compiles failed", e));
   warmJourneys();
 }
@@ -284,7 +292,7 @@ function showDoor() {
     /* (the live door too: its canvas and its context's first textures are the GPU's, so they wait with the rest) */
     drawn().then(() => {
       if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms`); }
-      openChores(); if (DOOR3D) liveDoorOf();
+      openChores(); if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); });
     }); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }

@@ -15,6 +15,7 @@ import { chore, note, noteChores, quiet, counted, COMPILES_ASIDE } from "./chore
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 import { onTilt } from "./tilt.js";
+import { liveDoor } from "./capability.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -517,8 +518,9 @@ export function createInstall(pad, opts = {}) {
       /* the world is free again: the door's planets may be drawn by it */
       doorLoop?.wake();
     },
-    /* the door's planets drawn by their own worlds while the door is shown (?door3d): resolves once it is under way */
-    doorPlanets(door) { return startDoor(door, mine); },
+    /* the door's planets drawn by their own worlds while the door is shown (?door3d, at level 1 or 2), from once the
+       door's own first measure is taken (after: door3d.js, doorMeasured): resolves once it is under way */
+    doorPlanets(door, after) { return startDoor(door, mine, after); },
     /* one frame at a point in the shot, for the posters (assets/img/install) and for review */
     async still(k, idle = 0, dotAt = null, moving = false) {
       ensure(); if (!world) return false;
@@ -575,8 +577,10 @@ export function createInstall(pad, opts = {}) {
    orbital size, its own world's look) drawn into a square five times its radius round it, and copied into a small
    canvas of its own at that place on the door, behind the ring or before it as its anchor goes. planets3d.js draws
    them until the first of these frames (html[data-worldplanets]), and the docs' moon all along */
-function startDoor(door, lead) {
+function startDoor(door, lead, after = null) {
   if (doorLoop) return doorLoop.ready;
+  /* only where the door is live (capability.js: ?door3d, level 1 or 2) */
+  if (!liveDoor()) return null;
   const root = document.documentElement, body = document.body;
   const lockup = door?.querySelector(".lockup"), box = door?.querySelector(".planets");
   /* the plain door's planets are turned about the ring, not placed on it (planets3d.js likewise) */
@@ -675,7 +679,9 @@ function startDoor(door, lead) {
   addEventListener("resize", wake);
 
   /* the worlds baked and measured first (prepare: the measure draws at the screen's size, so it is not to be met by a
-     square); planets3d.js's spheres stand in until then */
+     square), and the live door measured and shown (after: door3d.js, doorMeasured: its measure read 37 ms beside these
+     and 16 alone); planets3d.js's spheres stand in until then. A dive meanwhile goes on from the door's picture, as
+     it did before these (form: doorLoop.has is false until their first frame) */
   /* and the world's targets made for the square before the loop's first frame (fit), as a chore between frames, so the
      world holds both the square's and the screen's (made at prepare, drawn once by touch) from then on */
   const fit = () => {
@@ -685,7 +691,7 @@ function startDoor(door, lead) {
     side = clamp(Math.max(...at.map((d) => 5 * d.r * dpr)), 48, 1024);
     lead.fit(side / dpr, lead.scale() * rs);
   };
-  const ready = Promise.all(list.map((p) => p.w.api.prepared)).then((oks) => {
+  const ready = Promise.resolve(after).catch(() => {}).then(() => Promise.all(list.map((p) => p.w.api.prepared))).then((oks) => {
     if (!oks.every(Boolean)) throw new Error("a world could not be made");
     return chore(fit, 60, lead.tag).catch(() => { /* the loop's first frame makes them */ });
   }).then(() => {

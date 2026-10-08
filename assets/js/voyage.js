@@ -22,7 +22,7 @@
 
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { uploadBanded } from "./upload.js";
-import { theDoorWeight } from "./capability.js";
+import { theDoorWeight, liveDoor } from "./capability.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
@@ -31,7 +31,8 @@ export const TEX = {
   /* finer, about where the door looks (NEAR) */
   lightsN: IMG("door/lights-near.webp"), cloudsN: IMG("door/clouds-near.webp"), dayN: IMG("door/land-near.webp"),
 };
-/* the live door, while it is tried (?door3d; the same test main.js makes): only then is the strip below drawn */
+/* the live door, while it is tried (?door3d; the same test main.js makes): engine.js waits for the probe under it. Only
+   where the door is live here (capability.js: liveDoor, the flag and level 1 or 2) is the strip below drawn */
 export const DOOR3D = /[?&]door3d\b/.test(location.search);
 /* the sharpest lights, the 500 m Black Marble over the door's own ground (tools/doorcrop.py), at the sharpness the
    device can show: its band's width in device pixels (D) picks one of three, so a small screen fetches 0.6 MB, not 1.8 */
@@ -1048,11 +1049,13 @@ export function createVoyage(under) {
     const n = gl.getProgramParameter(pr.p, gl.ACTIVE_UNIFORMS);
     for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(pr.p, i); pr.u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(pr.p, a.name); }
   };
-  /* the live door's weight (capability.js; ?door3d only, chosen before the flight's world is made: engine.js): "rich",
-     and what lies over the rush is the RICH Earth from the first, in place of the lean one (the door draws the rich
-     from its first frame); "lean", the lean alone, the rich never made; "both" (and without a live door), the lean,
-     and the rich made only if the door goes rich (wantRich) */
-  const weight = DOOR3D ? theDoorWeight() : null, richOnly = weight === "rich";
+  /* the live door's weight (capability.js; only where the door is live here, ?door3d at level 1 or 2, chosen before the
+     flight's world is made: engine.js): "rich", and what lies over the rush is the RICH Earth from the first, in place
+     of the lean one (the door draws the rich from its first frame); "lean", the lean alone, the rich never made; "both"
+     (and without a live door), the lean, and the rich made only if the door goes rich (wantRich). Without a live door
+     (level 0, or no ?door3d) the flight is as it always was: no strip, no sharp tier, the lean overlay */
+  const live = liveDoor();
+  const weight = live ? theDoorWeight() : null, richOnly = weight === "rich";
   const P = { scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null };
   const compiled = (list) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
@@ -1188,11 +1191,11 @@ export function createVoyage(under) {
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
          device's own after everything (sharpStrip) */
-      if (DOOR3D) stripS = sharpStrip();
+      if (live) stripS = sharpStrip();
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
-      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(DOOR3D ? [loadStrip()] : [])])
+      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
         .then(() => { allIn = true; });
       warming = Promise.all([made, loaded])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
@@ -1342,7 +1345,7 @@ export function createVoyage(under) {
       gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
       gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
       gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
-      gl.uniform4f(u.uStripBox, ...(strip ? strip.box : [0, 0, 0, 0])); gl.uniform1f(u.uHasS, DOOR3D && maps.lightsS ? 1 : 0);
+      gl.uniform4f(u.uStripBox, ...(strip ? strip.box : [0, 0, 0, 0])); gl.uniform1f(u.uHasS, live && maps.lightsS ? 1 : 0);
       /* the sharper strip fading in; once in, the small one let go */
       let mixS = maps.lightsS2 ? stripS.mix() : 0;
       if (mixS >= 1) { gl.deleteTexture(maps.lightsS); maps.lightsS = maps.lightsS2; maps.lightsS2 = null; mixS = 0; }
@@ -1371,7 +1374,7 @@ export function createVoyage(under) {
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
       bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
       bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
-      bind(11, (DOOR3D && maps.lightsS) || blank, u.uLightsS); bind(15, maps.lightsS2 || blank, u.uLightsS2);
+      bind(11, (live && maps.lightsS) || blank, u.uLightsS); bind(15, maps.lightsS2 || blank, u.uLightsS2);
       bind(12, fields.clouds || blank, u.uCloudF); bind(13, fields.cloudsN || blank, u.uCloudFN); bind(14, glowT || blank, u.uGlow);
       /* the docs' flight: the Milky Way, and the constellations lighting */
       const cs = s.cstars || [], n = Math.min(64, cs.length);

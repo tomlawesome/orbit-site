@@ -26,6 +26,7 @@
  */
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
 import { uploadBanded } from "./upload.js";
+import { liveDoor } from "./capability.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -99,12 +100,13 @@ const KINDS = { docs: 0, install: 1, info: 2 };
 /* the install's ring, tilted this far from its orbit's plane (degrees) */
 const RING_TILT = 24;
 
-/* the planets their own world draws on the door (install.js: doorPlanets): not drawn here. Under ?door3d the install's
-   and the information's are theirs from the first frame, before their worlds are live (their pictures stand in until
-   then); html[data-worldplanets] stays what says so from then on */
+/* the planets their own world draws on the door (install.js: doorPlanets): not drawn here. Where the door is live
+   (capability.js: liveDoor, ?door3d at level 1 or 2; asked once the probe has resolved) the install's and the
+   information's are theirs from the first frame, before their worlds are live (their pictures stand in until then);
+   html[data-worldplanets] stays what says so from then on */
 const DOOR3D = /[?&]door3d\b/.test(location.search);
-const OWN = DOOR3D ? ["install", "info"] : [];
-const taken = (id) => OWN.includes(id) || (document.documentElement.dataset.worldplanets || "").split(" ").includes(id);
+const OWN = () => (liveDoor() ? ["install", "info"] : []);
+const taken = (id) => OWN().includes(id) || (document.documentElement.dataset.worldplanets || "").split(" ").includes(id);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a) => { const l = Math.hypot(...a) || 1; return a.map((v) => v / l); };
 
