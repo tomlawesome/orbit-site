@@ -82,10 +82,11 @@ function warmJourneys() {
   /* each way in opens as its journey is readied (or has failed, and goes as it can): the planets show from the
      first but take no click until then, and the gate is not shown at all */
   const settled = (p) => Promise.resolve(p).catch(() => {});
-  settled(all[0]).then(() => openWays(["install"]));
+  /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
+  settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
   settled(all[1]).then(() => openWays([], true));
   Promise.all([settled(all[1]), settled(all[2])]).then(() => openWays(["docs"]));
-  settled(all[3]).then(() => openWays(["info"]));
+  settled(PADS.info.world?.baked ?? all[3]).then(() => openWays(["info"]));
   /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are (some
      browsers compile on the page's own thread, and the page stands still meanwhile: better behind the running ring
      than on the door) */
