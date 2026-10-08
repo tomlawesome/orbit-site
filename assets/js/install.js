@@ -11,7 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note } from "./chores.js";
+import { chore, note, quiet, COMPILES_ASIDE } from "./chores.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 import { onTilt } from "./tilt.js";
@@ -447,14 +447,17 @@ export function createInstall(pad, opts = {}) {
       /* its pictures asked for, and its shaders set compiling, at once: both go on away from the page (the browser
          compiles in the background), so they have all of the first light and the door to be done in, and the
          compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
-         measure) waits its turn as chores (chores.js), from the moment the door is lit */
+         measure) waits its turn as chores (chores.js), from the moment the door is lit. Where the browser compiles on
+         the page's own thread (COMPILES_ASIDE false), making the world is itself a chore ("compile", first of all,
+         after the door's painted reveal; hurried with this journey's own) */
       if (!this.prepared) {
         fetchWorld(opts.world);
-        const w = ensure(); if (w) size();
-        w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`));
-        this.compiled = w ? w.made : Promise.resolve(false);
+        const make = () => { const w = ensure(); if (w) size(); return w; };
+        const made = (COMPILES_ASIDE ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
+        made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`)));
+        this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
-        this.baked = w ? w.bake() : Promise.resolve(false);
+        this.baked = made.then((w) => (w ? w.bake() : false));
         this.prepared = this.baked
           .then((ok) => {
             note(`${TAG}: ready`);
@@ -583,14 +586,17 @@ function startDoor(door, lead) {
     if (!a) return null;
     const c = document.createElement("canvas");
     c.className = "worldplanet away"; c.setAttribute("aria-hidden", "true");
-    return { w, a, scene: { planet: a, body: a.querySelector(".body") }, c, ctx: c.getContext("2d") };
-  }).filter((p) => p && p.ctx && p.scene.body);
+    return { w, a, spin: a.querySelector(".spin"), scene: { planet: a, body: a.querySelector(".body") }, c, ctx: c.getContext("2d") };
+  }).filter((p) => p && p.ctx && p.scene.body && p.spin);
   if (!list.length) return null;
 
   let raf = 0, started = false, live = false, failed = false, last = 0, hook = null;
   /* the square's side, device px, shared by both (the larger), changed only when it is a tenth out; the scale the
-     world draws it at, halved once if the two take more than 8 ms a frame (over the first 30) */
-  let side = 0, rs = 1, n = 0, spent = 0;
+     world draws it at, halved once if the two take more than 8 ms a frame (over 30 frames, timed only once the chores
+     are at rest, quiet: a compile or an upload beside them is not their time, and halved them for nothing in Firefox;
+     timed again if a chore ran meanwhile) */
+  let side = 0, rs = 1, n = 0, spent = 0, calm = null, asked = false, timed = false;
+  const time = () => { asked = true; n = 0; spent = 0; calm = null; quiet().then((c) => { calm = c; }); };
   const busy = () => [...worlds.values()].some((w) => w.api.busy);
   /* as planets3d.js: not while the door is not seen, and not once a journey begins */
   const shown = () => !document.hidden && !door.hidden && !/\b(launching|departing|showwarp)\b/.test(body.className) && getComputedStyle(door).opacity !== "0";
@@ -618,7 +624,9 @@ function startDoor(door, lead) {
       p.ctx.drawImage(src, 0, 0);
       const st = p.c.style;
       st.left = `${r.x - L.left}px`; st.top = `${r.y - L.top}px`; st.width = st.height = `${r.w}px`;
-      p.c.classList.toggle("near", dot.k > 1);
+      /* on the side its anchor is (its .spin's z-index, pads.js: held while the world overlaps the ring's stroke), as
+         planets3d.js draws */
+      p.c.classList.toggle("near", getComputedStyle(p.spin).zIndex === "5");
     }
     const ms = performance.now() - t0;
     for (const p of list) p.c.classList.remove("away", "held");
@@ -627,9 +635,13 @@ function startDoor(door, lead) {
       root.dataset.worldplanets = list.map((p) => p.w.tag).join(" ");
       note("install: door planets live", since);
     }
-    if (n < 30 && dt) {
+    if (!timed && !asked) time();
+    else if (!timed && calm && dt) {
       spent += ms;
-      if (++n === 30) {
+      /* the 30th: kept only if no chore ran in the window, else timed again from the next quiet */
+      if (++n === 30 && !calm()) time();
+      else if (n === 30) {
+        timed = true;
         const avg = spent / 30;
         /* (the square at half scale is a new size, and the world lets the screen's targets go for it: they are made
            again now, between frames, not at the click) */

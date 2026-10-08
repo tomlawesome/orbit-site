@@ -205,3 +205,46 @@ Tried, October 2026:
 - The click is timed: `orbit · install: dive began: resize X ms, first frame Y ms` (likewise `info:`), X the world's
   resize to the screen and Y the shot's first draw, each the page's own time (the GPU's share is not waited for),
   printed before the existing `first second N frames, worst M ms`.
+
+## Firefox: every compile after the reveal, back to back; measures only when the queue is quiet (8 October 2026)
+
+- Firefox compiles shaders on the page's own thread, so each compile freezes the page (owner's machine: the
+  install/information world 0.5–1 s at about 2 s after opening, during the reveal, so the loading ring stuttered on
+  its second spin; the live door's lean program 0.37 s and its rich one 0.5 s; the planets'; the flight's).
+- `COMPILES_ASIDE` (chores.js, from main.js): a probe context asks for `KHR_parallel_shader_compile` and is let go at
+  once. Where it is missing, every compile is a chore tagged `"compile"`, and `"compile"` is first in the chores'
+  ORDER. They all run back to back once the door's painted reveal is over (`openChores`), before any upload, bake or
+  live loop, while only the compositor moves anything (the reveal's fades, the orbits). The compiles are:
+  - the install/information world (install.js `prepare`, which makes the world in the chore; `compiled`, `baked` and
+    `prepared` are chained off it);
+  - the flight (engine.js `warm`, which makes its world in the chore);
+  - the door's lean program, and its rich one, compiled up front whatever the ladder decides later, and drawn only if
+    the ladder keeps it;
+  - the flight's rich OVER program (voyage.js `compileRich`, asked for by the door's rich compile, and drawn only once
+    the door has gone rich);
+  - the planets' program.
+
+  A journey's own compile carries its journey's tag too (`["compile", "install"]`, `["compile", "flight"]`), so a
+  click before the reveal ends still hurries it. On a first visit the ring no longer waits for the compiles on these
+  browsers, because they now come after the reveal. Where `COMPILES_ASIDE` is true nothing changes: compiles start in
+  the background at once, as before. `&mainthread` forces `COMPILES_ASIDE` false, so the Firefox path can be tried
+  in Chromium. Headless Chromium on SwiftShader has no `KHR_parallel_shader_compile` either, so it takes that path
+  without the flag.
+- `quiet()` (chores.js): resolves once nothing is queued or running and it has stayed so for two animation frames.
+  The door's lean and rich measures (door3d.js) and the door planets' 30-frame measure (install.js) wait for it, and
+  the loops keep drawing meanwhile. The door planets' window starts again from the next quiet if a chore ran during
+  it. Firefox printed `door planets 24.4 ms a frame, so drawn at half scale` because that measure ran under the rich
+  compile and the uploads; when quiet it is 0.4–1 ms. The 8 ms rule still stands, but only a quiet measure can trip
+  it.
+- The side rule: a door planet's world canvas (install.js, `canvas.worldplanet`) is `.near` when its anchor's `.spin`
+  has the computed `z-index` 5, as planets3d.js reads it. pads.js holds a change of side until the planet is clear
+  of the ring's stroke, so canvas and anchor change together. This replaces the canvas's own `k > 1`.
+- Under `?door3d` planets3d.js draws only the docs' moon. The install's and the information's planets are never its
+  spheres: the sphere's bright, shadowless rings visibly dimmed when the world took over. Their pictures stay until
+  the world canvases are live. `html.planets3d` is still set once the moon is drawn.
+- Checked in SwiftShader at 1200×800, 1×:
+  - With `&mainthread`, the chores opened at 6.2 s (reveal from 3.4 s). The install/info, door lean, door rich and
+    planets compile lines came at 7.9–11.5 s, before every ready or live line (from 12.7 s). Both measures ran with
+    the queue empty (door lean 251 ms a frame at 40.6 s; door planets 7.1 ms at 44.5 s, not halved).
+  - With the extension emulated (the Edge path), the order was unchanged: compiles at 3.8 s, before the reveal, then
+    the journeys ready, then the door.

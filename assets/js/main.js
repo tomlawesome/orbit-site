@@ -10,7 +10,7 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
-import { openChores, hurryChores } from "./chores.js";
+import { openChores, hurryChores, COMPILES_ASIDE } from "./chores.js";
 
 const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
@@ -70,8 +70,9 @@ function warmJourneys() {
   if (MAINTENANCE) return (warmingAll = Promise.resolve());
   if (navigator.connection?.saveData) { openWays(["install", "docs", "info"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
-     their shaders start compiling now (both away from the page); the work each then needs on the GPU is queued as
-     chores (chores.js) in this order, and done a piece at a time once the door has come up */
+     their shaders start compiling now (both away from the page; where the browser compiles on the page's own thread,
+     the compiles are chores too, the first done: chores.js, COMPILES_ASIDE); the work each then needs on the GPU is
+     queued as chores (chores.js) in this order, and done a piece at a time once the door has come up */
   const all = [
     PADS.install.ring.prepare?.(),     /* 1. the install (the likeliest first journey) */
     journey.warm(),                    /* 2. the demo (and the docs' flight, which is the same flight's world) */
@@ -174,15 +175,10 @@ function hideAll() {
 /* a first visit: nothing of the site's kept in this browser yet (sw.js keeps the pictures for 36 hours) */
 const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-seen"); localStorage.setItem("orbit-site-seen", String(Date.now())); return !seen || Date.now() - +seen > 36 * 3600e3; } catch { return true; } })();
 let doorLitOnce = false;
-/* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not, the page
-   stands still while the journeys' shaders compile, so that is done behind the running ring, never on the door */
-const compilesAside = MAINTENANCE || (() => {
-  /* asked of a context made for the purpose and let go at once (Safari keeps only a few) */
-  try {
-    const gl = document.createElement("canvas").getContext("webgl2"); if (!gl) return true;
-    const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return ok;
-  } catch { return true; }
-})();
+/* whether this browser compiles shaders in the background (chores.js: COMPILES_ASIDE). Where it does not, the page
+   stands still while a shader compiles, so every compile is a chore, all of them done first once the door's painted
+   reveal is over, while only the compositor moves anything */
+const compilesAside = MAINTENANCE || COMPILES_ASIDE;
 function showDoor() {
   journey.reset(); hideAll(); current = "door"; done();
   $("#gate").classList.remove("flash");
@@ -201,8 +197,9 @@ function showDoor() {
     : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
-  /* the ring runs on a first visit, and wherever the shaders would stop the page: until they are compiled too */
-  const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !compilesAside);
+  /* the ring runs on a first visit until the shaders are compiled too (in the background). Where they would stop the
+     page they are not compiled until the painted reveal is over (chores: "compile"), so the ring cannot wait for them */
+  const waitCompiled = !MAINTENANCE && firstLight && firstVisit && compilesAside;
   /* a first visit's first light is always at least a lap of the ring */
   const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
   let here = false;

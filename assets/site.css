@@ -1303,12 +1303,15 @@ body.departing #door .lockup canvas.planets3d{opacity:0;transition:opacity .7s e
 /* once they are drawn the pictures give way (on the picture itself, the body's ::before: the body is still what the
    dives measure and swell); the anchor, its halo and its name stay, and still answer the pointer. The planet a dive
    goes to has its picture back at once, for the swell, and loses it again once it is set down */
-html.planets3d #door .planet .body::before{opacity:0;transition:opacity .6s}
+/* the docs' moon is planets3d's from its first frame: its picture goes as the moon comes; the install's and the
+   information's pictures stay until their own worlds draw them (data-worldplanets, below): a stand-in sphere's
+   bright, shadowless rings dimming into the world's would catch the eye */
+html.planets3d #door .planet[data-section=docs] .body::before{opacity:0;transition:opacity .6s}
 html.planets3d #door .planet.chosen .body::before{opacity:1;transition:none}
 /* ══ THE WORLD'S OWN PLANETS (?door3d, install.js: doorPlanets): the install's and the information's planets drawn on
    the door by the world each dives into, each in a small canvas of its own at its place on the orbit, behind the ring
    or before it as the anchors go (pads.js: z-index 1 and 5), so a dive goes on from the very frame on the door ══ */
-#door .lockup canvas.worldplanet{position:absolute;left:0;top:0;pointer-events:none;z-index:1}
+#door .lockup canvas.worldplanet{position:absolute;left:0;top:0;pointer-events:none;z-index:1;transition:opacity .6s ease}
 #door .lockup canvas.worldplanet.near{z-index:5}
 /* not drawn since the door was last left: nothing stale is shown, and it is back on the door's first frame */
 #door .lockup canvas.worldplanet.away{opacity:0}
@@ -1321,7 +1324,7 @@ body.departing #door .lockup>canvas.worldplanet.held{opacity:1;transition:none}
 html[data-worldplanets~=install] #door .planet[data-section=install] .body::before,
 html[data-worldplanets~=install] #door .planet[data-section=install].chosen .body::before,
 html[data-worldplanets~=info] #door .planet[data-section=info] .body::before,
-html[data-worldplanets~=info] #door .planet[data-section=info].chosen .body::before{opacity:0;transition:none}
+html[data-worldplanets~=info] #door .planet[data-section=info].chosen .body::before{opacity:0;transition:opacity .6s ease}
 
 /* ══ THE WAYS IN open as each journey is readied (main.js: openWays) ═══════════════════════════════════════════════
    a planet shows from the first but takes no click, and shows no label, until its journey can begin */
