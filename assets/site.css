@@ -225,7 +225,8 @@ body.lit #door .lockup .planets{opacity:1}
 #login-glyph{position:relative}
 @keyframes spinback{to{transform:rotate(360deg)}}
 .loginchrome .lockup .name{grid-area:1/1;font:600 clamp(48px,14vw,72px) var(--display);letter-spacing:.015em;line-height:1;color:#e9edf8}
-.gate-wrap{grid-area:1/1;align-self:center;justify-self:center;transform:translateY(min(74px,15vw))}
+/* the gate is over everything in the lockup: no planet (z 5), label (6) or world (5) ever passes over it */
+.gate-wrap{grid-area:1/1;align-self:center;justify-self:center;transform:translateY(min(74px,15vw));z-index:7}
 .gate{font:600 12px var(--display);color:#04060e;background:#d8b45a;border:0;border-radius:99px;padding:11px 30px;cursor:pointer;
   letter-spacing:.04em;text-decoration:none;display:inline-block;line-height:normal;
   box-shadow:0 0 28px rgba(216,180,90,.22);opacity:0;transform:translateY(10px);

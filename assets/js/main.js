@@ -85,7 +85,7 @@ function warmJourneys() {
   /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
   settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
   settled(all[1]).then(() => openWays([], true));
-  Promise.all([settled(all[1]), settled(all[2])]).then(() => openWays(["docs"]));
+  Promise.all([settled(all[1]), settled(all[2]), settled(journey.warmDocs())]).then(() => openWays(["docs"]));
   settled(PADS.info.world?.baked ?? all[3]).then(() => openWays(["info"]));
   /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are (some
      browsers compile on the page's own thread, and the page stands still meanwhile: better behind the running ring
@@ -236,7 +236,10 @@ function showDoor() {
       return Promise.all(ends.map((a) => a.finished.catch(() => {})));
     } catch { return Promise.resolve(); }
   };
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); if (DOOR3D) liveDoorOf(); drawn().then(() => openChores()); }); };
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); if (DOOR3D) liveDoorOf();
+    /* the chores begin at once where the browser compiles shaders in the background; where it compiles on the page's
+       own thread (Firefox) they wait for the painted part of the door's reveal, which they would stutter */
+    if (compilesAside) openChores(); else drawn().then(() => openChores()); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");
@@ -353,7 +356,7 @@ function flyToPad(id, push = true) {
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
   hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
-  flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null]));
+  flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null, id === "docs" ? journey.warmDocs() : null]));
 }
 /* the docs' chart, as the flights carry it: where it sits on the screen, measured when first wanted, and again
    if the window is resized on the way */

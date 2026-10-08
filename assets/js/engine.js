@@ -1136,7 +1136,7 @@ export function createFlight(canvas, options = {}) {
     voyage?.reset();
   }
 
-  let warmed = null, compiled = null;
+  let warmed = null, warmedDocs = null, compiled = null;
   return {
     /* when the flight's shaders are compiled (after warm has made its world) */
     compiled() { return compiled || Promise.resolve(); },
@@ -1155,6 +1155,12 @@ export function createFlight(canvas, options = {}) {
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) note("flight: ready"); });
       }
       return warmed;
+    },
+    /* the docs' flight needs its galaxy too, readied after the flight itself */
+    warmDocs() {
+      this.warm();
+      if (!warmedDocs) warmedDocs = warmed.then(() => (voyage ? voyage.warmDocs() : null)).catch(() => {});
+      return warmedDocs;
     },
     /**
      * Fly. `at` pins the flight to one beat instead of running it: the

@@ -1042,7 +1042,8 @@ export function createVoyage(under) {
       }
     })).catch(() => { /* drawn without it */ });
   /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
-  let warming = null, loaded = null;
+  let warming = null, warmingDocs = null, loaded = null;
+  const warmDocs = () => { warm(); return warmingDocs; };
   function warm() {
     if (!warming) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
@@ -1055,7 +1056,9 @@ export function createVoyage(under) {
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
         .then(() => chore(() => touch(ST()), 60, "flight"))
-        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"))
+        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"));
+      /* the docs' galaxy after it, the docs' own (warmDocs): the flight is ready before it */
+      warmingDocs = warming
         .then(() => chore(makeGal, 60, "docs"))
         .then(() => chore(() => { if (galOK) touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }); }, 60, "docs"));
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
@@ -1261,5 +1264,5 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, warm, made, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, made, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }
