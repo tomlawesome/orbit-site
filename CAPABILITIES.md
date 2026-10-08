@@ -56,7 +56,8 @@ No browser is named in the rules. The names only explain where a machine lands.
 | Desktop, RTX 3080 | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 2, compiles under the ring |
 | Laptop 14", Ryzen 7 4700U with integrated Radeon, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 0 or 1 without the world planets: decided by the probe before the uploads |
 | Laptop, same | Firefox | install 1.6 s, flight 3.1 s, door 0.4 + 0.7 s, planets 0.24, galaxy 0.18: 6.2 s of compiles, each a stall; lean 11 ms, rich 23 ms, world planets 11.9 ms (halved) | 0 |
-| iPhone 13 Pro Max, 428x926 at 3x (drawn at 2x) | Safari 26 | WebGL2, float targets, compiles in background (~145 ms each); lean 5 ms, rich 6 ms at 0.48 Mpx; uploads in single-digit ms; frames at 30 a second during the test (Low Power Mode?) | 2 |
+| iPhone 13 Pro Max, 428x926 at 3x (drawn at 2x) | Safari 26 | WebGL2, float targets, compiles in background (130-170 ms each); lean 3.3 ms, rich 5.7 ms at 0.48 Mpx; uploads in tens of ms; frames at 30 a second during the test (Low Power Mode?) | 2 |
+| MacBook, Apple GPU (Apple silicon), 1512x982 at 2x, 8 cores | Safari 26 | compiles in background (150-167 ms each; the very first compile of the context 503 ms, see below); probe 10.2 ms per Mpx, as fast as the 3080; lean 4.3 ms, rich 6.7 ms at 2.06 Mpx; uploads 5-47 ms; frame gaps 20 ms around the rich compile | 2, the most headroom measured |
 
 Readiness measured on 8 October 2026 (cold, private window), after the ordering work: desktop Edge ways in 5.3 s,
 button 6.0 s; desktop Firefox 8.7 s / 9.3 s (before compiles were moved under the ring); laptop Edge 8.6 s / 9.5 s;
@@ -90,6 +91,15 @@ be short enough to paste from one: a friend with a Mac should be able to open th
 | Upload 4096x2048 with mipmaps | ~50 ms | ~70-130 ms |
 | Stall of the page for the rich compile, Firefox | 445 ms | 520 ms |
 
+**WebKit, both devices (8 October).** iPhone 13 Pro Max: compiles 130-170 ms each in the background (probe 168, the
+salted probe again 88), lean 3.3 / rich 5.7 ms at 0.48 Mpx, uploads <= 45 ms. MacBook with an Apple GPU, Safari 26,
+1512x982 at 2x: probe 503 ms then 91; door lean 152, rich 167, flight head 151, rich 166 ms; probe 10.2 ms per Mpx;
+lean 4.3 / rich 6.7 ms at the band's 2.06 Mpx (first frames 96 and 110 ms); uploads 5-47 ms; rich compile 158 ms with
+frame gaps of 20 ms either side; 40 Mbit/s. Two Safari habits to design for: the *first* compile of a fresh context is
+3-5x the rest (503 vs 91 on the Mac, 168 vs 88 on the phone), so the probe's second compile is the honest one and the
+first is warm-up to be discounted; and "mipmaps 0 ms" every time means they are built lazily, on first use, so the
+first draw of a real shader carries ~100 ms there (which the unseen proving draw absorbs, as it should).
+
 **The finding: a program costs ~200-300 ms to compile whatever its size.** The 2k-character probe takes 199 ms on
 the desktop and 317 on the laptop; the 16k door shader 279/457; the 28k flight head 346/583. Size adds a little
 (about 0.01 ms a character, more for loops); the count of programs is the cost. That is where the Firefox totals
@@ -106,7 +116,7 @@ live door four (lean, rich, the cloud field pass, the glow pass) and the planets
   compiled on demand, after the ring.
 On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.
 
-**Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx, rich ≈ 0.45-0.55; a compile ≈ the
+**Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Mac 0.20), rich ≈ 0.3-0.55 (the Mac 0.32, the PCs 0.45-0.55); a compile ≈ the
 probe's compile time plus ~0.01 ms a character (loop-heavy code ~1.5x). Firefox's GPU name is made up ("GTX 980",
 "R9 200 Series"); Edge's is real.
 
@@ -114,5 +124,6 @@ probe's compile time plus ~0.01 ms a character (loop-heavy code ~1.5x). Firefox'
 
 - The exact ring budget (how many seconds of compiles a visitor will wait on a first visit before the door): 2.5 s?
 - Whether level 1 on a weak GPU keeps the world planets (two world draws a frame) or only the spheres.
-- Calibration of the probe against the real shaders: two points so far (the 3080 and the 4700U's Radeon); the phone
-  will be the third.
+- Calibration of the probe against the real shaders: four points (the 3080, the 4700U's Radeon, the phone, the Mac);
+  rich's ratio spreads 0.3-0.55, so the real rich measure, unseen, stays the gate and the probe only decides whether
+  to try it.
