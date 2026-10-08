@@ -62,6 +62,15 @@ export function timeDraws(gl, prog, fbo, w, h, set, n = 4) {
 
 /* the probe shader (about two thousand characters, an Earth-like march), the one the site probes with at its start */
 export { PROBE } from "../assets/js/capability.js";
+import { PROBE as P0 } from "../assets/js/capability.js";
+/* the smallest program there is: what a program costs before any of its code does */
+export const TRIVIAL = `#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o=vec4(gl_FragCoord.x/1000.0,0.0,0.0,1.0); }`;
+/* the probe with its loops' counts unknown to the compiler (a uniform that is always 0 added to each), so it cannot
+   unroll them (Direct3D's compiler unrolls every loop it can, which may be where a big shader's compile time goes) */
+export const PROBE_ROLLED = P0.replace("uniform float uT;", "uniform float uT; uniform int uZ;").replace("i<4;i++", "i<4+uZ;i++").replace("i<16;i++", "i<16+uZ;i++");
 
 export const line = (k, v) => `${k}: ${v}`;
 export const round = (x, d = 1) => (Number.isFinite(x) ? +x.toFixed(d) : x);

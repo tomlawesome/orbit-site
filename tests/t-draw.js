@@ -1,6 +1,6 @@
 /* how fast the GPU draws here: the probe at 512x512 (ms per million pixels), then the door's real lean and rich Earth
    shaders at this screen's own band size, with maps of noise so every path runs (the slab needs clouds to march) */
-import { context, release, program, target, noiseTexture, timeDraws, PROBE, line, round } from "./common.js";
+import { context, release, program, target, noiseTexture, timeDraws, PROBE, PROBE_ROLLED, line, round } from "./common.js";
 import { sceneHead, PASS_SWITCH, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/js/voyage.js";
 export const name = "draw";
 /* (the rich one draws its own fields and glow first: PASS_SWITCH) */
@@ -14,8 +14,11 @@ export async function run() {
   const A = noiseTexture(gl, 256, 128, 3), B = noiseTexture(gl, 256, 128, 7);
   try {
     const pr = program(gl, PROBE), tg = target(gl, 512, 512);
-    const r = timeDraws(gl, pr, tg.f, 512, 512, (u) => { gl.uniform2f(u.uRes, 512, 512); gl.uniform1f(u.uT, 1); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A); gl.uniform1i(u.uA, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, B); gl.uniform1i(u.uB, 1); });
+    const setP = (u) => { gl.uniform2f(u.uRes, 512, 512); gl.uniform1f(u.uT, 1); if (u.uZ) gl.uniform1i(u.uZ, 0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A); gl.uniform1i(u.uA, 0); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, B); gl.uniform1i(u.uB, 1); };
+    const r = timeDraws(gl, pr, tg.f, 512, 512, setP);
     out.push(line("probe 512x512", `${round(r.mean, 2)} ms a frame = ${round(r.mean / 0.262144, 1)} ms per Mpx (frames ${r.all.join(", ")})`));
+    /* and the same with its loops left as loops (not unrolled): what that costs the GPU, if anything */
+    try { const pr2 = program(gl, PROBE_ROLLED); const r2 = timeDraws(gl, pr2, tg.f, 512, 512, setP); out.push(line("probe 512x512, loops not unrolled", `${round(r2.mean, 2)} ms a frame (frames ${r2.all.join(", ")})`)); gl.deleteProgram(pr2.p); } catch (e) { out.push(line("probe, loops not unrolled", `failed: ${e.message}`)); }
   } catch (e) { out.push(line("probe", `failed: ${e.message}`)); }
   /* the door's band, as door3d.js sizes it */
   const W = innerWidth, H = innerHeight, s = Math.max(W / 1600, H / 1000), bh = Math.min(H, 360 * s), px = Math.min(devicePixelRatio || 1, 2);
