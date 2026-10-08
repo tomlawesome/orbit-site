@@ -29,7 +29,7 @@
   <div id="spin"></div>
   <pre id="out">Ready.</pre>
   <script type="module">
-    const TESTS = ["machine", "compile", "draw", "upload", "upload-bands", "stall", "network"];
+    const TESTS = ["machine", "compile", "draw", "upload", "upload-bands", "stall", "worker", "network"];
     const out = document.getElementById("out"), each = document.getElementById("each"), copy = document.getElementById("copy"), all = document.getElementById("all"), spin = document.getElementById("spin");
     let text = "";
     const head = () => `orbit tests · ${new Date().toISOString()} · ${location.href}\n`;
