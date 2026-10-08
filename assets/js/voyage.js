@@ -23,14 +23,15 @@
 import { chore, fetchOnce } from "./chores.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
-const TEX = {
+export const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
   euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"), moon: IMG("install/moon.webp"),
 };
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
-const EURO = [2, 24, 38, 55];
+export const EURO = [2, 24, 38, 55];
+const ID3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -40,6 +41,8 @@ precision highp float;
 uniform vec2 uRes; uniform float uPx, uTime;
 uniform vec2 uVP; uniform float uSpeed, uRmax; uniform vec4 uOff, uLen; uniform vec3 uTint;
 uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
+/* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
+uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
 uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
 uniform mat3 uSkyM; uniform float uStarA, uDens;
 uniform float uBloom, uPre; uniform vec2 uBloomPt;
@@ -169,7 +172,8 @@ vec3 tauSun(float hh,float mu){
 }
 vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c; if(d<0.0) return vec2(-1.0); d=sqrt(d); return vec2(-b-d,-b+d); }
 vec3 surface(vec3 P,vec3 rd,out float ca){
-  float lat=asin(clamp(P.z,-1.0,1.0)), lon=atan(P.y,P.x);
+  vec3 Q=uSpinM*P;
+  float lat=asin(clamp(Q.z,-1.0,1.0)), lon=atan(Q.y,Q.x);
   vec2 uv=vec2(lon/TAU+0.5,0.5-lat/PI);
   float mu=dot(P,uSun);
   vec3 lights=uHas.x>0.5?pow(texture(uLights,uv).rgb,vec3(2.2)):vec3(0.0);
@@ -179,7 +183,7 @@ vec3 surface(vec3 P,vec3 rd,out float ca){
     float edge=min(min(eu.x,1.0-eu.x),min(eu.y,1.0-eu.y));
     lights=mix(lights,pow(texture(uEuro,eu).rgb,vec3(2.2)),smoothstep(0.0,0.06,edge));
   }
-  float cl=uHas.z>0.5?texture(uClouds,uv).r:0.0; ca=smoothstep(0.22,0.85,cl);
+  float cl=uHas.z>0.5?texture(uClouds,uv+vec2(uCloudOff,0.0)).r:0.0; ca=smoothstep(0.22,0.85,cl);
   vec3 alb=uHas.z>0.5?pow(texture(uDay,uv).rgb,vec3(2.2)):vec3(0.06,0.07,0.1);
   /* the sun on the ground and on the cloud tops, through the air above them */
   vec3 Ts=exp(-tauSun(0.0,mu)), Tc=exp(-tauSun(8.0/6371.0,mu));
@@ -214,7 +218,7 @@ vec3 earth(vec2 css,out float cover){
       vec3 Tsun=exp(-tauSun(hh,dot(x/r,uSun)));
       vec3 ins=(BR*dr*pr+BM*dm*pm)*Tsun*SUNL+BR*dr*SUNL*0.012*exp(min(dot(x/r,uSun),0.0)*38.0);
       vec3 st=exp(-ext*ds);
-      L+=T*ins*(1.0-st)/max(ext,vec3(1e-6)); T*=st;
+      L+=T*ins*(1.0-st)/max(ext,vec3(1e-6))*uAirK; T*=st;
     }
   }
   if(ground){
@@ -380,6 +384,9 @@ void main(){
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
   o=vec4(c,1.0);
 }`;
+
+/* the scene's own functions, for the live door (door3d.js), which draws only its Earth */
+export const SCENE_HEAD = SCENE.slice(0, SCENE.indexOf("void main(){"));
 
 /* what lies over the rush: the Earth, the moon, the star, the docs' constellations, the shock's light. A program of
    its own, drawn over the first and blended by how much of it still shows through (alpha), so the sum is exactly the
@@ -577,7 +584,7 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const norm = (a) => mul(a, 1 / Math.hypot(...a));
-function doorCamera() {
+export function doorCamera(sunUnder = SUN_UNDER) {
   const r = Math.PI / 180, la = LAT * r, lo = LON * r, hd = HEAD * r;
   const Z = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
   const E = [-Math.sin(lo), Math.cos(lo), 0], N = cross(Z, E);
@@ -585,7 +592,7 @@ function doorCamera() {
   const D0 = (RE + ALT) / RE, F = 3000 / Math.tan(Math.asin(1 / D0));
   /* the sun: the horizon point it rises at, turned SUN_UNDER degrees under it */
   const sd = norm(add(add(mul(R, 0), mul(H, 3000)), mul(Z, -F)));
-  const ax = norm(cross(sd, mul(Z, -1))), a = SUN_UNDER * r;
+  const ax = norm(cross(sd, mul(Z, -1))), a = sunUnder * r;
   const S = norm(add(add(mul(sd, Math.cos(a)), mul(cross(ax, sd), Math.sin(a))), mul(ax, dot(ax, sd) * (1 - Math.cos(a)))));
   return { B: [...R, ...H, ...mul(Z, -1)], S, D0 };
 }
@@ -809,6 +816,7 @@ export function createVoyage(under) {
       gl.uniform4fv(u.uOff, off); gl.uniform4fv(u.uLen, len); gl.uniform3fv(u.uTint, s.tint);
       gl.uniform3f(u.uCirc, w ? w.cx : 0, w ? w.cy : 0, w ? w.R : 1); gl.uniform1f(u.uEarthA, w ? w.alpha : 0); gl.uniform1f(u.uD, D);
       gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, cam.S);
+      gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(s.spinM || ID3)); gl.uniform1f(u.uCloudOff, s.cloudOff || 0); gl.uniform1f(u.uAirK, s.airK ?? 1);
       gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
       gl.uniform4f(u.uEuroBox, ...EURO);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);

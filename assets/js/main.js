@@ -15,6 +15,10 @@ import { openChores, hurryChores } from "./chores.js";
 const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
 const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
+/* the live door, while it is tried (?door3d): the Earth under the door drawn as it is (door3d.js), not a picture */
+const DOOR3D = /[?&]door3d\b/.test(location.search);
+let liveDoor = null;
+const liveDoorOf = () => import("./door3d.js").then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
 if (MAINTENANCE) {
   /* the message, if the attribute gives one ("Launching soon"); "Back shortly" if not */
   const words = document.documentElement.getAttribute("data-maintenance")?.trim();
@@ -206,7 +210,7 @@ function showDoor() {
       return Promise.all(ends.map((a) => a.finished.catch(() => {})));
     } catch { return Promise.resolve(); }
   };
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); drawn().then(() => openChores()); }); };
+  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit"); warmJourneys(); if (DOOR3D) liveDoorOf(); drawn().then(() => openChores()); }); };
   within(critical, 250).then(() => {
     if (here && !minLaps) { light(); return; }
     document.body.classList.add("loading");

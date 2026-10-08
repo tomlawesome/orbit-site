@@ -132,6 +132,11 @@ body.showdawn #door{pointer-events:none}
 #door .dsky svg,#dusk .dsky svg,#door .world .wl,#dusk .world .wl{position:absolute;inset:0;width:100%;height:100%}
 #door .dsky svg,#dusk .dsky svg{will-change:transform;overflow:visible}
 #door .world,#dusk .world{position:absolute;inset:0}
+/* the live door (door3d.js): the Earth drawn as it is, in the band at the door's foot; the picture and the limb give
+   way to it once its first frame is drawn */
+#door .world canvas.live{opacity:0;transition:opacity 1.2s ease}
+#door .world.live canvas.live{opacity:1}
+#door .world.live .wl.earth,#door .world.live .wl.limb{opacity:0;transition:opacity 1.2s ease}
 .world .defs{width:0;height:0;position:absolute}
 .world .dawnlayer,.world .rays,.world .sunpt{position:absolute;inset:0}
 #door .dsky .far{animation:driftf 360s linear infinite}
