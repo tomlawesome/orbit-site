@@ -448,7 +448,9 @@ export function createInstall(pad, opts = {}) {
         const w = ensure(); if (w) size();
         w?.made.then((ok) => note(`${TAG}: shaders ${ok ? "compiled" : "failed"}`));
         this.compiled = w ? w.made : Promise.resolve(false);
-        this.prepared = (w ? w.bake() : Promise.resolve(false))
+        /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
+        this.baked = w ? w.bake() : Promise.resolve(false);
+        this.prepared = this.baked
           .then((ok) => {
             note(`${TAG}: ready`);
             if (ok) chore(touch, 60, TAG);
