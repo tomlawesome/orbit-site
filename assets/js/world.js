@@ -661,19 +661,31 @@ export function createWorld(canvas, opts = {}) {
   }
 
   /* the frame's own targets: the light, and the bloom's chain of halves */
+  /* kept for the last two sizes drawn (sets, by size, the one drawn longest ago first): the door's planets' square and
+     the full screen (install.js: doorPlanets, size), so a dive's click goes from the one to the other without making a
+     target (at 4K that was an HDR frame and its chain, 3.3 Mpx, made in the click's frame); a third size lets the one
+     drawn longest ago go */
   let W = 1, H = 1, hdrT = null, chain = [];
-  const LEVELS = 6;
+  const LEVELS = 6, KEEP = 2, sets = new Map();
+  const free = (set) => [set.hdrT, ...set.chain].forEach((c) => { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); });
   function resize(w, h, scale) {
     W = Math.max(1, Math.round(w * scale)); H = Math.max(1, Math.round(h * scale));
     if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
     if (!hdr || (hdrT && hdrT.w === W && hdrT.h === H)) return;
-    [hdrT, ...chain].forEach((c) => { if (c) { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); } });
-    const target = (cw, ch) => { const t = tex(cw, ch, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null, gl.CLAMP_TO_EDGE); return { t, f: fb(t), w: cw, h: ch }; };
-    hdrT = target(W, H);
-    chain = [];
-    let cw = W, ch = H;
-    for (let i = 0; i < LEVELS; i++) { cw = Math.max(1, cw >> 1); ch = Math.max(1, ch >> 1); chain.push(target(cw, ch)); }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const key = `${W}x${H}`;
+    let set = sets.get(key);
+    if (set) sets.delete(key);
+    else {
+      while (sets.size >= KEEP) { const [k, old] = sets.entries().next().value; sets.delete(k); free(old); }
+      const target = (cw, ch) => { const t = tex(cw, ch, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null, gl.CLAMP_TO_EDGE); return { t, f: fb(t), w: cw, h: ch }; };
+      set = { hdrT: target(W, H), chain: [] };
+      let cw = W, ch = H;
+      for (let i = 0; i < LEVELS; i++) { cw = Math.max(1, cw >> 1); ch = Math.max(1, ch >> 1); set.chain.push(target(cw, ch)); }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    /* (the most recently drawn last) */
+    sets.set(key, set);
+    hdrT = set.hdrT; chain = set.chain;
   }
   const m3 = (m) => new Float32Array(m);
   /* view: { cam, fwd, right, up, focal (px of the drawing), shift [x,y] (px, y up), sun, spin, tilt, sky (mat3, column-major),

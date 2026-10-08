@@ -20,7 +20,7 @@
  * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
  */
 
-import { chore, fetchOnce } from "./chores.js";
+import { chore, fetchOnce, note } from "./chores.js";
 
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
@@ -41,8 +41,46 @@ export function lightsStrip(W, dpr) {
    strip, so the click's handoff from one to the other does not change the cities */
 let strip = null;
 export function theStrip() {
-  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); TEX.lightsS = strip.url; }
+  /* (what is loaded first is the smallest, whatever the device's: sharpStrip, below) */
+  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); TEX.lightsS = STRIP0; }
   return strip;
+}
+/* the strip comes small first (120 px a degree, 0.6 MB: all the flight waits for), and the device's own (theStrip),
+   if it is sharper, after everything else (the last chore, "rich"): put on the GPU in every context drawing the strip
+   (the door's, the flight's) in the one chore, and faded in over a second in each by the same clock (uStripMix), so the
+   door and the flight never show two sharpnesses at once. The box is the same for every tier.
+   sharpStrip(): a context that will draw it says so as it is made, then ready(take) once its small one is on the GPU
+   (take(bitmap): the sharp one put on its GPU, kept beside the small one), or fail() if it never will be; the sharp one
+   is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore */
+const STRIP0 = IMG("door/lights-strip-120.webp"), FADE = 1000;
+const sharp = { wants: new Set(), busy: false };
+export function sharpStrip() {
+  const me = { settled: false, take: null, served: false, at: 0 };
+  const settle = (take) => { if (me.settled) return; me.settled = true; me.take = take; sharpen(); };
+  if (theStrip().url === STRIP0) return { ready() {}, fail() {}, mix: () => 0 };
+  sharp.wants.add(me);
+  return { ready: settle, fail: () => settle(null), mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
+}
+function sharpen() {
+  const all = [...sharp.wants];
+  if (sharp.busy || all.some((w) => !w.settled)) return;
+  const todo = all.filter((w) => w.take && !w.served);
+  if (!todo.length) return;
+  sharp.busy = true;
+  for (const w of todo) w.served = true;
+  fetchOnce(strip.url)
+    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+    .then((bm) => chore(() => {
+      for (const w of todo) { try { w.take(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
+      /* the fade's start, the same moment for all of them */
+      const at = performance.now();
+      for (const w of todo) w.at = at;
+      bm.close?.();
+      note(`strip: ${strip.ppd} px a degree in, fading over ${FADE / 1000} s`);
+    }, 60, "rich"))
+    .catch((e) => console.warn("orbit: the strip stays small", e))
+    /* a context that said so meanwhile is given it in a chore of its own */
+    .finally(() => { sharp.busy = false; sharpen(); });
 }
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
@@ -201,6 +239,8 @@ uniform sampler2D uCloudF, uCloudFN, uGlow;
 /* the sharpest lights, over the door's own ground (lightsStrip; ?door3d only): the box they cover, and whether they
    are there */
 uniform sampler2D uLightsS; uniform vec4 uStripBox; uniform float uHasS;
+/* and the sharper strip fading in over it (sharpStrip): how far */
+uniform sampler2D uLightsS2; uniform float uStripMix;
 /* the sun's light through the air (sunTable) */
 uniform sampler2D uSunT;
 uniform mat3 uSkyM; uniform float uStarA, uDens;
@@ -365,7 +405,11 @@ vec3 lightsAt(vec2 g,vec2 ga,vec2 gb){
     }
     if(wE>0.0) c=mix(c,crisp(uEuro,boxUV(g,uEuroBox),boxD(ga,uEuroBox),boxD(gb,uEuroBox)),wE);
   }
-  if(wS>0.0) c=mix(c,crisp(uLightsS,boxUV(g,uStripBox),boxD(ga,uStripBox),boxD(gb,uStripBox)),wS);
+  if(wS>0.0){
+    vec3 cs=crisp(uLightsS,boxUV(g,uStripBox),boxD(ga,uStripBox),boxD(gb,uStripBox));
+    if(uStripMix>0.0) cs=mix(cs,crisp(uLightsS2,boxUV(g,uStripBox),boxD(ga,uStripBox),boxD(gb,uStripBox)),uStripMix);
+    c=mix(c,cs,wS);
+  }
   return pow(c,vec3(2.2));
 }
 vec3 landAt(vec2 g,vec2 ga,vec2 gb){
@@ -1024,17 +1068,23 @@ export function createVoyage(under) {
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU as a
      chore of its own (chores.js): never all at once */
   const inTurn = (fn) => chore(fn, 60, "flight");
+  /* a map put on the GPU (each as load does it; the sharper strip, too: sharpStrip) */
+  const upload = (key, bm) => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  /* the strip's sharper tier, fading in over the small one (sharpStrip; ?door3d only) */
+  let stripS = null;
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => inTurn(() => {
-      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
-      if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, BOXED.includes(key) ? gl.CLAMP_TO_EDGE : gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       maps[key] = t; dims[key] = [bm.width, bm.height];
       /* a clouds map's slab field, made with it (cloudField), where the flight can be asked for its rich Earth */
       if (DOOR3D && (key === "clouds" || key === "cloudsN")) {
@@ -1048,9 +1098,13 @@ export function createVoyage(under) {
     if (!warming) {
       const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
         progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
-      /* the strip only where the door is live (the same one the door draws: theStrip) */
-      if (DOOR3D) theStrip();
-      loaded = Promise.all(["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN", ...(DOOR3D ? ["lightsS"] : [])].map(load));
+      /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
+         device's own after everything (sharpStrip) */
+      if (DOOR3D) stripS = sharpStrip();
+      const loadStrip = () => load("lightsS").then(() => {
+        if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
+      });
+      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(DOOR3D ? [loadStrip()] : [])]);
       warming = Promise.all([made, loaded])
         .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
@@ -1198,6 +1252,10 @@ export function createVoyage(under) {
       gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
       gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
       gl.uniform4f(u.uStripBox, ...(strip ? strip.box : [0, 0, 0, 0])); gl.uniform1f(u.uHasS, DOOR3D && maps.lightsS ? 1 : 0);
+      /* the sharper strip fading in; once in, the small one let go */
+      let mixS = maps.lightsS2 ? stripS.mix() : 0;
+      if (mixS >= 1) { gl.deleteTexture(maps.lightsS); maps.lightsS = maps.lightsS2; maps.lightsS2 = null; mixS = 0; }
+      gl.uniform1f(u.uStripMix, mixS);
       gl.uniformMatrix3fv(u.uSkyM, false, new Float32Array(SK)); gl.uniform1f(u.uStarA, 1);
       /* how thick the field is: the door's sparse sky at rest, filling in as the flight gathers speed */
       { const q = Math.min(1, Math.max(0, (Math.abs(s.v) - 0.03) / 0.6)); gl.uniform1f(u.uDens, q * q * (3 - 2 * q)); }
@@ -1222,7 +1280,7 @@ export function createVoyage(under) {
       bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
       bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
       bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
-      bind(11, (DOOR3D && maps.lightsS) || blank, u.uLightsS);
+      bind(11, (DOOR3D && maps.lightsS) || blank, u.uLightsS); bind(15, maps.lightsS2 || blank, u.uLightsS2);
       bind(12, fields.clouds || blank, u.uCloudF); bind(13, fields.cloudsN || blank, u.uCloudFN); bind(14, glowT || blank, u.uGlow);
       /* the docs' flight: the Milky Way, and the constellations lighting */
       const cs = s.cstars || [], n = Math.min(64, cs.length);
