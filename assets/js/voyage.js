@@ -1139,6 +1139,7 @@ export function createVoyage(under) {
   const load = (key) => fetchOnce(TEX[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => inTurn(() => {
+      const t = upload(key, bm);
       maps[key] = t; dims[key] = [bm.width, bm.height];
       /* a clouds map's slab field, made with it (cloudField), where the flight can be asked for its rich Earth */
       if (DOOR3D && (key === "clouds" || key === "cloudsN")) {
