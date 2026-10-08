@@ -593,7 +593,9 @@ export function wirePlanets(door, onGo) {
       const sync = () => { const stop = orbits3d.some((r) => r.hover) || p.classList.contains("chosen") || reduced; rec.anims.forEach((x) => (stop ? x.pause() : x.play())); };
       const hold = (v) => () => { rec.hover = v; orbits3d.forEach((r) => r.sync()); };
       p.addEventListener("pointerenter", hold(true)); p.addEventListener("pointerleave", hold(false));
-      p.addEventListener("focus", hold(true)); p.addEventListener("blur", hold(false));
+      /* focus holds the system as a pointer does, but only focus that shows (the keyboard's): the focus a journey back
+         gives the planet it came from would otherwise hold everything until the next click */
+      p.addEventListener("focus", () => { if (p.matches(":focus-visible")) hold(true)(); }); p.addEventListener("blur", hold(false));
       new MutationObserver(sync).observe(p, { attributes: true, attributeFilter: ["class"] });
       rec.sync = sync;
       return rec;
