@@ -1,0 +1,149 @@
+# GitLab is where orbit-site is developed: branches, merge requests and
+# the dev -> main promotion happen here, and this file is the CI that
+# gates them. GitHub tomlawesome/orbit-site is a push mirror GitLab updates
+# after every merge (configured by the owner in the project settings, not
+# here), and GitHub Pages serves `main` from what arrives: the mirror push
+# is the release. GitHub keeps CodeQL. The model is in the
+# gitlab-first-migration skill; the plan is docs/plans/gitlab-migration.md.
+#
+# Runner lanes (ai/agent-infra#3): `light` is 4 CPU / 6 GB, one hour.
+# Nothing here needs Docker or `big`.
+
+stages:
+  - lint
+  - live
+  - maintenance
+
+default:
+  tags: [light]
+  interruptible: true
+
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    # Tags publish nothing here: Pages serves a branch.
+    - if: $CI_COMMIT_TAG
+      when: never
+    # A scheduled pipeline is the docs-import lane or the Renovate lane.
+    # `import_docs` and `renovate` are the only jobs that opt in, so a
+    # schedule without its variable would make a pipeline with no jobs;
+    # refusing it here says why.
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # A branch with an open merge request is tested by that merge request.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    # Pushes start a pipeline on the long-lived branches only; a working
+    # branch's first push would otherwise run twice (orbit #829).
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+.not_scheduled: &not_scheduled
+  if: $CI_PIPELINE_SOURCE == "schedule"
+  when: never
+
+variables:
+  # Docker Hub through the group dependency proxy, pinned by digest;
+  # Renovate bumps them (renovate.json, the regex manager).
+  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:22-bookworm@sha256:87a4f951f28b85d189df365d24c479d3bdb70be77c1ff5c9029db2ef67e251ac
+  # Microsoft's own registry, not proxied. Its tag names the playwright
+  # version the `live` job installs; the two must agree.
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+  PLAYWRIGHT_VERSION: "1.63.0"
+
+# ---------------------------------------------------------------- lint --
+# Every module parses, every file the pages name exists, the docs index
+# is whole, nothing stray at the root. tools/ci/lint.sh.
+lint:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - sh tools/ci/lint.sh
+
+# ---------------------------------------------------------------- live --
+# The site served as Pages serves it, visited in Firefox: the door, each
+# landing, a docs page, the 404; nothing thrown, nothing missing. This is
+# the gate's live check and is never optional, manual or allowed to fail
+# (new-project skill: live testing is not optional, owner 2026-09-19).
+live:journey:
+  stage: live
+  image:
+    name: $PLAYWRIGHT_IMAGE
+  needs: [lint]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    BROWSER: firefox
+  script:
+    - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
+    - PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright" node tools/ci/journey.mjs
+
+# --------------------------------------------------------- maintenance --
+# The docs, imported: every night the markdown in Orbit's repositories is
+# fetched and set as the site's own pages, and what changed is committed
+# to `main` so Pages serves it the same night (owner decision 2026-10-08,
+# docs/plans/gitlab-migration.md decision (a)). Replaces GitHub's
+# import-docs.yml, which was a second writer of `main`.
+#
+# The push uses ORBIT_SITE_PUSH_TOKEN, a project access token the owner
+# created (role Developer, scope write_repository, Masked + Protected)
+# whose bot user is allowed to push to `main` in the protected-branch
+# settings. Nothing here sets it. The schedule runs on `main` with
+# IMPORT_DOCS=true.
+import_docs:
+  stage: maintenance
+  image: $NODE_IMAGE
+  interruptible: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
+  variables:
+    GIT_DEPTH: 1
+  script:
+    - test -n "${ORBIT_SITE_PUSH_TOKEN:-}" || { echo "ORBIT_SITE_PUSH_TOKEN is not set -- is main protected and the variable protected?"; exit 1; }
+    - npm i --no-save --no-package-lock --no-audit --no-fund marked@18 sharp@0.34
+    - node tools/import-docs.mjs
+    - rm -rf node_modules
+    - git add assets/docs assets/img/launcher
+    - |
+      if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+      git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
+        commit -m "Docs: imported from the repositories"
+      # the token goes to git through a credential helper, never into the
+      # URL or the job log
+      git -c credential.helper= \
+          -c 'credential.helper=!f() { echo "username=oauth2"; echo "password=$ORBIT_SITE_PUSH_TOKEN"; }; f' \
+          push "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:main
+
+# Renovate, weekly, on a schedule the owner created on `dev` with
+# RENOVATE=true and RENOVATE_TOKEN Masked + Protected. renovate.json has
+# what it watches.
+renovate:
+  stage: maintenance
+  image:
+    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.83.2@sha256:c1cb952b2e14a112d0d0c61987a10f60a2626fe9b9c1504436be46a17bd123bc
+    pull_policy: if-not-present
+  timeout: 1h
+  interruptible: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
+  variables:
+    GIT_DEPTH: 1
+    RENOVATE_PLATFORM: gitlab
+    RENOVATE_ENDPOINT: $CI_API_V4_URL
+    RENOVATE_AUTODISCOVER: "false"
+    RENOVATE_REPOSITORIES: $CI_PROJECT_PATH
+    RENOVATE_CONFIG_FILE: $CI_PROJECT_DIR/renovate.json
+    RENOVATE_ONBOARDING: "false"
+    RENOVATE_REQUIRE_CONFIG: "optional"
+    LOG_LEVEL: info
+  script:
+    - renovate
