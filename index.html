@@ -9,7 +9,7 @@
   <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Orbit — everything in your orbit, on track</title>
-  <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. One container, one command to install." />
+  <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. Three containers, one command to install." />
   <meta name="theme-color" content="#05070d" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="icon" href="assets/img/icon-192.png" type="image/png" sizes="192x192" />
@@ -192,7 +192,6 @@
       <div class="keyrow">closer = sooner</div>
       <div class="keyrow">bigger = costlier</div>
       <div class="keyrow">belt = documents attached</div>
-      <div class="keyrow">the sky's weather = your workload</div>
     </aside>
 
     <!-- the inbox: the relay, then the lanes -->
@@ -218,7 +217,7 @@
         <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
         <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
       </div>
-      <p class="from"><a href="install.html">what one line does →</a></p>
+      <p class="from"><a href="index.html#docs/readme/quick-start">what one line does →</a></p>
     </aside>
 
     <section class="hero" id="hero">
@@ -342,7 +341,7 @@
       <p class="theline"><code data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copy"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button></p>
       <p class="made">Designed by a human, written by Claude.</p>
     </div>
-    <p class="credit"><a href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Jupiter and Saturn's rings from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a href="https://svs.gsfc.nasa.gov/4720/" title="The Moon: NASA's Scientific Visualization Studio, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>
+    <p class="credit"><a href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Jupiter from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a href="https://photojournal.jpl.nasa.gov/catalog/PIA08389" title="Saturn's rings from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">rings</a> · <a href="https://svs.gsfc.nasa.gov/4720/" title="The Moon: NASA's Scientific Visualization Studio, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
   <div class="pad docs" id="docspad" hidden>
@@ -469,9 +468,9 @@
           <span class="kicker centre">Around your household</span>
           <h2 class="centre">Shared, private, and yours to shape.</h2>
           <div class="tiles">
-            <div class="tile"><span class="people" aria-hidden="true"><i style="--c:#d8b45a">A</i><i style="--c:#a78bfa">J</i><i style="--c:#4ade80">M</i></span><h3>Share the load</h3><p>Add the people you live with by name. No invitations, no email addresses exposed.</p></div>
+            <div class="tile"><span class="people" aria-hidden="true"><i style="--c:#d8b45a">A</i><i style="--c:#a78bfa">J</i><i style="--c:#4ade80">M</i></span><h3>Share the load</h3><p>Add the people you live with: by name if they already have an Orbit account, or by an invitation sent to their email.</p></div>
             <div class="tile"><span class="glyph" aria-hidden="true"><i style="--c:#f0b429"></i><i style="--c:#8fb8ff"></i><i style="--c:#4ade80"></i><i style="--c:#f87171"></i></span><h3>Sections that fit</h3><p>Home, Vehicles, Devices and Services to begin with. Add, rename, reorder and recolour your own.</p></div>
-            <div class="tile"><span class="glyph swatch" aria-hidden="true"><i style="--c:#0b1226"></i><i style="--c:#f4efe6"></i><i style="--c:#d8b45a"></i></span><h3>Make it yours</h3><p>Light or dark, five colourways, three text sizes.</p></div>
+            <div class="tile"><span class="glyph swatch" aria-hidden="true"><i style="--c:#0b1226"></i><i style="--c:#f4efe6"></i><i style="--c:#d8b45a"></i></span><h3>Make it yours</h3><p>Five themes, four text sizes.</p></div>
             <div class="tile"><span class="glyph line" aria-hidden="true"><i></i><i></i><i></i></span><h3>A history for everything</h3><p>What was done and when, reminders before it's due, and its documents, stored encrypted.</p></div>
             <div class="tile"><span class="glyph phone" aria-hidden="true"><i></i></span><h3>On your home screen</h3><p>Installs like an app and can notify you. Your data stays on your server, not copied onto the phone.</p></div>
             <div class="tile"><span class="glyph lock" aria-hidden="true"><i></i></span><h3>Private by design</h3><p>Your own sign-in, or the identity provider you already use. Nothing is shared beyond your household.</p></div>
@@ -486,8 +485,8 @@
             <p>Three containers on a Linux machine of your own, set up by one command. Nothing exotic to learn, nothing to babysit.</p>
             <dl class="spec">
               <div><dt>You bring</dt><dd>A Linux host with Docker and a domain with HTTPS. Sign in with Orbit's own accounts, or with a provider you already use (any OpenID Connect, such as Authentik) if you would rather.</dd></div>
-              <div><dt>It runs</dt><dd>Orbit itself and PostgreSQL&nbsp;18 for your records. That is all it needs.</dd></div>
-              <div><dt>If you like</dt><dd>ClamAV to check every upload before it is kept (it wants about 4&nbsp;GB of memory of its own), email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
+              <div><dt>It runs</dt><dd>Orbit itself, PostgreSQL&nbsp;18 for your records, and ClamAV to check every upload before it is kept. That is all it needs. ClamAV wants about 4&nbsp;GB of memory of its own; an administrator can turn scanning off.</dd></div>
+              <div><dt>If you like</dt><dd>Email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
               <div><dt>Your data</dt><dd>On your own disk: records in the database, documents encrypted at rest.</dd></div>
               <div><dt>Updates</dt><dd>Run the installer again. Every release is pinned to an exact image, and your settings carry over.</dd></div>
             </dl>
