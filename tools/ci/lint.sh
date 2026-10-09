@@ -29,6 +29,21 @@ if [ -f assets/docs/index.json ]; then
   ' || fail=1
 fi
 
+echo "== the imported docs carry no script"
+# the stored pages are what Pages serves; a handler or script tag here would
+# run on every visitor, whatever the importer let through
+node -e '
+  const fs = require("fs");
+  const bad = [/<[a-z][^>]*\son[a-z]+\s*=/i, /<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i,
+    /(href|src)\s*=\s*["\x27]?\s*(javascript|vbscript|data):/i];
+  const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
+  for (const f of files) {
+    for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
+      if (bad.some((re) => re.test(s.html || ""))) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
+    }
+  }
+' || fail=1
+
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
 for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
   [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
