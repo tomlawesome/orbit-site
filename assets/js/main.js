@@ -570,6 +570,9 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
     navigator.clipboard?.writeText(el.dataset.copy).then(() => {
       el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = "copied";
       setTimeout(() => { delete el.dataset.done; if (el.tagName !== "CODE") el.textContent = was; }, 1600);
+    }).catch(() => {
+      /* a refused write says so, rather than failing silently */
+      if (el.tagName !== "CODE") { el.textContent = "not copied"; setTimeout(() => { el.textContent = was; }, 1600); }
     });
   });
 });

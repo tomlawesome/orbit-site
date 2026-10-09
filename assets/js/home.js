@@ -535,8 +535,4 @@ export function mountHome(skyCams) {
   document.addEventListener("pointerdown", (e) => { if (armedBody && !e.target.closest(".body-link") && !e.target.closest("#body-callout")) hideBodyCallout(); });
   addEventListener("scroll", () => { if (armedBody) hideBodyCallout(); }, { passive: true });
   document.addEventListener("click", (e) => { if (!e.target.closest("#account") && !e.target.closest("#account-orb")) $("#account").classList.remove("open"); });
-  $$("[data-copy]").forEach((b) => b.addEventListener("click", () => {
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(b.dataset.copy).then(() => { b.dataset.done = "1"; b.textContent = "copied"; setTimeout(() => { delete b.dataset.done; b.textContent = "copy"; }, 1600); }).catch(() => {});
-  }));
 }
