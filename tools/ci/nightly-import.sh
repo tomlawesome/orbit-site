@@ -1,0 +1,78 @@
+#!/bin/sh
+# The nightly docs import, as a merge request into main that merges itself
+# once its pipeline passes (owner decision 13a, 2026-10-09). Nobody pushes
+# to main: the import pushes its own branch, opens the merge request, and
+# asks GitLab to merge it when the lint and the live journey are green, so
+# every import is tested before Pages serves it. A run with nothing new
+# does nothing. An older import merge request still open is closed first;
+# the new one carries everything it had.
+#
+# Runs in the `import_docs` job, from a schedule on main. Needs
+# ORBIT_SITE_IMPORT_TOKEN: a project access token, role Maintainer (to
+# merge into main), scopes api and write_repository, held as a Masked +
+# Protected CI/CD variable. Pushes go through a git credential helper and
+# API calls read the token from a header file, so it is never in a URL, an
+# argument list or the log.
+#
+#   DRY_RUN=1 sh tools/ci/nightly-import.sh   import and report, write nothing
+set -eu
+cd "$(dirname "$0")/../.."
+
+: "${CI_API_V4_URL:?}" "${CI_PROJECT_ID:?}" "${CI_SERVER_HOST:?}" "${CI_PROJECT_PATH:?}"
+: "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main and the variable protected?}"
+DRY_RUN=${DRY_RUN:-}
+
+umask 077
+hdr=$(mktemp); trap 'rm -f "$hdr"' EXIT
+printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
+api() { m=$1; p=$2; shift 2; curl -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@"; }
+json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
+
+echo "== import"
+if [ ! -d node_modules/marked ]; then
+  npm i --no-save --no-package-lock --no-audit --no-fund marked@18 sharp@0.34 >/dev/null
+fi
+node tools/import-docs.mjs
+rm -rf node_modules
+git add assets/docs assets/img/launcher
+if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+git diff --cached --stat | tail -1
+
+stamp=$(date -u +%Y%m%d-%H%M)
+branch="docs/import-$stamp"
+
+echo "== older import merge requests"
+old=$(api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
+  | json 'for (const m of j) if (m.source_branch.startsWith("docs/import-")) console.log(m.iid)')
+for iid in $old; do
+  echo "   closing !$iid (superseded by $branch)"
+  [ -n "$DRY_RUN" ] || api PUT "/merge_requests/$iid" --data-urlencode "state_event=close" >/dev/null
+done
+
+if [ -n "$DRY_RUN" ]; then echo "DRY_RUN: would push $branch and open a merge request into main"; git reset -q; exit 0; fi
+
+echo "== push $branch"
+git checkout -q -b "$branch"
+git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
+  commit -q -m "Docs: imported from the repositories"
+git -c credential.helper= \
+    -c 'credential.helper=!f() { echo "username=oauth2"; echo "password=$ORBIT_SITE_IMPORT_TOKEN"; }; f' \
+    push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/$branch"
+
+echo "== merge request"
+iid=$(api POST "/merge_requests" \
+  --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
+  --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
+  --data-urlencode "remove_source_branch=true" \
+  --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass." \
+  | json 'console.log(j.iid)')
+echo "   !$iid"
+
+# Auto-merge can only be set once the merge request's pipeline exists.
+for i in $(seq 1 30); do
+  if api PUT "/merge_requests/$iid/merge" --data-urlencode "auto_merge=true" >/dev/null 2>&1; then
+    echo "   set to merge when the pipeline passes"; exit 0
+  fi
+  sleep 10
+done
+echo "could not set !$iid to merge itself; it is open for a maintainer"; exit 1

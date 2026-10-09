@@ -24,6 +24,8 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 ## Progress
 
+- 2026-10-09: !1 (CI, scaffolding) and !3 (GitHub main's last import, back-merged) merged into `dev`. GitHub's `import-docs.yml` disabled by the owner. Owner settings done: default branch `dev`, `dev` and `main` protected, pipelines must succeed, merge commits, 60-minute timeout, push mirror added (first push refused by GitHub: deploy key to check).
+- 2026-10-09, decision 13a: the runner cannot reach GitLab over SSH and the owner will not open it, so the import cannot push with a deploy key (9a). It opens a merge request into `main` that merges itself when the gate passes, with a Maintainer project access token, `ORBIT_SITE_IMPORT_TOKEN`.
 - 2026-10-08: imported by the owner as `ai/orbit-site` (project id 57). Every branch at the same commit as GitHub, issues #1 and #2, all 10 labels. Nothing else writes GitHub's `main` (the session that pushed to it is archived).
 
 ## Plan
@@ -34,7 +36,7 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
 **Step 2 — import.** Owner creates `ai/orbit-site` with GitLab's GitHub importer (repo, branches, issues, labels). The agent cannot: the importer needs a GitHub token handed to GitLab. Milestone `M1 — Foundation on GitLab` is created on GitLab afterwards (the agent credential cannot create milestones on GitHub).
 
-**Step 3 — owner settings on GitLab.** Default branch `dev`; `dev` and `main` protected; pipelines must succeed; merge commits; delete source branch on merge; a push mirror to `ssh://git@github.com/tomlawesome/orbit-site.git`, protected branches only, keep divergent refs, with the GitLab-generated key added on GitHub as a write deploy key (as orbit-launcher). Pipeline schedules: nightly `IMPORT_DOCS=true` on `main`, weekly `RENOVATE=true` on `dev`. Variables, Masked + Protected: `RENOVATE_TOKEN`; `ORBIT_SITE_PUSH_TOKEN`, a project access token (role Developer, scope `write_repository`) whose bot user is added to `main`'s allowed-to-push list.
+**Step 3 — owner settings on GitLab.** Default branch `dev`; `dev` and `main` protected; pipelines must succeed; merge commits; delete source branch on merge; a push mirror to `ssh://git@github.com/tomlawesome/orbit-site.git`, protected branches only, keep divergent refs, with the GitLab-generated key added on GitHub as a write deploy key (as orbit-launcher). Pipeline schedules: nightly `IMPORT_DOCS=true` on `main`, weekly `RENOVATE=true` on `dev`. Variables, Masked + Protected: `RENOVATE_TOKEN`; `ORBIT_SITE_IMPORT_TOKEN`, a project access token (role Maintainer, scopes `api` and `write_repository`); `main` stays push "No one" (decision 13a).
 
 **Step 4 — disable the reverse writer, then prove the mirror.** Delete `.github/workflows/import-docs.yml` in the first GitLab MR (the GitLab job replaces it), merge something small, watch it reach GitHub and Pages redeploy.
 
