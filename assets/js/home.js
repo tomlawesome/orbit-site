@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -495,7 +495,7 @@ function wireCreate() {
   let kind = "service";
   types.forEach((b) => b.addEventListener("click", () => { kind = b.dataset.type; types.forEach((o) => o.setAttribute("aria-pressed", String(o === b))); }));
   const due = $("#f-date");
-  due.min = today.toISOString().slice(0, 10);
+  due.min = ymd(today);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const title = $("#f-name").value.trim();
