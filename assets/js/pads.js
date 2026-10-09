@@ -134,7 +134,7 @@ export function createDocs(pad) {
   function load() {
     if (loading) return loading;
     /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
-    loading = fetch(DOCS_DIR + "index.json").then((r) => r.json()).then((data) => chore(() => {
+    loading = fetch(DOCS_DIR + "index.json").then((r) => { if (!r.ok) throw new Error(`index.json: ${r.status}`); return r.json(); }).then((data) => chore(() => {
       DOCS = data.sources; generated = data.generated; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
         GROUPS[d.name] = { c: d.c, slug: d.slug };
@@ -143,7 +143,10 @@ export function createDocs(pad) {
       keys.innerHTML = KEYS.map((h) => ENTRIES.find((e) => e.href === h)).filter(Boolean).map((e) => `<a class="key" href="${e.href}" style="--c:${GROUPS[e.g].c}">${esc(e.t)}</a>`).join("");
       if (stamp) stamp.textContent = generated ? `charted from the repositories · ${when(generated)}` : "";
       drawChart(); render();
-    }, 60, "docs")).catch(() => { results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
+    }, 60, "docs")).catch(() => {
+      /* a failed fetch is not remembered: the next look tries again */
+      loading = null;
+      results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
     return loading;
   }
 
