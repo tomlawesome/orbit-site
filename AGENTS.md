@@ -62,6 +62,12 @@ only; `dev` picks them up by back-merge after a promotion.
     node tools/ci/serve.mjs                   # the site at :8787, as Pages serves it
     PLAYWRIGHT_ROOT=<playwright package dir> node tools/ci/journey.mjs   # Firefox
 
+The gate runs Firefox headed under Xvfb with software GL, the only way it gets
+WebGL here (headless it has none and never draws a world): prefix both
+`journey.mjs` and `tools/ci/upload-test.mjs` with
+`HEADED=1 WEBGL=required LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a` to run them as
+the gate does.
+
 The journey is the gate's live check and is never optional. Locally,
 playwright comes from a sibling checkout (orbit's
 `node_modules/.pnpm/playwright@<version>/node_modules/playwright`); CI

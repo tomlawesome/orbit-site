@@ -74,6 +74,11 @@ lint:
 # landing, a docs page, the 404; nothing thrown, nothing missing. This is
 # the gate's live check and is never optional, manual or allowed to fail
 # (new-project skill: live testing is not optional, owner 2026-09-19).
+# Firefox runs headed under Xvfb with Mesa's software GL: headless, it has
+# no WebGL and never draws a world, so Firefox-only GPU bugs passed (#4,
+# #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
+# band-upload test then compares banded and whole uploads byte for byte in
+# Chromium and Firefox.
 live:journey:
   stage: live
   image:
@@ -84,9 +89,14 @@ live:journey:
     - when: on_success
   variables:
     BROWSER: firefox
+    HEADED: "1"
+    WEBGL: required
+    LIBGL_ALWAYS_SOFTWARE: "1"
   script:
     - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
-    - PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright" node tools/ci/journey.mjs
+    - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
+    - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
