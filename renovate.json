@@ -1,0 +1,60 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": [
+    "Renovate for ai/orbit-site on gitlab.tomlawson.io, run by the `renovate` job in .gitlab-ci.yml on a weekly schedule. The site has no package manifest: what it depends on is the pipeline's own images and the two npm packages the docs import installs, plus the GitHub Actions on the mirror (CodeQL). Orbit's renovate.json is the model; this is the small subset that applies here.",
+    "The dependency dashboard is off (owner, 2026-09-08, orbit): a bot-written issue with no done state."
+  ],
+  "timezone": "Europe/London",
+  "schedule": ["after 5:00am and before 6:15am on monday"],
+  "baseBranchPatterns": ["dev"],
+  "labels": ["dependencies"],
+  "semanticCommits": "disabled",
+  "dependencyDashboard": false,
+  "pinDigests": true,
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 0,
+  "osvVulnerabilityAlerts": true,
+  "enabledManagers": ["gitlabci", "github-actions", "custom.regex"],
+  "customManagers": [
+    {
+      "description": "The pipeline pins its job images in the variables block (NODE_IMAGE, PLAYWRIGHT_IMAGE) and the jobs reference them as $NODE_IMAGE, which the gitlabci manager cannot see through. The first pattern strips the dependency-proxy prefix; the second is for a pin that names its registry directly (the leading-$ exclusion tells them apart). Same as orbit's.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "matchStrings": [
+        "_IMAGE:\\s+\\$\\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\\}/(?<depName>[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        "_IMAGE:\\s+(?<depName>(?!\\$)[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "PLAYWRIGHT_VERSION must match the PLAYWRIGHT_IMAGE tag; this bumps the version so both land in one merge request.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "matchStrings": ["PLAYWRIGHT_VERSION:\\s+\"(?<currentValue>[0-9.]+)\""],
+      "depNameTemplate": "playwright",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "description": "The two npm packages the docs import installs inline (`npm i marked@18 sharp@0.34`), pinned to a major or minor in the job script.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "matchStrings": ["\\s(?<depName>marked|sharp)@(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
+    }
+  ],
+  "vulnerabilityAlerts": { "enabled": true, "schedule": ["at any time"] },
+  "packageRules": [
+    {
+      "description": "Every non-major update lands as one merge request a week; majors are reviewed on their own.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "non-major updates"
+    },
+    {
+      "description": "Renovate's own image: 44.63.0 and 44.64.0 do not start (orbit's renovate.json has why).",
+      "matchPackageNames": ["renovate/renovate"],
+      "allowedVersions": "!/^44\\.6[34]\\.0$/"
+    }
+  ]
+}
