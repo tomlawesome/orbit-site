@@ -20,7 +20,7 @@ import { docsFlight } from "./assets/js/flight.js";
 import { openChores } from "./assets/js/chores.js";
 openChores();
 const e = createFlight(document.getElementById("c"));
-await e.warmDocs();
+await e.warm();
 const P = docsFlight({ rect: { x: 0, y: 0, w: innerWidth, h: innerHeight }, geometry: { W: 1600, H: 900, field: { dots: [], arcs: [] }, cons: [] } });
 window.draw = () => { e.start(P, { at: 4790 }); return true; };
 window.ready = true;
