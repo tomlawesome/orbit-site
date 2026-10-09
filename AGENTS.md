@@ -75,9 +75,7 @@ refuses both.
 
 ## Approved third-party content
 
-- NASA imagery (Black Marble, Blue Marble, Cassini, LRO, Deep Star Maps):
+- NASA imagery (Black Marble, Blue Marble, Cassini, LRO):
   public domain, credited in `README.md` and `LICENSE`.
-- ESA Gaia DR2 in the Deep Star Maps: CC BY-NC 3.0 IGO, which the
-  noncommercial `LICENSE` is consistent with; the credit line is #1.
 - `marked`, `sharp` (import tool only), `playwright` (CI only): MIT, Apache-2.0,
   Apache-2.0. None ships to a visitor.
