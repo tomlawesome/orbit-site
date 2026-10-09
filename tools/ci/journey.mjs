@@ -162,18 +162,33 @@ const landings = async (prefix) => {
     const code = page.locator("#installpad code[data-copy]");
     const button = page.locator("#installpad button.copy");
     await code.click();
-    for (const wait of [200, 1800]) {
-      await page.waitForTimeout(wait);
-      const n = await page.evaluate(() => (window.__copied || []).length);
-      if (n !== 1) throw new Error(`${n} copies after clicking the command line (${wait} ms), want 1`);
-      const text = await code.textContent();
-      if (!text.includes("curl -fsSL")) throw new Error(`the command line reads ${JSON.stringify(text)} (${wait} ms), want the command`);
-    }
+    /* poll for the value the event should produce, not a fixed time: a
+       freezing page (headless Chromium, 2-4 s) makes fixed waits unreliable */
+    const until = async (where, read, ok, ms = 6000) => {
+      const t0 = Date.now();
+      let v = await read();
+      while (!ok(v) && Date.now() - t0 < ms) { await where.waitForTimeout(100); v = await read(); }
+      return v;
+    };
+    const copies = () => page.evaluate(() => (window.__copied || []).length);
+    /* exactly one write for the one click, and it stays one */
+    const n = await until(page, copies, (v) => v >= 1);
+    if (n !== 1) throw new Error(`${n} copies after clicking the command line, want 1`);
+    /* the line keeps its command while the button says "copied" ... */
+    const during = await code.textContent();
+    if (!during.includes("curl -fsSL")) throw new Error(`the command line reads ${JSON.stringify(during)} just after the click, want the command`);
+    /* ... and after the restore window, which ends when the button reads "copy" again */
+    const restored = await until(page, () => button.textContent(), (t) => t === "copy");
+    if (restored !== "copy") throw new Error(`the button reads ${JSON.stringify(restored)} after the restore window, want "copy"`);
+    const n2 = await copies();
+    if (n2 !== 1) throw new Error(`${n2} copies after the restore window, want 1`);
+    const text = await code.textContent();
+    if (!text.includes("curl -fsSL")) throw new Error(`the command line reads ${JSON.stringify(text)} after the restore window, want the command`);
     await button.click();
-    await page.waitForTimeout(200);
-    if ((await button.textContent()) !== "copied") throw new Error(`the button reads ${JSON.stringify(await button.textContent())} just after the click, want "copied"`);
-    await page.waitForTimeout(1800);
-    if ((await button.textContent()) !== "copy") throw new Error(`the button reads ${JSON.stringify(await button.textContent())} later, want "copy"`);
+    const copied = await until(page, () => button.textContent(), (t) => t === "copied");
+    if (copied !== "copied") throw new Error(`the button reads ${JSON.stringify(copied)} after the click, want "copied"`);
+    const back = await until(page, () => button.textContent(), (t) => t === "copy");
+    if (back !== "copy") throw new Error(`the button reads ${JSON.stringify(back)} later, want "copy"`);
     const refused = await ctx.newPage();
     try {
       refused.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
@@ -182,10 +197,10 @@ const landings = async (prefix) => {
       await refused.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
       const rb = refused.locator("#installpad button.copy");
       await rb.click();
-      await refused.waitForTimeout(200);
-      if ((await rb.textContent()) !== "not copied") throw new Error(`a refused copy reads ${JSON.stringify(await rb.textContent())}, want "not copied"`);
-      await refused.waitForTimeout(1800);
-      if ((await rb.textContent()) !== "copy") throw new Error(`a refused copy reads ${JSON.stringify(await rb.textContent())} later, want "copy"`);
+      const nc = await until(refused, () => rb.textContent(), (t) => t === "not copied");
+      if (nc !== "not copied") throw new Error(`a refused copy reads ${JSON.stringify(nc)}, want "not copied"`);
+      const rc = await until(refused, () => rb.textContent(), (t) => t === "copy");
+      if (rc !== "copy") throw new Error(`a refused copy reads ${JSON.stringify(rc)} later, want "copy"`);
     } finally { await refused.close(); }
   });
   /* A failed docs index is retried: the panel's way back to the door, then a
@@ -264,12 +279,23 @@ const landings = async (prefix) => {
         document.querySelector("#door .planet[data-section=install]").click();
         requestAnimationFrame(() => history.back());
       });
-      /* a flight that ignored Back lands within this wait, and the pad shows */
-      try { await p.locator("#installpad").waitFor({ state: "visible", timeout: 25000 }); } catch { /* none: Back was honoured */ }
-      if (await p.locator("#installpad").isVisible()) throw new Error(`#installpad is open after Back (hash ${JSON.stringify(await p.evaluate(() => location.hash))})`);
-      if (!(await p.locator("#door").isVisible())) throw new Error("#door is not shown after Back");
-      const hash = await p.evaluate(() => location.hash);
-      if (hash !== "") throw new Error(`location.hash is ${JSON.stringify(hash)} after Back, want ""`);
+      /* the click took effect: the pad opened (it shows at the click itself) */
+      try { await p.locator("#installpad").waitFor({ state: "visible", timeout: 2000 }); }
+      catch { throw new Error("the click on the install planet never opened #installpad, so Back mid-flight was not tested"); }
+      /* then Back is honoured: the pad closes and the door is shown. A flight
+         that ignored Back keeps the pad open (or lands on it), so this
+         times out and reports what it saw. Headless Chromium without WebGL takes
+         30-45 s to unwind the flight, so the wait is generous; it is only
+         spent in full when Back is ignored. */
+      const state = () => p.evaluate(() => {
+        const shown = (sel) => { const el = document.querySelector(sel); if (!el) return false; const r = el.getBoundingClientRect(), cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none"; };
+        return { pad: shown("#installpad"), door: shown("#door"), hash: location.hash };
+      });
+      const t0 = Date.now();
+      let seen = await state();
+      while (!(!seen.pad && seen.door) && Date.now() - t0 < 60000) { await p.waitForTimeout(100); seen = await state(); }
+      if (seen.pad || !seen.door) throw new Error(`after Back, within 60s: #installpad visible ${seen.pad}, #door visible ${seen.door}, location.hash ${JSON.stringify(seen.hash)}`);
+      if (seen.hash !== "") throw new Error(`location.hash is ${JSON.stringify(seen.hash)} after Back, want ""`);
     });
   });
 };
