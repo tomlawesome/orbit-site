@@ -5,6 +5,7 @@
  *
  *   node tools/ci/journey.mjs                 Firefox, site on :8787
  *   BROWSER=chromium node tools/ci/journey.mjs
+ *   HEADED=1 (headed, for Xvfb + software GL), WEBGL=required (no WebGL2 fails)
  *   SITE=http://127.0.0.1:8787/ node tools/ci/journey.mjs
  *
  * Needs playwright (the Playwright image in CI; locally PLAYWRIGHT_ROOT
@@ -37,7 +38,9 @@ if (!process.env.SITE) {
 }
 
 const problems = [];
-const browser = await playwright[BROWSER].launch();
+/* HEADED=1 runs the browser headed (the gate does so under Xvfb with software
+   GL, so Firefox has a WebGL2 to draw the worlds with) */
+const browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
 /* Each step opens its own tab, as a visitor arriving from a link does: a
    hash change inside one tab is a different path (the site flies between
    landings on a click, not on the address alone). */
@@ -105,6 +108,38 @@ const landings = async (prefix) => {
       await page.locator(pad).waitFor({ state: "visible", timeout: 60000 });
     });
   }
+  /* The world itself: its own context without reducedMotion (which shows
+     stills instead of the world). Where WebGL2 is missing this is skipped,
+     unless WEBGL=required, when it is a problem. */
+  await step("the install world draws", async () => {
+    const wctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    try {
+      const wpage = await wctx.newPage();
+      const messages = [];
+      let ready = () => {};
+      const readyP = new Promise((ok) => { ready = ok; });
+      wpage.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+      wpage.on("console", (m) => {
+        const text = m.text();
+        messages.push(text);
+        if (m.type() === "error") problems.push(`console.error: ${text}`);
+        if (text.includes("install: ready")) ready();
+      });
+      wpage.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
+      if (!(await wpage.evaluate(() => !!document.createElement("canvas").getContext("webgl2")))) {
+        if (process.env.WEBGL === "required") throw new Error(`no WebGL2 in ${BROWSER}: the worlds are never drawn`);
+        console.log("     (no WebGL2 here: the world is not drawn)");
+        return;
+      }
+      await wpage.goto(SITE + prefix + "#install", { waitUntil: "load" });
+      let timer;
+      const timedOut = new Promise((_, no) => { timer = setTimeout(() => no(new Error("the install world never logged 'install: ready' within 90s")), 90000); });
+      try { await Promise.race([readyP, timedOut]); } finally { clearTimeout(timer); }
+      await wpage.waitForTimeout(5000);
+      const fell = messages.filter((t) => t.includes("is drawn, not photographed") || t.includes("orbit: no map"));
+      if (fell.length) throw new Error(`a world fell back to drawn textures: ${fell[0]}`);
+    } finally { await wctx.close(); }
+  });
   await step(`a docs page opens${prefix ? " (preview)" : ""}`, async () => {
     await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
