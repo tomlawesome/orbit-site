@@ -597,7 +597,10 @@ body.farewell #dusk .farewell{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){
   .sky .far,.sky .near,#door .dsky .far,#door .dsky .near,#dusk .dsky .far,#dusk .dsky .near,#door .dsky .tws,#dusk .dsky .tws,.rays .sway1,.rays .sway2,
   .world .breath,.shimmer,.dial.arrive,.dial.bloom,.dial .ping,.dial .breathe,.inbox-orb.waiting svg,
-  .nstar .glint,.mark-row .tr,.loginchrome .lockup .glyph .tr,#dusk .afterglow,#dusk .belt{animation:none}
+  .nstar .glint,.mark-row .tr,.loginchrome .lockup .glyph .tr,#dusk .afterglow,#dusk .belt,
+  /* named by id because the rules that start them outrank this block: #dusk's own rules beat .shimmer and
+     .loginchrome … .tr above, and .planets .trdot and .dial.warn .danger come later at the same weight */
+  #door .planets .trdot,#dial.warn .danger,#dusk .shimmer,#dusk .lockup .glyph .tr{animation:none}
   .dial .ping{display:none}
   .rays .sway1,.rays .sway2{will-change:auto}
   #door,#door .loginchrome,.dialwrap,.minisys,.sky .cam{transition:none}
