@@ -7,7 +7,7 @@
  * whatever circle the flight gives the world each frame, so it moves exactly
  * as the flight's world does while its shading stays true: the cities on the
  * night side, the air lit along the limb, the sunlit crescent opening as the
- * camera climbs. Behind it, the Milky Way as Gaia saw it and the fine stars
+ * camera climbs. Behind it, the fine stars
  * (on the docs' flight, a galaxy in three dimensions is where it goes: seen
  * from outside, dived into, and rested in, its band across the sky as the
  * docs page shows it, the constellations lighting on it);
@@ -16,8 +16,7 @@
  * the door's own tone curve, grain.
  *
  * Imagery: NASA's Black Marble (city lights) and Blue Marble (land, clouds),
- * NASA Earth Observatory; the Milky Way: NASA/Goddard SVS, Gaia DR2:
- * ESA/Gaia/DPAC. Reduced to small maps for here (assets/img/flight).
+ * NASA Earth Observatory. Reduced to small maps for here (assets/img/flight).
  */
 
 import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
@@ -27,7 +26,7 @@ import { theDoorWeight, liveDoor } from "./capability.js";
 const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
 export const TEX = {
   lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
-  euro: IMG("flight/europe-lights.webp"), sky: IMG("install/galaxy-2k.webp"), moon: IMG("install/moon.webp"),
+  euro: IMG("flight/europe-lights.webp"), moon: IMG("install/moon.webp"),
   /* finer, about where the door looks (NEAR) */
   lightsN: IMG("door/lights-near.webp"), cloudsN: IMG("door/clouds-near.webp"), dayN: IMG("door/land-near.webp"),
 };
@@ -179,8 +178,8 @@ export function cityGlow(gl, prog, lights, w, h, lightsN, blank) {
 }
 
 /* the scene's uniforms, each with the part of the scene that reads it (a door-only Earth declares only its own; the
-   flight declares them all, in the order they always came in, so its source is what it was). uSky and uEarthA ride on
-   the Earth's lines, as they always did: declared, and unread by the door, they cost it nothing */
+   flight declares them all, in the order they always came in, so its source is what it was). uEarthA rides on
+   the Earth's lines, as it always did: declared, and unread by the door, it costs it nothing */
 const UNIFORMS = [
   ["common", `uniform vec2 uRes; uniform float uPx, uTime;
 /* which of the RICH programs' passes is drawn in place of the scene (0: none; PARTS.passes) */
@@ -189,7 +188,7 @@ uniform int uPass;`],
   ["earth", `uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
 uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
-uniform sampler2D uLights, uDay, uClouds, uEuro, uSky; uniform vec4 uEuroBox;
+uniform sampler2D uLights, uDay, uClouds, uEuro; uniform vec4 uEuroBox;
 /* the finer maps about where the door looks (lights, clouds, land: which are there, uHasN), the box they cover; the
    cloud slab's strength (0: none) */
 uniform sampler2D uLightsN, uCloudsN, uDayN; uniform vec4 uNearBox, uHasN; uniform float uCloudK;
@@ -252,10 +251,8 @@ vec3 sky(vec2 css){
   float f=uRes.y/uPx*0.95;
   vec3 d=normalize(vec3((css.x-uRes.x/uPx*0.5)/f,(uRes.y/uPx*0.5-css.y)/f,1.0));
   vec3 s=uSkyM*d;
-  vec2 uv=vec2(atan(s.x,s.z)/TAU+0.5,0.5-asin(clamp(s.y,-1.0,1.0))/PI);
   /* the night itself: black, with only the faintest warmth of the galaxy's own light */
   vec3 c=vec3(0.0011,0.0010,0.0010);
-  if(uHas.w>0.5) c+=pow(texture(uSky,uv).rgb,vec3(2.2))*0.055;
   c+=stars(s,f*uPx)*0.16*uStarA;
   return c;
 }
@@ -1195,7 +1192,7 @@ export function createVoyage(under) {
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
-      loaded = Promise.all([...["sky", "lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
+      loaded = Promise.all([...["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
         .then(() => { allIn = true; });
       warming = Promise.all([made, loaded])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
@@ -1341,7 +1338,7 @@ export function createVoyage(under) {
       gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(door?.spinM || ID3)); gl.uniform1f(u.uCloudOff, door?.cloudOff || 0);
       /* the door's air at the door (its glows carry the rest), the flight's own as the world falls away */
       { const k = door ? Math.min(1, Math.max(0, (w ? w.c : 1) / 0.35)) : 1; gl.uniform1f(u.uAirK, door ? door.air + (1 - door.air) * k * k * (3 - 2 * k) : 1); }
-      gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, maps.sky ? 1 : 0);
+      gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, 0);
       gl.uniform4f(u.uEuroBox, ...EURO); gl.uniform4f(u.uNearBox, ...NEAR);
       gl.uniform4f(u.uHasN, maps.lightsN ? 1 : 0, maps.cloudsN ? 1 : 0, maps.dayN ? 1 : 0, 0);
       gl.uniform1f(u.uCloudK, maps.clouds ? 1 : 0);
@@ -1371,7 +1368,7 @@ export function createVoyage(under) {
       gl.uniform1f(u.uPre, s.bloom != null && s.star !== false ? sm(2500, 3300, tu) : 0);
       gl.uniform1f(u.uBloom, s.bloom || 0); gl.uniform2f(u.uBloomPt, s.bloomPt?.[0] ?? W / 2, s.bloomPt?.[1] ?? H / 2);
       bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
-      bind(3, maps.euro || blank, u.uEuro); bind(4, maps.sky || blank, u.uSky);
+      bind(3, maps.euro || blank, u.uEuro);
       bind(10, sunTex || (sunTex = sunTexture(gl)), u.uSunT);
       bind(7, maps.lightsN || blank, u.uLightsN); bind(8, maps.cloudsN || blank, u.uCloudsN); bind(9, maps.dayN || blank, u.uDayN);
       bind(11, (live && maps.lightsS) || blank, u.uLightsS); bind(15, maps.lightsS2 || blank, u.uLightsS2);

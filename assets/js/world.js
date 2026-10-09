@@ -7,8 +7,7 @@
  * planet's map (assets/img/install/planet*.webp). Here it is flattened by its
  * spin, darkens towards the limb through a thin haze, and wears rings of
  * hundreds of ringlets that shade it and are shaded by it; a gold moon beyond,
- * and the galaxy behind (a photograph; painted on the GPU only if it cannot be
- * had). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
+ * and the galaxy behind (drawn here, on the GPU, once). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
  *
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
@@ -97,7 +96,7 @@ uniform vec3 uCam, uFwd, uRight, uUp, uSun;
 uniform mat3 uSpin, uTilt, uSkyM;
 uniform vec4 uMoon, uMoon2;
 uniform sampler2D uAlb, uSky, uRing, uMoonT;
-uniform float uHasMoon, uGalaxy, uGalK, uDust, uFocusD;
+uniform float uHasMoon, uDust, uFocusD;
 uniform int uDustN;
 uniform float uPartK;   /* the scene's resolution over the canvas's: a point of light keeps its light however coarse the drawing */
 uniform vec3 uVel;
@@ -155,9 +154,8 @@ vec3 sky(vec3 rd){
   vec2 uv2=vec2(fract(uv.x+0.5),uv.y), dx=dFdx(uv), dy=dFdy(uv), dx2=dFdx(uv2), dy2=dFdy(uv2);
   if(abs(dx2.x)<abs(dx.x))dx.x=dx2.x; if(abs(dy2.x)<abs(dy.x))dy.x=dy2.x;
   vec4 s=textureGrad(uSky,uv,dx,dy);
-  /* Gaia's Milky Way, its stars denser where the band is; or the drawn galaxy if it could not be had */
-  float dens=uGalaxy>0.5?clamp(dot(s.rgb,vec3(0.3,0.5,0.2))*2.5+0.12,0.0,1.0):s.a;
-  vec3 c=s.rgb*(uGalaxy>0.5?uGalK:0.5)+stars(d,dens)*0.09;
+  /* the drawn Milky Way, its stars denser where the band is */
+  vec3 c=s.rgb*0.5+stars(d,s.a)*0.09;
   float a=acos(clamp(dot(rd,uSun),-1.0,1.0));
   c+=vec3(1.0,0.97,0.9)*4000.0*smoothstep(0.0052,0.0046,a);
   return c;
@@ -489,7 +487,7 @@ function ringProfile(n) {
   return px;
 }
 
-/* a world's pictures: the planet's map, its rings, the moon, the galaxy (smaller on a small screen) */
+/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen) */
 function picturesOf(opts) {
   const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
   return {
@@ -497,15 +495,12 @@ function picturesOf(opts) {
     MAP: opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
     RINGS: opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href,
     MOON: opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href,
-    /* the galaxy behind is soft and dim: at 2k it cannot be told from 4k even on a dense screen (compared side by
-       side), and the flight already brings the 2k one, so it comes once, for everything */
-    GALAXY: opts.galaxy ?? new URL("../img/install/galaxy-2k.webp", import.meta.url).href,
   };
 }
 /** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */
 export function fetchWorld(opts = {}) {
   const p = picturesOf(opts);
-  for (const url of [p.MAP, p.RINGS, p.MOON, p.GALAXY]) fetchOnce(url).catch(() => {});
+  for (const url of [p.MAP, p.RINGS, p.MOON]) fetchOnce(url).catch(() => {});
 }
 
 export function createWorld(canvas, opts = {}) {
@@ -513,7 +508,7 @@ export function createWorld(canvas, opts = {}) {
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
-  const { small, MAP, RINGS, MOON, GALAXY } = picturesOf(opts);
+  const { small, MAP, RINGS, MOON } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
   /* a world's look: the map's hue turned by o.hue degrees (about the grey axis, in linear light), a little richer by
      o.sat; rings unless o.ringsOn is false; the haze tinted o.haze; graded by o.grade. One world can wear several
@@ -545,8 +540,7 @@ export function createWorld(canvas, opts = {}) {
   };
   /* in light where the GPU can draw in floats; straight to the screen where it cannot */
   const hdr = floatOK;
-  /* the galaxy's own painting (SKY) is only wanted if its photograph cannot be had: by far the largest shader here,
-     it is compiled then, not on every first visit (bake) */
+  /* the galaxy's own painting (SKY) is by far the largest shader here: it is compiled in bake */
   const P = {
     sky: null,
     render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
@@ -601,7 +595,7 @@ export function createWorld(canvas, opts = {}) {
   });
   const fb = (t) => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
 
-  /* the textures: the planet's map (loaded), the galaxy (baked), the rings (loaded; drawn until they come) */
+  /* the textures: the planet's map (loaded), the galaxy (drawn), the rings (loaded; drawn until they come) */
   let albT = null, SW = 1, SH = 1;
   let skyT = null, skyF = null;
   /* the drawn rings, no wider than this GPU's textures can be */
@@ -635,12 +629,7 @@ export function createWorld(canvas, opts = {}) {
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
       (e) => console.warn("orbit: the moon is drawn, not photographed", e));
-  let galT = null;
-  const loadGalaxy = fetchOnce(GALAXY)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => banded(img, "galaxy").then((t) => { galT = t; }),
-      (e) => console.warn("orbit: the galaxy is drawn, not Gaia's", e));
-  /* without the photograph: the galaxy painted, a strip a frame */
+  /* the galaxy painted, a strip a frame */
   const jobs = [];
   const STRIPS = 4;
   function paintSky() {
@@ -660,8 +649,8 @@ export function createWorld(canvas, opts = {}) {
   /* ready when the map is in and the galaxy is baked; resolves false if the map cannot be had */
   function bake() {
     if (!baking) baking = new Promise((res) => {
-      const step = () => { if (galT) skyDone = true; else { if (!P.sky) paintSky(); if (!skyDone) bakeSome(1); } if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
-      Promise.all([made, loadGalaxy]).then(([ok]) => (ok ? requestAnimationFrame(step) : res(false)));
+      const step = () => { if (!P.sky) paintSky(); if (!skyDone) bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
+      made.then((ok) => (ok ? requestAnimationFrame(step) : res(false)));
     });
     return baking;
   }
@@ -710,9 +699,9 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform3fv(u.uCam, v.cam); gl.uniform3fv(u.uFwd, v.fwd); gl.uniform3fv(u.uRight, v.right); gl.uniform3fv(u.uUp, v.up); gl.uniform3fv(u.uSun, v.sun);
       gl.uniformMatrix3fv(u.uSpin, false, m3(v.spin)); gl.uniformMatrix3fv(u.uTilt, false, m3(v.tilt)); gl.uniformMatrix3fv(u.uSkyM, false, m3(v.sky));
       gl.uniform4fv(u.uMoon, v.moon); gl.uniform4fv(u.uMoon2, v.moon2 || [0, 0, 0, 0]);
-      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform1f(u.uGalaxy, galT ? 1 : 0); gl.uniform1f(u.uGalK, v.galK ?? 0.35); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, L.HUE); gl.uniform1f(u.uRingK, L.RING_K); gl.uniform3fv(u.uHazeT, L.HAZE);
+      gl.uniform3fv(u.uVel, v.vel || [0, 0, 0]); gl.uniform1f(u.uDust, v.dust ?? 1); gl.uniform1f(u.uFocusD, v.focusD || 5); gl.uniform2f(u.uAlbSize, SW, SH); gl.uniformMatrix3fv(u.uHue, false, L.HUE); gl.uniform1f(u.uRingK, L.RING_K); gl.uniform3fv(u.uHazeT, L.HAZE);
       const G = L.GRADE; gl.uniform1f(u.uGradeK, G ? G[3] : 0); if (G) { gl.uniform3fv(u.uG0, G[0]); gl.uniform3fv(u.uG1, G[1]); gl.uniform3fv(u.uG2, G[2]); }
-      bind(0, albT, u.uAlb); bind(1, galT || skyT || ringT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
+      bind(0, albT, u.uAlb); bind(1, skyT || ringT, u.uSky); bind(2, ringT, u.uRing); bind(3, moonT || ringT, u.uMoonT); gl.uniform1f(u.uHasMoon, moonT ? 1 : 0);
     });
     if (!hdr) return;
     /* the bloom's steps and the film, one program (POST: uMode); a step's other maps read the one it reads, so none of
