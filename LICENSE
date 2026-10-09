@@ -5,7 +5,7 @@ Copyright (c) 2026 Tom Lawson. All rights reserved.
 This is a published website whose source is visible, not open source.
 Permission is to view the site as published, and nothing more, except as
 section 1 says. The pictures and the text it carries from other people
-keep their own terms (section 4).
+keep their own terms (section 3).
 
 
 1. WHAT YOU MAY DO
@@ -35,8 +35,9 @@ You may not:
 
 A company, firm, partnership or other business, a government or any part
 of one, and any organisation funded by the state, have no permission
-under section 1(b) at all, whether or not they charge anyone for
-anything. A registered charity is treated as an individual person.
+under section 1 beyond visiting and reading the site as published,
+whether or not they charge anyone for anything. A registered charity is
+treated as an individual person.
 
 
 3. PARTS THAT CARRY THEIR OWN TERMS
@@ -51,10 +52,23 @@ licence does. Nothing here restricts any right you hold under them.
     and NASA's Scientific Visualization Studio as README.md gives it.
   - The Deep Star Maps include Gaia DR2 data (ESA/Gaia/DPAC), licensed
     CC BY-NC 3.0 IGO: https://creativecommons.org/licenses/by-nc/3.0/igo/
+  - The Deep Star Maps' Gaia data are modified here (regraded and
+    resized). That licence forbids commercial use; this licence forbids
+    it too, and grants nothing that one does not.
   - The docs under assets/docs/ are imported from the Orbit repositories
     and carry Orbit's licence (AGPL-3.0).
+  - Some code and styles are carried from Orbit (the theme packs, the
+    chart law, the flight's engine and timeline). Orbit is the copyright
+    holder's own work, published under AGPL-3.0 in its own repository;
+    those parts remain available under AGPL-3.0 from there.
+  - Fonts (Space Grotesk, Inter, JetBrains Mono) are served by Google
+    Fonts under the SIL Open Font License 1.1, and Mermaid, which draws
+    diagrams in the docs, is loaded from cdnjs under the MIT licence.
+    Neither is copied into this repository.
   - The import and test tools depend on marked (MIT), sharp (Apache-2.0)
     and playwright (Apache-2.0); none of them is served to a visitor.
+  - NASA's imagery is used without any suggestion that NASA endorses
+    this site or Orbit.
 
 Where a part's terms entitle you to its source, ask the copyright holder
 and you will be given it.

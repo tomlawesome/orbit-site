@@ -89,16 +89,15 @@ live:journey:
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
-# fetched and set as the site's own pages, and what changed is committed
-# to `main` so Pages serves it the same night (owner decision 2026-10-08,
-# docs/plans/gitlab-migration.md decision (a)). Replaces GitHub's
-# import-docs.yml, which was a second writer of `main`.
+# fetched and set as the site's own pages. What changed goes to `main` as a
+# merge request that merges itself once `lint` and `live:journey` pass, so
+# nobody pushes to `main` and every import is tested before Pages serves
+# it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
+# Replaces GitHub's import-docs.yml, which pushed straight to `main`.
 #
-# The push uses ORBIT_SITE_PUSH_TOKEN, a project access token the owner
-# created (role Developer, scope write_repository, Masked + Protected)
-# whose bot user is allowed to push to `main` in the protected-branch
-# settings. Nothing here sets it. The schedule runs on `main` with
-# IMPORT_DOCS=true.
+# Needs ORBIT_SITE_IMPORT_TOKEN, a project access token (role Maintainer,
+# scopes api and write_repository, Masked + Protected) the owner created.
+# Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
   image: $NODE_IMAGE
@@ -108,20 +107,7 @@ import_docs:
   variables:
     GIT_DEPTH: 1
   script:
-    - test -n "${ORBIT_SITE_PUSH_TOKEN:-}" || { echo "ORBIT_SITE_PUSH_TOKEN is not set -- is main protected and the variable protected?"; exit 1; }
-    - npm i --no-save --no-package-lock --no-audit --no-fund marked@18 sharp@0.34
-    - node tools/import-docs.mjs
-    - rm -rf node_modules
-    - git add assets/docs assets/img/launcher
-    - |
-      if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
-      git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
-        commit -m "Docs: imported from the repositories"
-      # the token goes to git through a credential helper, never into the
-      # URL or the job log
-      git -c credential.helper= \
-          -c 'credential.helper=!f() { echo "username=oauth2"; echo "password=$ORBIT_SITE_PUSH_TOKEN"; }; f' \
-          push "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:main
+    - sh tools/ci/nightly-import.sh
 
 # Renovate, weekly, on a schedule the owner created on `dev` with
 # RENOVATE=true and RENOVATE_TOKEN Masked + Protected. renovate.json has
