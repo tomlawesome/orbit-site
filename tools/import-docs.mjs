@@ -111,7 +111,10 @@ function render(md, src, bySourcePath) {
       return `<blockquote>${this.parser.parse(tokens)}</blockquote>\n`;
     },
     html({ text }) {
-      return sanitiseHtml(text, { link: (h) => resolveLink(h, src, bySourcePath, false), image: (h) => resolveLink(h, src, bySourcePath, true) });
+      const out = sanitiseHtml(text, { link: (h) => resolveLink(h, src, bySourcePath, false), image: (h) => resolveLink(h, src, bySourcePath, true) });
+      // a dropped block is content the page no longer shows: say so in the import's log
+      if (!out && text.trim()) console.warn(`import-docs: ${src.repo}/${src.path}: raw html dropped: ${text.trim().slice(0, 80)}`);
+      return out;
     },
   };
   marked.use({ gfm: true, renderer });
