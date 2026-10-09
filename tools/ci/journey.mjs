@@ -72,12 +72,45 @@ const step = async (name, fn) => {
   catch (e) { problems.push(`${name}: ${e.message.split("\n")[0]}`); console.log(`FAIL ${name}`); }
 };
 
+/* A step that needs its own browser context (a time zone, motion left on, a
+   clock), with the harness's pageerror listener on its page. */
+const inOwnContext = async (options, fn) => {
+  const octx = await browser.newContext({ viewport: { width: 1280, height: 800 }, ...options });
+  try {
+    const opage = await octx.newPage();
+    opage.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+    await fn(opage, octx);
+  } finally { await octx.close(); }
+};
+
 let maintenance = false;
 await step("the door lights", async () => {
   await page.goto(SITE, { waitUntil: "load" });
   await page.locator("#door").waitFor({ state: "visible", timeout: 30000 });
   await page.locator("#door .planet[data-section=install]").waitFor({ state: "attached" });
   maintenance = (await page.locator("html[data-maintenance]").count()) > 0;
+});
+
+/* Reduced motion stops every endless animation (the door, the dusk film, the
+   dial's warning glow); a name other than "none" means one still runs. */
+await step("reduced motion stops the endless animations", async () => {
+  await page.goto(SITE, { waitUntil: "load" });
+  await page.locator("#door").waitFor({ state: "visible", timeout: 30000 });
+  const names = await page.evaluate(() => {
+    const name = (sel) => { const el = document.querySelector(sel); return [sel, el ? getComputedStyle(el).animationName : "missing"]; };
+    const out = [
+      name("#door .planets .trdot"),
+      name("#dusk .shimmer"),
+      name("#dusk .lockup .glyph .tr"),
+    ];
+    const dial = document.querySelector(".dial");
+    dial?.classList.add("warn");
+    out.push(name(".dial .danger"));
+    dial?.classList.remove("warn");
+    return out;
+  });
+  const running = names.filter(([, n]) => n !== "none");
+  if (running.length) throw new Error(`still animating under reduced motion: ${running.map(([s, n]) => `${s} (${n})`).join(", ")}`);
 });
 
 if (maintenance) {
@@ -108,6 +141,76 @@ const landings = async (prefix) => {
       await page.locator(pad).waitFor({ state: "visible", timeout: 60000 });
     });
   }
+  /* Saved dates keep their local calendar day: just after local midnight in
+     Tokyo it is still the 25th in UTC, and "due" must not start on the 25th. */
+  await step(`the due date starts tomorrow in Tokyo${prefix ? " (preview)" : ""}`, async () => {
+    await inOwnContext({ timezoneId: "Asia/Tokyo", reducedMotion: "reduce" }, async (p) => {
+      await p.clock.setFixedTime(Date.UTC(2026, 9, 25, 20, 0));
+      await p.goto(SITE + prefix + "#home", { waitUntil: "load" });
+      await p.locator("#f-date").waitFor({ state: "attached", timeout: 30000 });
+      try { await p.waitForFunction(() => document.querySelector("#f-date").min === "2026-10-26", null, { timeout: 5000 }); }
+      catch { throw new Error(`#f-date min is ${await p.locator("#f-date").getAttribute("min")}, want 2026-10-26`); }
+    });
+  });
+  /* One click on the install line copies once, and the line keeps its text;
+     only the button says "copied". */
+  const clipboard = (copies) => ({ content: `Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: ${copies} } });` });
+  await step(`one copy click makes one copy${prefix ? " (preview)" : ""}`, async () => {
+    await page.addInitScript(clipboard("(t) => { (window.__copied ||= []).push(t); return Promise.resolve(); }"));
+    await page.goto(SITE + prefix + "#install", { waitUntil: "load" });
+    await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
+    const code = page.locator("#installpad code[data-copy]");
+    const button = page.locator("#installpad button.copy");
+    await code.click();
+    for (const wait of [200, 1800]) {
+      await page.waitForTimeout(wait);
+      const n = await page.evaluate(() => (window.__copied || []).length);
+      if (n !== 1) throw new Error(`${n} copies after clicking the command line (${wait} ms), want 1`);
+      const text = await code.textContent();
+      if (!text.includes("curl -fsSL")) throw new Error(`the command line reads ${JSON.stringify(text)} (${wait} ms), want the command`);
+    }
+    await button.click();
+    await page.waitForTimeout(200);
+    if ((await button.textContent()) !== "copied") throw new Error(`the button reads ${JSON.stringify(await button.textContent())} just after the click, want "copied"`);
+    await page.waitForTimeout(1800);
+    if ((await button.textContent()) !== "copy") throw new Error(`the button reads ${JSON.stringify(await button.textContent())} later, want "copy"`);
+    const refused = await ctx.newPage();
+    try {
+      refused.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+      await refused.addInitScript(clipboard("() => Promise.reject(new Error('refused'))"));
+      await refused.goto(SITE + prefix + "#install", { waitUntil: "load" });
+      await refused.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
+      const rb = refused.locator("#installpad button.copy");
+      await rb.click();
+      await refused.waitForTimeout(200);
+      if ((await rb.textContent()) !== "not copied") throw new Error(`a refused copy reads ${JSON.stringify(await rb.textContent())}, want "not copied"`);
+      await refused.waitForTimeout(1800);
+      if ((await rb.textContent()) !== "copy") throw new Error(`a refused copy reads ${JSON.stringify(await rb.textContent())} later, want "copy"`);
+    } finally { await refused.close(); }
+  });
+  /* A failed docs index is retried: the panel's way back to the door, then a
+     second visit, must find the docs. */
+  await step(`a failed docs index is retried${prefix ? " (preview)" : ""}`, async () => {
+    await inOwnContext({ reducedMotion: "reduce" }, async (p) => {
+      let failedOnce = false;
+      await p.route("**/assets/docs/index.json", (route) => {
+        if (failedOnce) return route.continue();
+        failedOnce = true;
+        return route.abort();
+      });
+      await p.goto(SITE + prefix + "#docs", { waitUntil: "load" });
+      await p.locator("#docspad .none", { hasText: "The docs have not been imported" }).waitFor({ state: "visible", timeout: 30000 });
+      await p.locator("#docspad .back.dawn").click();
+      await p.locator("#door").waitFor({ state: "visible", timeout: 30000 });
+      const planet = p.locator("#door .planet[data-section=docs].ready");
+      await planet.waitFor({ state: "attached", timeout: 30000 });
+      /* the planets keep turning, so a pointer click never finds one stable */
+      await planet.evaluate((el) => el.click());
+      try {
+        await p.waitForFunction(() => document.querySelector("#docspad .entry, #docspad .chart .star") && !document.querySelector("#docspad .none"), null, { timeout: 30000 });
+      } catch { throw new Error("the docs index failed once and the docs never loaded on the second visit within 30s"); }
+    });
+  });
   /* The world itself: its own context without reducedMotion (which shows
      stills instead of the world). Where WebGL2 is missing this is skipped,
      unless WEBGL=required, when it is a problem. */
@@ -150,6 +253,24 @@ const landings = async (prefix) => {
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     try { await page.locator("#docspad figure[data-mermaid] svg").first().waitFor({ state: "attached", timeout: 30000 }); }
     catch { throw new Error("the docs diagram (figure[data-mermaid]) never drew an svg within 30s"); }
+  });
+  /* Back pressed in mid-flight is honoured: the door's planet is clicked and
+     Back follows on the next frame, before the flight can land. */
+  await step(`Back mid-flight returns to the door${prefix ? " (preview)" : ""}`, async () => {
+    await inOwnContext({}, async (p) => {
+      await p.goto(SITE + prefix, { waitUntil: "load" });
+      await p.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
+      await p.evaluate(() => {
+        document.querySelector("#door .planet[data-section=install]").click();
+        requestAnimationFrame(() => history.back());
+      });
+      /* a flight that ignored Back lands within this wait, and the pad shows */
+      try { await p.locator("#installpad").waitFor({ state: "visible", timeout: 25000 }); } catch { /* none: Back was honoured */ }
+      if (await p.locator("#installpad").isVisible()) throw new Error(`#installpad is open after Back (hash ${JSON.stringify(await p.evaluate(() => location.hash))})`);
+      if (!(await p.locator("#door").isVisible())) throw new Error("#door is not shown after Back");
+      const hash = await p.evaluate(() => location.hash);
+      if (hash !== "") throw new Error(`location.hash is ${JSON.stringify(hash)} after Back, want ""`);
+    });
   });
 };
 if (maintenance) {
