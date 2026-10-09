@@ -67,6 +67,7 @@ lint:
     - when: on_success
   script:
     - sh tools/ci/lint.sh
+    - sh tools/ci/lint-test.sh
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in Firefox: the door, each
