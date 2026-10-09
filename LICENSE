@@ -52,10 +52,23 @@ licence does. Nothing here restricts any right you hold under them.
     and NASA's Scientific Visualization Studio as README.md gives it.
   - The Deep Star Maps include Gaia DR2 data (ESA/Gaia/DPAC), licensed
     CC BY-NC 3.0 IGO: https://creativecommons.org/licenses/by-nc/3.0/igo/
+  - The Deep Star Maps' Gaia data are modified here (regraded and
+    resized). That licence forbids commercial use; this licence forbids
+    it too, and grants nothing that one does not.
   - The docs under assets/docs/ are imported from the Orbit repositories
     and carry Orbit's licence (AGPL-3.0).
+  - Some code and styles are carried from Orbit (the theme packs, the
+    chart law, the flight's engine and timeline). Orbit is the copyright
+    holder's own work, published under AGPL-3.0 in its own repository;
+    those parts remain available under AGPL-3.0 from there.
+  - Fonts (Space Grotesk, Inter, JetBrains Mono) are served by Google
+    Fonts under the SIL Open Font License 1.1, and Mermaid, which draws
+    diagrams in the docs, is loaded from cdnjs under the MIT licence.
+    Neither is copied into this repository.
   - The import and test tools depend on marked (MIT), sharp (Apache-2.0)
     and playwright (Apache-2.0); none of them is served to a visitor.
+  - NASA's imagery is used without any suggestion that NASA endorses
+    this site or Orbit.
 
 Where a part's terms entitle you to its source, ask the copyright holder
 and you will be given it.

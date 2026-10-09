@@ -13,9 +13,11 @@ from a visitor. The demo's workspace is fictional and lives in the page.
 - **A changed doc.** The docs are fetched from the Orbit repositories'
   `main` branches over HTTPS and rendered by the import tool; a page is
   never fetched live by the visitor's browser from a third party.
-- **Third-party code.** None runs on the site: every script is this
-  repository's own, served from the same origin. The only dependencies
-  (`marked`, `sharp`, `playwright`) run in the import and in CI, pinned.
+- **Third-party code.** One script comes from elsewhere: Mermaid, loaded
+  from cdnjs only when a docs page has a diagram to draw. Fonts come from
+  Google Fonts. Everything else is this repository's own, served from the
+  same origin. The import and CI dependencies (`marked`, `sharp`,
+  `playwright`) never reach a visitor.
 - **The service worker** caches pictures for 36 hours and otherwise asks
   for everything fresh; it never serves a cross-origin response from cache.
 
