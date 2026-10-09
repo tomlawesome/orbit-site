@@ -2,7 +2,8 @@
 # Test for tools/ci/lint.sh, section "nothing stray at the root": it judges
 # what git tracks, not what is on disk (issue #5); and section "Renovate
 # watches where the npm pins live": a pin in a file renovate.json does not
-# watch fails and names that file.
+# watch fails and names that file; and section "the imported docs carry no
+# script": a handler or script tag in a stored section fails and names it.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #

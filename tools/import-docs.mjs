@@ -13,6 +13,7 @@ import { marked } from "marked";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sanitiseHtml } from "./sanitise-html.mjs";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
 
@@ -110,14 +111,7 @@ function render(md, src, bySourcePath) {
       return `<blockquote>${this.parser.parse(tokens)}</blockquote>\n`;
     },
     html({ text }) {
-      /* raw html in the source (the README's centred pictures): kept only when
-         it is harmless, its pictures and links resolved like the markdown's */
-      if (!/<\/?(img|p|br|strong|em|details|summary|a|kbd|sub|sup|table|tr|td|th|div|span)\b/i.test(text) || /<(script|style|iframe)/i.test(text)) return "";
-      return text
-        .replace(/<img\b([^>]*?)\ssrc="([^"]+)"/gi, (m, pre, at) => `<img${pre} loading="lazy" src="${esc(resolveLink(at, src, bySourcePath, true))}"`)
-        .replace(/<a\b([^>]*?)\shref="([^"]+)"/gi, (m, pre, href) => { const to = resolveLink(href, src, bySourcePath, false); return `<a${pre} href="${esc(to)}"${/^https?:/i.test(to) ? ' target="_blank" rel="noopener"' : ""}`; })
-        .replace(/\salign="center"/gi, ' class="centred"')
-        .replace(/\swidth="100%"/gi, "");
+      return sanitiseHtml(text, { link: (h) => resolveLink(h, src, bySourcePath, false), image: (h) => resolveLink(h, src, bySourcePath, true) });
     },
   };
   marked.use({ gfm: true, renderer });
