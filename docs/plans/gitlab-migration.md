@@ -24,6 +24,7 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 ## Progress
 
+- 2026-10-09: !4 (nightly import MR, licence fixes, closes #1) merged; !5 promoted `dev` to `main` and the mirror carried it to GitHub in seconds. Owner accepted the licence (decision (c), 16).
 - 2026-10-09: !1 (CI, scaffolding) and !3 (GitHub main's last import, back-merged) merged into `dev`. GitHub's `import-docs.yml` disabled by the owner. Owner settings done: default branch `dev`, `dev` and `main` protected, pipelines must succeed, merge commits, 60-minute timeout, push mirror added (first push refused by GitHub: deploy key to check).
 - 2026-10-09, decision 13a: the runner cannot reach GitLab over SSH and the owner will not open it, so the import cannot push with a deploy key (9a). It opens a merge request into `main` that merges itself when the gate passes, with a Maintainer project access token, `ORBIT_SITE_IMPORT_TOKEN`.
 - 2026-10-08: imported by the owner as `ai/orbit-site` (project id 57). Every branch at the same commit as GitHub, issues #1 and #2, all 10 labels. Nothing else writes GitHub's `main` (the session that pushed to it is archived).
@@ -46,7 +47,7 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
 - **(a) The import commits to `main`** through a project access token the owner allows to push (1b): docs stay nightly-fresh. One host, so one writer.
 - **(b) `dev -> main`, no `preview`** (2b): Pages serves one branch; a `preview` would deploy nowhere.
-- **(c) A noncommercial licence of the owner's own** that leaves third-party terms intact (3): `LICENSE`, adapted from birdcage's, with the NASA and ESA/Gaia terms named. **To be read and ratified by the owner**; the draft is an agent's.
+- **(c) A noncommercial licence of the owner's own** that leaves third-party terms intact (3): `LICENSE`, adapted from birdcage's, with the NASA and ESA/Gaia terms named. Accepted by the owner as it stands after !4 (16, 2026-10-09): the priority is not infringing anyone's licence.
 - **(d) The GitHub token stays narrow** (4, recommendation accepted by default): after the import nothing is filed or pushed on GitHub by hand, so orbit-site is not added to the agent's GitHub token. This plan and the step-1 branch go to GitLab after the import.
 
 ### As they were put
