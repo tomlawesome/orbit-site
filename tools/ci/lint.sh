@@ -46,8 +46,10 @@ grep -q 'svs\.gsfc\.nasa\.gov/4720' index.html \
   || { echo "   index.html has no link to svs.gsfc.nasa.gov/4720"; fail=1; }
 
 echo "== nothing stray at the root"
+# what git tracks, not what is on disk: a local, ignored .agents/ or
+# node_modules/ is fine; a committed one is not (#5)
 for f in node_modules package.json package-lock.json .agents; do
-  [ ! -e "$f" ] || { echo "   $f must not be committed"; fail=1; }
+  [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }
