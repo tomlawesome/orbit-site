@@ -19,6 +19,12 @@ const CUT = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
 /* each texture's bands said in the console only with ?door3d (the console stays short otherwise) */
 const SAY = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
 
+/* Firefox takes the picture whole (the ?holdreveal path). Put in bands there, the install world's planet map and the
+   Gaia sky drew right for a moment and then as stripes and nothing, on the owner's desktop (2026-10-09, #4); whole,
+   on the same browser, they drew right and stayed. The band path's failure there is not understood and could not be
+   reproduced on the build host (no WebGL in its Firefox), so the engine that showed it is kept off it. */
+const WHOLE = HOLD_REVEAL || (() => { try { return /\bFirefox\//.test(navigator.userAgent); } catch { return false; } })();
+
 /** a bitmap put on the GPU in bands (soft chores, tagged tag), its mipmaps after (an ordinary chore) if mips. setup(gl,
     texture): the caller's own parameters (wrap modes), set when the texture is made; after(gl, texture): set with the
     mipmaps (anisotropy); drawable(texture): called once the last band is in (the first level whole, no mipmaps yet);
@@ -35,8 +41,8 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     after?.(gl, t);
   };
-  /* ?holdreveal: whole, in one ordinary chore, its mipmaps with it, as before */
-  if (HOLD_REVEAL) {
+  /* ?holdreveal, or Firefox (WHOLE): whole, in one ordinary chore, its mipmaps with it, as before */
+  if (WHOLE) {
     return chore(() => {
       const t = gl.createTexture(); gl.bindTexture(T, t);
       gl.texImage2D(T, 0, internal, format, type, bitmap);
