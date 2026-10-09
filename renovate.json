@@ -36,9 +36,9 @@
       "datasourceTemplate": "npm"
     },
     {
-      "description": "The two npm packages the docs import installs inline (`npm i marked@18 sharp@0.34`), pinned to a major or minor in the job script.",
+      "description": "The two npm packages the docs import installs inline (`npm i marked@18 sharp@0.34`), pinned to a major or minor in tools/ci/nightly-import.sh.",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "managerFilePatterns": ["/^tools/ci/nightly-import\\.sh$/"],
       "matchStrings": ["\\s(?<depName>marked|sharp)@(?<currentValue>[0-9.]+)"],
       "datasourceTemplate": "npm",
       "versioningTemplate": "npm"
