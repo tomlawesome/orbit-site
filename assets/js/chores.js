@@ -152,7 +152,12 @@ try { if (/[?&]door3d\b/.test(location.search)) window.__chores = () => ({ queue
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
 const fetched = new Map();
 export function fetchOnce(url) {
-  if (!fetched.has(url)) fetched.set(url, fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); }));
+  if (!fetched.has(url)) {
+    const p = fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); });
+    fetched.set(url, p);
+    /* a failed fetch is forgotten, so the next ask tries the network again */
+    p.catch(() => { if (fetched.get(url) === p) fetched.delete(url); });
+  }
   return fetched.get(url);
 }
 
