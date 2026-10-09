@@ -58,7 +58,7 @@ licence does. Nothing here restricts any right you hold under them.
     those parts remain available under AGPL-3.0 from there.
   - Fonts (Space Grotesk, Inter, JetBrains Mono) are served by Google
     Fonts under the SIL Open Font License 1.1, and Mermaid, which draws
-    diagrams in the docs, is loaded from cdnjs under the MIT licence.
+    diagrams in the docs, is loaded from jsDelivr under the MIT licence.
     Neither is copied into this repository.
   - The import and test tools depend on marked (MIT), sharp (Apache-2.0)
     and playwright (Apache-2.0); none of them is served to a visitor.
