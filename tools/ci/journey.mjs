@@ -110,6 +110,12 @@ const landings = async (prefix) => {
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     await page.waitForFunction(() => document.querySelector("#docspad")?.textContent.includes("Quick start"), null, { timeout: 30000 });
   });
+  await step(`a docs diagram draws${prefix ? " (preview)" : ""}`, async () => {
+    await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
+    await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
+    try { await page.locator("#docspad figure[data-mermaid] svg").first().waitFor({ state: "attached", timeout: 30000 }); }
+    catch { throw new Error("the docs diagram (figure[data-mermaid]) never drew an svg within 30s"); }
+  });
 };
 if (maintenance) {
   console.log("     (and the landings, past the door with ?preview)");
