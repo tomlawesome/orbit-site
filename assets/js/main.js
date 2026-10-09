@@ -168,7 +168,7 @@ const INFO_WORLD = {
     sun: [0.12, 0.82, 0.42], tiltZ: -0.22, tiltX: 0.1,
     sky: { core: [0.32, -0.3], along: [-0.55, 0.15] },
     /* the lens fringes less: its moon sits up in the corner, where the fringe is widest */
-    look: { galK: 0.03, fringe: 0.004 },
+    look: { fringe: 0.004 },
     /* it dives straight at the planet, and only late lets it settle beneath, a crescent under the title */
     aim: [0.42, 0.58],
     /* it comes in from above, on the sun's side, so the planet it dives at is lit, and drops to rest beneath the crescent */

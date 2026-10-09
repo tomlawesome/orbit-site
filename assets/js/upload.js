@@ -20,7 +20,7 @@ const CUT = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
 const SAY = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
 
 /* Firefox takes the picture whole (the ?holdreveal path). Put in bands there, the install world's planet map and the
-   Gaia sky drew right for a moment and then as stripes and nothing, on the owner's desktop (2026-10-09, #4); whole,
+   sky drew right for a moment and then as stripes and nothing, on the owner's desktop (2026-10-09, #4); whole,
    on the same browser, they drew right and stayed. The band path's failure there is not understood and could not be
    reproduced on the build host (no WebGL in its Firefox), so the engine that showed it is kept off it. */
 const WHOLE = HOLD_REVEAL || (() => { try { return /\bFirefox\//.test(navigator.userAgent); } catch { return false; } })();

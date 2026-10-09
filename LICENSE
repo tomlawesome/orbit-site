@@ -47,14 +47,9 @@ their own terms, which govern those parts; several allow more than this
 licence does. Nothing here restricts any right you hold under them.
 
   - Imagery from NASA (the Black Marble and Blue Marble, Cassini's
-    Jupiter and Saturn, the LRO/LOLA Moon, the Deep Star Maps) is in the
+    Jupiter and Saturn, the LRO/LOLA Moon) is in the
     public domain, with credit to NASA, NASA/JPL/Space Science Institute
     and NASA's Scientific Visualization Studio as README.md gives it.
-  - The Deep Star Maps include Gaia DR2 data (ESA/Gaia/DPAC), licensed
-    CC BY-NC 3.0 IGO: https://creativecommons.org/licenses/by-nc/3.0/igo/
-  - The Deep Star Maps' Gaia data are modified here (regraded and
-    resized). That licence forbids commercial use; this licence forbids
-    it too, and grants nothing that one does not.
   - The docs under assets/docs/ are imported from the Orbit repositories
     and carry Orbit's licence (AGPL-3.0).
   - Some code and styles are carried from Orbit (the theme packs, the
