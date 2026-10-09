@@ -52,4 +52,21 @@ for f in node_modules package.json package-lock.json .agents; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 
+echo "== Renovate watches where the npm pins live"
+# marked and sharp are pinned inline where the docs import installs them; a
+# customManagers entry for them must cover each file that pins them, or
+# Renovate never sees a bump.
+for f in $(grep -l -E '(marked|sharp)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs 2>/dev/null || true); do
+  node -e '
+    const f = process.argv[1];
+    const pats = (require("./renovate.json").customManagers || [])
+      .filter((m) => (m.matchStrings || []).some((s) => /marked|sharp/.test(s)))
+      .flatMap((m) => m.managerFilePatterns || []);
+    if (!pats.some((p) => new RegExp(p.replace(/^\/|\/$/g, "")).test(f))) {
+      console.log(`   ${f} pins marked/sharp but renovate.json watches only ${pats.join(", ")}`);
+      process.exitCode = 1;
+    }
+  ' "$f" || fail=1
+done
+
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }
