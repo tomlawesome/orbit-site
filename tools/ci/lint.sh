@@ -29,6 +29,22 @@ if [ -f assets/docs/index.json ]; then
   ' || fail=1
 fi
 
+echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
+for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
+  [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
+done
+[ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
+for f in index.html 404.html install.html README.md LICENSE; do
+  if grep -q -i -E 'gaia|CC BY-NC 3\.0 IGO|by-nc/3\.0/igo' "$f"; then
+    echo "   $f still mentions Gaia or its CC BY-NC 3.0 IGO licence"; fail=1
+  fi
+done
+if grep -q 'svs\.gsfc\.nasa\.gov/4851' index.html; then
+  echo "   index.html still links svs.gsfc.nasa.gov/4851"; fail=1
+fi
+grep -q 'svs\.gsfc\.nasa\.gov/4720' index.html \
+  || { echo "   index.html has no link to svs.gsfc.nasa.gov/4720"; fail=1; }
+
 echo "== nothing stray at the root"
 for f in node_modules package.json package-lock.json .agents; do
   [ ! -e "$f" ] || { echo "   $f must not be committed"; fail=1; }
