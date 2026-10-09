@@ -17,7 +17,7 @@ const ALLOWED = {
   img: ["src", "alt", "title", "width", "height", "loading"],
   a: ["href", "title", "target", "rel"],
   details: ["open"],
-  ...Object.fromEntries("br strong em b i code kbd sub sup summary span table thead tbody tr".split(" ").map((t) => [t, []])),
+  ...Object.fromEntries("br hr strong em b i code kbd sub sup summary span table thead tbody tr h1 h2 h3 h4 h5 h6 ul ol li blockquote pre".split(" ").map((t) => [t, []])),
 };
 
 const TAG = /<(\/?)([a-z][a-z0-9-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/iy;
