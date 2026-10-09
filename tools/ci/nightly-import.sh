@@ -10,9 +10,9 @@
 # Runs in the `import_docs` job, from a schedule on main. Needs
 # ORBIT_SITE_IMPORT_TOKEN: a project access token, role Maintainer (to
 # merge into main), scopes api and write_repository, held as a Masked +
-# Protected CI/CD variable. Pushes go through a git credential helper and
-# API calls read the token from a header file, so it is never in a URL, an
-# argument list or the log.
+# Protected CI/CD variable. Pushes read it from a mode-600 credential file
+# and API calls from a header file, so it is never in a URL, an argument
+# list or the log.
 #
 #   DRY_RUN=1 sh tools/ci/nightly-import.sh   import and report, write nothing
 set -eu
@@ -23,7 +23,7 @@ cd "$(dirname "$0")/../.."
 DRY_RUN=${DRY_RUN:-}
 
 umask 077
-hdr=$(mktemp); trap 'rm -f "$hdr"' EXIT
+hdr=$(mktemp); cred=$(mktemp); scratch=$(mktemp -d); trap 'rm -rf "$hdr" "$cred" "$scratch"' EXIT
 printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
 api() { m=$1; p=$2; shift 2; curl -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
@@ -55,9 +55,23 @@ echo "== push $branch"
 git checkout -q -b "$branch"
 git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
   commit -q -m "Docs: imported from the repositories"
-git -c credential.helper= \
-    -c 'credential.helper=!f() { echo "username=oauth2"; echo "password=$ORBIT_SITE_IMPORT_TOKEN"; }; f' \
-    push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/$branch"
+# Pushed from a fresh repository, not the runner's checkout: the runner's own
+# git setup there sends the job token, which may read this project and never
+# write it, and GitLab refused the push with a 403 before the token below was
+# ever asked for (#9; orbit #1081 found and fixed the same in its repin).
+# The fresh repository has no config of its own, and no global or system
+# config or HOME reaches it, so the only credential is the mode-600 store
+# file. The commit goes into it by a push from the checkout (receive-pack runs
+# in the repository this job made); the checkout is shallow, so the scratch
+# repository accepts a shallow update.
+printf 'https://oauth2:%s@%s\n' "$ORBIT_SITE_IMPORT_TOKEN" "$CI_SERVER_HOST" > "$cred"
+git init -q "$scratch/repo"
+git -C "$scratch/repo" config receive.shallowUpdate true
+git push -q "$scratch/repo" "HEAD:refs/heads/$branch"
+mkdir "$scratch/home"
+GIT_TERMINAL_PROMPT=0 HOME="$scratch/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+  git -C "$scratch/repo" -c credential.helper= -c "credential.helper=store --file=$cred" \
+  push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "refs/heads/$branch:refs/heads/$branch"
 
 echo "== merge request"
 iid=$(api POST "/merge_requests" \
