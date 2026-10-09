@@ -109,4 +109,36 @@ eq("12 a 92% width and a numeric height stay",
   { link: id, image: (h) => "https://raw/" + h },
   '<img src="https://raw/docs/a.png" alt="" width="92%" height="10" loading="lazy">');
 
+// 13. the heading block from orbit-launcher's README keeps its structure, text and entities.
+{
+  const sep = "  &nbsp;&nbsp;\u00b7&nbsp;&nbsp;\n";
+  const input =
+    "<h3>\n" +
+    '  <a href="https://tomlawesome.github.io/orbit-site/">Website</a>\n' + sep +
+    '  <a href="https://github.com/tomlawesome/orbit-launcher/security/policy">Report a vulnerability</a>\n' + sep +
+    '  <a href="https://github.com/tomlawesome/orbit-launcher/blob/main/LICENSE">Licence</a>\n' +
+    "</h3>";
+  const want =
+    "<h3>\n" +
+    '  <a href="https://tomlawesome.github.io/orbit-site/" target="_blank" rel="noopener">Website</a>\n' + sep +
+    '  <a href="https://github.com/tomlawesome/orbit-launcher/security/policy" target="_blank" rel="noopener">Report a vulnerability</a>\n' + sep +
+    '  <a href="https://github.com/tomlawesome/orbit-launcher/blob/main/LICENSE" target="_blank" rel="noopener">Licence</a>\n' +
+    "</h3>";
+  eq("13 the launcher README heading block keeps its links and text", input, std, want);
+  let got;
+  try { got = sanitiseHtml(input, std); } catch (e) { got = ""; }
+  check("13 the result is non-empty and holds all three link texts",
+    got !== "" && ["Website", "Report a vulnerability", "Licence"].every((t) => got.includes(`>${t}</a>`)),
+    `result: ${JSON.stringify(got)}`);
+}
+
+// 14. headings, lists, hr, blockquote and pre are kept with no attributes.
+eq("14 headings, lists, hr, blockquote and pre lose their attributes",
+  '<ul class="x"><li onclick="y">a</li></ul><hr/><blockquote cite="z">q</blockquote><pre>1 &lt; 2</pre><h2 id="t">T</h2>',
+  std,
+  "<ul><li>a</li></ul><hr><blockquote>q</blockquote><pre>1 &lt; 2</pre><h2>T</h2>");
+
+// 15. an allowed heading beside a tag outside the list still fails closed.
+eq("15 a heading beside a video returns an empty string", "<h3>x</h3><video src=y></video>", std, "");
+
 process.exit(failed ? 1 : 0);
