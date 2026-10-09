@@ -59,8 +59,8 @@ export const TUNE = {
   sun: [-0.95, 0.28, -0.08], tiltZ: 0.38, tiltX: -0.12,
   /* the Milky Way: where its core sits on the screen at rest, and a point its band runs through (fractions from the top left) */
   sky: { core: [-0.35, -0.25], along: [0.6, 0.25] },
-  /* the film: how bright the Milky Way is, how much dust, the lens's colour fringing, the grain */
-  look: { galK: 0.05, dust: 1, fringe: 0.012, grain: 0.028 },
+  /* the film: how much dust, the lens's colour fringing, the grain */
+  look: { dust: 1, fringe: 0.012, grain: 0.028 },
   rest: { az: 0.0, el: 0.3, roll: 0.18, d: 5.2 }, from: { az: -0.8, el: -0.23, roll: 0.3 },
   /* the moon the camera passes on the way in: when (k), how far off the path (planet radii, right and up), how big */
   fly: { k: 0.89, side: [-1.2, -0.8], r: 0.2 },
@@ -279,7 +279,7 @@ export function createInstall(pad, opts = {}) {
       look, sun: sunNow, spin: tr(spin), tilt: tr(TO_TILT), sky: tr(SKY), moon: moonPos, moon2: k < 0.999 ? flyPos : [0, 0, 0, 0],
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
-      vel, focusD: v.dist, blur, galK: TUNE.look.galK, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [at((W / 2 + v.shift[0]) * s, 0), at((H / 2 + v.shift[1]) * s, 1)],
+      vel, focusD: v.dist, blur, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [at((W / 2 + v.shift[0]) * s, 0), at((H / 2 + v.shift[1]) * s, 1)],
     });
   }
   /* going in, the world starts as bright as the door's planet is as it flares, and settles as the camera moves:

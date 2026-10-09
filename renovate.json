@@ -42,6 +42,14 @@
       "matchStrings": ["\\s(?<depName>marked|sharp)@(?<currentValue>[0-9.]+)"],
       "datasourceTemplate": "npm",
       "versioningTemplate": "npm"
+    },
+    {
+      "description": "Mermaid, which the docs load from jsDelivr for their diagrams (assets/js/pads.js: MERMAID). Renovate bumps the version but cannot recompute the integrity hash beside it, so the bump's merge request fails the journey's diagram step until the hash is updated by hand (the command is in pads.js).",
+      "customType": "regex",
+      "managerFilePatterns": ["/^assets/js/pads\\.js$/"],
+      "matchStrings": ["cdn\\.jsdelivr\\.net/npm/(?<depName>mermaid)@(?<currentValue>[0-9.]+)/"],
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
     }
   ],
   "vulnerabilityAlerts": { "enabled": true, "schedule": ["at any time"] },

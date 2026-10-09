@@ -49,6 +49,7 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 - **(b) `dev -> main`, no `preview`** (2b): Pages serves one branch; a `preview` would deploy nowhere.
 - **(c) A noncommercial licence of the owner's own** that leaves third-party terms intact (3): `LICENSE`, adapted from birdcage's, with the NASA and ESA/Gaia terms named. Accepted by the owner as it stands after !4 (16, 2026-10-09): the priority is not infringing anyone's licence.
 - **(d) The GitHub token stays narrow** (4, recommendation accepted by default): after the import nothing is filed or pushed on GitHub by hand, so orbit-site is not added to the agent's GitHub token. This plan and the step-1 branch go to GitLab after the import.
+- **(e) The Milky Way is the site's own drawing** (17, 2026-10-09): Gaia's picture (CC BY-NC) and its credit go (#6). The owner saw the drawn galaxy in Firefox and judged it fine; NASA's public-domain Deep Star Maps 2012 were compared and not chosen, ESO's all-sky picture was declined. With it, the licence's ESA/Gaia terms leave `LICENSE`.
 
 ### As they were put
 
@@ -58,11 +59,10 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
 ## Done when
 
-- [ ] `ai/orbit-site` exists on GitLab with every branch, issue and label; `dev` is the default and protected.
-- [ ] The gate (lint + live Firefox journey) runs on every MR and is required to merge.
-- [ ] The push mirror has delivered one merge to GitHub `main` and Pages served it.
+- [x] `ai/orbit-site` exists on GitLab with every branch, issue and label; `dev` is the default and protected.
+- [x] The gate (lint + live Firefox journey) runs on every MR and is required to merge.
+- [x] The push mirror has delivered one merge to GitHub `main` and Pages served it.
 - [ ] `import-docs.yml` is gone from GitHub and the GitLab schedule has committed one nightly import.
 - [ ] GitHub issues are off; CodeQL runs on the mirror.
 - [ ] orbit's `AGENTS.md` no longer says the site is GitHub-only.
 
-Written by Fable 5.1, 2026-10-08.
