@@ -42,18 +42,19 @@ anyone; Pages serves one branch, so a `preview` here would deploy nowhere
 and prove nothing. Do not add one, and do not "restore" it as an oversight.
 `dev -> main` is by merge request, as a promotion.
 
-## The nightly docs import commits to `main`
+## The nightly docs import reaches `main` by merge request
 
-`import_docs` in `.gitlab-ci.yml` runs from a schedule on `main`, fetches
-the markdown from the Orbit repositories and commits what changed straight
-to `main`, so the docs stay nightly-fresh as they were on GitHub (owner
-decision, 2026-10-08, question 1b). It pushes with `ORBIT_SITE_PUSH_TOKEN`,
-a project access token whose bot user is allowed to push to `main`; it is
-the one exception to "nothing lands on `main` but a promotion", and it only
-ever touches `assets/docs/` and `assets/img/launcher/`. After it runs,
-`main` is ahead of `dev` by that commit; the next `dev -> main` merge
-request carries it, and a `main -> dev` back-merge is not needed because
-the import is re-run, not merged.
+`import_docs` runs from a schedule on `main` and calls
+`tools/ci/nightly-import.sh`: it fetches the markdown from the Orbit
+repositories and, when anything changed, pushes a `docs/import-*` branch
+and opens a merge request into `main` that merges itself once the gate
+passes (owner decisions 1b and 13a, 2026-10-08/09). Nobody pushes to
+`main`. It uses `ORBIT_SITE_IMPORT_TOKEN`, a Maintainer project access
+token, because merging into `main` needs that role. An SSH deploy key was
+the first choice, but the runner cannot reach GitLab over SSH and the
+owner will not open it (2026-10-09). An import merge request still open
+from an earlier night is closed by the next one. Imports land on `main`
+only; `dev` picks them up by back-merge after a promotion.
 
 ## Verifying a change
 
