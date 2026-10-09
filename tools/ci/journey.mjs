@@ -43,6 +43,9 @@ const browser = await playwright[BROWSER].launch();
    landings on a click, not on the address alone). */
 const ctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1280, height: 800 } });
 let page = null;
+/* set only while the deliberate no-such-page visit runs: Chromium logs its
+   404 as a console error, which is expected there and nowhere else */
+let expectNotFound = false;
 const fresh = async () => {
   await page?.close();
   page = await ctx.newPage();
@@ -55,7 +58,7 @@ const fresh = async () => {
     if (/^galaxy.*\.webp$/.test(name)) problems.push(`requested a galaxy picture: ${r.url()}`);
   });
   page.on("console", (m) => { if (m.text().includes("is drawn, not Gaia's")) problems.push(`console message mentions Gaia: ${m.text()}`); });
-  page.on("console", (m) => { if (m.type() === "error") problems.push(`console.error: ${m.text()}`); });
+  page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error: ${m.text()}`); });
   page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
   page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
   return page;
@@ -90,23 +93,37 @@ if (maintenance) {
     await page.waitForTimeout(3000);
     for (const pad of ["#installpad", "#docspad", "#infopad"]) if (await page.locator(pad).isVisible()) throw new Error(`${pad} opened`);
   });
-} else {
+}
+
+/* The landings: each one reached, and a docs page opened. `prefix` is
+   "" when the site is open, and "?preview" past the maintenance door
+   (the query removes maintenance mode for that page load). */
+const landings = async (prefix) => {
   for (const [hash, pad] of [["#install", "#installpad"], ["#docs", "#docspad"], ["#info", "#infopad"]]) {
-    await step(`${hash} arrives`, async () => {
-      await page.goto(SITE + hash, { waitUntil: "load" });
+    await step(`${prefix}${hash} arrives`, async () => {
+      await page.goto(SITE + prefix + hash, { waitUntil: "load" });
       await page.locator(pad).waitFor({ state: "visible", timeout: 60000 });
     });
   }
-  await step("a docs page opens", async () => {
-    await page.goto(SITE + "#docs/readme", { waitUntil: "load" });
+  await step(`a docs page opens${prefix ? " (preview)" : ""}`, async () => {
+    await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     await page.waitForFunction(() => document.querySelector("#docspad")?.textContent.includes("Quick start"), null, { timeout: 30000 });
   });
+};
+if (maintenance) {
+  console.log("     (and the landings, past the door with ?preview)");
+  await landings("?preview");
+} else {
+  await landings("");
 }
 
 await step("404 is the site's own", async () => {
-  const res = await page.goto(SITE + "no-such-page", { waitUntil: "load" });
-  if (res.status() !== 404) throw new Error(`status ${res.status()}`);
+  expectNotFound = true;
+  try {
+    const res = await page.goto(SITE + "no-such-page", { waitUntil: "load" });
+    if (res.status() !== 404) throw new Error(`status ${res.status()}`);
+  } finally { await page.waitForTimeout(300); expectNotFound = false; }
 });
 
 await browser.close();
