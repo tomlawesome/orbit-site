@@ -14,7 +14,9 @@ from a visitor. The demo's workspace is fictional and lives in the page.
   `main` branches over HTTPS and rendered by the import tool; a page is
   never fetched live by the visitor's browser from a third party.
 - **Third-party code.** One script comes from elsewhere: Mermaid, loaded
-  from cdnjs only when a docs page has a diagram to draw. Fonts come from
+  from jsDelivr only when a docs page has a diagram to draw, pinned to a
+  version and checked against its integrity hash, so a changed file is
+  refused rather than run. Fonts come from
   Google Fonts. Everything else is this repository's own, served from the
   same origin. The import and CI dependencies (`marked`, `sharp`,
   `playwright`) never reach a visitor.
