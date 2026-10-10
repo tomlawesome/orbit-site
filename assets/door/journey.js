@@ -6,6 +6,7 @@
  * DOWN, DOWN_DAWN), and a host makes its own from them (the site: assets/js/journeys.js).
  */
 import { createFlight, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP, homeProps } from "./engine.js";
+import { drawnIn } from "./chores.js";
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
 
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
@@ -92,6 +93,23 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const body = document.body;
   let cancelTimeline = () => {};
+  /* the host's leisure work still waiting (later), each by its own stop; a flight or a descent beginning drops them all */
+  const leisure = new Set();
+  const dropLeisure = () => { for (const stop of [...leisure]) stop(); };
+  /**
+   * `fn` at leisure: after `after` ms, and once the page's painted animations have finished (chores.js: drawnIn), so
+   * work that touches the GPU never runs under a reveal still being drawn. Dropped, never called, if a flight or a
+   * descent begins first (a compile on the page's own thread, started mid-flight, is a pause of over a second in the
+   * middle of it: Orbit's #1299), or by the stop it returns.
+   * @param {() => void} fn @param {{ after?: number }} [how] @returns {() => void}
+   */
+  function later(fn, { after = 4000 } = {}) {
+    let off = false, timer = 0;
+    const stop = () => { off = true; clearTimeout(timer); leisure.delete(stop); };
+    timer = setTimeout(() => { drawnIn().then(() => { if (!off) { leisure.delete(stop); fn(); } }); }, after);
+    leisure.add(stop);
+    return stop;
+  }
 
   let flight = { profile: UP, on: {} };
   const ascentStep = (act, beat) => {
@@ -135,6 +153,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   /* fly: any profile, to whichever landing `on` describes. `at` (ms into the journey, in its own time) pins it there:
      the beats up to `at` are applied at once, the flight drawn as it stands then, and nothing after is scheduled */
   function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null, at } = {}) {
+    dropLeisure();
     cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");
     const pinned = typeof at === "number";
@@ -155,6 +174,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const ascend = (o = {}) => fly(UP, o);
   /* `at` as for fly(): ms into the descent's own (quickened) time */
   function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, homes = [], on: hooks = {}, at } = {}) {
+    dropLeisure();
     cancelTimeline();
     /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
        drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
@@ -175,6 +195,6 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
-  function destroy() { reset(); clock.dispose(); removeEventListener("resize", onResize); }
-  return { fly, ascend, descend, reset, destroy, reduced, warm: () => engine.warm(), warmDocs: () => engine.warmDocs(), compiled: () => engine.compiled() };
+  function destroy() { dropLeisure(); reset(); clock.dispose(); removeEventListener("resize", onResize); }
+  return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => engine.warm(how), warmDocs: (how) => engine.warmDocs(how), compiled: () => engine.compiled() };
 }

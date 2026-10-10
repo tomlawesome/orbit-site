@@ -33,7 +33,7 @@
  */
 import { mountFlightSky, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./stars.js";
 import { mountRasters, SUN } from "./glows.js";
-import { openSoft, openChores, softRan, note, holdReveal, compilesAside } from "./chores.js";
+import { openSoft, openChores, softRan, note, holdReveal, compilesAside, drawnIn } from "./chores.js";
 import { decodeAhead } from "./decode-ahead.js";
 import { flag } from "./settings.js";
 
@@ -103,21 +103,6 @@ export function mountDawn(host) {
         if (wait) Promise.resolve(until).catch(() => {}).then(alive(() => { here = true; arrived(); }));
       }))));
     }));
-    const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
-    const painted = (a) => {
-      try {
-        const t = a.effect.target;
-        if (t instanceof SVGElement && !(t instanceof SVGSVGElement)) return true;
-        const props = a.transitionProperty ? [a.transitionProperty] : a.effect.getKeyframes().flatMap(Object.keys);
-        return props.some((k) => !COMPOSITED.has(k));
-      } catch { return true; }
-    };
-    const drawn = () => {
-      try {
-        const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime) && painted(a));
-        return Promise.all(ends.map((a) => a.finished.catch(() => {})));
-      } catch { return Promise.resolve(); }
-    };
     const go = alive(() => { openChores(); onOpen(); });
     const lightNow = alive(() => { if (lit) return; lit = true; requestAnimationFrame(alive(() => { document.body.classList.remove("loading"); loadingOn = false; document.body.classList.add("lit");
       if (!holdReveal()) openSoft();
@@ -126,7 +111,7 @@ export function mountDawn(host) {
       if (timing) requestAnimationFrame(frame);
       onLit();
       if (OPEN_EARLY) go();
-      drawn().then(alive(() => {
+      drawnIn().then(alive(() => {
         if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (the chores open with the reveal)" : " (held to the reveal's end)"}`); }
         if (!OPEN_EARLY) go();
       })); })); });

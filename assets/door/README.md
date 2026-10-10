@@ -46,7 +46,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
@@ -75,7 +75,8 @@ star fields and sets the glows' origin.
   the reveal begins. `onOpen()`: the chores are open (`openChores` has been
   called); the host may start what waits for them. `aside`: whether shader
   compiles here are in the background (`compilesAside()` unless the host
-  says). The flags `ring` and `open` apply here.
+  says: asking it is what makes the GPU gate decide, so a host that cares
+  when passes its own). The flags `ring` and `open` apply here.
 - `live`: the live door (`door3d.js`), only where `flags.door3d` is set,
   else `null`: `compile()`, `start()` → the live door, `measured` (a promise:
   it has been measured and shown), `firstCompiled()`. The live door is an
@@ -104,7 +105,7 @@ removes the resize listeners.
 
 `canvas` is `#warp`, `name` is `#launchname`, the glyphs are functions
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
-reduced, warm, warmDocs, compiled }`.
+destroy, later, reduced, warm, warmDocs, compiled }`.
 
 - `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
@@ -121,8 +122,19 @@ reduced, warm, warmDocs, compiled }`.
   `released`, `surface` (the dusk or the dawn comes up), `farewell`.
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
-- `warm()`: the flight's world made ready; `warmDocs()`: and the galaxy;
-  `compiled()`: its shaders compiled. `reset()`: everything off.
+- `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: and the galaxy;
+  `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
+  below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
+  `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
+  put on the GPU (as chores, so as the host opens them), and no frame drawn, no test pixel read back. The default
+  proves it, and is the flight's own ask: it hurries the flight's chores (`hurryChores("flight")`), draws the
+  warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
+  world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
+  own canvas, as it always could.
+- `later(fn, { after = 4000 })` → `stop()`: `fn` at leisure, `after` ms from now and once the page's painted
+  animations have finished; never called if `stop()` is, or if a `fly()` or `descend()` begins first (both drop
+  every pending `later`: a compile on the page's own thread, started mid-flight, would be a pause in the middle
+  of it). A host that needs its readying after a descent makes it in the descent's hook.
 - `destroy()`: the journey taken down: `reset()`, its clock's pending beats
   dropped, its resize listener removed. A single-page host calls it when
   the component unmounts; a page that keeps one journey never needs it.
@@ -177,11 +189,34 @@ host (`--star-far`, `--star-near`, `--display`, `--mono`, `html.rich`) and
 the keyframes it defines that a host may use (`driftf`, `driftn`,
 `spinback`). Every `url()` in it stays inside the folder.
 
+### The GPU gate (`fitness.js`, ADR-0002)
+
+`gpu()` → `{ canvas, gl, parallel, renderer } | null`: whether the page may use the GPU at all, decided
+synchronously on first asking, once a page, from ONE WebGL2 context made with
+`failIfMajorPerformanceCaveat: true`. It is `null` where the browser declines that context and where the renderer
+(`isSoftware(name)`: llvmpipe, softpipe, SwiftShader, Microsoft Basic Render) is software, and then the console
+says why, once (`orbit · flight world: off: software renderer (…)`). Accepted, the context is kept and is the flight's
+(`#warpgl` is its canvas) and the probe's: the folder makes no other context for them. The host asks it first, at a
+moment of its choosing (the site: when the door is shown, before first light; arriving elsewhere, the leisure
+warm-up's), and may ask it again (`compilesAside()` and the host's own worlds do). A host's own worlds that need
+a different context (an alpha channel) ask `gpu()` first and take their no-WebGL2 path when it is `null`.
+The flag `gpu: "force"` takes the context without the caveat and without the name check (a debug switch for a
+machine that is software on purpose, the site's own live check); `level` never grants the GPU.
+
+`compilesAside()`: whether shaders compile off the page's thread, read from `gpu().parallel`; `true` when the GPU
+is refused or absent (nothing will compile), `false` under the `mainthread` flag.
+`probe()`: only with the `door3d` flag and an accepted GPU, on the gate's context (left as found, not lost); else
+nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
+`FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
+(in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the
+verdict: `flight world: on (frame N ms)`, or `off: frame N ms`. No verdict is stored.
+
 ### Also exported from `index.js`
 
 For a host's own worlds and skies, so their work takes its turn with the
 door's: the chores (`chore`, `fetchOnce`, `openChores`, `hurryChores`,
-`note`, `quiet`, `compilesAside`, …), `uploadBanded`, the capability probe
+`note`, `quiet`, `compilesAside`, …), `uploadBanded`, the GPU gate (`gpu`,
+`isSoftware`, `FIT_MS`, below), the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
@@ -203,7 +238,8 @@ backwards, with the `homes` on the end); `DOWN`, `DOWN_DAWN`, `DOWNDUR` and
 | `journey.js` | The journey's clock and `createJourney` |
 | `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine, its beats, its WebGL world |
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
-| `capability.js` | The probe at the page's start, and the level it gives |
+| `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
+| `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
 | `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |

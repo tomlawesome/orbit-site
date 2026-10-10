@@ -48,6 +48,16 @@ export function cropHonoured(gl) {
   return p;
 }
 
+/* the probe, but not before the chores may run: a pixel read back is a wait for the GPU to finish all it has been given,
+   so it is not made the moment a picture arrives (ahead of the door's reveal, or on a machine nothing has yet decided
+   can draw the world: ADR-0002, "no test frames on the door") but at the first turn the chores are given, once a context */
+const turns = new WeakMap();
+function cropWhenChoresRun(gl, tag) {
+  let p = turns.get(gl);
+  if (!p) turns.set(gl, (p = chore(() => {}, 0, tag, { soft: true }).then(() => cropHonoured(gl))));
+  return p;
+}
+
 /** a bitmap put on the GPU in bands (soft chores, tagged tag), its mipmaps after (an ordinary chore) if mips. setup(gl,
     texture): the caller's own parameters (wrap modes), set when the texture is made; after(gl, texture): set with the
     mipmaps (anisotropy); drawable(texture): called once the last band is in (the first level whole, no mipmaps yet);
@@ -75,7 +85,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     return t;
   }, 60, tag);
   if (holdReveal()) return whole();
-  return cropHonoured(gl).then((ok) => (ok ? inBands() : whole()));
+  return cropWhenChoresRun(gl, tag).then((ok) => (ok ? inBands() : whole()));
   function inBands() {
     let t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
     /* (seen once on the laptop in Firefox and not again: a first band of 1012 ms, with the browser's warning that a

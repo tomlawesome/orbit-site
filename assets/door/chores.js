@@ -38,19 +38,20 @@ const SHARE = 8, REVEAL_SHARE = 4;
 export const holdReveal = () => !!flag("holdreveal");
 
 import { settings, flag } from "./settings.js";
+import { gpu } from "./fitness.js";
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
    is a chore tagged "compile", all of them done while the first light's ring runs, before the door is lit
-   (openCompiles; dawn.js waits for them), where only the ring's runner can show the hitch. Asked of a context
-   made for the purpose and let go at once (Safari keeps only a few). &mainthread: as if it did not (to try the Firefox
-   path in another browser) */
+   (openCompiles; dawn.js waits for them), where only the ring's runner can show the hitch. Asked of the page's one
+   context (fitness.js: gpu(), which makes it on first asking, never a throwaway); true where the page may not use the
+   GPU at all (nothing will compile). &mainthread: as if it did not (to try the Firefox path in another browser) */
 let aside = null;
 export function compilesAside() {
   if (aside !== null) return aside;
   try {
     if (flag("mainthread")) return (aside = false);
-    const gl = document.createElement("canvas").getContext("webgl2"); if (!gl) return (aside = true);
-    const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return (aside = ok);
+    const g = gpu();
+    return (aside = g ? g.parallel : true);
   } catch { return (aside = true); }
 }
 /* (each chore used to wait for an idle moment, requestIdleCallback with a 120 ms timeout: while the door moves neither
@@ -144,6 +145,25 @@ export function hurryChores(tags, opening = 6000) {
   until = Math.max(until, performance.now() + opening);
   if (!open) openedAt = performance.now();
   open = true; pump();
+}
+
+/** the painted animations done: resolves once every finite animation on the page that is painted (not only composited:
+    a transform or an opacity is the compositor's, a colour or a size is the page's) has finished, so work that touches
+    the GPU never runs under a reveal still being drawn (the door's first light; journey.js: later) */
+const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
+const painted = (a) => {
+  try {
+    const t = a.effect.target;
+    if (typeof SVGElement === "function" && t instanceof SVGElement && !(t instanceof SVGSVGElement)) return true;
+    const props = a.transitionProperty ? [a.transitionProperty] : a.effect.getKeyframes().flatMap(Object.keys);
+    return props.some((k) => !COMPOSITED.has(k));
+  } catch { return true; }
+};
+export function drawnIn() {
+  try {
+    const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime) && painted(a));
+    return Promise.all(ends.map((a) => a.finished.catch(() => {})));
+  } catch { return Promise.resolve([]); }
 }
 
 /** the queue at rest: resolves once nothing is queued or running, and has stayed so for two animation frames, with

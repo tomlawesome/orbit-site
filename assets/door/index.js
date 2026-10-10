@@ -15,6 +15,8 @@ export { chore, fetchOnce, linked, counted, note, noteChores, quiet, openChores,
 export { uploadBanded } from "./upload.js";
 /* what this machine can carry (capability.js), and the level the door ships at */
 export { probe, level, liveDoor, lateDoor } from "./capability.js";
+/* whether the page may use the GPU at all, decided once from one context (fitness.js), and the renderer names it refuses */
+export { gpu, isSoftware, FIT_MS } from "./fitness.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";
 /* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */
