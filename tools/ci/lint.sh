@@ -67,21 +67,34 @@ for f in node_modules package.json package-lock.json .agents; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 
-echo "== Renovate watches where the npm pins live"
-# marked and sharp are pinned inline where the docs import installs them; a
-# customManagers entry for them must cover each file that pins them, or
-# Renovate never sees a bump.
-for f in $(grep -l -E '(marked|sharp)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs 2>/dev/null || true); do
-  node -e '
-    const f = process.argv[1];
-    const pats = (require("./renovate.json").customManagers || [])
-      .filter((m) => (m.matchStrings || []).some((s) => /marked|sharp/.test(s)))
-      .flatMap((m) => m.managerFilePatterns || []);
-    if (!pats.some((p) => new RegExp(p.replace(/^\/|\/$/g, "")).test(f))) {
-      console.log(`   ${f} pins marked/sharp but renovate.json watches only ${pats.join(", ")}`);
-      process.exitCode = 1;
-    }
-  ' "$f" || fail=1
+echo "== the npm pins live in tools/package.json only"
+# the docs import installs marked and sharp with npm ci from tools/, so the
+# manifest names exact versions, the lockfile holds a hash for every package,
+# and Renovate's npm manager bumps both; a version named anywhere else
+# escapes all three
+for f in $(grep -l -E '(marked|sharp)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs AGENTS.md 2>/dev/null || true); do
+  echo "   $f names a marked/sharp version; the pins live in tools/package.json"; fail=1
 done
+node -e '
+  const fs = require("fs");
+  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+  const lock = "tools/package-lock.json";
+  if (!fs.existsSync(lock)) bad(`${lock} is missing`);
+  else {
+    const j = JSON.parse(fs.readFileSync(lock, "utf8"));
+    if (!(j.lockfileVersion >= 3)) bad(`${lock} is lockfileVersion ${j.lockfileVersion}, want 3`);
+    for (const [k, p] of Object.entries(j.packages || {})) if (k !== "" && !p.integrity) bad(`${lock}: ${k} has no integrity`);
+  }
+  const man = "tools/package.json";
+  const deps = fs.existsSync(man) ? JSON.parse(fs.readFileSync(man, "utf8")).dependencies || {} : {};
+  for (const n of ["marked", "sharp"]) {
+    if (!/^\d+\.\d+\.\d+$/.test(deps[n] || "")) bad(`${man}: ${n} is ${JSON.stringify(deps[n])}, want an exact x.y.z`);
+  }
+  const r = require("./renovate.json");
+  if (!(r.enabledManagers || []).includes("npm")) bad("renovate.json: enabledManagers lacks npm");
+  for (const m of r.customManagers || []) {
+    if ((m.matchStrings || []).some((s) => /marked|sharp/.test(s))) bad("renovate.json: a customManager still matches marked/sharp");
+  }
+' || fail=1
 
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }

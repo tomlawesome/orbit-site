@@ -74,10 +74,10 @@ playwright comes from a sibling checkout (orbit's
 installs it to match `$PLAYWRIGHT_IMAGE`. `BROWSER=chromium` for a second
 engine.
 
-The docs import by hand: `npm i --no-save --no-package-lock marked@18
-sharp@0.34 && node tools/import-docs.mjs` (or `--from ../orbit` to read a
-local checkout). Never commit `node_modules` or a `package.json`; the lint
-refuses both.
+The docs import by hand: `npm ci --prefix tools --ignore-scripts && node
+tools/import-docs.mjs` (or `--from ../orbit` to read a local checkout).
+Never commit `node_modules`, or a `package.json` anywhere but `tools/`,
+where the import's manifest and lockfile live; the lint refuses both.
 
 ## Approved third-party content
 

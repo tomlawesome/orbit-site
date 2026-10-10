@@ -7,7 +7,8 @@
  *   node tools/import-docs.mjs            fetches from GitHub
  *   node tools/import-docs.mjs --from DIR reads a local checkout instead
  *
- * Needs `marked` (npm i --no-save marked). Nothing here runs on the site.
+ * Needs `marked` (npm ci --prefix tools --ignore-scripts). Nothing here runs
+ * on the site.
  */
 import { marked } from "marked";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
