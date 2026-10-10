@@ -146,7 +146,7 @@ case "$1" in
   *) case " $* " in *" push "*) ;; *) exec "$REAL_GIT" "$@" ;; esac ;;
 esac
 case "$*" in
-  *https://*) echo "git $*" | sed 's/not-a-real-token-test-only/<token>/g' >> "$STATE/shim.log"; exit 0 ;;
+  *https://*) echo "git $*" | sed "s/$FAKE/<token>/g" >> "$STATE/shim.log"; exit 0 ;;
 esac
 exec "$REAL_GIT" "$@"
 SHIM
@@ -243,7 +243,7 @@ run_push() { # run_push <outfile> <scenario: refused | second>
   rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n
   : > "$aux/api.log"; : > "$aux/shim.log"
   rc=0
-  env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" \
+  env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
     CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
