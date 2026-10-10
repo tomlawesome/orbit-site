@@ -154,6 +154,45 @@
       finally { skew = null; try { journey.reset(); } catch { /* nothing to reset */ } }
       return out;
     };
+    /* window.descentTest(verdict): a sign-out descent with no flight before it, the verdict on the world being "none"
+       (not asked yet: the warm-up has not run), "fit" or "unfit" (proved on the bent clock, "fast" or "slow", before
+       the descent; the clock is the browser's again for the descent itself). Answers when body got showwarp, in ms
+       from the descend() call, how many readPixels (new timed frames) the descent made, and how many draw calls (the
+       world drawn; a painted descent makes none). */
+    window.descentTest = async (verdict) => {
+      const out = { verdict, error: null };
+      const race = (p, limit) => Promise.race([Promise.resolve(p).then(() => true, () => "rejected"), sleep(limit).then(() => false)]);
+      try {
+        openChores();
+        const warmed = journey.warm({ prove: false });
+        if (verdict === "none") await sleep(500);
+        else {
+          out.warmed = await race(warmed, 60000);
+          await sleep(1500);
+          skew = verdict === "fit" ? "fast" : "slow";
+          out.proved = await race(journey.warm(), 120000);
+          skew = null;
+          /* let the verdict settle: no more syncs for a moment */
+          let seenPixels = -1;
+          while (seenPixels !== pixels) { seenPixels = pixels; await sleep(1500); }
+        }
+        const seen = pixels;
+        draws.length = 0;
+        const t0 = realNow();
+        const hooks = {};
+        const note = (n) => () => { hooks[n] ??= Math.round(realNow() - t0); };
+        const watcher = setInterval(() => { if (out.showwarpAt === undefined && document.body.classList.contains("showwarp")) out.showwarpAt = Math.round(realNow() - t0); }, 20);
+        journey.descend({ title: "Test", subtitle: "sign out", on: { released: note("released"), surface: note("surface"), farewell: note("farewell") } });
+        while (hooks.farewell === undefined && realNow() - t0 < 60000) await sleep(100);
+        await sleep(1000);
+        clearInterval(watcher);
+        out.hooks = hooks;
+        out.pixels = pixels - seen;
+        out.draws = draws.length;
+      } catch (e) { out.error = String(e && e.message || e); }
+      finally { skew = null; try { journey.reset(); } catch { /* nothing to reset */ } }
+      return out;
+    };
     window.gateReady = true;
   </script>
 </body>

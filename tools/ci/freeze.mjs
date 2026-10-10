@@ -28,7 +28,9 @@
  *   5    ?gpu=force: a webgl2 context without the caveat, #warpgl, and the install world logs `install: ready`
  *   6    ?door3d without force: no probe runs, and the `level 0` line is there
  *   7    save-data: no webgl2 context until the gate is clicked, then one
- *   -    a descent with no flight before it proves the world as a flight up does (tests/gate.html, a bent clock)
+ *   12d  the leisure warm-up proves the world (no readPixels before lit, some after, no flight asked for); a flight up
+ *        asked first still proves it behind its hold; a descent never waits and makes no timed frames (tests/gate.html,
+ *        a page-bent clock to judge the software renderer fit or unfit)
  *   11   journey.later: not called before `after`; a descent or a flight started first drops it (tests/gate.html)
  *   12   the speculative warm makes no readPixels; the proved one does (tests/gate.html)
  * Behaviours 8 (the real-GPU control) and 9 (frameCost) are in tools/ci/gpu-gate-test.mjs and by hand.
@@ -353,17 +355,46 @@ try {
     await ctx.close();
   }
 
-  /* ---- a descent proves the world as a flight up does (review of the build; tests/gate.html, ?gpu=force) ----
-     A visitor who lands on the home page and signs out has had no flight up: the world has been readied without test
-     frames, and the descent must ask it to prove itself -- the timed frames (a readPixels sync each) run between the
-     call and the warp, and a fit world is drawn for the descent (draw calls, frame after frame, after the last of those
-     syncs). The page bends the clock so the software renderer is judged "fast" (fit) or "slow" (unfit): fit draws the
-     world, unfit draws none. The flight up is the control for the page's method: it proves the world today. */
+  /* ---- the world is proved in the leisure warm-up, and no flight waits for it (owner decision 12d) ----
+     The speed test is not made by a flight any more, nor by a descent: the leisure warm-up (journey.later, a few
+     seconds after the door is lit) runs it, on an accepted GPU. A flight up asked before that still proves the world
+     itself, behind its `ready` hold. A descent never waits: if the verdict is not in it is painted at once; in and fit
+     it draws the world with no new timed frames; in and unfit it is painted. (These replace the earlier cases that
+     wanted a descent to prove the world before its warp, which 12d reverses.) */
+  {
+    const { ctx, page, log } = await open({ init: [() => {
+      const rec = window.__freeze;
+      rec.pixels = [];
+      for (const C of [WebGL2RenderingContext, WebGLRenderingContext]) {
+        const read = C.prototype.readPixels;
+        C.prototype.readPixels = function (...args) { rec.pixels.push(performance.now()); return read.apply(this, args); };
+      }
+    }] });
+    await scenario("12d the leisure warm-up proves the world: no readPixels before body.lit, timed frames soon after, with no flight asked for", async (want, info) => {
+      await page.goto(at(["gpu=force"]), { waitUntil: "load" });
+      await waitBody(page, "lit", 90000);
+      const atLit = await state(page);
+      const before = atLit.pixels.filter((t) => t < atLit.seen.lit).length;
+      info(`readPixels before body.lit: ${before}`);
+      want(before === 0, `no readPixels before body.lit -- ${before}`);
+      let proved = null;
+      const t0 = Date.now();
+      while (Date.now() - t0 < 90000) {
+        const s = await state(page);
+        if (s.pixels.length > 0) { proved = Math.round(s.pixels[0] - s.seen.lit); break; }
+        await page.waitForTimeout(250);
+      }
+      info(`first readPixels ${proved === null ? "never" : proved + " ms after body.lit"}; no gate click made`);
+      want(proved !== null, "the leisure warm-up makes the timed frames (readPixels) within 90 s of body.lit, with no flight asked for");
+      want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
+    });
+    await ctx.close();
+  }
+
+  /* a flight up asked before the warm-up proves the world itself behind its ready hold: the method's control */
   for (const [kind, mode, name, fitWants] of [
-    ["fly", "fast", "prove: a flight up on a fit machine draws the world (control for the method)", true],
-    ["fly", "slow", "prove: a flight up on an unfit machine draws no world (control)", false],
-    ["descend", "fast", "prove: a descent with no flight before it, on a fit machine, proves the world and draws it", true],
-    ["descend", "slow", "prove: a descent with no flight before it, on an unfit machine, proves the world and draws none", false],
+    ["fly", "fast", "prove: a flight up asked before the warm-up proves the world, fit: drawn (control, as before)", true],
+    ["fly", "slow", "prove: a flight up asked before the warm-up proves the world, unfit: painted (control, as before)", false],
   ]) {
     const { ctx, page } = await open({ viewport: { width: 800, height: 500 } });
     await page.goto(`${SITE}tests/gate.html?gpu=force`, { waitUntil: "load" });
@@ -376,6 +407,29 @@ try {
       want((r.pixels ?? 0) > 0, `the timed frames ran during the ${kind} (readPixels made) -- ${r.pixels}`);
       if (fitWants) want((r.drawsAfterProof ?? 0) >= 20, `a fit world is drawn after the proof (at least 20 draw calls after the last sync) -- ${r.drawsAfterProof}`);
       else want((r.drawsAfterProof ?? 0) <= 2, `an unfit world is not drawn (at most 2 draw calls after the last sync) -- ${r.drawsAfterProof}`);
+    });
+    await ctx.close();
+  }
+
+  /* a descent never waits: showwarp comes on time (the normal 720 ms, with a wide margin) whatever the verdict */
+  for (const [verdict, name] of [
+    ["none", "12d a descent before any verdict does not wait, even with the world's pictures delayed 8 s: showwarp on time, painted, no timed frames"],
+    ["fit", "12d a descent with the verdict in and fit draws the world, on time, with no new timed frames"],
+    ["unfit", "12d a descent with the verdict in and unfit is painted, on time, with no new timed frames"],
+  ]) {
+    const { ctx, page } = await open({ viewport: { width: 800, height: 500 } });
+    if (verdict === "none") await page.route("**/assets/door/img/flight/**", async (route) => { await new Promise((ok) => setTimeout(ok, 8000)); await route.continue().catch(() => {}); });
+    await page.goto(`${SITE}tests/gate.html?gpu=force`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.gateReady, null, { timeout: 30000 });
+    await scenario(name, async (want, info) => {
+      const r = await page.evaluate((v) => window.descentTest(v), verdict);
+      info(`result ${short(r)}`);
+      want(!r.error, `the descent runs -- ${r.error}`);
+      want(r.hooks?.farewell !== undefined, "the descent reaches its farewell");
+      want(r.showwarpAt !== undefined && r.showwarpAt <= 2500, `body gets showwarp within 2500 ms of the call (normally about 720) -- ${r.showwarpAt === undefined ? "never" : r.showwarpAt + " ms"}`);
+      want(r.pixels === 0, `no new timed frames during the descent (readPixels) -- ${r.pixels}`);
+      if (verdict === "fit") want(r.draws >= 20, `the world is drawn (at least 20 draw calls) -- ${r.draws}`);
+      else want(r.draws <= 2, `the descent is painted (at most 2 draw calls) -- ${r.draws}`);
     });
     await ctx.close();
   }
