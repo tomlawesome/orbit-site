@@ -111,8 +111,9 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 - NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
   credited in the layout table above and in `LICENSE`.
 - `marked` (MIT), `sharp` (Apache-2.0; the import tool only) and `playwright`
-  (Apache-2.0; CI only). None ships to a visitor. Their versions are pinned in
-  `tools/package.json` and nowhere else.
+  (Apache-2.0; CI only). None ships to a visitor. `marked` and `sharp` are pinned in
+  `tools/package.json` and nowhere else; `playwright` by `PLAYWRIGHT_VERSION`
+  and `PLAYWRIGHT_IMAGE` in `.gitlab-ci.yml`.
 
 ## Publishing
 
