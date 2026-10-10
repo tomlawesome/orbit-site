@@ -218,7 +218,7 @@ export const mirror = (t) => UPDUR * (1 - Math.min(1, Math.max(0, t / DOWNDUR)))
 
 /* THE DOCS' GALAXY, first seen just where the mark's ring is at the centre of the screen and as large (166.4px
    across, timeline.js: MARK_ARRIVE; the ring 72 of its 200), far out; the camera then rushes in, faster and
-   faster, to the start of the way in (engine: milkyWay). Shared with the journey (flight.js), so the mark's ring
+   faster, to the start of the way in (engine: milkyWay). Shared with the journey (journey.js), so the mark's ring
    grows with the galaxy, exactly, as it becomes its rim. */
 export const MARK_RING = 166.4 * 72 / 200, FAR_T0 = 1080, FAR_T1 = 1750;
 /* the way in: from out beyond the disc, down into it, to rest among the stars of an arm (voyage.js: REST) */
@@ -1101,7 +1101,7 @@ export function createFlight(canvas, options = {}) {
   /** @param {number} now */
   function frame() {
     if (!flight) return;
-    /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (flight.js) */
+    /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (journey.js) */
     const now = clock();
     const active = flight;
     /* a profile may run its beats faster (the docs' and the information's flights) */
@@ -1143,6 +1143,8 @@ export function createFlight(canvas, options = {}) {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
+    /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
+    get drawingWorld() { return !!flight && !!voyage; },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
       if (!warmed) {

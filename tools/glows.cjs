@@ -2,7 +2,7 @@
 /*
  * The dawn's and the dusk's glows, rendered once, here, into pictures.
  *
- * Each glow is an SVG filter graph (flight.js: DAWN, DUSK) — blurs and a
+ * Each glow is an SVG filter graph (assets/door/glows.js: DAWN, DUSK) — blurs and a
  * turbulence — that the page used to draw into a canvas on load, on the main
  * thread, while the dawn was coming up. These are the same graphs drawn by the
  * same browser engine, so the pictures are those pixels, and the page only
@@ -17,7 +17,7 @@ const http = require("http"), fs = require("fs"), path = require("path");
 const root = path.resolve(__dirname, "..");
 const types = { ".html": "text/html", ".js": "text/javascript" };
 const page = `<!doctype html><meta charset="utf-8"><script type="module">
-import { DAWN, DUSK } from "./assets/js/flight.js";
+import { DAWN, DUSK } from "./assets/door/index.js";
 const SOFTEST = new Set(["zod", "sway1", "sway2", "glow", "belt"]), SOFT = new Set(["afterglow"]);
 window.render = async () => {
   const out = {};
