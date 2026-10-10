@@ -166,6 +166,11 @@ for (const src of SOURCES) {
     sections: page.sections.map((s) => ({ id: s.id, title: s.title, summary: s.summary, text: s.text, subs: s.subs })) });
   console.log(`${src.slug}: ${page.sections.length} sections, ${page.sections.reduce((n, s) => n + s.html.length, 0)} bytes`);
 }
+/* the stamp says when the docs last changed, not when the import last ran:
+   an unchanged import keeps the old one, so it changes nothing and the
+   nightly job has nothing to merge (#17) */
+const before = await readFile(join(OUT, "index.json"), "utf8").then(JSON.parse, () => null);
+if (before && JSON.stringify(before.sources) === JSON.stringify(index.sources)) index.generated = before.generated;
 await writeFile(join(OUT, "index.json"), JSON.stringify(index));
 console.log(`index: ${index.sources.reduce((n, s) => n + s.sections.length, 0)} sections in ${index.sources.length} sources`);
 
