@@ -64,7 +64,8 @@ try {
       ["the release hook has fired (a beat before the pin)", (r) => r.hooks.release !== undefined],
       ["the land hook has fired", (r) => r.hooks.land !== undefined && r.hooks.land < SOON],
       ["the body has class bare", (r) => r.classes.bare !== undefined && r.classes.bare < SOON && r.now.includes("bare")],
-      ["the flight is on show (class showwarp)", (r) => r.now.includes("showwarp") || r.classes.showwarp !== undefined],
+      /* the land beat takes the flight's canvas off as it bares the page, so a pin past it shows no showwarp */
+      ["the flight's canvas is off again (no class showwarp)", (r) => !r.now.includes("showwarp")],
     ]],
     ["fly unpinned (control)", "fly", undefined, CONTROL, [
       ["the land hook has not fired", (r) => r.hooks.land === undefined],
