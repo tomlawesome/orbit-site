@@ -72,7 +72,7 @@ Tried, October 2026:
 1. **Measure each program's translated size first; it's cheap.**
    - `WEBGL_debug_shaders.getTranslatedShaderSource(shader)` returns the HLSL (or other translation) the browser
      actually compiles.
-   - Logging its length for every program in `world.js` and `voyage.js`, beside the existing `orbit ·` console
+   - Logging its length for every program in `world.js` and `assets/door/voyage.js`, beside the existing `orbit ·` console
      lines, shows which program and which function dominate.
    - Then every change below can be judged by a number rather than by feel.
 
@@ -81,7 +81,7 @@ Tried, October 2026:
      Each unrolled copy multiplies the shader's size and compile time.
    - Candidates:
      - `world.js`: `dust()` (30 iterations), the haze march (`N=8`), `stars()` (4 layers).
-     - `voyage.js`: the galaxy raymarch (52 steps), `ignite()` (64), `streaks()` (4×2×2 nested), the ciliary and
+     - `assets/door/voyage.js`: the galaxy raymarch (52 steps), `ignite()` (64), `streaks()` (4×2×2 nested), the ciliary and
        spike loops in the star.
    - Rewriting a bound as a uniform (`for (int i = 0; i < uSteps; i++)`) keeps the loop a loop.
    - **The catch:** loops that sample textures with implicit derivatives must stay unrollable. Switch those reads
@@ -143,7 +143,7 @@ Tried, October 2026:
 
 ## The live door's Earth with dawn.py's clouds (8 October 2026, `?door3d` only, and the flight's Earth)
 
-- The Earth (voyage.js, shared by the door and the flight) now has dawn.py's cloud slab marched through the low air
+- The Earth (assets/door/voyage.js, shared by the door and the flight) now has dawn.py's cloud slab marched through the low air
   (under 15 km: a step every 6 km on rays that reach the ground, at most 40; every 4 km on rays that skim the limb,
   at most 160), the sun's light read from a table made as dawn.py makes it (sunTable, about 20–30 ms of script once),
   and finer maps about the door's view (lights, clouds, land).
@@ -165,7 +165,7 @@ Tried, October 2026:
 - Measured on an RTX 3080 (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
   about 10 ms a million pixels: far too heavy for a mid-range GPU.
 - The slab's march now reads one texel a step instead of three. Each clouds map (global, near) gets a field, made
-  once per context by a pass right after the map is put on the GPU (voyage.js: cloudField; RGBA8 at the map's own
+  once per context by a pass right after the map is put on the GPU (assets/door/voyage.js: cloudField; RGBA8 at the map's own
   size, with its levels). The field holds the cover remapped as dawn.py does, the same from the level that blurs it
   by 0.16 degrees (its soft cover), and the tops' height. The height is stored as a share of 12.6 km over the slab's
   foot, the most a top can stand: (CL1 - CL0) would clip the tallest. Across the near box's margin the march reads
@@ -181,11 +181,11 @@ Tried, October 2026:
     it first, and the flight always compiles it, so the default site's flight is back to flat clouds and a shorter
     compile.
   - RICH: the slab. The door measures lean (three frames, the mean of the last two). At 10 ms or less it makes rich as
-    a chore and measures it, and keeps it at 40 ms or less, asking the flight for the same (voyage.js: wantRich).
+    a chore and measures it, and keeps it at 40 ms or less, asking the flight for the same (assets/door/voyage.js: wantRich).
     The flight draws lean until its own rich program is made. Otherwise the door stays lean, drawn coarser if over
     40 ms, as before.
-    - *Superseded 2026-10: the 10 ms figure is not the rule now. `door3d.js` has `ROOM = 16` (a lean frame at 16 ms
-      or less makes rich), and which level a machine ships is decided at the page's start by `capability.js`: see
+    - *Superseded 2026-10: the 10 ms figure is not the rule now. `assets/door/door3d.js` has `ROOM = 16` (a lean frame at 16 ms
+      or less makes rich), and which level a machine ships is decided at the page's start by `assets/door/capability.js`: see
       "The ladder" below.*
   - `&rich` forces rich (still measured); `&lean` forbids it.
 - SwiftShader (software rendering: relative only), 1440×900, deviceScaleFactor 2, band 2880×648: lean 1.1 s a frame
@@ -221,16 +221,16 @@ Tried, October 2026:
 - Firefox compiles shaders on the page's own thread, so each compile freezes the page (owner's machine: the
   install/information world 0.5–1 s at about 2 s after opening, during the reveal, so the loading ring stuttered on
   its second spin; the live door's lean program 0.37 s and its rich one 0.5 s; the planets'; the flight's).
-- `COMPILES_ASIDE` (chores.js, from main.js): a probe context asks for `KHR_parallel_shader_compile` and is let go at
+- `COMPILES_ASIDE` (assets/door/chores.js, from main.js): a probe context asks for `KHR_parallel_shader_compile` and is let go at
   once. Where it is missing, every compile is a chore tagged `"compile"`, and `"compile"` is first in the chores'
   ORDER. They all run back to back once the door's painted reveal is over (`openChores`), before any upload, bake or
   live loop, while only the compositor moves anything (the reveal's fades, the orbits). The compiles are:
   - the install/information world (install.js `prepare`, which makes the world in the chore; `compiled`, `baked` and
     `prepared` are chained off it);
-  - the flight (engine.js `warm`, which makes its world in the chore);
+  - the flight (assets/door/engine.js `warm`, which makes its world in the chore);
   - the door's lean program, and its rich one, compiled up front whatever the ladder decides later, and drawn only if
     the ladder keeps it;
-  - the flight's rich OVER program (voyage.js `compileRich`, asked for by the door's rich compile, and drawn only once
+  - the flight's rich OVER program (assets/door/voyage.js `compileRich`, asked for by the door's rich compile, and drawn only once
     the door has gone rich);
   - the planets' program.
 
@@ -240,8 +240,8 @@ Tried, October 2026:
   the background at once, as before. `&mainthread` forces `COMPILES_ASIDE` false, so the Firefox path can be tried
   in Chromium. Headless Chromium on SwiftShader has no `KHR_parallel_shader_compile` either, so it takes that path
   without the flag.
-- `quiet()` (chores.js): resolves once nothing is queued or running and it has stayed so for two animation frames.
-  The door's lean and rich measures (door3d.js) and the door planets' 30-frame measure (install.js) wait for it, and
+- `quiet()` (assets/door/chores.js): resolves once nothing is queued or running and it has stayed so for two animation frames.
+  The door's lean and rich measures (assets/door/door3d.js) and the door planets' 30-frame measure (install.js) wait for it, and
   the loops keep drawing meanwhile. The door planets' window starts again from the next quiet if a chore ran during
   it. Firefox printed `door planets 24.4 ms a frame, so drawn at half scale` because that measure ran under the rich
   compile and the uploads; when quiet it is 0.4–1 ms. The 8 ms rule still stands, but only a quiet measure can trip
@@ -266,26 +266,26 @@ Tried, October 2026:
   Firefox stalls even compositor animations while it compiles.
 - Where `COMPILES_ASIDE` is false, the compiles now run under the loading ring, before the door is lit, where only the
   ring's runner can show a hitch:
-  - `openCompiles()` (chores.js), called at the page's start (main.js), lets the `"compile"` chores run while the rest
+  - `openCompiles()` (assets/door/chores.js), called at the page's start (main.js), lets the `"compile"` chores run while the rest
     of the queue stays shut until `openChores()`.
   - `compileFirst()` (main.js, at first light) queues every compile at once: the install/information world
-    (`prepare`), the flight (`engine.warm`), the docs' galaxy (voyage.js `makeGal`, now a `["compile", "docs"]` chore
-    queued with the flight's world), the live door's lean and rich programs and the flight's rich one (door3d.js
-    `compileDoor`), and the planets' (planets3d.js `compilePlanets`). door3d.js and planets3d.js are now imported at
+    (`prepare`), the flight (`engine.warm`), the docs' galaxy (assets/door/voyage.js `makeGal`, now a `["compile", "docs"]` chore
+    queued with the flight's world), the live door's lean and rich programs and the flight's rich one (assets/door/door3d.js
+    `compileDoor`), and the planets' (planets3d.js `compilePlanets`). assets/door/door3d.js and planets3d.js are now imported at
     the page's start, not at light. Their canvases, maps and loops still wait for the reveal (`liveDoorOf`).
-  - The two passes' small programs (voyage.js `passPrograms`) are compiled with them: the clouds' field with the lean
+  - The two passes' small programs (assets/door/voyage.js `passPrograms`) are compiled with them: the clouds' field with the lean
     weight and the flight's world, the cities' glow with the rich. Before this they compiled on the page's thread at
     their first upload, after the reveal.
     - *Superseded 2026-10: `passPrograms` no longer exists. The pass programs live only in the RICH program
-      (`voyage.js`); see "Fewer programs, same picture" below.*
+      (`assets/door/voyage.js`); see "Fewer programs, same picture" below.*
   - The ring waits for all of these on every visit (`waitCompiled`, via `compiledAll`, which now holds the door's and
     the docs' galaxy's), capped at 8 s so a failure never holds the door. `minLaps` is unchanged.
 - On every browser, the chores (uploads, bakes, first draws) and the live door (`liveDoorOf`) now start at `drawn()`,
   the end of the reveal's painted part, no longer at light. Where `COMPILES_ASIDE` is true the compiles still start in
   the background at once, as before.
-- The door-only Earth: voyage.js's scene source is in named parts (`UNIFORMS` tagged by part; `PARTS`: common, sky,
+- The door-only Earth: assets/door/voyage.js's scene source is in named parts (`UNIFORMS` tagged by part; `PARTS`: common, sky,
   ignite, streaks, earth, nebula, moon, arrival, shock). `sceneHead({ slab, door: true })` gives common and earth only
-  (earth carries its sun table lookup, its map tiers, the slab and the limb), and door3d.js compiles that. The flight's
+  (earth carries its sun table lookup, its map tiers, the slab and the limb), and assets/door/door3d.js compiles that. The flight's
   SCENE, OVER and rich OVER are byte-identical to before (diffed).
   - Door program (fragment, with its main): lean 28,937 → 16,919 characters; rich 28,952 → 16,934 (−42%).
   - The live band (y ≥ 560 px, 1440×900 at 1×, `&lean`, reduced motion, the pictures hidden), rendered by the new
@@ -293,7 +293,7 @@ Tried, October 2026:
   - The Firefox compile time is still to be measured on the owner's machine. SwiftShader caches and is not
     representative: 11 ms → 7–9 ms.
 - Every compile prints its duration as `<tag>: shaders compiled in N ms`: `install:` and `info:` (world.js
-  `compileMs`: from the first compile asked for to the last link status read), `flight:` (voyage.js `made`),
+  `compileMs`: from the first compile asked for to the last link status read), `flight:` (assets/door/voyage.js `made`),
   `docs galaxy:`, and `planets:`. The door's existing `door: lean|rich compiled N ms` lines are unchanged.
 - Checked in SwiftShader at 1200×800, 1×, `?preview&door3d`. Every WebGL call was timed against the reveal
   (`__chores().openedAt`).
@@ -315,7 +315,7 @@ Tried, October 2026:
   stalls the page; elsewhere they run in the background but still hold up readiness. A first visit under `?door3d`
   compiled about 20 programs.
 - What was merged:
-  - **One post-process program** in the flight (voyage.js) and in the install/information world (world.js). The
+  - **One post-process program** in the flight (assets/door/voyage.js) and in the install/information world (world.js). The
     bloom's down and up steps and the film are now one fragment shader, `POST`, with `uniform int uMode` (0 down,
     1 up, 2 film). Each old `main` is kept as a function (`down()`, `up()`, `film()`), and the uniforms are the union
     of the three. A step points `uHdr` and `uBloom` at the map it reads, so no sampler of the program is ever the
@@ -328,11 +328,11 @@ Tried, October 2026:
     program. A field is made with its map if the rich program is already there, otherwise as soon as the program is
     finished. The glow is made once every map has come. Both are made before the door's rich measure, and before the
     flight's `richOK`.
-  - **The probe** (capability.js, `probe()`), the first thing main.js does. It is one throwaway context and the tests'
+  - **The probe** (assets/door/capability.js, `probe()`), the first thing main.js does. It is one throwaway context and the tests'
     probe shader, compiled (twice where compiles are in the background, the second timed) and drawn four times at
     512×512. It is kept for 7 days per browser and screen. It prints
     `probe: compile N ms (background|page thread), M ms per Mpx (fresh|stored)`.
-  - **The door compiles only the weight it will draw** (door3d.js). `doorWeight()` predicts the rich Earth at the
+  - **The door compiles only the weight it will draw** (assets/door/door3d.js). `doorWeight()` predicts the rich Earth at the
     probe's ms per Mpx × the band's Mpx × 0.55:
     - "rich" (≤ 24 ms): the rich program alone, drawn from the first frame, measured, and drawn coarser if it must be.
       Only if it is still over 40 ms at 0.5× is the lean one compiled and drawn instead.
@@ -341,12 +341,12 @@ Tried, October 2026:
 
     `&rich` and `&lean` still force a weight. The console says which weight was chosen and why:
     `door: weight lean (predicted 174 ms of 40 for the rich, …)`.
-  - **The flight compiles only the overlay it will draw** (voyage.js). Where the door is "rich", the rich `OVER` is
+  - **The flight compiles only the overlay it will draw** (assets/door/voyage.js). Where the door is "rich", the rich `OVER` is
     compiled in place of the lean one, with the flight's own fields and glow made before the flight is ready. Where it
     is "lean", the rich one is never made. "both" and the public path are as before.
   - **The docs' galaxy** is now a `["galaxy", "docs"]` chore where compiles are in the background. `"galaxy"` ranks
-    after `"door"` and `"measure"` in chores.js ORDER, and the docs' journey still hurries it. On the page's thread it
-    stays a `"compile"` chore under the ring. `compiled()` (engine.js) and main.js's wait still don't wait for it on
+    after `"door"` and `"measure"` in assets/door/chores.js ORDER, and the docs' journey still hurries it. On the page's thread it
+    stays a `"compile"` chore under the ring. `compiled()` (assets/door/engine.js) and main.js's wait still don't wait for it on
     the background path.
   - **Counts in the console** (`?door3d` only): each `… compiled in N ms` line gains `(N programs)`, and main.js prints
     `programs compiled before the door: N (…)` once all the ring waits for, the door's first weight and the planets
@@ -373,10 +373,10 @@ Tried, October 2026:
 
 ## Rolled loops (8 October 2026): tried, measured, taken out
 
-- The probe (capability.js `PROBE`, a 16-step march with a 4-octave noise inside) compiles in 315 ms on the laptop
+- The probe (assets/door/capability.js `PROBE`, a 16-step march with a 4-octave noise inside) compiles in 315 ms on the laptop
   (Firefox and Edge, Direct3D) and 129 ms with a uniform that is always 0 in each loop's count (the tests'
   `PROBE_ROLLED`), drawing at the same speed; a trivial program compiles in 8-13 ms. On that, every fixed-count loop
-  in voyage.js and world.js was given the same `+uZ` (24 loops).
+  in assets/door/voyage.js and world.js was given the same `+uZ` (24 loops).
 - Measured the same evening, against the unchanged probe in the same run (the laptop ran ~35% faster that run, so
   absolute times mislead): the rich door went from 2.4x the probe to 2.5x, the flight's rich head from 3.2x to 3.0x,
   the lean door from 1.4x to 1.7x; Edge the same. No gain on the real shaders: their cost is not in their loops (the
@@ -388,7 +388,7 @@ Tried, October 2026:
 ## Fill the reveal (8 October 2026)
 
 - Why: after the shaders compile under the ring, the door is lit and its reveal plays for about 2.5 s. Until now no GPU
-  work ran during it. chores.js opened its queue (`openChores`) only at `drawn()` in main.js, once every painted
+  work ran during it. assets/door/chores.js opened its queue (`openChores`) only at `drawn()` in main.js, once every painted
   animation of the reveal had finished, because one 40-90 ms upload on the page's thread stutters the ring's stroke,
   which is drawn on that thread. So every upload, bake and first draw the ways in need waited until after the reveal,
   and the ways in opened 0.9 s (Edge) to 1.3 s (Firefox) after it. Measured on the laptop: on Edge, 4.9 s between the
@@ -396,26 +396,26 @@ Tried, October 2026:
 - The design: uploads are cut into bands small enough to fit in one frame's slack, one band a frame, during the
   reveal. The mipmaps (30-170 ms for the big maps) are built after the reveal as ordinary chores. No visual change,
   and every texture is byte-identical to before.
-  - **Soft chores** (chores.js). `chore(fn, rest, tag, { soft: true })` promises to take under ~5 ms. `openSoft()`
+  - **Soft chores** (assets/door/chores.js). `chore(fn, rest, tag, { soft: true })` promises to take under ~5 ms. `openSoft()`
     is called by main.js at `light()`, when the door is lit and the reveal begins. From then until `openChores()`
     (still at `drawn()`), pump() runs only soft chores (and the compiles, where they may run). They run one a frame:
     the next starts on the next animation frame and `setTimeout(0)`, with no 20 ms rest. Once the queue is open they
     are ordinary chores, ranked by their tags as before. A journey chosen hurries them as it hurries the rest.
     - *Superseded 2026-10: `openChores()` is no longer left to `drawn()`. `main.js` opens the chores at `light()`
       unless they are held (on Firefox, or with `?open=late`); see "Three to see" below.*
-  - **Bands** (new: upload.js `uploadBanded`). The texture is made at its full size at once (`texImage2D` with no
+  - **Bands** (new: assets/door/upload.js `uploadBanded`). The texture is made at its full size at once (`texImage2D` with no
     data) with LINEAR filtering and the caller's own wrap modes. The picture then goes in with `texSubImage2D`, a band
     of rows at a time, each band a soft chore. Each band is its own small bitmap (`createImageBitmap` of the picture's
     rows, off the page's thread), cut while the band before waits its turn: at most two in flight per picture. A band
     starts at about 1 MB (4096 wide: 64 rows; 2048: 128; 1024: 256; never under 16). The first band is timed: over
     4 ms halves the rest, under 1.5 ms doubles them.
     - *Superseded 2026-10: the bands are never doubled (a doubled band dropped frames in Edge); they are only halved
-      after any band that takes over 4 ms. See the comment in `upload.js`.*
+      after any band that takes over 4 ms. See the comment in `assets/door/upload.js`.*
   - **Mipmaps after**. After the last band, one ordinary chore with the same tag makes the mipmaps, sets
     LINEAR_MIPMAP_LINEAR and the caller's anisotropy. Until then the texture is complete at its first level and
     drawable. The helper's promise resolves only then.
-  - **Who uses it**: the flight's maps (voyage.js `load`), the install and information worlds' map, rings, moon and
-    galaxy photograph (world.js, SRGB8_ALPHA8), the live door's eight maps (door3d.js), and the planets' two maps in
+  - **Who uses it**: the flight's maps (assets/door/voyage.js `load`), the install and information worlds' map, rings, moon and
+    galaxy photograph (world.js, SRGB8_ALPHA8), the live door's eight maps (assets/door/door3d.js), and the planets' two maps in
     each of their two contexts (planets3d.js). A map's slab field, the cities' glow, the flight's warm draws and
     `loaded`, the worlds' `baked`, the door's first frame and the planets' first frame all still wait for the
     mipmaps. The sharper lights strip (`sharpStrip`, the last chore of all, never during the reveal) is still put on
@@ -440,7 +440,7 @@ Tried, October 2026:
   To be confirmed on the laptop, with the `reveal:` line's frame gap no worse than `&holdreveal`'s. SwiftShader's
   timings are not evidence either way.
 - Once the queue is open, or a journey is hurried, the bands no longer wait a frame each: they run back to back
-  within an 8 ms share of the frame (chores.js: SHARE), then the next frame is waited for. Without that the live
+  within an 8 ms share of the frame (assets/door/chores.js: SHARE), then the next frame is waited for. Without that the live
   door's eight maps took 50-220 frames to go in after the reveal, and a click before the flight's maps were in
   waited a frame a band.
 
@@ -461,7 +461,7 @@ Tried, October 2026:
   of the visit: the Earth 16-18 ms a frame at 20 a second, the world planets 13-17 ms, dropped to half scale. The
   owner's rule (CAPABILITIES.md): find at the page's start the highest level this machine can carry reliably, and ship
   exactly that.
-- The rule (capability.js: `level()`, after the probe, once a page view):
+- The rule (assets/door/capability.js: `level()`, after the probe, once a page view):
   - 0, still: no WebGL2 or no probe; reduced motion or save-data; compiles on the page's thread (the probe's
     `background` false); or a lean frame predicted over 16 ms.
   - 2, live rich: compiles in the background and the rich predicted at 40 ms or less. The weight is then
@@ -470,7 +470,7 @@ Tried, October 2026:
   - The page-thread rule is the decision, not a threshold: a Windows Firefox pays about 6 s of compiles under the
     ring for the journeys alone, on the desktop and the laptop alike. The live door's own compiles could go nowhere
     but under the ring, and its loops would then run beside a page that stalls on every later compile.
-  - *Superseded 2026-10: a page-thread compiler (Firefox) is no longer level 0. `capability.js` gives it level 1,
+  - *Superseded 2026-10: a page-thread compiler (Firefox) is no longer level 0. `assets/door/capability.js` gives it level 1,
     the lean door, started late (`lateDoor`) once every way in is open, and "classic" is now called "lean". See "The
     live door late, where compiles stall the page" below.*
   - The console says it on every page, with the flag or without: `level 0: still (compiles stall the page; probe
@@ -481,20 +481,20 @@ Tried, October 2026:
   - From the page after it: the door's eight maps and the planets' two maps in each of two contexts, their first
     frames, the strip's sharp tier, and both loops (the Earth's, the world planets').
   - Level 0 is exactly the door without the flag: the painted dawn, the picture planets, the flight with its lean
-    Earth (no rich overlay, no sharp strip, no strip at all), the dives from the pictures. Nothing of door3d.js or
+    Earth (no rich overlay, no sharp strip, no strip at all), the dives from the pictures. Nothing of assets/door/door3d.js or
     planets3d.js is compiled or made, though under the flag the modules are still fetched.
-- How it is gated (`liveDoor()`, capability.js: `?door3d` and level 1 or 2; asked only after the probe):
+- How it is gated (`liveDoor()`, assets/door/capability.js: `?door3d` and level 1 or 2; asked only after the probe):
   - main.js: the door's and the planets' compiles (`compileFirst`, which now waits for the probe, at most its one
     compile, under a ring already running), `liveDoorOf` at the reveal's end, and the programs-count line.
-  - voyage.js: the door's weight, the strip and its sharp tier, `uHasS`, and the strip's map.
+  - assets/door/voyage.js: the door's weight, the strip and its sharp tier, `uHasS`, and the strip's map.
   - planets3d.js (the planets the worlds draw, `OWN`) and install.js (`doorPlanets`).
-  - engine.js still waits for the probe under the flag before the flight's world is made.
-- Prove before show (door3d.js). The first frame is drawn into the canvas while it is still unseen (site.css: the
+  - assets/door/engine.js still waits for the probe under the flag before the flight's world is made.
+- Prove before show (assets/door/door3d.js). The first frame is drawn into the canvas while it is still unseen (site.css: the
   canvas is at opacity 0 until `.world.live`), measured there (`quiet()` first, then three frames with a read-back),
   decided on (coarser if over 40 ms; with the rich alone, the rich ladder's rules, down to the lean fallback), and
   only then shown: the `live` class, `followDoor`, the `door: live (…)` line. So `door: rich N ms a frame, kept, drawn
   at …` now comes before `door: live (rich)`. With "both", the rich is still tried after the lean is shown.
-- The door measured before the world planets. door3d.js's `doorMeasured` resolves once the first measure and its
+- The door measured before the world planets. assets/door/door3d.js's `doorMeasured` resolves once the first measure and its
   decision are made (or at once where the door is not live, has no WebGL2, or fails), and install.js's door-planets
   loop, with its own `door planets … ms a frame` measure, starts only after it. The owner saw the door's rich measure
   read 37 ms beside the world planets and 16 alone. A dive chosen before then is not held: until their first frame,
@@ -523,7 +523,7 @@ Targets, laptop, Firefox, first visit: the ring 4 s or under (10 s today); the w
 Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 
 1. **Rolled loops.** Tried and measured the same day: no gain on the real shaders (above). Taken out.
-2. **Chore waiting** (in). The `chores at … ready` line (chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
+2. **Chore waiting** (in). The `chores at … ready` line (assets/door/chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
    (Edge) of waiting for an idle moment on the laptop before the flight was ready, the full 120 ms timeout each time.
    Chores now start a frame after the last. The line still prints: the queue's empty time (pictures still coming, or
    decoding) and its rests are told apart, for the next look.
@@ -588,7 +588,7 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
   stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
   process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).
 
-**The build, if funded:** the flight (voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
+**The build, if funded:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
 state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;
 measures taken there; the live door late and in the worker too (the door's own canvas handed over when its journeys
 are ready). Verified pixel-identical against the page path, in Edge, before the switch is made for Firefox only

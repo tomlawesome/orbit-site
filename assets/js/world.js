@@ -12,8 +12,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { fetchOnce, linked } from "./chores.js";
-import { uploadBanded } from "./upload.js";
+import { fetchOnce, linked, uploadBanded } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -494,7 +493,7 @@ function picturesOf(opts) {
     small,
     MAP: opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
     RINGS: opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href,
-    MOON: opts.moon ?? new URL("../img/install/moon.webp", import.meta.url).href,
+    MOON: opts.moon ?? new URL("../door/img/flight/moon.webp", import.meta.url).href,
   };
 }
 /** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */

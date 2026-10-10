@@ -11,11 +11,10 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note, noteChores, quiet, counted, COMPILES_ASIDE } from "./chores.js";
+import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor } from "../door/index.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld } from "./world.js";
 import { onTilt } from "./tilt.js";
-import { liveDoor } from "./capability.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -449,13 +448,13 @@ export function createInstall(pad, opts = {}) {
          compiles in the background), so they have all of the first light and the door to be done in, and the
          compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
          measure) waits its turn as chores (chores.js), once the door's painted reveal is over. Where the browser
-         compiles on the page's own thread (COMPILES_ASIDE false), making the world is itself a chore ("compile",
+         compiles on the page's own thread (compilesAside false), making the world is itself a chore ("compile",
          queued at once and run under the first light's ring, which main.js holds until it is done; hurried with
          this journey's own). The time the compiles took is said (world.js: compileMs) */
       if (!this.prepared) {
         fetchWorld(opts.world);
         const make = () => { const w = ensure(); if (w) size(); return w; };
-        const made = (COMPILES_ASIDE ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
+        const made = (compilesAside() ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
         made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms${counted("world")}` : "failed"}`)));
         this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */

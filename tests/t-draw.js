@@ -1,7 +1,7 @@
 /* how fast the GPU draws here: the probe at 512x512 (ms per million pixels), then the door's real lean and rich Earth
    shaders at this screen's own band size, with maps of noise so every path runs (the slab needs clouds to march) */
 import { context, release, program, target, noiseTexture, timeDraws, PROBE, PROBE_ROLLED, line, round } from "./common.js";
-import { sceneHead, PASS_SWITCH, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/js/voyage.js";
+import { sceneHead, PASS_SWITCH, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/door/voyage.js";
 export const name = "draw";
 /* (the rich one draws its own fields and glow first: PASS_SWITCH) */
 const DOOR_MAIN = `void main(){

@@ -1,6 +1,6 @@
 /*
  * In the gate (live:journey, under Xvfb) and by hand: does the band upload do the right thing in each browser? Checks that cropHonoured(gl)
- * (assets/js/upload.js) agrees with a direct measurement of whether the browser's WebGL honours an ImageBitmap's
+ * (assets/door/upload.js) agrees with a direct measurement of whether the browser's WebGL honours an ImageBitmap's
  * crop on upload, and that a picture put on in bands matches the same picture put on whole, byte for byte
  * (tests/crop.html runs both and writes JSON to document.title). Chromium headless; Firefox headed, since it has
  * no WebGL headless here.

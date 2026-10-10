@@ -19,6 +19,9 @@
  */
 const queue = [];
 let open = false, soft = false, compiling = false, running = false, want = null, until = 0, wake = 0, started = 0, openedAt = 0;
+/* when someone last typed (watchTyping): an unhurried chore waits while they are, so a texture upload never lands
+   between a keystroke and its echo (Orbit's addition; settings.typingWait, 0 to never wait) */
+let lastInput = -Infinity;
 /* where the chores' time goes (noteChores): waiting for an idle moment, running, and the first one's start */
 let waited = 0, ran = 0, firstAt = 0, empty = 0, emptyAt = 0, held = 0, heldAt = 0;
 /* and each chore: its tag, how long it waited to start, how long it ran (ms) */
@@ -32,26 +35,29 @@ let frameAt = 0;
 const SHARE = 8, REVEAL_SHARE = 4;
 /* ?holdreveal: nothing during the reveal, as before (openSoft is never called, and upload.js puts each picture on the
    GPU whole): for the owner's A/B */
-export const HOLD_REVEAL = (() => { try { return /[?&]holdreveal\b/.test(location.search); } catch { return false; } })();
+export const holdReveal = () => !!flag("holdreveal");
 
+import { settings, flag } from "./settings.js";
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
    is a chore tagged "compile", all of them done while the first light's ring runs, before the door is lit
-   (openCompiles; main.js waits for them), where only the ring's runner can show the hitch. Asked of a context
+   (openCompiles; dawn.js waits for them), where only the ring's runner can show the hitch. Asked of a context
    made for the purpose and let go at once (Safari keeps only a few). &mainthread: as if it did not (to try the Firefox
    path in another browser) */
-export const COMPILES_ASIDE = (() => {
+let aside = null;
+export function compilesAside() {
+  if (aside !== null) return aside;
   try {
-    if (/[?&]mainthread\b/.test(location.search)) return false;
-    const gl = document.createElement("canvas").getContext("webgl2"); if (!gl) return true;
-    const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return ok;
-  } catch { return true; }
-})();
+    if (flag("mainthread")) return (aside = false);
+    const gl = document.createElement("canvas").getContext("webgl2"); if (!gl) return (aside = true);
+    const ok = !!gl.getExtension("KHR_parallel_shader_compile"); gl.getExtension("WEBGL_lose_context")?.loseContext(); return (aside = ok);
+  } catch { return (aside = true); }
+}
 /* (each chore used to wait for an idle moment, requestIdleCallback with a 120 ms timeout: while the door moves neither
    browser calls one, so each waited the whole 120 ms. Measured on the laptop, 8 October: 1.6 s of waiting in Firefox
    and 1.3 s in Edge before the flight was ready. Now a chore starts a frame after the last, and no sooner) */
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
-   freeze the page: COMPILES_ASIDE; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
+   freeze the page: compilesAside; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
    (a visitor can do nothing until one is ready), then the live door (door3d.js: its picture is already on screen),
    the measures, the docs' galaxy where it compiles in the background (voyage.js: after the door is live; the docs'
    journey still hurries it), and last of all the rich clouds, which nothing waits for */
@@ -70,6 +76,9 @@ function pump() {
     if (!open && !compiling && !soft) { if (!heldAt) heldAt = now; return; }
     /* the rest waits until the journey has had its opening */
     if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
+    /* and while someone is typing, until they pause */
+    const typing = settings.typingWait - (now - lastInput);
+    if (typing > 0) { clearTimeout(wake); wake = setTimeout(pump, typing + 20); return; }
     /* before open, only a compile (while they may run) or a soft chore (once the door is lit), or nothing ("compile"
        ranks first, so if there is one, it is this) */
     const may = (j) => open || (compiling && tags(j.tag)[0] === "compile") || (soft && j.soft);
@@ -111,6 +120,14 @@ export function chore(fn, rest = 60, tag = "", { soft: frameSized = false } = {}
   if (emptyAt) { empty += performance.now() - emptyAt; emptyAt = 0; }
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag, soft: frameSized }); pump(); });
 }
+/** the keyboard watched (index.js), once however often the door is made, and never off a page (a server has no
+    keyboard): capture, so a field that stops propagation still counts as typing */
+let watching = false;
+export function watchTyping() {
+  if (watching || typeof addEventListener !== "function") return;
+  watching = true;
+  for (const type of ["keydown", "input", "compositionupdate"]) addEventListener(type, () => { lastInput = performance.now(); }, { capture: true, passive: true });
+}
 /* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
 export function openChores() { if (!open) openedAt = performance.now(); if (heldAt) { held += performance.now() - heldAt; heldAt = 0; } open = true; pump(); }
 /* the door is lit and its reveal begins (main.js: light; never with ?holdreveal): the soft chores may run now, one a
@@ -146,19 +163,23 @@ export function quiet() {
     requestAnimationFrame(look);
   });
 }
-/* for the test only (?door3d): the queue as it is now */
-try { if (/[?&]door3d\b/.test(location.search)) window.__chores = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open, soft, compiling, openedAt }); } catch { /* not a page */ }
+/** for the test only (?door3d, index.js: window.__chores): the queue as it is now */
+export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open, soft, compiling, openedAt });
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
+/* (keyed by the address resolved against the page, so a relative and an absolute spelling of one picture share
+   the one fetch; off a page, by the string as given) */
 const fetched = new Map();
+const keyOf = (url) => { try { return new URL(url, document.baseURI).href; } catch { return url; } };
 export function fetchOnce(url) {
-  if (!fetched.has(url)) {
+  const key = keyOf(url);
+  if (!fetched.has(key)) {
     const p = fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); });
-    fetched.set(url, p);
+    fetched.set(key, p);
     /* a failed fetch is forgotten, so the next ask tries the network again */
-    p.catch(() => { if (fetched.get(url) === p) fetched.delete(url); });
+    p.catch(() => { if (fetched.get(key) === p) fetched.delete(key); });
   }
-  return fetched.get(url);
+  return fetched.get(key);
 }
 
 /** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as
@@ -169,7 +190,7 @@ export function noteChores(when) {
   /* (the soft chores ran inside the held time: counted once, as running) */
   note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, of which ${softN} soft chores (${Math.round(softMs)} ms) during the reveal, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - Math.max(0, held - softMs) - empty))} ms, over ${Math.round(wall)}`);
   /* each one: tag, waited/ran (?door3d only: a long line) */
-  if (COUNTING) note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
+  if (counting()) note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
 }
 /* how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went) */
@@ -177,9 +198,9 @@ export function note(what, since = 0) {
   try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
 }
 /* how many programs each part has linked (?door3d only: said in its notes, " (3 programs)", and summed by main.js) */
-const COUNTING = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
+const counting = () => !!flag("door3d");
 const links = {};
 export function linked(label) { links[label] = (links[label] || 0) + 1; }
-export const counted = (label) => (COUNTING ? ` (${links[label] || 0} program${links[label] === 1 ? "" : "s"})` : "");
+export const counted = (label) => (counting() ? ` (${links[label] || 0} program${links[label] === 1 ? "" : "s"})` : "");
 /* all of them so far, and by part ("flight 3, world 2, …") */
 export const programs = () => ({ n: Object.values(links).reduce((a, b) => a + b, 0), by: Object.entries(links).map(([k, v]) => `${k} ${v}`).join(", ") });

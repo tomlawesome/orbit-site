@@ -15,10 +15,11 @@ const root = path.resolve(__dirname, "..");
 const types = { ".html": "text/html", ".js": "text/javascript", ".webp": "image/webp", ".png": "image/png" };
 const page = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{position:fixed;inset:0;width:100vw;height:100vh}</style>
 <canvas id="c"></canvas><script type="module">
-import { createFlight } from "./assets/js/engine.js";
-import { docsFlight } from "./assets/js/flight.js";
-import { openChores } from "./assets/js/chores.js";
+import { createDoor, openChores } from "./assets/door/index.js";
+import { docsFlight } from "./assets/js/journeys.js";
+createDoor({ image: (p) => "assets/door/img/" + p });
 openChores();
+const { createFlight } = await import("./assets/door/index.js");
 const e = createFlight(document.getElementById("c"));
 /* the docs' galaxy is warmed on its own, after the flight (voyage.js: warmDocs); warm() alone leaves it undrawn and
    the picture black (#7) */

@@ -5,7 +5,7 @@
  * documents; the information's are what Orbit is, in the README's words.
  */
 import { reduced, seededRng } from "./sky.js";
-import { chore } from "./chores.js";
+import { chore } from "../door/index.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);

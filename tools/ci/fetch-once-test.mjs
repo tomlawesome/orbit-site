@@ -1,5 +1,5 @@
 /*
- * Test for fetchOnce (assets/js/chores.js): a failed fetch is not remembered.
+ * Test for fetchOnce (assets/door/chores.js): a failed fetch is not remembered.
  * The first answer is a 503; the same address asked again must try again and
  * succeed, and a call made while that retry is in flight must share it.
  *
@@ -15,7 +15,7 @@ globalThis.fetch = async () => {
   return { ok: true, blob: async () => "b" };
 };
 
-const { fetchOnce } = await import("../../assets/js/chores.js");
+const { fetchOnce } = await import("../../assets/door/chores.js");
 
 let failed = false;
 const check = (name, ok, detail) => {

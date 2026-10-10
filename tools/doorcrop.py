@@ -2,10 +2,10 @@
 """
 The door's Earth, near: the patch of the planet the live door looks at, cut
 from NASA's full-resolution maps, so its clouds and cities stay as sharp as
-the baked picture's (tools/dawn.py, assets/img/door/dawn.webp).
+the baked picture's (tools/dawn.py, assets/door/img/dawn/dawn.webp).
 
 The live door (assets/js/door3d.js) otherwise samples the flight's global
-maps (assets/img/flight/, 2048 px around the world for the clouds, about
+maps (assets/door/img/flight/, 2048 px around the world for the clouds, about
 17 km a pixel): from 800 km up the clouds go to mush and the lights go soft.
 The ground actually in view is lat 42–54, lon 5–14; the Earth turns slowly
 under the camera, so the box cut here has room around it:
@@ -25,7 +25,7 @@ What is written, into --out:
     points. lon -25 falls half way into a pixel there, so the crop starts on
     the pixel edge just west of it: it covers lon -25.0133 … 44.9867 (the
     latitudes are exact). The 500 m Europe crop
-    (assets/img/flight/europe-lights.webp) still lies on top of it.
+    (assets/door/img/flight/europe-lights.webp) still lies on top of it.
   - land-near.webp: the Blue Marble Next Generation (December 2004, with
     topography and bathymetry) at its own 15 px a degree (1050×570).
   - lights-strip-240.webp, -180, -120: the Black Marble 2016 lights at
@@ -56,8 +56,8 @@ given, so the result is the same as with both at once:
   python3 tools/doorcrop.py --clouds-w cloud.W.png --strips S
   python3 tools/doorcrop.py --clouds-e cloud.E.png --strips S \\
       --lights BlackMarble_2016_3km.jpg --land world.topo.bathy.200412.3x5400x2700.jpg \\
-      --out assets/img/door
-  python3 tools/doorcrop.py --lights-500m BlackMarble_2016_C1.jpg --out assets/img/door
+      --out assets/door/img/dawn
+  python3 tools/doorcrop.py --lights-500m BlackMarble_2016_C1.jpg --out assets/door/img/dawn
 
 (the 500 m tile is a 59 MB JPEG, 21600×21600: about 1.4 GB once decoded.)
 (pip install pillow, with WebP.)
@@ -82,7 +82,7 @@ ap.add_argument("--strips", help="a directory to keep each hemisphere's cut stri
 ap.add_argument("--lights", help="BlackMarble_2016_3km.jpg (13500×6750, the whole world)")
 ap.add_argument("--lights-500m", help="BlackMarble_2016_C1.jpg (21600×21600, lon 0..90, lat 0..90)")
 ap.add_argument("--land", help="world.topo.bathy.200412.3x5400x2700.jpg (the whole world)")
-ap.add_argument("--out", default="assets/img/door", help="where the *-near.webp and lights-strip-*.webp go")
+ap.add_argument("--out", default="assets/door/img/dawn", help="where the *-near.webp and lights-strip-*.webp go")
 args = ap.parse_args()
 
 lon0, lon1, lat0, lat1 = NEAR

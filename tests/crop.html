@@ -35,7 +35,7 @@
       const g2 = document.createElement("canvas").getContext("webgl2");
       /* imported here, so a missing export is reported in the JSON rather than leaving the page blank */
       try {
-        const { cropHonoured } = await import("../assets/js/upload.js");
+        const { cropHonoured } = await import("../assets/door/upload.js");
         if (typeof cropHonoured !== "function") throw new Error("upload.js does not export cropHonoured");
         result.probe = await cropHonoured(g2);
       } catch (e) { result.error = String(e && e.message || e); }
