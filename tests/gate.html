@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="../assets/door/door.css" />
+</head>
+<body class="at-door">
+  <!-- Driven by tools/ci/freeze.mjs (#2, ADR-0002 behaviours 11 and 12): a door and a journey made through
+       assets/door/index.js alone, as a host makes them, with ?gpu=force read here by the host (the debug flag that
+       takes the software renderer the gate would refuse). Nothing else on the page flies or warms.
+         window.later(mode, after, watch)  mode "plain" | "stop" | "descend" | "fly": journey.later(fn, { after }),
+           then (per mode) stop() it, or start a descent or a flight at once; answers whether fn ran, and when, in
+           ms from the call, watching `watch` ms (a plain one stops watching 300 ms after fn runs)
+         window.warmSequence()  journey.warm({ prove: false }) and 6 s of quiet, then journey.warm() until a
+           further readPixels is seen; answers the webgl2 contexts made and the readPixels calls counted at each point -->
+  <div id="stage"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div id="launchname" aria-hidden="true"></div>
+  <script type="module">
+    /* counted before the door exists: every WebGL context asked for, and every readPixels (the sync a test frame
+       ends with) on either kind of context */
+    const contexts = [];
+    let pixels = 0;
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+      if (/webgl/.test(type)) contexts.push({ type, attrs: attrs ?? null });
+      return getContext.call(this, type, attrs);
+    };
+    for (const C of [globalThis.WebGL2RenderingContext, globalThis.WebGLRenderingContext]) {
+      if (!C) continue;
+      const read = C.prototype.readPixels;
+      C.prototype.readPixels = function (...args) { pixels++; return read.apply(this, args); };
+    }
+
+    const { createDoor, dawnMarkup, duskMarkup, UP } = await import("../assets/door/index.js");
+    const image = (path) => `../assets/door/img/${path}`;
+    const force = /[?&]gpu=force\b/.test(location.search);
+    const door = createDoor({ image, flags: force ? { gpu: "force" } : {} });
+    document.getElementById("stage").innerHTML = dawnMarkup({ image }) + duskMarkup({ image });
+    const glyph = () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 10 10");
+      svg.setAttribute("width", "10");
+      svg.setAttribute("height", "10");
+      return svg;
+    };
+    door.dawn(document.querySelector("#door"));
+    door.dusk(document.querySelector("#dusk"));
+    const journey = door.journey({
+      canvas: document.getElementById("warp"), name: document.getElementById("launchname"),
+      dawnGlyph: glyph, duskGlyph: glyph,
+      on: { dusk() { document.querySelector("#dusk").hidden = false; }, farewell() {} },
+    });
+    const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+    window.later = async (mode, after, watch) => {
+      const t0 = performance.now();
+      const ms = () => Math.round(performance.now() - t0);
+      const ran = [];
+      const hooks = {};
+      const note = (n) => () => { hooks[n] ??= ms(); };
+      let error = null, stop = null, returned = null;
+      try {
+        stop = journey.later(() => ran.push(ms()), { after });
+        returned = typeof stop;
+        if (mode === "stop") stop();
+        else if (mode === "fly") journey.fly(UP, { title: "Test", subtitle: "later", on: { release: note("release"), land: note("land"), settled: note("settled") } });
+        else if (mode === "descend") journey.descend({ title: "Test", subtitle: "later", onto: "dusk", from: UP, on: { released: note("released"), surface: note("surface"), farewell: note("farewell") } });
+      } catch (e) { error = String(e && e.message || e); }
+      let early = null;
+      while (ms() < watch) {
+        if (mode === "plain" && ran.length && early === null) early = ms();
+        if (early !== null && ms() > early + 300) break;
+        await sleep(50);
+      }
+      /* (a flight or a descent in hand is let go, as the other live tests do) */
+      try { journey.reset(); } catch { /* nothing to reset */ }
+      return { mode, after, ran, hooks, returned, error, watched: ms() };
+    };
+
+    window.warmSequence = async () => {
+      const out = { error: null };
+      const race = (p, limit) => Promise.race([Promise.resolve(p).then(() => true, () => "rejected"), sleep(limit).then(() => false)]);
+      const snapshot = () => ({ pixels, contexts: contexts.map((c) => ({ ...c })) });
+      try {
+        out.speculativeSettled = await race(journey.warm({ prove: false }), 60000);
+        await sleep(6000);
+        out.afterSpeculative = snapshot();
+        /* the proved warm: not waited for to settle, only until its first test frame has been synced */
+        const proved = journey.warm();
+        const seen = pixels;
+        const t0 = performance.now();
+        while (pixels === seen && performance.now() - t0 < 90000) await sleep(100);
+        out.afterProve = { ...snapshot(), waited: Math.round(performance.now() - t0) };
+        out.provedSettled = await race(proved, 100);
+      } catch (e) { out.error = String(e && e.message || e); }
+      return out;
+    };
+    window.gateReady = true;
+  </script>
+</body>
+</html>

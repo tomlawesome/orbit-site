@@ -85,6 +85,7 @@ uargs="ARGS|-a|-s|-screen 0 $ush|node|tools/ci/upload-test.mjs"
 pargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/pin-test.mjs"
 dargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/dawn-test.mjs"
 sargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/asdawn-test.mjs"
+fargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/freeze.mjs"
 
 failed=0
 passed=0
@@ -134,10 +135,10 @@ verdict() {
   why=""
 }
 
-# Case 1: no argument runs journey, upload, pin, dawn, then asdawn, with the gate's commands.
+# Case 1: no argument runs journey, upload, pin, dawn, asdawn, then freeze, with the gate's commands.
 run
-want_rc 0; want_calls 5; want_args "$jargs" "$uargs" "$pargs" "$dargs" "$sargs"
-verdict "no argument runs journey, upload, pin, dawn, then asdawn, with the gate's arguments"
+want_rc 0; want_calls 6; want_args "$jargs" "$uargs" "$pargs" "$dargs" "$sargs" "$fargs"
+verdict "no argument runs journey, upload, pin, dawn, asdawn, then freeze, with the gate's arguments"
 
 # Case 2: journey runs only the journey.
 run journey
@@ -164,6 +165,11 @@ run asdawn
 want_rc 0; want_calls 1; want_args "$sargs"
 verdict "asdawn runs only the asdawn test"
 
+# Case 3e (#2): freeze runs only the GPU gate's Chromium check.
+run freeze
+want_rc 0; want_calls 1; want_args "$fargs"
+verdict "freeze runs only the freeze check"
+
 # Case 4: an unknown argument -> usage on stderr, exit 64, nothing run.
 run bogus
 want_rc 64; want_calls 0
@@ -179,39 +185,39 @@ verdict "two arguments exit 64"
 
 # Case 6: the environment both runs get, with BROWSER defaulting to firefox.
 run
-want_every "BROWSER=firefox" 5; want_every "HEADED=1" 5
-want_every "WEBGL=required" 5; want_every "LIBGL_ALWAYS_SOFTWARE=1" 5
+want_every "BROWSER=firefox" 6; want_every "HEADED=1" 6
+want_every "WEBGL=required" 6; want_every "LIBGL_ALWAYS_SOFTWARE=1" 6
 verdict "every run gets BROWSER=firefox HEADED=1 WEBGL=required LIBGL_ALWAYS_SOFTWARE=1"
 
 # Case 7: the caller's BROWSER wins.
 extra="ORBIT_DIR=$orbit BROWSER=chromium"
 run
-want_every "BROWSER=chromium" 5; want_every "HEADED=1" 5
+want_every "BROWSER=chromium" 6; want_every "HEADED=1" 6
 verdict "a caller's BROWSER overrides the firefox default"
 
 # Case 8: PLAYWRIGHT_ROOT, when set, is used as it is.
 mkdir -p "$tmp/custom"
 extra="ORBIT_DIR=$orbit PLAYWRIGHT_ROOT=$tmp/custom"
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$tmp/custom" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$tmp/custom" 6
 verdict "PLAYWRIGHT_ROOT is honoured when set"
 
 # Case 9: otherwise the highest version wins (1.52.0 over 1.40.0 and 1.9.0)
 # and is exported as PLAYWRIGHT_ROOT.
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$orbit" 1.52.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$orbit" 1.52.0)" 6
 verdict "the highest Playwright version is chosen and exported"
 
 # Case 10: version order, not string order (1.40.0 over 1.9.0).
 extra="ORBIT_DIR=$tmp/old"
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/old" 1.40.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/old" 1.40.0)" 6
 verdict "1.40.0 beats 1.9.0 (version order, not string order)"
 
 # Case 11: ORBIT_DIR defaults to the orbit directory beside the top level.
 extra=""; sc=$tmp/work/site/tools/ci/journey-local.sh
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/work/orbit" 1.20.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/work/orbit" 1.20.0)" 6
 verdict "ORBIT_DIR defaults to the orbit directory beside the repository"
 
 # Case 12: no Playwright anywhere -> exit 2 naming the variables, no run.
