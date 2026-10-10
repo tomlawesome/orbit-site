@@ -1,6 +1,6 @@
 # Move orbit-site to GitLab: MRs and CI on the owner's runner, GitHub as mirror and Pages host
 
-**Status: complete (2026-10-10), kept as the record of the move.** One step remains with the owner: turning off issues on the GitHub mirror.
+**Status: complete (2026-10-10), kept as the record of the move.**
 
 Tracking plan, written here because the agent credential could not file issues on this repository at the time.
 
@@ -66,6 +66,6 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 - [x] The gate (lint + live Firefox journey) runs on every MR and is required to merge.
 - [x] The push mirror has delivered one merge to GitHub `main` and Pages served it.
 - [x] `import-docs.yml` is gone from GitHub and the GitLab schedule has committed one nightly import.
-- [ ] GitHub issues are off (owner, still on at 2026-10-10); CodeQL runs on the mirror (done).
+- [x] GitHub issues are off; CodeQL runs on the mirror. Private vulnerability reporting is on (owner, 2026-10-10).
 - [x] orbit's `AGENTS.md` no longer says the site is GitHub-only.
 
