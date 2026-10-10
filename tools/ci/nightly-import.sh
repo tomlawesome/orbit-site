@@ -45,10 +45,16 @@ branch="docs/import-$stamp"
 
 echo "== older import merge requests"
 old=$(api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
-  | json 'for (const m of j) if (m.source_branch.startsWith("docs/import-")) console.log(m.iid)')
-for iid in $old; do
-  echo "   closing !$iid (superseded by $branch)"
-  [ -n "$DRY_RUN" ] || api PUT "/merge_requests/$iid" --data-urlencode "state_event=close" >/dev/null
+  | json 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)')
+# Closing leaves the branch behind, so it goes too (#12): the name is checked
+# above, and a fork's merge request is never matched, so only an import's
+# own branch in this project is ever deleted.
+printf '%s\n' "$old" | while read -r iid ref; do
+  [ -n "$iid" ] || continue
+  echo "   closing !$iid and its branch $ref (superseded by $branch)"
+  [ -n "$DRY_RUN" ] && continue
+  api PUT "/merge_requests/$iid" --data-urlencode "state_event=close" >/dev/null
+  api DELETE "/repository/branches/$(printf '%s' "$ref" | sed 's|/|%2F|g')" >/dev/null || echo "   (could not delete $ref)"
 done
 
 if [ -n "$DRY_RUN" ]; then echo "DRY_RUN: would push $branch and open a merge request into main"; git reset -q; exit 0; fi

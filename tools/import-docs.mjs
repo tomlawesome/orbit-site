@@ -157,15 +157,23 @@ function render(md, src, bySourcePath) {
 const bySourcePath = new Map(SOURCES.map((s) => [`${s.repo}:${s.path}`, s]));
 await mkdir(OUT, { recursive: true });
 const index = { generated: new Date().toISOString(), sources: [] };
+let changed = false;
 for (const src of SOURCES) {
   const md = await fetchSource(src);
   const page = render(md, src, bySourcePath);
   const doc = { slug: src.slug, name: src.name, c: src.c, title: page.title, repo: src.repo, path: src.path, sections: page.sections };
-  await writeFile(join(OUT, `${src.slug}.json`), JSON.stringify(doc));
+  const file = join(OUT, `${src.slug}.json`), body = JSON.stringify(doc);
+  if (await readFile(file, "utf8").catch(() => "") !== body) changed = true;
+  await writeFile(file, body);
   index.sources.push({ slug: src.slug, name: src.name, c: src.c, title: page.title, repo: src.repo, path: src.path,
     sections: page.sections.map((s) => ({ id: s.id, title: s.title, summary: s.summary, text: s.text, subs: s.subs })) });
   console.log(`${src.slug}: ${page.sections.length} sections, ${page.sections.reduce((n, s) => n + s.html.length, 0)} bytes`);
 }
+/* the stamp says when the docs last changed, not when the import last ran:
+   an unchanged import keeps the old one, so it changes nothing and the
+   nightly job has nothing to merge (#17) */
+const before = await readFile(join(OUT, "index.json"), "utf8").then(JSON.parse, () => null);
+if (!changed && before && JSON.stringify(before.sources) === JSON.stringify(index.sources)) index.generated = before.generated;
 await writeFile(join(OUT, "index.json"), JSON.stringify(index));
 console.log(`index: ${index.sources.reduce((n, s) => n + s.sections.length, 0)} sections in ${index.sources.length} sources`);
 
