@@ -25,11 +25,19 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="assets/site.css" />
   <!-- the door's Earth comes with the page, the sunrise picture just after it -->
-  <link rel="preload" as="image" href="assets/img/door/dawn-pre.webp" fetchpriority="high" />
-  <link rel="preload" as="image" href="assets/img/door/dawn.webp" fetchpriority="low" />
+  <link rel="preload" as="image" href="assets/door/img/dawn/dawn-pre.webp" fetchpriority="high" />
+  <link rel="preload" as="image" href="assets/door/img/dawn/dawn.webp" fetchpriority="low" />
   <!-- every module asked for at once, rather than each only when the one before it has been read -->
   <link rel="modulepreload" href="assets/js/main.js" />
-  <link rel="modulepreload" href="assets/js/capability.js" />
+  <link rel="modulepreload" href="assets/door/index.js" />
+  <link rel="modulepreload" href="assets/door/settings.js" />
+  <link rel="modulepreload" href="assets/door/stars.js" />
+  <link rel="modulepreload" href="assets/door/chores.js" />
+  <link rel="modulepreload" href="assets/door/upload.js" />
+  <link rel="modulepreload" href="assets/door/capability.js" />
+  <link rel="modulepreload" href="assets/door/engine.js" />
+  <link rel="modulepreload" href="assets/door/timeline.js" />
+  <link rel="modulepreload" href="assets/door/voyage.js" />
   <link rel="modulepreload" href="assets/js/sky.js" />
   <link rel="modulepreload" href="assets/js/home.js" />
   <link rel="modulepreload" href="assets/js/data.js" />
@@ -37,9 +45,6 @@
   <link rel="modulepreload" href="assets/js/tour.js" />
   <link rel="modulepreload" href="assets/js/pads.js" />
   <link rel="modulepreload" href="assets/js/flight.js" />
-  <link rel="modulepreload" href="assets/js/engine.js" />
-  <link rel="modulepreload" href="assets/js/timeline.js" />
-  <link rel="modulepreload" href="assets/js/voyage.js" />
   <link rel="modulepreload" href="assets/js/install.js" />
   <link rel="modulepreload" href="assets/js/world.js" />
 </head>
@@ -59,15 +64,15 @@
       <div class="dawnlayer">
         <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#skywash)"/></svg>
         <div class="rays">
-          <svg class="wl sway1" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway1" href="assets/img/door/glow-sway1.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-          <svg class="wl sway2" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway2" href="assets/img/door/glow-sway2.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+          <svg class="wl sway1" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway1" href="assets/door/img/dawn/glow-sway1.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+          <svg class="wl sway2" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="sway2" href="assets/door/img/dawn/glow-sway2.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
         </div>
         <!-- the glows that breathe, breathing together as one layer -->
         <div class="sunpt">
           <svg class="wl breath" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
-            <image class="zodiacal" data-raster="zod" href="assets/img/door/glow-zod.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+            <image class="zodiacal" data-raster="zod" href="assets/door/img/dawn/glow-zod.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
             <image data-raster="sun" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
-            <image data-raster="sunpt" href="assets/img/door/glow-sunpt.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+            <image data-raster="sunpt" href="assets/door/img/dawn/glow-sunpt.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
           </svg>
         </div>
       </div>
@@ -77,8 +82,8 @@
       </svg>
       <!-- the Earth itself, from orbit, as the sun comes up over it (tools/dawn.py): before the light, and with it -->
       <svg class="wl earth" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
-        <image class="pre" data-href="assets/img/door/dawn-pre.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
-        <image class="up" data-href="assets/img/door/dawn.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
+        <image class="pre" data-href="assets/door/img/dawn/dawn-pre.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
+        <image class="up" data-href="assets/door/img/dawn/dawn.webp" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>
       </svg>
     </div>
     <div class="loginchrome">
@@ -290,12 +295,12 @@
         <linearGradient id="d-rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f0a35a"/><stop offset="100%" stop-color="#7a2c18"/></linearGradient>
         <linearGradient id="d-wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="40%" stop-color="#1e1838" stop-opacity=".30"/><stop offset="62%" stop-color="#3b2450" stop-opacity=".34"/><stop offset="78%" stop-color="#83354f" stop-opacity=".26"/><stop offset="91%" stop-color="#a2492a" stop-opacity=".22"/><stop offset="100%" stop-color="#c2571f" stop-opacity=".22"/></linearGradient>
       </defs></svg>
-      <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#d-wash)"/><image data-raster="glow" href="assets/img/dusk/glow-glow.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-      <svg class="wl belt" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="belt" href="assets/img/dusk/glow-belt.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
-      <svg class="wl afterglow" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="afterglow" href="assets/img/dusk/glow-afterglow.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl wash" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><rect x="0" y="0" width="1600" height="1000" fill="url(#d-wash)"/><image data-raster="glow" href="assets/door/img/dusk/glow-glow.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl belt" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="belt" href="assets/door/img/dusk/glow-belt.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
+      <svg class="wl afterglow" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><image data-raster="afterglow" href="assets/door/img/dusk/glow-afterglow.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/></svg>
       <svg class="wl limb" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice">
         <circle cx="800" cy="3920" r="3000" fill="#03050b"/>
-        <image data-raster="rim" href="assets/img/dusk/glow-rim.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
+        <image data-raster="rim" href="assets/door/img/dusk/glow-rim.webp" x="0" y="0" width="1600" height="1000" preserveAspectRatio="none"/>
         <circle cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="1.8" stroke-opacity=".6"/>
       </svg>
       <svg class="wl shimmerlayer" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice"><circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/></svg>

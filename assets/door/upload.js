@@ -10,7 +10,8 @@
  * (LINEAR). With ?holdreveal, or where the browser ignores a cut picture's crop (cropHonoured, below), the picture
  * is put on the GPU whole in one chore, its mipmaps with it, as before.
  */
-import { chore, note, HOLD_REVEAL } from "./chores.js";
+import { chore, note, holdReveal } from "./chores.js";
+import { flag } from "./settings.js";
 
 /* a band to start from: about a megabyte (4096 wide: 64 rows; 2048: 128; 1024: 256), never under 16 rows; every band
    timed, and the rows halved after any that took over 4 ms (never doubled: a band doubled after a quick first one
@@ -18,7 +19,7 @@ import { chore, note, HOLD_REVEAL } from "./chores.js";
 const BYTES = 1 << 20, FEWEST = 16, SLOW = 4;
 const CUT = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
 /* each texture's bands said in the console only with ?door3d (the console stays short otherwise) */
-const SAY = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
+const say = () => !!flag("door3d");
 
 /* whether this browser's WebGL honours a cut bitmap's crop when it is put on the GPU: a picture two rows high, its second
    row cut out and read back. Firefox (2026-10) puts the source's top rows in instead, so every band of a picture came out
@@ -41,7 +42,7 @@ export function cropHonoured(gl) {
       row.close?.(); gl.bindTexture(T, wasT); gl.bindFramebuffer(F, wasF); gl.deleteTexture(t); gl.deleteFramebuffer(f);
     }
     const ok = px[0] < 128 && px[1] > 128;
-    if (SAY || !ok) note(`upload: a cut picture's crop ${ok ? "honoured" : "ignored on upload: pictures go whole"}`);
+    if (say() || !ok) note(`upload: a cut picture's crop ${ok ? "honoured" : "ignored on upload: pictures go whole"}`);
     return ok;
   })().catch(() => false)));
   return p;
@@ -73,7 +74,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     drawable?.(t);
     return t;
   }, 60, tag);
-  if (HOLD_REVEAL) return whole();
+  if (holdReveal()) return whole();
   return cropHonoured(gl).then((ok) => (ok ? inBands() : whole()));
   function inBands() {
     let t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
@@ -119,7 +120,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
       } finally {
         if (!keep) bitmap.close?.();
       }
-      if (SAY) note(`upload: ${name} ${w}x${h} in ${bands} bands, longest ${longest.toFixed(1)} ms (the first: cut ${firstCut.toFixed(0)} ms, copied ${firstBand.toFixed(1)})`);
+      if (say()) note(`upload: ${name} ${w}x${h} in ${bands} bands, longest ${longest.toFixed(1)} ms (the first: cut ${firstCut.toFixed(0)} ms, copied ${firstBand.toFixed(1)})`);
       drawable?.(t);
       return t;
     })();

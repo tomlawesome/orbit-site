@@ -4,7 +4,7 @@ The goal: find, reliably and within the first quarter second, the highest-qualit
 machine and browser can run smoothly, and ship exactly that. Never a stutter to find out; never something shown
 and then taken away.
 
-(Decided 8 October 2026, from the measurements below. The code that follows it: `assets/js/capability.js`, which
+(Decided 8 October 2026, from the measurements below. The code that follows it: `assets/door/capability.js`, which
 every other module reads its level from; nothing decides on its own.)
 
 ## Two rules
@@ -38,7 +38,7 @@ stall of 50-150 ms while nothing moves yet. Draw it four times into a 512x512 ta
 numbers: compile ms (predicts the ring budget) and ms per million pixels (predicts frame cost). Then release the
 context. Calibration points from the real shaders: see the measurements.
 
-As built (`assets/js/capability.js`, `probe()`, 8 October 2026): where compiles are in the background the probe is
+As built (`assets/door/capability.js`, `probe()`, 8 October 2026): where compiles are in the background the probe is
 compiled twice (salted, two programs) and the second is the one timed, since a fresh context's first compile is
 3-5x the rest on Safari; on the page's thread once, since each is a stall. The result is kept in `localStorage` for
 **7 days**, keyed by the user agent, the screen's width and height and the pixel ratio, and while it is that fresh
@@ -53,12 +53,12 @@ compiles)`. `liveDoor()` is the one test every module asks: `?door3d`, and level
 
 | Level | What ships | Proof required, in order |
 |---|---|---|
-| **0 Still** | the baked door (`assets/img/door/dawn.webp`, 3200x720 from the NASA sources: static Earth, static clouds, high fidelity) and its picture planets; the flight with its classic Earth (the lighter, pre-slab shader); the dives and planets as before the live door | none: the floor, always ready. Chosen where there is no WebGL2 or the probe failed; with reduced motion or save-data; where shaders compile on the page's thread (the probe's `background` false: each compile stalls the page, so the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on every later compile); or where the probe predicts a lean frame over 16 ms. Nothing of the live door is compiled or made |
+| **0 Still** | the baked door (`assets/door/img/dawn/dawn.webp`, 3200x720 from the NASA sources: static Earth, static clouds, high fidelity) and its picture planets; the flight with its classic Earth (the lighter, pre-slab shader); the dives and planets as before the live door | none: the floor, always ready. Chosen where there is no WebGL2 or the probe failed; with reduced motion or save-data; where shaders compile on the page's thread (the probe's `background` false: each compile stalls the page, so the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on every later compile); or where the probe predicts a lean frame over 16 ms. Nothing of the live door is compiled or made |
 | **1 Live lean** | the live Earth with flat clouds, turning slowly; sphere and world planets; the flight's lean Earth (the rich one never compiled); near maps, the small lights strip and the device's own faded in | compiles in the background; the probe's ms per million pixels, scaled to the band, predicts lean <= 16 ms a frame and rich over 40, *before* the maps are fetched; then the first lean frame drawn unseen and measured (drawn coarser, to half, if over 40 ms) before it is shown; the world planets start only once that measure is taken |
 | **2 Live rich** | the cloud slab (dawn.py's physics); the device's sharp lights strip, faded in | as 1, with the rich predicted <= 40 ms; the weight then by the same prediction (`doorWeight`): the rich alone at 24 ms or less, its first frames drawn unseen and measured, kept at 40 (coarser first, to half), else the lean one made and shown instead; "both" at 40 or less, the lean shown first as at 1 and the rich tried after (that measure is on the shown canvas) |
 
 *Superseded 2026-10: the ladder above sends a browser that compiles on the page's thread (Firefox) to level 0. Now
-`assets/js/capability.js` gives it level 1, the lean door, started late (`lateDoor`) once every way in is open, and
+`assets/door/capability.js` gives it level 1, the lean door, started late (`lateDoor`) once every way in is open, and
 what is called "classic" above is now called "lean". See PERFORMANCE.md, "The live door late, where compiles stall the
 page".*
 
@@ -90,7 +90,7 @@ laptop Firefox 15.4 s / 16.1 s. The flight's compile grew from ~1.9 s to 3.1 s o
 
 *Superseded 2026-10: the Firefox rows above (level 0) and the sentence about level 0 and the classic Earth predate
 the late lean door: Firefox now lands on level 1. See PERFORMANCE.md, "The live door late, where compiles stall the
-page", and `assets/js/capability.js`.*
+page", and `assets/door/capability.js`.*
 
 ## Testing across devices
 

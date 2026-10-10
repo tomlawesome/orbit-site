@@ -191,7 +191,7 @@ export function mountRasters(world, groups, prefix) {
    The canvas between the dawn and the sky, and the name written once on the
    void; the door's ring stays in the door and goes as it goes. The surfaces are the host's; this only says WHEN, in the body-class
    vocabulary the app uses, and the stylesheet answers. */
-import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP } from "./engine.js";
+import { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP } from "../door/index.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -228,7 +228,7 @@ export function docsFlight(chart) {
   return { ...RIGHT, vpX: 0.5, vpY: 0.44, props: [], ending: "chart", chart };
 }
 export { UP, DOWN };
-import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
+import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "../door/index.js";
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
 

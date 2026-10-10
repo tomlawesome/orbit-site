@@ -8,7 +8,11 @@
 # the renovate.json section: a look-around in a customManagers matchString
 # fails and names renovate.json (Renovate compiles these with RE2); and the
 # .gitlab-ci.yml section: the docs/import-* merge-request rule must set
-# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13).
+# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13); and section
+# "the shared door is self-contained" (ADR-0001, issue #16): a file in
+# assets/door/ that imports from outside the folder, reads location.search or
+# uses import.meta.url fails and is named, as is a site module that imports a
+# file of the folder other than its index.js.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -300,6 +304,40 @@ if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'import' | grep -iq 'depend
   echo "ok   the committed .gitlab-ci.yml has the docs-import proxy section and passes"
 else
   echo "FAIL the committed .gitlab-ci.yml has the docs-import proxy section and passes (exit $rc, want 0 with a == heading naming import and dependency proxy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+# Cases (i)-(l) judge section "the shared door is self-contained" (ADR-0001).
+# Each adds one offending line, runs the lint, and takes the commit back.
+# door_case <label> <file> <line> <named>: the line appended to the file must
+# fail the lint with a message naming <named>.
+door_case() {
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $4)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# Case (i): a module of the folder importing a site module -> fails, names the file.
+door_case "a door module importing from outside the folder" assets/door/stars.js 'import { reduced } from "../js/sky.js";' "assets/door/stars.js:.*outside the folder"
+# Case (j): a module of the folder reading the address -> fails.
+door_case "a door module reading location.search" assets/door/stars.js 'export const X = /x/.test(location.search);' "assets/door/stars.js:.*reads the address"
+# Case (k): a module of the folder making a URL from import.meta.url -> fails.
+door_case "a door module using import.meta.url" assets/door/stars.js 'export const Y = new URL("./img/dawn/dawn.webp", import.meta.url).href;' "assets/door/stars.js:.*import.meta.url"
+# Case (l): a site module importing a file of the folder other than index.js -> fails, names the module.
+door_case "a site module importing inside the folder" assets/js/sky.js 'import { DAWN_FAR as Z } from "../door/stars.js";' "assets/js/sky.js:.*index.js"
+# Case (m): the committed tree as it is -> the section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'shared door'; then
+  echo "ok   the committed door folder passes the self-contained section"
+else
+  echo "FAIL the committed door folder passes the self-contained section (exit $rc, want 0 with a == heading naming the shared door)"
   sed 's/^/     /' "$out"
   failed=1
 fi

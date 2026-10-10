@@ -1,12 +1,12 @@
-/* a picture put on the GPU a band at a time (assets/js/upload.js), against the same picture put on whole: each drawn
+/* a picture put on the GPU a band at a time (assets/door/upload.js), against the same picture put on whole: each drawn
    into a target and read back, byte for byte, at its first level and (once both have their mipmaps) at its third.
    Both should be 0 bytes apart. In RGBA8 (the flight's and the door's maps) and SRGB8_ALPHA8 (the worlds' and the
    planets') */
 import { context, release, program, target, line, round } from "./common.js";
-import { uploadBanded } from "../assets/js/upload.js";
-import { openChores } from "../assets/js/chores.js";
+import { uploadBanded } from "../assets/door/upload.js";
+import { openChores } from "../assets/door/chores.js";
 export const name = "upload-bands";
-const PICTURE = new URL("../assets/img/door/clouds-near.webp", import.meta.url).href;
+const PICTURE = new URL("../assets/door/img/dawn/clouds-near.webp", import.meta.url).href;
 const SHOW = `#version 300 es
 precision highp float;
 uniform sampler2D uT; uniform float uLod; uniform vec2 uSize;
