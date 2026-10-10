@@ -43,13 +43,21 @@ const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new 
 export function mountDawn(host) {
   const unsky = mountFlightSky(host.querySelector(".dsky"), DAWN_FAR, DAWN_NEAR, "lg");
   const world = host.querySelector(".world");
-  const rasters = mountRasters(world, { sun: SUN }, "dawn");
+  /* the Earth's pictures asked for by start(), each settled when it has loaded or failed to (a failed one is let go,
+     as critical() lets it go: the door is drawn without it, not held "pending" for ever); none asked for yet: settled */
+  let earthSettled = Promise.resolve();
+  const rasters = mountRasters(world, { sun: SUN }, "dawn", { until: () => earthSettled });
   /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
   const loadEarth = () => {
+    const settled = [];
     for (const im of world.querySelectorAll(".earth image[data-href]")) {
-      im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
+      settled.push(new Promise((done) => {
+        im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); done(); }, { once: true });
+        im.addEventListener("error", done, { once: true });
+      }));
       im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
     }
+    earthSettled = Promise.all(settled);
   };
   let started = false, litOnce = false;
   const start = () => { if (started) return; started = true; afterFirstFrame(() => { loadEarth(); rasters.start(); }); };

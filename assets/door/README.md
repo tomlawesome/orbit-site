@@ -58,6 +58,13 @@ star fields and sets the glows' origin.
 
 - `start()`: the Earth's pictures asked for and the glows drawn, once, after
   the next frame is on screen. Call it whenever the door is shown.
+  `world.dataset.rasterised` reads `"pending"` from then, and `"ready"` once
+  the door is drawn: the glows are drawn AND the Earth's pictures `start()`
+  asked for (`dawn/dawn-pre.webp`, `dawn/dawn.webp`) have each loaded. A
+  picture that fails to load counts as settled, as the first light already
+  treats it (`critical()`): the door is then "ready" drawn without it, never
+  held "pending". (Interface change, 2026-10: "ready" used to mean the glows
+  alone. The dusk's world is unchanged: its glows alone.)
 - `light({ firstVisit, wait, after, onLit, onOpen, aside })`: first light,
   once per showing. The ring runs while the door's pieces (the fonts, the
   Earth's first picture) come; `firstVisit` makes it run at least a lap;

@@ -158,7 +158,7 @@ const frame = (defs, body, w, h) =>
    The groups are drawn one at a time with a breath between each, so the
    first light's own fade (three seconds) covers their arrival and the page
    stays answerable while they land; the result is kept per size. */
-export function mountRasters(world, groups, prefix) {
+export function mountRasters(world, groups, prefix, { until = () => null } = {}) {
   let timer, run = 0;
   /* where the sunrise point (800, 920 in the slice) falls on screen, for the
      layers that turn about it */
@@ -184,6 +184,9 @@ export function mountRasters(world, groups, prefix) {
       await new Promise((r) => setTimeout(r, 0));
       if (id !== run) return;
     }
+    /* "ready" is "drawn": the host may hold it for more (`until()`: a promise it never rejects; the dawn's Earth) */
+    await until();
+    if (id !== run) return;
     world.dataset.rasterised = "ready";
   }
   const rebuild = () => { clearTimeout(timer); timer = setTimeout(build, 120); };
