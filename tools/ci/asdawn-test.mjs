@@ -92,7 +92,7 @@ const MEASURE = () => {
        never lights the dawn, so its transform is set aside while it is measured (the row, not the entrance) */
     dawnSvg: box(dawn && dawn.querySelector(".glyph svg")), dawnRing: box(ringOf(dawn)), dawnGate: settled(dawn && dawn.querySelector(".gate")),
     duskSvg: box(dusk.querySelector(".glyph svg")), duskRing: box(ring), duskGate: box(dusk.querySelector(".gate")),
-    wrap: box(dusk.querySelector(".gate-wrap")), fw: box(fw), said: box(dusk.querySelector(".farewell .said")), sub: box(dusk.querySelector(".farewell .sub")),
+    wrap: box(dusk.querySelector(".gate-wrap")), fw: box(fw), said: box(dusk.querySelector(".farewell .said")), sub: box(dusk.querySelector(".farewell .sub")), subLine: parseFloat(cs(dusk.querySelector(".farewell .sub"))?.lineHeight),
     name: box(name),
     nameVisibility: cs(name) && cs(name).visibility, nameColor: cs(name) && cs(name).color,
     ringStroke: cs(ring) && cs(ring).stroke, ringWidth: cs(ring) && parseFloat(cs(ring).strokeWidth),
@@ -187,7 +187,7 @@ function phoneAsDawn(s, m) {
   s.want(".said is no wider than .6R", m.said && m.said.w <= 0.6 * R + 1, `said ${f(m.said?.w)} wide, .6R = ${f(0.6 * R)}`);
   s.want(".sub is 26px under the ring's foot, within 2px", near(m.sub?.t - m.duskRing?.b, 26, 2), `sub top ${f(m.sub?.t)}, ring foot ${f(m.duskRing?.b)}`);
   s.want(".sub is centred on the ring's axis, within 2px", near(m.sub?.cx, m.duskRing?.cx, 2), `sub centre ${f(m.sub?.cx)}, ring ${f(m.duskRing?.cx)}`);
-  s.want("the gate's top is 24px under .sub's bottom, within 2px", near(m.duskGate?.t - m.sub?.b, 24, 2), `gate top ${f(m.duskGate?.t)}, sub bottom ${f(m.sub?.b)}`);
+  s.want("the gate's top is 24px under the room for two lines of .sub, within 2px", near(m.duskGate?.t - (m.sub?.t + 2 * m.subLine), 24, 2) && m.duskGate.t >= m.sub.b + 22, `gate top ${f(m.duskGate?.t)}, sub top ${f(m.sub?.t)}, line ${f(m.subLine)}`);
   s.want("no horizontal overflow", m.scrollW <= m.vw, `the page scrolls ${m.scrollW} wide in ${m.vw}`);
   s.want("the farewell, the sub and the gate are inside the viewport's width", [m.fw, m.sub, m.duskGate].every((b) => b && b.l >= -0.5 && b.r <= m.vw + 0.5), `fw ${f(m.fw?.l)}..${f(m.fw?.r)}, sub ${f(m.sub?.l)}..${f(m.sub?.r)}, gate ${f(m.duskGate?.l)}..${f(m.duskGate?.r)}`);
 }
@@ -218,7 +218,7 @@ function layoutSigns(s, m, phone, tag) {
     s.want(`${tag}.said's centre is on the ring's centre, within 2px`, near(m.said?.cx, m.duskRing?.cx, 2) && near(m.said?.cy, m.duskRing?.cy, 2), `said (${f(m.said?.cx)}, ${f(m.said?.cy)}), ring (${f(m.duskRing?.cx)}, ${f(m.duskRing?.cy)})`);
     s.want(`${tag}.said is no wider than .6R`, m.said && m.said.w <= 0.6 * R + 1, `said ${f(m.said?.w)} wide, .6R = ${f(0.6 * R)}`);
     s.want(`${tag}.sub is 26px under the ring's foot, within 2px`, near(m.sub?.t - m.duskRing?.b, 26, 2), `sub top ${f(m.sub?.t)}, ring foot ${f(m.duskRing?.b)}`);
-    s.want(`${tag}the gate's top is 24px under .sub's bottom, within 2px`, near(m.duskGate?.t - m.sub?.b, 24, 2), `gate top ${f(m.duskGate?.t)}, sub bottom ${f(m.sub?.b)}`);
+    s.want(`${tag}the gate's top is 24px under the room for two lines of .sub, within 2px`, near(m.duskGate?.t - (m.sub?.t + 2 * m.subLine), 24, 2) && m.duskGate.t >= m.sub.b + 22, `gate top ${f(m.duskGate?.t)}, sub top ${f(m.sub?.t)}, line ${f(m.subLine)}`);
   } else {
     s.want(`${tag}the goodbye's .name shows`, m.nameVisibility === "visible", `visibility ${m.nameVisibility}`);
     s.want(`${tag}the farewell's top is 22px under the way back in's box`, near(m.fw?.t - m.wrap?.b, 22, 1), `farewell top ${f(m.fw?.t)}, .gate-wrap bottom ${f(m.wrap?.b)}`);
