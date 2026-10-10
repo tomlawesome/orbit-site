@@ -100,7 +100,9 @@ lint:
 # #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
 # band-upload test then compares banded and whole uploads byte for byte in
 # Chromium and Firefox, and the pin test checks a journey pinned at a moment
-# (`at`) starts there (#23).
+# (`at`) starts there (#23); the dawn test checks that destroy() cancels a
+# first light (#27) and that the Earth's pictures are in before the door reads
+# drawn (#28).
 live:journey:
   stage: live
   image:
@@ -120,6 +122,7 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is

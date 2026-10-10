@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="../assets/door/door.css" />
+</head>
+<body class="at-door">
+  <!-- Driven by tools/ci/dawn-test.mjs (#27, #28): a dawn made through assets/door/index.js alone, as a host makes it.
+       window.lightIt(destroyAt, watch) starts and lights it with an after() that never settles (so only the
+       13 s backstop can light it), calls destroy() at `destroyAt` ms (or never: null) and answers with when body.lit
+       showed and when onLit and onOpen were called, in ms from the call, after `watch` ms. window.drawBegin() starts it
+       and watches data-rasterised on the dawn's world; window.drawEnd() answers with when it first read "pending" and
+       "ready". -->
+  <div id="stage"></div>
+  <script type="module">
+    import { createDoor, dawnMarkup } from "../assets/door/index.js";
+
+    const image = (path) => `../assets/door/img/${path}`;
+    const door = createDoor({ image, flags: {} });
+    document.getElementById("stage").innerHTML = dawnMarkup({ image });
+    const dawn = door.dawn(document.querySelector("#door"));
+    window.dawn = dawn;
+    const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+    window.lightIt = async (destroyAt, watch) => {
+      const t0 = performance.now();
+      const ms = () => Math.round(performance.now() - t0);
+      const at = {}, errors = [];
+      const onerror = (e) => errors.push(String(e.message || e));
+      const onrejection = (e) => errors.push(String(e.reason && e.reason.message || e.reason));
+      addEventListener("error", onerror);
+      addEventListener("unhandledrejection", onrejection);
+      const look = () => { if (document.body.classList.contains("lit")) at.lit ??= ms(); };
+      const watcher = setInterval(look, 50);
+      let thrown = null;
+      try {
+        dawn.start();
+        dawn.light({
+          firstVisit: false, wait: true,
+          after: () => new Promise(() => {}),
+          onLit() { at.onLit ??= ms(); },
+          onOpen() { at.onOpen ??= ms(); },
+        });
+        if (typeof destroyAt === "number") { await sleep(destroyAt); dawn.destroy(); at.destroyed = ms(); }
+      } catch (e) { thrown = String(e && e.message || e); }
+      await sleep(Math.max(0, watch - ms()));
+      look();
+      clearInterval(watcher);
+      removeEventListener("error", onerror);
+      removeEventListener("unhandledrejection", onrejection);
+      return { at, lit: document.body.classList.contains("lit"), thrown, errors, end: ms() };
+    };
+
+    /* drawBegin() starts the dawn and watches its world's data-rasterised; drawNow() says what it reads now; drawEnd()
+       says when each value first showed (epoch ms, the same clock as the test runner's) and stops watching */
+    const seen = {}, drawErrors = [];
+    let watcher = null, thrown = null;
+    const look = () => { const v = dawn.world.dataset.rasterised; if (v) seen[v] ??= Date.now(); };
+    const onerror = (e) => drawErrors.push(String(e.message || e));
+    window.drawBegin = () => {
+      addEventListener("error", onerror);
+      watcher = setInterval(look, 10);
+      try { look(); dawn.start(); look(); } catch (e) { thrown = String(e && e.message || e); }
+      return Date.now();
+    };
+    window.drawNow = () => { look(); return dawn.world.dataset.rasterised ?? null; };
+    window.drawEnd = () => {
+      look();
+      clearInterval(watcher);
+      removeEventListener("error", onerror);
+      return { seen, now: dawn.world.dataset.rasterised ?? null, thrown, errors: drawErrors };
+    };
+    window.dawnReady = true;
+  </script>
+</body>
+</html>
