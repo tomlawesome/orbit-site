@@ -85,6 +85,17 @@ const RECORD = () => {
     new PerformanceObserver((list) => { for (const e of list.getEntries()) rec.long.push({ start: e.startTime, dur: e.duration }); })
       .observe({ type: "longtask", buffered: true });
   } catch { rec.noLongTasks = true; }
+  /* what each long frame ran (logged, not asserted: a failure says what the pause was, #32) */
+  rec.frames = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        rec.frames.push({ start: Math.round(e.startTime), dur: Math.round(e.duration), block: Math.round(e.blockingDuration || 0),
+          render: Math.round(e.renderStart ? e.startTime + e.duration - e.renderStart : 0),
+          scripts: (e.scripts || []).filter((x) => x.duration >= 20).map((x) => `${x.invoker || x.invokerType} ${String(x.sourceURL || "").replace(/^.*\/assets\//, "")}:${x.sourceFunctionName || ""} ${Math.round(x.duration)}ms`) });
+      }
+    }).observe({ type: "long-animation-frame", buffered: true });
+  } catch { rec.frames = null; }
   /* the first moment each class we care about was on */
   const look = () => {
     const now = performance.now();
@@ -109,7 +120,7 @@ const open = async ({ init = [], viewport = { width: 1280, height: 800 } } = {})
   for (const s of init) await page.addInitScript(s);
   return { ctx, page, log };
 };
-const state = (page) => page.evaluate(() => ({ ...window.__freeze, now: performance.now() }));
+const state = (page) => page.evaluate(() => ({ ...window.__freeze, now: performance.now(), paints: performance.getEntriesByType("paint").map((e) => `${e.name} ${Math.round(e.startTime)}`) }));
 const waitBody = (page, cls, timeout) => page.waitForFunction((c) => document.body.classList.contains(c), cls, { timeout });
 const gateOpen = (page, timeout) => page.waitForFunction(() => { const g = document.querySelector("#gate"); return g && !g.disabled; }, null, { timeout });
 const clickGate = (page) => page.evaluate(() => { const t = performance.now(); document.querySelector("#gate").click(); return t; });
@@ -191,6 +202,9 @@ try {
          painting's own stalls before it are not the GPU's and are tracked in their own issue ("The door's start-up
          painting stalls the page before it is lit", owner decision 10a), which wants this baseline. */
       info(`BASELINE long tasks before the light (not asserted): ${before.length}, ${short(before.map((t) => Math.round(t.dur)))} ms`);
+      /* (logged, not asserted) when the browser reported its paints, and what the long frames ran */
+      info(`paints reported (at 10 s): ${short(s.paints)}`);
+      info(`long frames over 100 ms, to 10 s after the light: ${JSON.stringify((s.frames || []).filter((f) => f.dur > 100 && f.start <= lit + 10000)).slice(0, 3000)}`);
 
       /* 3: the console, the requests, the page, the storage */
       const refusal = said(log, /orbit · flight world: off: software renderer \(/);
