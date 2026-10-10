@@ -33,7 +33,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
-    # The nightly import's merge requests are started by its project
+    # The nightly import's merge requests (docs/import-*) are started by its project
     # token's bot, which is not a member of the group and so cannot pull
     # through the group dependency proxy: they pull the same digest-pinned
     # images from Docker Hub instead (#13).
