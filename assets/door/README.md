@@ -89,13 +89,13 @@ removes the resize listeners.
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
 reduced, warm, warmDocs, compiled }`.
 
-- `fly(profile, { title, subtitle, ready, on })`: the climb, `profile` a
+- `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
   `ready`, a promise the clock holds for just before the canvas comes up, at
   most eight seconds. Hooks, each optional, in order: `release` (the surface
   flown from may go), `land` (the bare sky is readable), `settled` (the
   instrument has arrived).
-- `descend({ title, subtitle, onto, from, on })`: the descent, `onto`
+- `descend({ title, subtitle, onto, from, on, at })`: the descent, `onto`
   `"dusk"` or `"dawn"`, `from` the profile flown up (mirrored on the way
   down). Hooks: `released`, `surface` (the dusk or the dawn comes up),
   `farewell`.
@@ -106,6 +106,14 @@ reduced, warm, warmDocs, compiled }`.
 - `destroy()`: the journey taken down: `reset()`, its clock's pending beats
   dropped, its resize listener removed. A single-page host calls it when
   the component unmounts; a page that keeps one journey never needs it.
+
+`at` (both): pin the journey at a moment, in milliseconds into the journey
+as it plays (its own time, after a profile's `rate` has quickened it and the
+chart descent has moved its beats). The beats at or before `at` are applied at
+once, in order, with their hooks, and the flight is drawn as it stands then;
+nothing after them is scheduled, so a pinned journey stands still (for a
+screenshot or a test). Left out, the journey plays live. A pinned `fly()` does
+not wait for `ready`.
 
 A `fly()` whose `ready` never settles holds the clock at most eight
 seconds; a `descend()`, `reset()` or later `fly()` lets the hold go at once.

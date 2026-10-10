@@ -65,6 +65,15 @@ function journeyClock() {
   };
 }
 
+/* where in a pinned flight's own time the journey's `at` falls: the flight began at its warp beat (in the journey's own,
+   already transformed, time), runs at its profile's rate, and may start a little way into itself (P.skip); a live
+   flight is left to its clock (the empty options) */
+const pinnedFlight = (P, at, warpAt) => (typeof at === "number"
+  ? { at: Math.min(Math.max(0, (at - warpAt) * (P.rate || 1) + (P.skip || 0)), P.dur ?? Infinity) } : {});
+/* a pin at or after the beat that takes the canvas off the screen: there is nothing of the flight to see, and stepping
+   it frame by frame to draw it (slow where the GPU is software) would only hold up every beat after it */
+const gone = (beats, at, act) => typeof at === "number" && beats.some((b) => b.act === act && b.at <= at);
+
 export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const clock = journeyClock();
   const engine = createFlight(canvas, { now: clock.now });
@@ -75,10 +84,10 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   let cancelTimeline = () => {};
 
   let flight = { profile: UP, on: {} };
-  const ascentStep = (act) => {
+  const ascentStep = (act, beat) => {
     switch (act) {
       case "arming": body.classList.add("arming"); break;
-      case "warp": body.classList.add("showwarp"); engine.start(flight.profile); clock.stalls(engine.drawingWorld); break;
+      case "warp": body.classList.add("showwarp"); if (!flight.gone) engine.start(flight.profile, pinnedFlight(flight.profile, flight.at, beat.at)); clock.stalls(engine.drawingWorld); break;
       /* the door's ring is not lifted out of it: it goes as the door goes, as on the install's and the information's shots */
       case "mark": body.classList.remove("arming"); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
@@ -89,11 +98,14 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     }
   };
   let descent = { onto: "dusk", from: null, on: {} };
-  const descentStep = (act) => {
+  const descentStep = (act, beat) => {
     switch (act) {
       case "withdraw": body.classList.remove("instrument"); body.classList.add("withdrawing"); break;
       case "disperse": body.classList.add("dispersing"); break;
-      case "warp": body.classList.add("showwarp"); engine.start(descent.from ? descentFrom(descent.from) : descent.onto === "dawn" ? DOWN_DAWN : DOWN); break;
+      case "warp": {
+        const P = descent.from ? descentFrom(descent.from) : descent.onto === "dawn" ? DOWN_DAWN : DOWN;
+        body.classList.add("showwarp"); if (!descent.gone) engine.start(P, pinnedFlight(P, descent.at, beat.at)); break;
+      }
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
       case "nameOff": name.classList.remove("on"); break;
@@ -110,31 +122,35 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
-  /* fly: any profile, to whichever landing `on` describes */
-  function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null } = {}) {
+  /* fly: any profile, to whichever landing `on` describes. `at` (ms into the journey, in its own time) starts it there:
+     the beats up to `at` are applied at once, the flight drawn as it stands then, and the rest play out from there */
+  function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null, at } = {}) {
     cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");
-    flight = { profile, on: hooks };
+    const pinned = typeof at === "number";
+    flight = { profile, on: hooks, at, gone: false };
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
     let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1);
     /* not yet ready: the journey still starts at once, and the clock holds just before the flight's canvas comes up
        until what it draws is ready */
-    if (ready && !reduced) {
+    if (ready && !reduced && !pinned) {
       const warp = beats.find((b) => b.act === "warp")?.at ?? 0;
       body.classList.add("holding");
       clock.holdAt(Math.max(0, warp - 10), ready.finally(() => body.classList.remove("holding")));
     }
-    cancelTimeline = runTimeline(beats, ascentStep, clock);
+    flight.gone = gone(beats, at, "land");
+    cancelTimeline = runTimeline(beats, ascentStep, pinned ? { at } : clock);
   }
   const ascend = (o = {}) => fly(UP, o);
-  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {} } = {}) {
+  /* `at` as for fly(): ms into the descent's own (quickened) time */
+  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {}, at } = {}) {
     cancelTimeline();
     /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
        drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
     clock.stalls(false); clock.release();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
-    descent = { onto, from, on: hooks, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
+    descent = { onto, from, on: hooks, at, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
     let beats = descentBeats();
     /* out of the docs' galaxy: under way at once. The page lets go as the flight comes up beneath it (the same sky,
@@ -144,7 +160,9 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       const warp = 300, shift = D.warp - warp + DEEP_SKIP_T;
       beats = beats.map((b) => (b.act === "withdraw" ? b : b.act === "disperse" ? { ...b, at: 240 } : b.act === "warp" ? { ...b, at: warp } : { ...b, at: Math.max(warp + 60, b.at - shift) }));
     }
-    cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate), descentStep, clock);
+    beats = reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate);
+    descent.gone = gone(beats, at, "warpOut");
+    cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
   function destroy() { reset(); clock.dispose(); removeEventListener("resize", onResize); }
