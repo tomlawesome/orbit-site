@@ -23,7 +23,7 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, noteChores, compilesAside, hurryChores } from "./chores.js";
+import { chore, note, noteChores, compilesAside } from "./chores.js";
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
 
@@ -1158,20 +1158,18 @@ export function createFlight(canvas, options = {}) {
     voyage?.reset();
   }
 
-  let warmed = null, proved = null, warmedDocs = null, provedDocs = null, compiled = null, provenDone = false;
+  let warmed = null, proved = null, warmedDocs = null, provedDocs = null, compiled = null;
   return {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
     /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
     get drawingWorld() { return !!flight && !!voyage; },
-    /** whether the world has been proved (or is not to be had) and so will not be held for: a proving warm() has settled */
-    get proven() { return provenDone; },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is. Where the page may
        not use the GPU (fitness.js: gpu()) there is no world, none of its pictures is fetched, and this is the Earth's
        picture alone. `prove: false` (the door's, speculative): the world made and its pictures on the GPU, and no
-       frame drawn; the default proves the world (its test frames and the fitness test: voyage.js), which is the
-       flight's own ask and so hurries the flight's chores, and the world is drawn only once it has. */
+       frame drawn; the default proves the world (its test frames and the fitness test: voyage.js), which the host
+       asks at leisure once the door is lit, or a flight up asks if it is first; the world is drawn only once proved. */
     warm({ prove = true } = {}) {
       if (!warmed) {
         if (earth && !earth.src) earth.src = image("dawn/dawn.webp");
@@ -1196,9 +1194,7 @@ export function createFlight(canvas, options = {}) {
       }
       if (!prove) return warmed;
       if (!proved) {
-        /* the flight is wanted now: what it needs is done straight away */
-        hurryChores("flight");
-        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; provenDone = true; });
+        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; });
       }
       return proved;
     },

@@ -1044,7 +1044,7 @@ export function createVoyage(under) {
   let ok = false, dead = false, ready = false, fit = false;
   /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
      fitness test's, said when the test has ended and the world was still there to be judged) */
-  let offSaid = false;
+  let offSaid = false, madeOk = false;
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
   canvas.addEventListener("webglcontextlost", () => { dead = true; ok = false; ready = false; sayOff("the context was lost"); });
 
@@ -1081,7 +1081,7 @@ export function createVoyage(under) {
   const core = Object.values(P).filter(Boolean);
   const made = compiled(core).then(() => {
     if (dead) return false;
-    try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
+    try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
     if (ok && richOnly) P.overRich = P.over;
     if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
@@ -1098,6 +1098,7 @@ export function createVoyage(under) {
       const g0 = performance.now();
       const G = { gal: program(GAL, vs, "galaxy"), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV), "galaxy") };
       galMade = compiled(Object.values(G)).then(() => {
+        if (dead) return;   /* (the world was let go while it compiled: nothing to link on) */
         try {
           Object.values(G).forEach(finish); Object.assign(P, G); galOK = true;
           note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms${counted("galaxy")}`);
@@ -1201,7 +1202,8 @@ export function createVoyage(under) {
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
      back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
-     measure wait for the first call that proves, which is the flight's own, when it starts. Resolves when done */
+     measure wait for the first call that proves: the host's leisure warm-up after the door is lit, or a flight up that comes
+     first (owner decision 12d). Resolves when done */
   let loading = null, warming = null, docsLoading = null, warmingDocs = null, loaded = null;
   const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
     progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
@@ -1239,7 +1241,7 @@ export function createVoyage(under) {
           if (dead) sayOff("the world is gone");
           else if (fit) sayVerdict(`on (frame ${Math.round(ms)} ms)`);
           else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
-          note(`flight: world ${ready ? "proved" : dead ? "not made" : "too slow here, drawn without it"}`);
+          note(`flight: world ${ready ? "proved" : dead ? (madeOk ? "lost" : "not made") : "too slow here, drawn without it"}`);
           if (ok && !fit) retire();
         });
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
