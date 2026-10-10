@@ -275,7 +275,10 @@ fi
 
 # Cases (g)-(h) judge the .gitlab-ci.yml section "docs-import merge requests
 # pull without the dependency proxy" (issue #13): the workflow rule for source
-# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io.
+# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io,
+# and (issue #20) so does the rule for pushes whose commit author is a GitLab
+# project bot (CI_COMMIT_AUTHOR =~ /project_N_bot_/): the import's merge request
+# merges itself as the bot, so main's push pipeline runs as the bot too.
 proxy_line='^[[:space:]]*CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:[[:space:]]*docker\.io[[:space:]]*$'
 
 # Case (g): the docs/import rule loses its prefix override -> fails, names
@@ -292,6 +295,26 @@ else
     echo "ok   removing the docs/import prefix override fails"
   else
     echo "FAIL removing the docs/import prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+fi
+
+# Case (g2): the bot-author rule loses its prefix override -> fails, names
+# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
+# a clear line instead of stopping the run.
+if ! grep -q 'CI_COMMIT_AUTHOR =~' .gitlab-ci.yml; then
+  echo "FAIL removing the bot-author prefix override fails (no bot-author rule to remove: .gitlab-ci.yml has no CI_COMMIT_AUTHOR =~ rule)"
+  failed=1
+else
+  sed -i '/CI_COMMIT_AUTHOR =~/d' .gitlab-ci.yml
+  commit_all "bot-author rule removed"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
+    echo "ok   removing the bot-author prefix override fails"
+  else
+    echo "FAIL removing the bot-author prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
     sed 's/^/     /' "$out"
     failed=1
   fi
