@@ -6,7 +6,7 @@
 
 Pattern throughout: **capability detection before feature use, from one resource that is then reused** (Orbit #1253, commits ab8e356f, b3e99cd4). The door folder takes Orbit's `fitness.js` almost verbatim, minus its remembered verdict (Orbit #1310, 00a8923a; owner decision 7, below), so Orbit can delete its own `fitness.js` and most of `warm.js` after the import.
 
-Owner decisions, 2026-10-10: **5a** a slow machine (median frame over 30 ms) gets the painted flight, as Orbit does; **6a** a cheaper model builds from these notes; **7** no remembered verdict: the machine is tested on every visit, "it gives the smoothest experience for the pc conditions at the time".
+Owner decisions, 2026-10-10: **5a** a slow machine (median frame over 30 ms) gets the painted flight, as Orbit does; **6a** a cheaper model builds from these notes; **7** no remembered verdict: the machine is tested on every visit, "it gives the smoothest experience for the pc conditions at the time". **12d** the speed test runs in the leisure warm-up after the door is lit, so no flight waits for it (below).
 
 ## 1. Decisions
 
@@ -20,7 +20,7 @@ Owner decisions, 2026-10-10: **5a** a slow machine (median frame over 30 ms) get
 
 **Fitness: adopt Orbit's refusal, keep the site's scaling (both).** After the warm-up frames, `frameCost()` draws 2 untimed frames then up to 5 timed, judging the median against 30 ms; unfit → the flight draws on its own 2D canvas ("too slow here, drawn without it"). `calibrate()` still scales resolution afterwards for fit machines. Owner decision 5a: refuse, as Orbit does, rather than fly a 31–45 ms machine coarse.
 
-**No test frames on the door.** `warm({ prove: false })` makes shaders and uploads pictures and stops; the touch frames, the fitness and calibrate run on the first `prove: true` ask, which is the flight's own.
+**No test frames on the door; the verdict is ready before anyone flies (owner decision 12d).** Before `body.lit`, `warm({ prove: false })` makes shaders and uploads pictures and stops. The leisure warm-up (`journey.later`, a few seconds after the door is lit) proves the world, on an accepted GPU only: the touch frames, the fitness and calibrate, a few milliseconds on real graphics. A flight never waits for a verdict. Up or down, it uses the world if the verdict is in and fit, and otherwise flies the painted flight with no pause. A flight up asked before the warm-up has run still proves the world itself, as it always did, behind the `ready` hold. Only a descent made before the warm-up (a visitor leaving within about 4 s of arriving) is painted. Owner, 2026-10-10, on a descent that waited up to 8 s: "we should have already known this from when the door loaded".
 
 **Drop the leisure warm-up when a flight begins.** The door owns the timer: `journey.later(fn, { after })` runs `fn` after `after` ms once painted animations have finished (Orbit's `drawnIn`); `descend()` and `fly()` drop every pending one. Orbit's `stopLeisure` becomes this.
 
