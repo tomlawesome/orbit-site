@@ -327,6 +327,11 @@ door_case() {
 }
 # Case (i): a module of the folder importing a site module -> fails, names the file.
 door_case "a door module importing from outside the folder" assets/door/stars.js 'import { reduced } from "../js/sky.js";' "assets/door/stars.js:.*outside the folder"
+# Case (i2): the same over several lines, and (i3) a bare import with no `from` -> fail.
+door_case "a door module importing from outside over several lines" assets/door/stars.js 'import {
+  reduced,
+} from "../js/sky.js";' "assets/door/stars.js:.*outside the folder"
+door_case "a door module with a bare import from outside" assets/door/stars.js "import '../js/sky.js';" "assets/door/stars.js:.*outside the folder"
 # Case (j): a module of the folder reading the address -> fails.
 door_case "a door module reading location.search" assets/door/stars.js 'export const X = /x/.test(location.search);' "assets/door/stars.js:.*reads the address"
 # Case (k): a module of the folder making a URL from import.meta.url -> fails.

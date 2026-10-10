@@ -25,17 +25,19 @@ function block(src, name) {
   const start = a.index + a[0].length;
   return { start, end: b.index, indent: a[1], inner: src.slice(start, b.index) };
 }
-/* a slot's content, as the page has it, markers and all (so it is found again next time) */
-function slot(src, name) {
+/* a slot's content, as the page has it, markers and all (so it is found again next time). A slot whose markers are
+   missing or mistyped is an error, never an empty slot: a plain run must not quietly drop the site's own parts */
+function slot(src, block, name) {
   const re = new RegExp(`[ \\t]*<!-- slot:${name} -->[\\s\\S]*?<!-- /slot:${name} -->`);
   const m = src.match(re);
-  return m ? m[0] : "";
+  if (!m) throw new Error(`index.html: the ${block} block has no <!-- slot:${name} --> … <!-- /slot:${name} --> markers (mistyped, or lost?)`);
+  return m[0];
 }
 
 let out = html;
-for (const [name, render] of [["door", dawnMarkup], ["dusk", duskMarkup]]) {
+for (const [name, render, names] of [["door", dawnMarkup, ["lockup", "gate", "foot"]], ["dusk", duskMarkup, ["gate", "foot"]]]) {
   const b = block(out, name);
-  const slots = Object.fromEntries(["lockup", "gate", "foot"].map((s) => [s, slot(b.inner, s)]));
+  const slots = Object.fromEntries(names.map((s) => [s, slot(b.inner, name, s)]));
   /* the gate's slot sits inline inside .gate-wrap: its markers carry no indent */
   slots.gate = slots.gate.trim();
   const fresh = render({ image, indent: b.indent, ...slots }) + "\n";

@@ -186,7 +186,10 @@ export function mountRasters(world, groups, prefix) {
     }
     world.dataset.rasterised = "ready";
   }
-  const start = () => { build(); addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(build, 120); }); };
+  const rebuild = () => { clearTimeout(timer); timer = setTimeout(build, 120); };
+  const start = () => { build(); addEventListener("resize", rebuild); };
   origin(); addEventListener("resize", origin);
-  return { start };
+  /* taken down: a build under way stops at its next step, and nothing listens */
+  const stop = () => { run++; clearTimeout(timer); removeEventListener("resize", rebuild); removeEventListener("resize", origin); };
+  return { start, stop };
 }
