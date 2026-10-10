@@ -203,4 +203,44 @@ if (glyph) {
   check("4. the site's own copy is still there", !!b, b ? `${b.length} bytes` : "removed");
 }
 
+/* ---- text safety: the farewell's words are text, never markup (a person's name may be in them) ---- */
+for (const asDawn of [false, true]) {
+  const how = asDawn ? "asDawn" : "no option";
+  const opts = (farewell) => ({ image, farewell, ...(asDawn ? { asDawn: true } : {}) });
+  for (const key of ["said", "sub"]) {
+    const other = key === "said" ? "sub" : "said";
+    const words = { [other]: "plain" };
+    const probe = (v) => duskMarkup(opts({ ...words, [key]: v }));
+    const elementIn = (out) => byClass(parse(out), key)[0];
+
+    const evil = probe("<img src=x onerror=1>");
+    const el = elementIn(evil);
+    check(`text. ${how}, ${key}: <img src=x onerror=1> is escaped, no element is made`, !!el && el.kids.length === 0 && find(parse(evil), (n) => n.tag === "img").length === 0 && !evil.includes("<img") && evil.includes("&lt;img"), `${evil.includes("<img") ? "a raw <img was written" : "no raw <img"}; elements inside .${key}: ${el ? el.kids.length : `no .${key}`}; ${evil.includes("&lt;img") ? "&lt;img present" : "no &lt;img"}`);
+
+    const amp = probe("A&B");
+    check(`text. ${how}, ${key}: "A&B" comes out as A&amp;B`, amp.includes(">A&amp;B<"), amp.includes(">A&amp;B<") ? "escaped" : `got ${JSON.stringify((amp.match(new RegExp(`class="${key}">([^<]*)<`)) || [])[1])}`);
+
+    const script = probe("</div><script>alert(1)</script>");
+    check(`text. ${how}, ${key}: a closing tag and a script cannot break out`, find(parse(script), (n) => n.tag === "script").length === 0 && !script.includes("<script") && byClass(parse(script), "farewell").length === 1, script.includes("<script") ? "a raw <script was written" : "no raw <script");
+
+    const mixed = probe(`Tom's <b>"best"</b> & more`);
+    const inner = (mixed.match(new RegExp(`class="${key}">([^\n]*?)</div>`)) || [])[1] || "";
+    check(`text. ${how}, ${key}: no raw < in the text and every & starts an entity`, inner.length > 0 && !inner.includes("<") && !/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/i.test(inner), `text written: ${JSON.stringify(inner)}`);
+
+    const plain = probe("Signed out, Tom Lawson");
+    check(`text. ${how}, ${key}: ordinary words are written as given`, plain.includes(">Signed out, Tom Lawson<"), "ordinary words unchanged");
+  }
+}
+
+/* ---- the picture resolver's answer goes into attributes: a quote or a bracket in it must not break out
+   (not marked raw in the README; this one is the resolver's output, not an option string) ---- */
+{
+  const hostile = (p) => `x/${p}" onerror="1"><img src=y onerror=2>`;
+  for (const [name, out] of [["dawnMarkup", dawnMarkup({ image: hostile })], ["duskMarkup", duskMarkup({ image: hostile })], ["duskMarkup asDawn", duskMarkup({ image: hostile, asDawn: true })]]) {
+    const t = parse(out);
+    const bad = find(t, (n) => n.tag === "img" || "onerror" in n.attrs);
+    check(`text. ${name}: image() output cannot add an attribute or an element`, bad.length === 0 && !out.includes("<img"), bad.length ? `${bad.length} element(s) with onerror or an <img>` : "contained");
+  }
+}
+
 process.exit(failed ? 1 : 0);

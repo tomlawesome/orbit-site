@@ -151,6 +151,14 @@ try {
     } finally { await page.close(); }
   };
 
+  const pendingAtOnce = async () => {
+    const { page, problems } = await open();
+    try {
+      const value = await page.evaluate(() => window.pendingAtOnce());
+      return { r: { value, thrown: null, errors: [] }, problems };
+    } finally { await page.close(); }
+  };
+
   const twoLights = async (gap, checks, watch) => {
     const { page, problems } = await open();
     try {
@@ -190,6 +198,10 @@ try {
       ["every Earth request had finished before ready", r.earth.length > 0 && r.seen.ready !== undefined && r.earth.every((e) => e.finished !== null && e.finished <= r.seen.ready)],
       ["no error was thrown", !r.thrown && r.errors.length === 0],
     ], (r) => `held ${JSON.stringify(r.earth.map((e) => e.url))}; at the end of the hold ${JSON.stringify(r.atHold)}; ready at ${r.seen.ready === undefined ? "never" : `+${r.seen.ready - r.began} ms`}, released at +${r.releasedAt - r.began} ms, requests finished at ${JSON.stringify(r.earth.map((e) => e.finished === null ? null : e.finished - r.began))}`],
+
+    ["data-rasterised is pending by the time start() returns (a host checking straight after sees it)", () => pendingAtOnce(), (r) => [
+      ["data-rasterised reads \"pending\" straight after start()", r.value === "pending"],
+    ], (r) => `straight after start() it read ${JSON.stringify(r.value)}`],
 
     ["dawn, start() alone (control): ready, and a resize rebuilds it", () => dead("start"), (r) => [
       ["data-rasterised reached ready", r.valuesBefore.includes("ready")],

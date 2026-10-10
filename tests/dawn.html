@@ -131,6 +131,11 @@
       removeEventListener("unhandledrejection", onrejection);
       return { called, litAt: lit.at, lit: document.body.classList.contains("lit"), loading, loadingBefore, destroyedAt, thrown, errors, end: ms() };
     };
+    /* #28: what the world reads in data-rasterised the moment start() returns (null: nothing yet) */
+    window.pendingAtOnce = () => {
+      dawn.start();
+      return dawn.world.dataset.rasterised ?? null;
+    };
     window.dawnReady = true;
   </script>
 </body>

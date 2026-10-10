@@ -14,7 +14,8 @@
        it. Query: asdawn=1 gives the dusk duskMarkup({ asDawn: true }) (else plain duskMarkup()); dawn=0 leaves the
        dawn's markup out (so a request for the Earth's pictures can only be the dusk's); rich=0 starts without
        html.rich. The dusk is unhidden. window.beat(classes) sets which of showdusk / farewell the body has (the
-       journey's beats, set by hand). window.descendHomes(n, at) runs journey.descend with n homes (none given when n
+       journey's beats, set by hand). window.remountDusk() and window.pendingAtOnce() are for the dusk's
+       remount and its data-rasterised (#25, #28). window.descendHomes(n, at) runs journey.descend with n homes (none given when n
        is null) pinned at `at`, and answers with the hooks fired and the body classes. -->
   <div id="stage"></div>
   <canvas id="warp" aria-hidden="true"></canvas>
@@ -42,6 +43,18 @@
     const dusk = door.dusk(document.querySelector("#dusk"));
     document.querySelector("#dusk").hidden = false;
     window.dusk = dusk;
+    /* the dusk, as a host that remounts it does: destroy() the mounted one, mount a new one on the same markup, and
+       start() it. window.dusk is the new one. */
+    window.remountDusk = () => {
+      window.dusk.destroy();
+      window.dusk = door.dusk(document.querySelector("#dusk"));
+      window.dusk.start();
+    };
+    /* what the dusk's world reads in data-rasterised the moment start() returns (null: nothing) */
+    window.pendingAtOnce = () => {
+      window.dusk.start();
+      return window.dusk.world.dataset.rasterised ?? null;
+    };
 
     window.beat = (...names) => {
       for (const c of ["showdusk", "farewell"]) document.body.classList.toggle(c, names.includes(c));

@@ -12,7 +12,8 @@
  * inside the ring (the said), 26px under it (the sub), the gate 24px under the sub, and nothing overflows sideways.
  * Reduced motion turns the planet's and its spin's animations off and changes none of that. The Earth photo (11a):
  * a dusk page without a dawn asks for dawn.webp and dawn-pre.webp, and shows one; without the option it asks for
- * neither. #26: journey.descend({ homes, at: 5400 }) still fires released, surface, farewell and sets
+ * neither; a dusk remounted on the same markup after destroy() (the photos still loading) shows one too, and its
+ * world reads "pending" the moment start() returns. #26: journey.descend({ homes, at: 5400 }) still fires released, surface, farewell and sets
  * showdusk/farewell, 30 homes without a throw.
  *
  * Without the option the same page is measured too, as controls: the glyph is 420px, the gate sits inside the ring,
@@ -65,7 +66,15 @@ const MEASURE = () => {
     const b = el.getBoundingClientRect();
     return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height, cx: b.left + b.width / 2, cy: b.top + b.height / 2 };
   };
-  const settled = (el) => { if (!el) return null; const was = el.style.transform; el.style.transform = "none"; const r = box(el); el.style.transform = was; return r; };
+  /* a transition or an animation on the gate would hold the old transform for the sample, so both are set aside too */
+  const settled = (el) => {
+    if (!el) return null;
+    const was = [el.style.transform, el.style.transition, el.style.animation];
+    el.style.transition = "none"; el.style.animation = "none"; el.style.transform = "none";
+    const r = box(el);
+    [el.style.transform, el.style.transition, el.style.animation] = was;
+    return r;
+  };
   const ringOf = (root) => root && (root.querySelector(".glyph .ring:not(.lux)") || root.querySelector('.glyph circle[r="72"]'));
   const dusk = document.querySelector("#dusk"), dawn = document.querySelector("#door");
   const cs = (el) => (el ? getComputedStyle(el) : null);
@@ -317,6 +326,47 @@ try {
       } catch (e) { s.problems.push(`${e.message.split("\n")[0]}`); } finally { await page.close().catch(() => {}); }
       s.done();
     }
+    await ctx.close();
+  }
+
+  /* ---- a dusk remounted on the same markup after destroy() still shows the Earth (#25) ----
+     start(), destroy() while the pictures are still on their way (delayed), mount again, start(): the second dusk must
+     show an Earth picture. Control: the same after the first pictures have loaded. */
+  {
+    const ctx = await browser.newContext({ viewport: DESKTOP, reducedMotion: "no-preference" });
+    for (const [delay, label] of [[3000, "destroy() while the pictures are still loading"], [0, "destroy() after the pictures have loaded (control)"]]) {
+      const s = scenario(`1280x800, asDawn, a remounted dusk: ${label}`);
+      const page = await ctx.newPage();
+      page.on("pageerror", (e) => s.problems.push(`pageerror: ${e.message}`));
+      if (delay) await page.route(EARTH, async (route) => { await sleep(delay); await route.continue().catch(() => {}); });
+      try {
+        await page.goto(`${SITE}tests/asdawn.html?asdawn=1&dawn=0`, { waitUntil: "load" });
+        await page.waitForFunction(() => window.asdawnReady, null, { timeout: 30000 });
+        await page.evaluate(() => window.dusk.start());
+        await sleep(delay ? 600 : 6000);
+        await page.evaluate(() => { window.remountDusk(); window.beat("showdusk", "farewell"); });
+        const shown = () => page.evaluate(() => [...document.querySelectorAll("#dusk image")]
+          .filter((i) => /dawn\/dawn(-pre)?\.webp/.test((i.getAttribute("href") || "") + (i.getAttribute("data-href") || "")))
+          .map((i) => parseFloat(getComputedStyle(i).opacity)));
+        let ops = [];
+        for (let t = 0; t < 12000; t += 250) { ops = await shown(); if (ops.some((o) => o >= 0.5)) break; await sleep(250); }
+        s.want("the second dusk's start() reaches an Earth picture at opacity 0.5 or more (within 12 s)", ops.some((o) => o >= 0.5), `Earth picture opacities ${JSON.stringify(ops)}`);
+      } catch (e) { s.problems.push(`${e.message.split("\n")[0]}`); } finally { await page.close().catch(() => {}); }
+      s.done();
+    }
+    await ctx.close();
+  }
+
+  /* ---- data-rasterised is "pending" by the time start() returns, on the sign-in-faced dusk ---- */
+  {
+    const ctx = await browser.newContext({ viewport: DESKTOP, reducedMotion: "no-preference" });
+    const s = scenario("1280x800, asDawn: the dusk's world reads pending straight after start()");
+    await withPage(ctx, "asdawn=1&dawn=0", s, async (page) => {
+      const v = await page.evaluate(() => window.pendingAtOnce());
+      s.want("data-rasterised reads \"pending\" the moment start() returns", v === "pending", `read ${JSON.stringify(v)}`);
+      await page.waitForFunction(() => window.dusk.world.dataset.rasterised === "ready", null, { timeout: 20000 }).catch(() => s.problems.push('want: it reaches "ready" once the glows are drawn and the Earth has loaded -- it did not within 20 s'));
+    });
+    s.done();
     await ctx.close();
   }
 
