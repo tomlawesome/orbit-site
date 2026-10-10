@@ -1158,13 +1158,15 @@ export function createFlight(canvas, options = {}) {
     voyage?.reset();
   }
 
-  let warmed = null, proved = null, warmedDocs = null, provedDocs = null, compiled = null;
+  let warmed = null, proved = null, warmedDocs = null, provedDocs = null, compiled = null, provenDone = false;
   return {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
     /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
     get drawingWorld() { return !!flight && !!voyage; },
+    /** whether the world has been proved (or is not to be had) and so will not be held for: a proving warm() has settled */
+    get proven() { return provenDone; },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is. Where the page may
        not use the GPU (fitness.js: gpu()) there is no world, none of its pictures is fetched, and this is the Earth's
        picture alone. `prove: false` (the door's, speculative): the world made and its pictures on the GPU, and no
@@ -1196,7 +1198,7 @@ export function createFlight(canvas, options = {}) {
       if (!proved) {
         /* the flight is wanted now: what it needs is done straight away */
         hurryChores("flight");
-        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; });
+        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; provenDone = true; });
       }
       return proved;
     },

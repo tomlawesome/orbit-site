@@ -192,6 +192,14 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     }
     beats = reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate);
     descent.gone = gone(beats, at, "warpOut");
+    /* the world is proved as a climb proves it (a visitor who lands on the home page and signs out has had no climb): its
+       test frames run in the withdrawing's first moments, and the clock holds just before the warp until they are done
+       (at most WORLD_WAIT), so a fit world is drawn for the descent and an unfit one is not. Nothing to wait for when it
+       has been proved, or there is none (no GPU, or reduced motion), or the descent is pinned at a moment */
+    if (!reduced && !engine.proven && typeof at !== "number") {
+      const warp = beats.find((b) => b.act === "warp")?.at;
+      if (warp !== undefined) clock.holdAt(Math.max(0, warp - 10), engine.warm());
+    }
     cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
