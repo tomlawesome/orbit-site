@@ -41,49 +41,53 @@ Words used in the table:
 | `index.html` | The sunrise (the hub: three more planets on their own orbits round the ring, each a section), the sky, the dusk, the three landings, and the flight's chrome |
 | `install.html` | Arrives at `./#install` |
 | `404.html` | Not found |
-| `assets/site.css` | The five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
+| `assets/door/` | The shared door (ADR-0001): the Earth door, the flight, their engine, timeline, stylesheet, markup and imagery, in one self-contained folder Orbit pulls in unchanged. `assets/door/README.md` is its interface. Also licensed AGPL-3.0 (`LICENSE`, section 3) |
+| `assets/site.css` | The site's own styles: the five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
 | `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today |
-| `assets/js/sky.js` | Star tiles, dawn and dusk fields, grain, packs |
+| `assets/js/sky.js` | The home sky's star tiles, grain, packs |
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
-| `assets/js/chores.js` | The background work, a piece at a time: each journey's pictures put on the GPU, its shaders checked, its first frames drawn unseen, starting the moment the door is lit; a chosen journey's own pieces go first. Each world also prints how long it took to the console (`orbit · …`) |
-| `assets/js/capability.js` | What this machine can carry, found by one small timed shader test at the page's start and kept for a week in the browser. It picks the level: the still door, the live door lean, or the live door rich (`CAPABILITIES.md`) |
-| `assets/js/upload.js` | Puts a big picture on the GPU a band of rows at a time, so the door's reveal is not held up |
+| `assets/door/chores.js` | The background work, a piece at a time: each journey's pictures put on the GPU, its shaders checked, its first frames drawn unseen, starting the moment the door is lit; a chosen journey's own pieces go first. Each world also prints how long it took to the console (`orbit · …`) |
+| `assets/door/capability.js` | What this machine can carry, found by one small timed shader test at the page's start and kept for a week in the browser. It picks the level: the still door, the live door lean, or the live door rich (`CAPABILITIES.md`) |
+| `assets/door/upload.js` | Puts a big picture on the GPU a band of rows at a time, so the door's reveal is not held up |
 | `assets/js/tilt.js` | On Android phones, the phone's tilt moves the worlds as a mouse pointer would (iOS is never asked) |
-| `assets/js/door3d.js` | The live door, while it is tried (add `door3d` to the address): the door's Earth drawn as it is, from the flight's own shader, turning slowly against the stars, its clouds drifting and the sun at the edge of rising; the picture stays until its first frame is drawn |
+| `assets/door/door3d.js` | The live door, while it is tried (add `door3d` to the address): the door's Earth drawn as it is, from the flight's own shader, turning slowly against the stars, its clouds drifting and the sun at the edge of rising; the picture stays until its first frame is drawn |
 | `assets/js/planets3d.js` | The live planets, with the live door (`door3d` in the address): the three worlds on the door's orbits drawn as lit spheres (the install's giant from its world's map, with a ring; the docs' moon, grey; the information's red bands), each where the compositor has put its anchor, lit by the sunrise and turning once a lap, on two canvases either side of the ring; the pictures stay until the first frame is drawn; the install's and the information's are handed to their own world once it is ready (install.js: `doorPlanets`), so a dive goes on from the very frame on the door |
-| `assets/js/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`), plus a sideways vanishing point and three more endings |
-| `assets/js/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
-| `assets/js/flight.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
+| `assets/door/engine.js` | The flight's canvas engine (orbit `web/src/lib/flight/engine.js`), plus a sideways vanishing point and three more endings |
+| `assets/door/timeline.js` | The flight's beats (orbit `web/src/lib/flight/timeline.js`) |
+| `assets/js/journeys.js` | The site's own flights, made from the door's climb: sideways to the docs and the information, quietly up to the install, past the other households for the demo |
+| `assets/door/glows.js`, `assets/door/journey.js` | The dawn's and the dusk's glows, drawn once; the journey between the surfaces |
+| `assets/door/dawn.js` | The dawn and the dusk mounted on their markup, and first light: the ring runs while the door's pieces come, then the reveal |
 | `assets/js/pads.js` | The sections — the docs' chart of the sky, its search and its reader, the information page — and the planets on the sunrise |
 | `assets/js/install.js` | The dives into a world: the camera goes from a planet on the door to the world it is, and settles in orbit over it. Two worlds use it: the install's (the purple ringed planet; the one line waits in the dark above) and the information's (`main.js`, `INFO_WORLD`: a coral planet, no rings, lit from above, resting as a crescent under the title, dimmed as its scenes are read). Each world has its own tuning, look and framing |
 | `assets/js/world.js` | The world, drawn in WebGL2: a ray-traced gas giant, flattened by its spin, under a thin haze, with rings that shade it and are shaded by it, a gold moon, and a Milky Way it draws itself (baked on the GPU, no picture); drawn in light, bloomed and tone-mapped |
 | `assets/img/install/planet*.webp` | The gas giant's cloud deck: Cassini's map of Jupiter (PIA07782, NASA/JPL/Space Science Institute), regraded to violet by `tools/gas-giant.py --base` (`pip install numpy scipy pillow`) |
 | `assets/img/install/orbit*.webp` | The world, still: shown while it loads, and in its place where WebGL2 is not |
 | `assets/img/install/rings.png` | The rings: Cassini's natural-colour mosaic across Saturn's rings (PIA08389, NASA/JPL/Space Science Institute) read as a radial profile by `tools/rings.py` |
-| `assets/img/install/moon.webp` | The gold moon: NASA's CGI Moon Kit (LRO colour and LOLA elevation; NASA's Scientific Visualization Studio) graded to gold by `tools/moon.py` |
+| `assets/door/img/flight/moon.webp` | The gold moon: NASA's CGI Moon Kit (LRO colour and LOLA elevation; NASA's Scientific Visualization Studio) graded to gold by `tools/moon.py` |
 | `tools/gas-giant.py` | Writes the cloud deck: regrades a real planet's map (`--base`), or simulates one of its own — jets along irregular bands, storms, eddies |
-| `assets/img/door/dawn*.webp` | The door's Earth: the night side from 800 km over the Atlantic, looking east over Europe as the sun comes up — the city lights from NASA's Black Marble (2016), the clouds and land from NASA's Blue Marble — before the light (`dawn-pre`) and with it (`dawn`), in the door's 1600×1000 frame, rows 640–1000 |
+| `assets/door/img/dawn/dawn*.webp` | The door's Earth: the night side from 800 km over the Atlantic, looking east over Europe as the sun comes up — the city lights from NASA's Black Marble (2016), the clouds and land from NASA's Blue Marble — before the light (`dawn-pre`) and with it (`dawn`), in the door's 1600×1000 frame, rows 640–1000 |
 | `tools/dawn.py` | Renders them: the air's scattering (molecules, haze, ozone) under a sun just below the horizon, the Earth's shadow included; the clouds as a slab standing up from the map; the cities through the air and under the clouds. Its docstring has the sources and the command |
-| `assets/img/door/glow-*.webp`, `assets/img/dusk/glow-*.webp` | The dawn's and the dusk's glows (the zodiacal light, the two fans of rays, the sun's point; the dusk's glow, belt, afterglow and rim), rendered once from their SVG filter graphs (`flight.js`: `DAWN`, `DUSK`) by `tools/glows.cjs` (`NODE_PATH=$(npm root -g) node tools/glows.cjs`, needs Playwright), so the page only shows them |
+| `assets/door/img/dawn/glow-*.webp`, `assets/door/img/dusk/glow-*.webp` | The dawn's and the dusk's glows (the zodiacal light, the two fans of rays, the sun's point; the dusk's glow, belt, afterglow and rim), rendered once from their SVG filter graphs (`assets/door/glows.js`: `DAWN`, `DUSK`) by `tools/glows.cjs` (`NODE_PATH=$(npm root -g) node tools/glows.cjs`, needs Playwright), so the page only shows them |
 | `assets/img/door/planet-*.webp` | The door's planets: the install's ringed giant, the information's coral giant, the docs' ice moon and the gold world on the ring, made from the install's own maps and backlit by the sunrise, by `tools/planets.py` (`python3 tools/planets.py`) |
-| `assets/js/voyage.js` | The flight's world in WebGL2, under the flight's own canvas (`engine.js` keeps the traffic, the endings and the mark): the door's Earth as a globe that falls away (the same camera, projected on the circle the flight gives the world, so its night side, its lit limb and the crescent that opens are true), the Milky Way, the streaks as light in depth, the star at the end; on the docs' flight, a galaxy in three dimensions (a spiral marched through for its light and dust, with 48,000 stars that pass with their parallax) flown into from outside; bloom, the door's tone curve, grain. Without WebGL2 the flight draws as before |
+| `assets/door/voyage.js` | The flight's world in WebGL2, under the flight's own canvas (`engine.js` keeps the traffic, the endings and the mark): the door's Earth as a globe that falls away (the same camera, projected on the circle the flight gives the world, so its night side, its lit limb and the crescent that opens are true), the Milky Way, the streaks as light in depth, the star at the end; on the docs' flight, a galaxy in three dimensions (a spiral marched through for its light and dust, with 48,000 stars that pass with their parallax) flown into from outside; bloom, the door's tone curve, grain. Without WebGL2 the flight draws as before |
 | `assets/img/docs/milkyway-sky.webp` | The docs page's sky: the last frame of the docs' flight, inside the galaxy looking at its core, drawn once, 3:1 and set to the screen's height as the flight draws it, with no constellations on it by `tools/docsky.cjs` (`NODE_PATH=$(npm root -g) node tools/docsky.cjs`, needs Playwright) |
 | `sw.js` | The site's cache, in the visitor's browser: pictures kept 36 hours and served without asking again; the page, code, styles and docs always checked fresh (a cheap "not modified" when unchanged), the last copy used offline. `main.js` also readies each journey in the background once the door is up (the demo's flight, then the install's world, then the docs, then the information's pictures), and each path waits for its own, briefly, before it starts |
-| `assets/img/flight/*.webp` | Its Earth: NASA's Black Marble city lights (global, and Europe sharper, where the door looks), the Blue Marble's land and clouds, reduced from the same sources as `tools/dawn.py` |
-| `assets/img/door/*-near.webp` | The live door's Earth, near: the patch it looks at (lon -25 to 45, lat 28 to 66) cut from NASA's full-resolution maps — the Blue Marble's clouds at 48 px a degree, the Black Marble's lights (2016, 3 km) and the Blue Marble's land at their own 37.5 and 15 — so the clouds and cities stay as sharp as the picture's; the flight's global maps stay for the rest of the globe; `lights-strip-{240,180,120}.webp` are the 500 m lights over the door's own ground (lon 0 to 20, lat 40 to 56) at three sharpnesses, of which the device's band width picks one |
+| `assets/door/img/flight/*.webp` | Its Earth: NASA's Black Marble city lights (global, and Europe sharper, where the door looks), the Blue Marble's land and clouds, reduced from the same sources as `tools/dawn.py` |
+| `assets/door/img/dawn/*-near.webp` | The live door's Earth, near: the patch it looks at (lon -25 to 45, lat 28 to 66) cut from NASA's full-resolution maps — the Blue Marble's clouds at 48 px a degree, the Black Marble's lights (2016, 3 km) and the Blue Marble's land at their own 37.5 and 15 — so the clouds and cities stay as sharp as the picture's; the flight's global maps stay for the rest of the globe; `lights-strip-{240,180,120}.webp` are the 500 m lights over the door's own ground (lon 0 to 20, lat 40 to 56) at three sharpnesses, of which the device's band width picks one |
 | `tools/doorcrop.py` | Cuts them (`python3 tools/doorcrop.py`; `pip install pillow`): each cloud hemisphere is a 211 MB PNG, so they can be given one at a time, the strips kept with `--strips`. Its docstring has the sources, the box and the command |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
-| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
+| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`npm ci --prefix tools --ignore-scripts && node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
 | `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import and the weekly Renovate run |
-| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
+| `tools/door-markup.mjs` | Writes the door's markup into `index.html` from `assets/door/markup.js` (`node tools/door-markup.mjs`; `--check` is what the lint runs) |
+| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
 | `.github/workflows/codeql.yml` | CodeQL scans the JavaScript on the GitHub mirror |
 | `renovate.json` | What Renovate watches for newer versions of the pipeline's images and the import tool's packages |
 | `CONTRIBUTING.md`, `SECURITY.md` | How changes are made; how to report a security problem |
-| `LICENSE` | The licence, with the parts that carry their own terms |
+| `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs and launcher screenshots (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
 | `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the probe at 0 s, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
@@ -101,6 +105,15 @@ The walk is optional, and puts the sky back as it found it when it ends.
 
 Default pack: after dark. Links are relative; the `og:image` tags and the
 404's link are the only absolute URLs.
+
+## Approved third-party content
+
+- NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
+  credited in the layout table above and in `LICENSE`.
+- `marked` (MIT), `sharp` (Apache-2.0; the import tool only) and `playwright`
+  (Apache-2.0; CI only). None ships to a visitor. `marked` and `sharp` are pinned in
+  `tools/package.json` and nowhere else; `playwright` by `PLAYWRIGHT_VERSION`
+  and `PLAYWRIGHT_IMAGE` in `.gitlab-ci.yml`.
 
 ## Publishing
 

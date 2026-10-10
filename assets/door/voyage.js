@@ -16,35 +16,39 @@
  * the door's own tone curve, grain.
  *
  * Imagery: NASA's Black Marble (city lights) and Blue Marble (land, clouds),
- * NASA Earth Observatory. Reduced to small maps for here (assets/img/flight).
+ * NASA Earth Observatory. Reduced to small maps for here (img/flight in this folder).
  */
 
-import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
+import { chore, fetchOnce, note, linked, counted, compilesAside } from "./chores.js";
+import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
 
-const IMG = (p) => new URL(`../img/${p}`, import.meta.url).href;
-export const TEX = {
-  lights: IMG("flight/earth-lights.webp"), day: IMG("flight/earth-day.webp"), clouds: IMG("flight/earth-clouds.webp"),
-  euro: IMG("flight/europe-lights.webp"), moon: IMG("install/moon.webp"),
-  /* finer, about where the door looks (NEAR) */
-  lightsN: IMG("door/lights-near.webp"), cloudsN: IMG("door/clouds-near.webp"), dayN: IMG("door/land-near.webp"),
-};
-/* the live door, while it is tried (?door3d; the same test main.js makes): engine.js waits for the probe under it. Only
+/* the pictures, where the host says they are (settings.js: image), resolved once they are first wanted, never at load */
+let textures = null;
+export function pictures() {
+  return textures || (textures = {
+    lights: image("flight/earth-lights.webp"), day: image("flight/earth-day.webp"), clouds: image("flight/earth-clouds.webp"),
+    euro: image("flight/europe-lights.webp"), moon: image("flight/moon.webp"),
+    /* finer, about where the door looks (NEAR) */
+    lightsN: image("dawn/lights-near.webp"), cloudsN: image("dawn/clouds-near.webp"), dayN: image("dawn/land-near.webp"),
+  });
+}
+/* the live door, while it is tried (?door3d: the host's flag): engine.js waits for the probe under it. Only
    where the door is live here (capability.js: liveDoor, the flag and level 1 or 2) is the strip below drawn */
-export const DOOR3D = /[?&]door3d\b/.test(location.search);
+export const DOOR3D = () => !!flag("door3d");
 /* the sharpest lights, the 500 m Black Marble over the door's own ground (tools/doorcrop.py), at the sharpness the
    device can show: its band's width in device pixels (D) picks one of three, so a small screen fetches 0.6 MB, not 1.8 */
 export function lightsStrip(W, dpr) {
   const D = W * Math.min(dpr, 2), ppd = D < 1600 ? 120 : D < 2600 ? 180 : 240;
-  return { url: IMG(`door/lights-strip-${ppd}.webp`), box: [0, 20, 40, 56], ppd };
+  return { url: image(`dawn/lights-strip-${ppd}.webp`), box: [0, 20, 40, 56], ppd };
 }
 /* chosen once a page view, by whichever (the door or the flight) loads its maps first, and kept: the two draw the same
    strip, so the click's handoff from one to the other does not change the cities */
 let strip = null;
 export function theStrip() {
   /* (what is loaded first is the smallest, whatever the device's: sharpStrip, below) */
-  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); TEX.lightsS = STRIP0; }
+  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); pictures().lightsS = strip0(); }
   return strip;
 }
 /* the strip comes small first (120 px a degree, 0.6 MB: all the flight waits for), and the device's own (theStrip),
@@ -54,12 +58,12 @@ export function theStrip() {
    sharpStrip(): a context that will draw it says so as it is made, then ready(take) once its small one is on the GPU
    (take(bitmap): the sharp one put on its GPU, kept beside the small one), or fail() if it never will be; the sharp one
    is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore */
-const STRIP0 = IMG("door/lights-strip-120.webp"), FADE = 1000;
+const strip0 = () => image("dawn/lights-strip-120.webp"), FADE = 1000;
 const sharp = { wants: new Set(), busy: false };
 export function sharpStrip() {
   const me = { settled: false, take: null, served: false, at: 0 };
   const settle = (take) => { if (me.settled) return; me.settled = true; me.take = take; sharpen(); };
-  if (theStrip().url === STRIP0) return { ready() {}, fail() {}, mix: () => 0 };
+  if (theStrip().url === strip0()) return { ready() {}, fail() {}, mix: () => 0 };
   sharp.wants.add(me);
   return { ready: settle, fail: () => settle(null), mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
 }
@@ -85,7 +89,7 @@ function sharpen() {
     .finally(() => { sharp.busy = false; sharpen(); });
 }
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
-export function fetchVoyage() { for (const url of Object.values(TEX)) fetchOnce(url).catch(() => {}); }
+export function fetchVoyage() { for (const url of Object.values(pictures())) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 export const EURO = [2, 24, 38, 55];
 /* the near maps (lights, clouds, land) cover lon -25..45, lat 28..66: all the door's ground can turn to in a while */
@@ -1071,7 +1075,7 @@ export function createVoyage(under) {
      where the browser compiles in the background they are a chore of their own ("galaxy", ranked after the live door
      and the measures: chores.js), so they are compiled once the door is live, not beside the rest during the reveal
      (the docs' journey still hurries them: "docs"); where it compiles on the page's own thread (Firefox:
-     COMPILES_ASIDE false) they are a "compile" chore, queued now, behind the flight's, so they too are done under the
+     compilesAside false) they are a "compile" chore, queued now, behind the flight's, so they too are done under the
      first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
   const makeGal = () => {
@@ -1089,7 +1093,7 @@ export function createVoyage(under) {
   };
   /* (in the background the chore only starts them and lets the queue go, so the door's measures, which wait for it
      to be at rest, are not held for a compile that costs the page nothing) */
-  const galaxy = COMPILES_ASIDE ? chore(() => { makeGal(); }, 60, ["galaxy", "docs"]).then(() => galMade).catch(() => {}) : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
+  const galaxy = compilesAside() ? chore(() => { makeGal(); }, 60, ["galaxy", "docs"]).then(() => galMade).catch(() => {}) : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
   const vao = gl.createVertexArray();
 
   /* the rich Earth (wantRich, above): its program (where the door is rich from the first, the overlay itself), the
@@ -1168,7 +1172,7 @@ export function createVoyage(under) {
   let stripS = null;
   /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
      only once its mipmaps are made */
-  const load = (key) => fetchOnce(TEX[key])
+  const load = (key) => fetchOnce(pictures()[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => {
       const wh = [bm.width, bm.height];

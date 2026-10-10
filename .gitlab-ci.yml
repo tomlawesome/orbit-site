@@ -48,6 +48,12 @@ workflow:
     # branch's first push would otherwise run twice (orbit #829).
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
       when: never
+    # That merge request merges itself as the same bot, so the push pipeline
+    # main then gets runs as the bot and its merge commit is the bot's: Docker
+    # Hub again (pipeline 2379 failed pulling through the proxy).
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/
+      variables:
+        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_COMMIT_BRANCH
 
 .not_scheduled: &not_scheduled
@@ -76,6 +82,7 @@ lint:
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-test.sh
     - sh tools/ci/nightly-import-test.sh
+    - sh tools/ci/journey-local-test.sh
     - node tools/ci/fetch-once-test.mjs
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs

@@ -23,8 +23,9 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, noteChores, COMPILES_ASIDE } from "./chores.js";
-import { seededRng } from "./sky.js";
+import { chore, note, noteChores, compilesAside } from "./chores.js";
+import { seededRng } from "./stars.js";
+import { image } from "./settings.js";
 
 /**
  * @typedef {object} Atmosphere
@@ -217,7 +218,7 @@ export const mirror = (t) => UPDUR * (1 - Math.min(1, Math.max(0, t / DOWNDUR)))
 
 /* THE DOCS' GALAXY, first seen just where the mark's ring is at the centre of the screen and as large (166.4px
    across, timeline.js: MARK_ARRIVE; the ring 72 of its 200), far out; the camera then rushes in, faster and
-   faster, to the start of the way in (engine: milkyWay). Shared with the journey (flight.js), so the mark's ring
+   faster, to the start of the way in (engine: milkyWay). Shared with the journey (journey.js), so the mark's ring
    grows with the galaxy, exactly, as it becomes its rim. */
 export const MARK_RING = 166.4 * 72 / 200, FAR_T0 = 1080, FAR_T1 = 1750;
 /* the way in: from out beyond the disc, down into it, to rest among the stars of an arm (voyage.js: REST) */
@@ -1100,7 +1101,7 @@ export function createFlight(canvas, options = {}) {
   /** @param {number} now */
   function frame() {
     if (!flight) return;
-    /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (flight.js) */
+    /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (journey.js) */
     const now = clock();
     const active = flight;
     /* a profile may run its beats faster (the docs' and the information's flights) */
@@ -1142,13 +1143,15 @@ export function createFlight(canvas, options = {}) {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
+    /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
+    get drawingWorld() { return !!flight && !!voyage; },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is */
     warm() {
       if (!warmed) {
-        if (earth && !earth.src) earth.src = new URL("../img/door/dawn.webp", import.meta.url).href;
+        if (earth && !earth.src) earth.src = image("dawn/dawn.webp");
         /* its pictures asked for, and its world made (its shaders set compiling in the background), at once; what it then
            puts on the GPU waits its turn as chores (voyage.js). Where the browser compiles on the page's own thread
-           (COMPILES_ASIDE false), the world is made as a chore ("compile", queued at once and run under the first
+           (compilesAside false), the world is made as a chore ("compile", queued at once and run under the first
            light's ring, before the door is lit; hurried with the flight's own), its shaders looked at in the same
            chore (voyage.js: made) */
         if (!options.plain) fetchVoyage();
@@ -1158,10 +1161,10 @@ export function createFlight(canvas, options = {}) {
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
            voyage.js) */
-        const first = DOOR3D && !options.plain ? probe().catch(() => null) : Promise.resolve();
-        const made = options.plain ? Promise.resolve() : COMPILES_ASIDE ? first.then(() => { make(); })
+        const first = DOOR3D() && !options.plain ? probe().catch(() => null) : Promise.resolve();
+        const made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
-        compiled = made.then(() => voyage?.made).then((ok) => (COMPILES_ASIDE ? ok : Promise.resolve(voyage?.galaxy).then(() => ok)));
+        compiled = made.then(() => voyage?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(voyage?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (voyage ? voyage.warm() : null))]).catch(() => {}).then(() => { if (voyage?.dead) voyage = null; if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
       }

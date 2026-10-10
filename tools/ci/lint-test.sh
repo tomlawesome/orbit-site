@@ -8,7 +8,12 @@
 # the renovate.json section: a look-around in a customManagers matchString
 # fails and names renovate.json (Renovate compiles these with RE2); and the
 # .gitlab-ci.yml section: the docs/import-* merge-request rule must set
-# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13).
+# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13); and section
+# "the shared door is self-contained" (ADR-0001, issue #16): a file in
+# assets/door/ that imports from outside the folder, reads location.search or
+# uses import.meta.url fails and is named, as is a site module that imports a
+# file of the folder other than its index.js, a url() in door.css that reaches
+# outside the folder, and an index.html whose door differs from markup.js.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -270,7 +275,10 @@ fi
 
 # Cases (g)-(h) judge the .gitlab-ci.yml section "docs-import merge requests
 # pull without the dependency proxy" (issue #13): the workflow rule for source
-# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io.
+# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io,
+# and (issue #20) so does the rule for pushes whose commit author is a GitLab
+# project bot (CI_COMMIT_AUTHOR =~ /project_N_bot_/): the import's merge request
+# merges itself as the bot, so main's push pipeline runs as the bot too.
 proxy_line='^[[:space:]]*CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:[[:space:]]*docker\.io[[:space:]]*$'
 
 # Case (g): the docs/import rule loses its prefix override -> fails, names
@@ -293,6 +301,26 @@ else
   git reset -q --hard HEAD~1
 fi
 
+# Case (g2): the bot-author rule loses its prefix override -> fails, names
+# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
+# a clear line instead of stopping the run.
+if ! grep -q 'CI_COMMIT_AUTHOR =~' .gitlab-ci.yml; then
+  echo "FAIL removing the bot-author prefix override fails (no bot-author rule to remove: .gitlab-ci.yml has no CI_COMMIT_AUTHOR =~ rule)"
+  failed=1
+else
+  sed -i '/CI_COMMIT_AUTHOR =~/d' .gitlab-ci.yml
+  commit_all "bot-author rule removed"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
+    echo "ok   removing the bot-author prefix override fails"
+  else
+    echo "FAIL removing the bot-author prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+fi
+
 # Case (h): the committed tree as it is -> the lint passes and has a heading
 # for the section, a "==" line naming both "import" and "dependency proxy".
 lint_to_out
@@ -300,6 +328,59 @@ if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'import' | grep -iq 'depend
   echo "ok   the committed .gitlab-ci.yml has the docs-import proxy section and passes"
 else
   echo "FAIL the committed .gitlab-ci.yml has the docs-import proxy section and passes (exit $rc, want 0 with a == heading naming import and dependency proxy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+# Cases (i)-(l) judge section "the shared door is self-contained" (ADR-0001).
+# Each adds one offending line, runs the lint, and takes the commit back.
+# door_case <label> <file> <line> <named>: the line appended to the file must
+# fail the lint with a message naming <named>.
+door_case() {
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $4)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# Case (i): a module of the folder importing a site module -> fails, names the file.
+door_case "a door module importing from outside the folder" assets/door/stars.js 'import { reduced } from "../js/sky.js";' "assets/door/stars.js:.*outside the folder"
+# Case (i2): the same over several lines, and (i3) a bare import with no `from` -> fail.
+door_case "a door module importing from outside over several lines" assets/door/stars.js 'import {
+  reduced,
+} from "../js/sky.js";' "assets/door/stars.js:.*outside the folder"
+door_case "a door module with a bare import from outside" assets/door/stars.js "import '../js/sky.js';" "assets/door/stars.js:.*outside the folder"
+# Case (j): a module of the folder reading the address -> fails.
+door_case "a door module reading location.search" assets/door/stars.js 'export const X = /x/.test(location.search);' "assets/door/stars.js:.*reads the address"
+# Case (k): a module of the folder making a URL from import.meta.url -> fails.
+door_case "a door module using import.meta.url" assets/door/stars.js 'export const Y = new URL("./img/dawn/dawn.webp", import.meta.url).href;' "assets/door/stars.js:.*import.meta.url"
+# Case (l): a site module importing a file of the folder other than index.js -> fails, names the module.
+door_case "a site module importing inside the folder" assets/js/sky.js 'import { DAWN_FAR as Z } from "../door/stars.js";' "assets/js/sky.js:.*index.js"
+# Case (n): a url() in door.css reaching outside the folder -> fails, names door.css.
+door_case "a door.css url outside the folder" assets/door/door.css '#door .x{background:url(../img/mark.svg)}' "assets/door/door.css -> ../img/mark.svg"
+# Case (o): the page's copy of the door edited by hand -> fails, names index.html.
+sed -i 's/<svg class="wl wash" /<svg class="wl washed" /' index.html
+commit_all "index.html door edited by hand"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "index.html: the door's markup differs" "$out"; then
+  echo "ok   a hand-edited door in index.html fails"
+else
+  echo "FAIL a hand-edited door in index.html fails (exit $rc, want 1 naming index.html)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+# Case (m): the committed tree as it is -> the section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'shared door'; then
+  echo "ok   the committed door folder passes the self-contained section"
+else
+  echo "FAIL the committed door folder passes the self-contained section (exit $rc, want 0 with a == heading naming the shared door)"
   sed 's/^/     /' "$out"
   failed=1
 fi
