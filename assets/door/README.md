@@ -119,16 +119,19 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   `mirrored(homeProps(homes))` added to the end of the props, whatever the
   base; with `from`, only if the climb did not carry them (both would pass
   them twice). Left out, the descent is exactly as before. Hooks:
-  `released`, `surface` (the dusk or the dawn comes up), `farewell`. A descent proves the flight's world as a climb does (`warm()`): a visitor who never flew up (landed on the home page, signs out) still gets a fit world drawn and an unfit one not; the clock holds just before the warp until the proof is done (at most eight seconds), and not at all once it has been done or there is no world.
+  `released`, `surface` (the dusk or the dawn comes up), `farewell`. A
+  descent never waits for the flight's world: at its warp it draws the world
+  if the verdict on it is in and fit, and otherwise flies painted (a descent
+  made before the host's leisure warm-up has proved the world is painted).
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
 - `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: and the galaxy;
   `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
   below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
   `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
-  put on the GPU (as chores, so as the host opens them), and no frame drawn, no test pixel read back. The default
-  proves it, and is the flight's own ask: it hurries the flight's chores (`hurryChores("flight")`, which adds to
-  what is already wanted), draws the
+  put on the GPU (as chores, so as the host opens them), and no frame drawn, no pixel read back. The default
+  proves it: the host asks it at leisure once the door is lit (`later`), so the verdict is in before anyone flies, and
+  a flight up asked first holds on it (`ready`); it draws the
   warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
   world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
   own canvas, as it always could.

@@ -264,6 +264,7 @@ function showDoor() {
           (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
         }));
         warmJourneys();
+        proveLater(4000);
       },
       /* the live door's canvas and its context's first textures are the GPU's, so they wait with the rest of the chores */
       onOpen() { if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); },
@@ -295,7 +296,17 @@ const doorFocus = (id) => focusOn(id === "home" ? $("#gate") : $(`#door .planet[
    mid-dive) waits for the first to land. It lets go by itself if a journey never reports landing */
 /* the journeys readied and the chores opened: what the door's first light does, and what a descent that comes back to the
    door does in its place when it has dropped the leisure ask above */
-function readyDoor() { warmJourneys(); openChores(); }
+function readyDoor() { warmJourneys(); openChores(); proveLater(2000); }
+/* the flight's world proved (assets/door/engine.js: warm, the default) at leisure, a few seconds after the door is lit or
+   the journeys are readied, on an accepted GPU: the speed test (a few milliseconds of whole frames) is then done before
+   anyone flies, and a flight or a descent never waits for it (ADR-0002, owner decision 12d). A flight up that is asked
+   first proves it itself, behind its hold; a flight or a descent that begins before this drops it (journey.later), and a
+   descent then flies painted. Not in maintenance or under save-data, where nothing is readied; where the GPU was
+   refused it resolves at once, having done nothing */
+function proveLater(after) {
+  if (MAINTENANCE || saveData()) return;
+  journey.later(() => { journey.warm(); journey.warmDocs(); }, { after });
+}
 let moving = 0, after = null;
 const begin = () => { if (moving) return false; moving = setTimeout(done, 15000); return true; };
 /* a Back or Forward kept for the landing runs once the landing has finished setting itself straight */
