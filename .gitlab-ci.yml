@@ -87,6 +87,8 @@ lint:
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs
     - node tools/ci/home-props-test.mjs
+    - node tools/ci/goodbye-markup-test.mjs
+    - node tools/ci/descent-homes-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/glow-banding-test.mjs
 
@@ -102,7 +104,8 @@ lint:
 # Chromium and Firefox, and the pin test checks a journey pinned at a moment
 # (`at`) starts there (#23); the dawn test checks that destroy() cancels a
 # first light (#27) and that the Earth's pictures are in before the door reads
-# drawn (#28).
+# drawn (#28); the asdawn test checks the goodbye wearing the sign-in's face and
+# households met again on the way down (#25, #26).
 live:journey:
   stage: live
   image:
@@ -123,6 +126,7 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
