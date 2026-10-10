@@ -4,7 +4,7 @@
    compositor's: watch it), a dot drawn by the page every frame (the page's thread: its gaps are measured), and a
    triangle the page draws with its own WebGL every frame (the page's own drawing: its gaps are measured apart) */
 import { context, release, program, PROBE, line, round } from "./common.js";
-import { sceneHead, PASS_SWITCH } from "../assets/js/voyage.js";
+import { sceneHead, PASS_SWITCH } from "../assets/door/voyage.js";
 export const name = "worker";
 const DOOR_MAIN = `void main(){
 ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;

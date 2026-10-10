@@ -57,15 +57,14 @@ const ASCENT_BASE = {
 };
 /* THE SITE'S OWN AMENDMENT (owner, 2026-10): on the site the bare sky's dwell read as a wait, not a breath. The
    instrument now arrives as the dial finishes settling (its condense runs 1.3s from the landing), not two seconds
-   after the settle: the land and the draw-in are untouched, the dead air between them is gone */
-const SETTLE = 1100;
-const instrumentAt = ASCENT_BASE.land + SETTLE;                               /*  5900 */
-const tourAt = instrumentAt + ASCENT_BASE.instrument + ASCENT_BASE.tourGap;  /* 10650 */
-
+   after the settle: the land and the draw-in are untouched, the dead air between them is gone. The settle is the
+   host's setting (settings.js: settle, 1100 ms unless the host says otherwise), so instrumentAt is 5900 here */
+import { settings } from "./settings.js";
 
 export const T = {
   ...ASCENT_BASE,
-  instrumentAt, tourAt,
+  get instrumentAt() { return ASCENT_BASE.land + settings.settle; },
+  get tourAt() { return this.instrumentAt + ASCENT_BASE.instrument + ASCENT_BASE.tourGap; },
 };
 
 /* the descent's own offsets, kept as the mockup wrote them: the flight starts

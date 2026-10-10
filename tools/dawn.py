@@ -27,7 +27,7 @@ Imagery (NASA Earth Observatory; credit NASA):
   https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud.E.2001210.21600x21600.png (or cloud_combined_2048.jpg)
   https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x21600x21600.C1.jpg
 
-  python3 tools/dawn.py --lights L.jpg --clouds C.png --land G.jpg --out assets/img/door/dawn.webp
+  python3 tools/dawn.py --lights L.jpg --clouds C.png --land G.jpg --out assets/door/img/dawn/dawn.webp
 """
 import argparse, json, math, time
 import numpy as np

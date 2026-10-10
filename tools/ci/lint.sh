@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 fail=0
 
 echo "== modules parse"
-for f in sw.js assets/js/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
+for f in sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
   node --experimental-default-type=module --check "$f" 2>/dev/null \
     || node --check "$f" || { echo "   $f does not parse"; fail=1; }
 done
@@ -19,6 +19,42 @@ for page in index.html install.html 404.html tests/index.html; do
     [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
   done || fail=1
 done
+
+echo "== the shared door is self-contained (assets/door, ADR-0001)"
+# the folder is copied into Orbit unchanged: nothing in it may reach outside it, read the address, or make a URL
+# from import.meta.url (a bundler leaks that into server-rendered pages); the site's own modules use only its entry
+# point, so the interface is one file. tests/ and tools/ may reach in: they are not the site
+# every module specifier (import … from, export … from, a bare import, a dynamic import; either quote, over any
+# number of lines, comments set aside) is read by node, so nothing slips past a line-by-line grep
+node -e '
+  const fs = require("fs");
+  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:\\])\/\/[^\n]*/g, "$1");
+  const specifiers = (s) => {
+    const out = [], q = "[\"\x27]";
+    const re = new RegExp(`\\b(?:import|export)\\b[^;\"\x27\`]*?\\bfrom\\s*(${q})([^\"\x27]+)\\1|\\bimport\\s*(${q})([^\"\x27]+)\\3|\\bimport\\s*\\(\\s*(${q})([^\"\x27]+)\\5`, "g");
+    let m; while ((m = re.exec(s))) out.push(m[2] ?? m[4] ?? m[6]);
+    return out;
+  };
+  const js = (dir) => fs.readdirSync(dir).filter((n) => n.endsWith(".js")).map((n) => `${dir}/${n}`);
+  for (const f of js("assets/door")) {
+    const src = strip(fs.readFileSync(f, "utf8"));
+    for (const sp of specifiers(src)) if (!/^\.\/[^/]+$/.test(sp)) bad(`${f}: imports ${sp} from outside the folder (a door module imports only ./name.js)`);
+    if (/\blocation\s*(\.\s*search\b|\[\s*[\"\x27]search[\"\x27]\s*\])/.test(src)) bad(`${f}: reads the address (a flag is a setting: settings.js)`);
+    if (/\bimport\s*\.\s*meta\s*\.\s*url\b/.test(src)) bad(`${f}: uses import.meta.url (a picture\x27s place is a setting: settings.js)`);
+  }
+  for (const f of ["sw.js", ...js("assets/js")]) {
+    const src = strip(fs.readFileSync(f, "utf8"));
+    for (const sp of specifiers(src)) if (/(^|\/)door\//.test(sp) && sp !== "../door/index.js") bad(`${f}: imports ${sp}; a site module imports assets/door/index.js alone`);
+  }
+' || fail=1
+# its stylesheet reaches nothing outside the folder either: every url() in it is a fragment, data, or a file in it
+for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^url\("?//; s/"?\)$//' | sort -u); do
+  case "$ref" in \#*|data:*) continue ;; /*|../*|*://*) echo "   assets/door/door.css -> $ref reaches outside the folder"; fail=1; continue ;; esac
+  [ -e "assets/door/$ref" ] || { echo "   assets/door/door.css -> $ref is missing"; fail=1; }
+done
+# and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
+node tools/door-markup.mjs --check || fail=1
 
 echo "== the docs index names pages that exist"
 if [ -f assets/docs/index.json ]; then

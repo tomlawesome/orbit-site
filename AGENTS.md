@@ -60,6 +60,21 @@ owner will not open it (2026-10-09). An import merge request still open
 from an earlier night is closed by the next one. Imports land on `main`
 only; `dev` picks them up by back-merge after a promotion.
 
+## The shared door: `assets/door/` is an interface
+
+The Earth door and the flight live in `assets/door/`, one self-contained
+folder Orbit copies from `main` unchanged by its own job (ADR-0001). Its
+entry point (`index.js`: `createDoor`, the settings, the exports), its
+markup slots and its stylesheet contract are an interface between two
+repositories: change them deliberately, and say so in the commit, because
+a break shows in Orbit's import merge request, not in this site's gate.
+What differs between the site and Orbit is a setting or a slot, never an
+edit a host makes to the folder. The folder's `README.md` has the
+interface; the lint holds the folder to importing nothing from outside it,
+reading no address and making no URL from `import.meta.url`, and the page
+to carrying the door as `markup.js` writes it (`node tools/door-markup.mjs`
+after editing the module). The folder is also licensed AGPL-3.0.
+
 ## Verifying a change
 
     sh tools/ci/lint.sh                       # modules parse, files exist

@@ -10,6 +10,7 @@
  * lean first, the rich tried by the ladder), so only what will be drawn is compiled.
  */
 import { note } from "./chores.js";
+import { settings, flag } from "./settings.js";
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -44,7 +45,7 @@ void main(){
 
 /* kept a week, for this browser on this screen */
 const WEEK = 7 * 24 * 3600e3;
-const KEY = () => `orbit-probe ${navigator.userAgent} ${screen.width}x${screen.height}@${devicePixelRatio || 1}`;
+const KEY = () => `${settings.storagePrefix}-probe ${navigator.userAgent} ${screen.width}x${screen.height}@${devicePixelRatio || 1}`;
 const FAILED = { background: null, compileMs: null, msPerMpx: null, ok: false };
 
 /* the salt is code, not a comment (Safari hashes the source without its comments): no cache answers for the compiler */
@@ -143,8 +144,8 @@ export function predicted(W, H, r = got) {
     might: the lean first, the rich tried by the ladder), "lean" (it will not: the lean alone), or null without a
     probe (then both, as before). &rich and &lean say which, whatever the probe */
 export function doorWeight(W, H, r = got) {
-  if (/[?&]rich\b/.test(location.search)) return "rich";
-  if (/[?&]lean\b/.test(location.search)) return "lean";
+  if (flag("rich")) return "rich";
+  if (flag("lean")) return "lean";
   const p = predicted(W, H, r);
   if (!p) return null;
   return p.rich <= 24 ? "rich" : p.rich <= BUDGET ? "both" : "lean";
@@ -155,8 +156,8 @@ const band = () => {
   return [box?.width || innerWidth, box?.height || innerHeight];
 };
 
-/* the live door, while it is tried (?door3d; the same test main.js makes) */
-const DOOR3D = (() => { try { return /[?&]door3d\b/.test(location.search); } catch { return false; } })();
+/* the live door, while it is tried (?door3d: the host's flag) */
+const DOOR3D = () => !!flag("door3d");
 /* a lean frame over this (predicted, ms) and the door stays still */
 const LEAN_MAX = 16;
 const NAMES = ["still", "live lean", "live rich"];
@@ -171,10 +172,10 @@ export function level() {
   /* (asked before the probe has resolved: still, and not kept) */
   if (!got) return 0;
   let why;
-  const flag = location.search.match(/[?&]level=([012])\b/)?.[1];
+  const asked = /^[012]$/.test(String(flag("level"))) ? String(flag("level")) : null;
   const quiet = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
   const p = predicted(...band());
-  if (flag) { lvl = +flag; why = `?level=${flag}`; }
+  if (asked) { lvl = +asked; why = `?level=${asked}`; }
   else if (!got.ok) { lvl = 0; why = "no WebGL2, or no probe"; }
   else if (quiet) { lvl = 0; why = "reduced motion"; }
   else if (navigator.connection?.saveData) { lvl = 0; why = "save-data"; }
@@ -189,7 +190,7 @@ export function level() {
   return lvl;
 }
 /** whether the door is live here: ?door3d, and level 1 or 2 (after the probe has resolved) */
-export const liveDoor = () => DOOR3D && level() >= 1;
+export const liveDoor = () => DOOR3D() && level() >= 1;
 /** and whether it comes late: nothing of it compiled or drawn until every journey is ready (where compiles stall the
     page: the still door first, the live one after the ways in are open) */
 export const lateDoor = () => liveDoor() && !!got && !got.background;
@@ -204,8 +205,8 @@ export function theDoorWeight() {
   const L = level();
   if (L === 0) return null;
   const [W, H] = band(), p = predicted(W, H);
-  const flag = location.search.match(/[?&](rich|lean)\b/)?.[1];
+  const asked = flag("rich") ? "rich" : flag("lean") ? "lean" : null;
   chosen = L === 1 ? "lean" : doorWeight(W, H) || "both";
-  note(`door: weight ${chosen} (${L === 1 ? "level 1" : flag ? `&${flag}` : p ? `predicted ${Math.round(p.rich)} ms of ${BUDGET} for the rich, ${Math.round(p.lean)} for the lean, at ${p.mpx.toFixed(2)} Mpx` : "no probe"})`);
+  note(`door: weight ${chosen} (${L === 1 ? "level 1" : asked ? `&${asked}` : p ? `predicted ${Math.round(p.rich)} ms of ${BUDGET} for the rich, ${Math.round(p.lean)} for the lean, at ${p.mpx.toFixed(2)} Mpx` : "no probe"})`);
   return chosen;
 }

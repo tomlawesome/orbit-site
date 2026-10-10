@@ -22,6 +22,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "assets/img/install"
+# the moon is the shared door's (assets/door/img/flight); the planet pictures stay the hub's (assets/img/door)
+MOON = ROOT / "assets/door/img/flight"
 OUT = ROOT / "assets/img/door"
 
 S = 288            # the picture's side, px
@@ -155,7 +157,7 @@ def render(name, tex, look):
 
 if __name__ == "__main__":
     giant = load("planet-2k.webp", (1024, 512))
-    moon = load("moon.webp")
+    moon = load(MOON / "moon.webp")
     LOOKS = {
         "install": (giant, dict(tiltZ=0.38, tiltX=-0.32, lon=0.4, rings=True, haze=[0.55, 0.42, 1.0], ringTint=[0.82, 0.74, 1.0], limbK=0.35)),
         "info": (giant, dict(tiltZ=-0.22, tiltX=0.1, lon=2.1, haze=[1.0, 0.62, 0.5], atmH=0.06,

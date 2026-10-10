@@ -4,13 +4,13 @@ The install's gold moon, from the Moon itself: NASA's CGI Moon Kit (the LRO
 camera's natural-colour mosaic and the LOLA elevation map; credit NASA's
 Scientific Visualization Studio), graded to Orbit's gold.
 
-Writes assets/img/install/moon.webp: RGB the graded surface, alpha the
+Writes assets/door/img/flight/moon.webp: RGB the graded surface, alpha the
 elevation, for world.js to light the craters with.
 
   pip install numpy pillow
   base=https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720
   curl -O $base/lroc_color_poles_2k.tif -O $base/ldem_4_uint.tif
-  python3 tools/moon.py lroc_color_poles_2k.tif ldem_4_uint.tif [--out assets/img/install/moon.webp]
+  python3 tools/moon.py lroc_color_poles_2k.tif ldem_4_uint.tif [--out assets/door/img/flight/moon.webp]
 """
 import argparse
 import numpy as np
@@ -19,7 +19,7 @@ from PIL import Image
 ap = argparse.ArgumentParser()
 ap.add_argument("colour")
 ap.add_argument("elevation")
-ap.add_argument("--out", default="assets/img/install/moon.webp")
+ap.add_argument("--out", default="assets/door/img/flight/moon.webp")
 ap.add_argument("--w", type=int, default=1024)
 args = ap.parse_args()
 
