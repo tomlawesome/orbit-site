@@ -92,7 +92,10 @@ star fields and sets the glows' origin.
 
 `start()`: the dusk's pictures decoded ahead of the beat that shows them
 (`decode-ahead.js`), its glows' origin set. Call it when the sign-out begins.
-`held`: what `decodeAhead` returned (`{ ready, held }`), `null` before
+A dusk made with `asDawn` (Markup, below) also asks for the dawn's two Earth
+pictures then and shows them as the dawn does, and `world.dataset.rasterised`
+reads `"pending"` from `start()` and `"ready"` once its glows are drawn and
+those pictures have loaded or failed (a plain dusk: its glows alone). `held`: what `decodeAhead` returned (`{ ready, held }`), `null` before
 `start()`; the decoded pictures are kept until `destroy()`, which also
 removes the resize listeners.
 
@@ -142,12 +145,23 @@ them.
 ### Markup (`markup.js`)
 
 `dawnMarkup({ image, lockup, gate, foot, indent })` and
-`duskMarkup({ image, gate, foot, farewell, indent })` are pure string
+`duskMarkup({ image, gate, foot, farewell, asDawn, indent })` are pure string
 functions: the door's markup with the host's parts in the slots (`lockup`,
 between the glyph and the name; `gate`, inside `.gate-wrap`; `foot`, at the
 surface's foot). The site writes them into `index.html` with
 `node tools/door-markup.mjs` (the lint fails if the page differs); Orbit
 renders them in its components. `image` is the same resolver as the setting.
+
+`asDawn` dresses the goodbye as the sign-in (Orbit's; the site keeps its own
+and leaves it off, and without it the markup is byte for byte unchanged): the
+dawn's glyph (the lit ring and discs, their gradients' ids prefixed `d-`) with
+the gold planet on its trail, shown after the farewell beat; the dawn's Earth
+photo under the ember rim; the farewell hung under the way back in (inside the
+ring on a phone), as the last child of `.gate-wrap`, not beside the lockup. All
+of it hangs off `#dusk.asdawn` in `door.css`, so a dusk without the option
+matches none of it. Needs `img/dawn/planet-gold.webp`, `dawn-pre.webp` and
+`dawn.webp`. It takes the sign-in's measures, and its lit look follows
+`html.rich` as the dawn's does.
 
 ### Stylesheet (`door.css`)
 
@@ -187,6 +201,6 @@ backwards, with the `homes` on the end); `DOWN`, `DOWN_DAWN`, `DOWNDUR` and
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |
 | `markup.js`, `door.css` | The markup and the stylesheet |
-| `img/dawn/` | The door's Earth (`dawn-pre`, `dawn`), its glows, and the near maps and light strips the live door draws |
+| `img/dawn/` | The door's Earth (`dawn-pre`, `dawn`), its glows, the gold planet (`planet-gold`, the goodbye's under `asDawn`), and the near maps and light strips the live door draws |
 | `img/dusk/` | The dusk's glows |
 | `img/flight/` | The flight's Earth maps and the gold moon |

@@ -166,17 +166,33 @@ export function mountDawn(host) {
   return { host, world, start, light, live, destroy };
 }
 
-/* the dusk: its star field, its glows' origin, and its pictures decoded ahead of the beat that shows them */
+/* the dusk: its star field, its glows' origin, and its pictures decoded ahead of the beat that shows them. A dusk dressed
+   as the sign-in (markup.js, asDawn) also carries the dawn's Earth, its two pictures lying under the ember rim: asked
+   for and shown as the dawn's are (each fades in when it has come; the crisp rim gives way to the first), and "ready"
+   waits for them too (a picture that fails to load counts as settled). A dusk without them is unchanged */
 export function mountDusk(host) {
   const unsky = mountFlightSky(host.querySelector(".dsky"), DUSK_FAR, DUSK_NEAR, "dk");
   const world = host.querySelector(".world");
-  const rasters = mountRasters(world, {}, "dusk");
-  let started = false, held = null;
-  const start = () => {
-    if (started) return; started = true;
-    held = decodeAhead([...world.querySelectorAll("image[href]")].map((im) => im.getAttribute("href")));
-    afterFirstFrame(rasters.start);
+  let earthSettled = Promise.resolve();
+  const rasters = mountRasters(world, {}, "dusk", { until: () => earthSettled });
+  let started = false, gone = false, held = null;
+  const earth = () => [...world.querySelectorAll(".earth image[data-href]")];
+  const loadEarth = () => {
+    const settled = [];
+    for (const im of earth()) {
+      settled.push(new Promise((done) => {
+        im.addEventListener("load", () => { if (!gone) { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); } done(); }, { once: true });
+        im.addEventListener("error", done, { once: true });
+      }));
+      im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
+    }
+    earthSettled = Promise.all(settled);
   };
-  const destroy = () => { unsky(); rasters.stop(); held = null; };
+  const start = () => {
+    if (started || gone) return; started = true;
+    held = decodeAhead([...[...world.querySelectorAll("image[href]")].map((im) => im.getAttribute("href")), ...earth().map((im) => im.dataset.href)]);
+    afterFirstFrame(() => { if (gone) return; loadEarth(); rasters.start(); });
+  };
+  const destroy = () => { gone = true; unsky(); rasters.stop(); held = null; };
   return { host, world, start, destroy, get held() { return held; } };
 }

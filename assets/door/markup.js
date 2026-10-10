@@ -14,6 +14,7 @@
  *                 sign-in form). Nothing by default
  *   foot          a line at the foot of the surface (the site: its credit). Nothing by default
  *   farewell      the dusk's words: { said, sub }
+ *   asDawn        the dusk dressed as the sign-in (Orbit's goodbye): see duskMarkup. Off by default (the site's own)
  *   indent        the whitespace before each line (the page's own), "" for none
  *
  * A slot is put in as given, its own whitespace and all: the host indents it as it likes.
@@ -23,13 +24,18 @@ const DEFS_DAWN = [
   '<linearGradient id="skywash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="62%" stop-color="#3d2a4d" stop-opacity=".12"/><stop offset="86%" stop-color="#a2492a" stop-opacity=".2"/><stop offset="100%" stop-color="#e2772b" stop-opacity=".26"/></linearGradient>',
 ];
 /* the rich look's light: the ring and the orbits lit from the sunrise below, a deep disc behind the name (orblit is
-   the site's orbits' stroke, drawn by its hub: kept here so the one glyph serves both) */
-const DEFS_GLYPH = [
-  '<linearGradient id="ringlit" gradientUnits="userSpaceOnUse" x1="0" y1="26" x2="0" y2="174"><stop offset="0" stop-color="#6c76a0" stop-opacity=".6"/><stop offset=".5" stop-color="#aab2cf" stop-opacity=".85"/><stop offset=".86" stop-color="#ead2a4"/><stop offset="1" stop-color="#ffe2a8"/></linearGradient>',
-  '<linearGradient id="orblit" gradientUnits="userSpaceOnUse" x1="0" y1="-15" x2="0" y2="215"><stop offset="0" stop-color="#8791b3" stop-opacity=".1"/><stop offset=".55" stop-color="#9aa2c2" stop-opacity=".2"/><stop offset="1" stop-color="#f2cf98" stop-opacity=".5"/></linearGradient>',
-  '<radialGradient id="disclit" cx="100" cy="100" r="72" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#03040a" stop-opacity=".55"/><stop offset=".8" stop-color="#05070f" stop-opacity=".35"/><stop offset="1" stop-color="#05070f" stop-opacity="0"/></radialGradient>',
-  '<radialGradient id="discwarm" cx="100" cy="182" r="70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffcf8a" stop-opacity=".16"/><stop offset="1" stop-color="#ffcf8a" stop-opacity="0"/></radialGradient>',
-];
+   the site's orbits' stroke, drawn by its hub: kept here so the one glyph serves both). One set of gradients for both
+   surfaces: the dawn's ids are bare, the dusk's (asDawn) carry "d-", so a page with both has no duplicate id */
+const glyphDefs = (p) => ({
+  ringlit: `<linearGradient id="${p}ringlit" gradientUnits="userSpaceOnUse" x1="0" y1="26" x2="0" y2="174"><stop offset="0" stop-color="#6c76a0" stop-opacity=".6"/><stop offset=".5" stop-color="#aab2cf" stop-opacity=".85"/><stop offset=".86" stop-color="#ead2a4"/><stop offset="1" stop-color="#ffe2a8"/></linearGradient>`,
+  orblit: `<linearGradient id="${p}orblit" gradientUnits="userSpaceOnUse" x1="0" y1="-15" x2="0" y2="215"><stop offset="0" stop-color="#8791b3" stop-opacity=".1"/><stop offset=".55" stop-color="#9aa2c2" stop-opacity=".2"/><stop offset="1" stop-color="#f2cf98" stop-opacity=".5"/></linearGradient>`,
+  disclit: `<radialGradient id="${p}disclit" cx="100" cy="100" r="72" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#03040a" stop-opacity=".55"/><stop offset=".8" stop-color="#05070f" stop-opacity=".35"/><stop offset="1" stop-color="#05070f" stop-opacity="0"/></radialGradient>`,
+  discwarm: `<radialGradient id="${p}discwarm" cx="100" cy="182" r="70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffcf8a" stop-opacity=".16"/><stop offset="1" stop-color="#ffcf8a" stop-opacity="0"/></radialGradient>`,
+  /* the gold planet's wake along the ring, fading behind it (the dusk's only: the site's gold planet draws its own) */
+  trail: `<linearGradient id="${p}trail" gradientUnits="userSpaceOnUse" x1="46.5" y1="51.8" x2="163" y2="63.5"><stop offset="0" stop-color="#ffd68c" stop-opacity="0"/><stop offset=".46" stop-color="#ffd68c" stop-opacity=".08"/><stop offset="1" stop-color="#ffdea0" stop-opacity=".75"/></linearGradient>`,
+});
+const DAWN_GLYPH = glyphDefs("");
+const DUSK_GLYPH = glyphDefs("d-");
 const DEFS_DUSK = [
   '<linearGradient id="d-rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f0a35a"/><stop offset="100%" stop-color="#7a2c18"/></linearGradient>',
   '<linearGradient id="d-wash" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-opacity="0"/><stop offset="40%" stop-color="#1e1838" stop-opacity=".30"/><stop offset="62%" stop-color="#3b2450" stop-opacity=".34"/><stop offset="78%" stop-color="#83354f" stop-opacity=".26"/><stop offset="91%" stop-color="#a2492a" stop-opacity=".22"/><stop offset="100%" stop-color="#c2571f" stop-opacity=".22"/></linearGradient>',
@@ -112,7 +118,7 @@ export function dawnMarkup({ image = (p) => p, lockup = "", gate = "", foot = ""
           [
             "<!-- the rich look's light: the ring and the orbits lit from the sunrise below, a deep disc behind the name -->",
             "<defs>",
-            [...DEFS_GLYPH],
+            [DAWN_GLYPH.ringlit, DAWN_GLYPH.orblit, DAWN_GLYPH.disclit, DAWN_GLYPH.discwarm],
             "</defs>",
             '<g class="lux" aria-hidden="true"><circle cx="100" cy="100" r="71" fill="url(#disclit)"/><circle cx="100" cy="100" r="71" fill="url(#discwarm)"/></g>',
             '<circle class="ring lux" cx="100" cy="100" r="72" fill="none" stroke="url(#ringlit)" stroke-width="9" stroke-opacity=".05" pathLength="100"/>',
@@ -133,10 +139,28 @@ export function dawnMarkup({ image = (p) => p, lockup = "", gate = "", foot = ""
   ]);
 }
 
-/** the dusk: `<div id="dusk" hidden>…</div>` */
-export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, indent = "" } = {}) {
+/**
+ * the dusk: `<div id="dusk" hidden>…</div>`.
+ *
+ * `asDawn: true` dresses it as the sign-in (Orbit's goodbye; the site keeps its own, and leaves this off): the root
+ * carries `class="asdawn"` (door.css styles everything of it from that one class), the glyph is the dawn's (the lit
+ * ring and discs, ids prefixed "d-" so a page with both surfaces has no duplicate) with the gold planet on its trail
+ * (`dawn/planet-gold.webp`) in place of the plain circle and no runner, the Earth's two pictures lie under the ember
+ * rim (loaded as the dawn's are: dawn.js), and the farewell hangs off the way back in, the last child of `.gate-wrap`.
+ * Without it the markup is byte for byte what it always was.
+ */
+export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, asDawn = false, indent = "" } = {}) {
+  /* the farewell's lines: a block of its own beside the lockup, or (asDawn) nested in the way back in's box */
+  const words = [
+    '<div class="farewell">',
+    [
+      `<div class="said">${farewell.said}</div>`,
+      `<div class="sub">${farewell.sub}</div>`,
+    ],
+    "</div>",
+  ];
   return lines(indent, [
-    '<div id="dusk" hidden>',
+    asDawn ? '<div id="dusk" class="asdawn" hidden>' : '<div id="dusk" hidden>',
     [
       '<div class="dsky" aria-hidden="true"></div>',
       '<div class="world" aria-hidden="true">',
@@ -150,8 +174,17 @@ export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = 
         `<svg class="wl limb" ${SLICE}>`,
         [
           '<circle cx="800" cy="3920" r="3000" fill="#03050b"/>',
+          ...(asDawn ? [
+            "<!-- the Earth itself, the very one the dawn shows (sign out and sign in use the same photo), under the ember rim -->",
+            '<g class="earth">',
+            [
+              `<image class="pre" data-href="${image("dawn/dawn-pre.webp")}" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>`,
+              `<image class="up" data-href="${image("dawn/dawn.webp")}" x="0" y="640" width="1600" height="360" preserveAspectRatio="none"/>`,
+            ],
+            "</g>",
+          ] : []),
           picture("rim", image("dusk/glow-rim.webp")),
-          '<circle cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="1.8" stroke-opacity=".6"/>',
+          `<circle${asDawn ? ' class="crisp"' : ""} cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="1.8" stroke-opacity=".6"/>`,
         ],
         "</svg>",
         layer("shimmerlayer", '<circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/>'),
@@ -162,20 +195,24 @@ export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = 
         '<div class="lockup">',
         [
           '<div class="glyph" id="dusk-glyph"><svg width="420" height="420" viewBox="0 0 200 200" aria-hidden="true">',
-          [
+          asDawn ? [
+            "<defs>",
+            [DUSK_GLYPH.ringlit, DUSK_GLYPH.disclit, DUSK_GLYPH.discwarm, DUSK_GLYPH.trail],
+            "</defs>",
+            '<g class="lux" aria-hidden="true"><circle cx="100" cy="100" r="71" fill="url(#d-disclit)"/><circle cx="100" cy="100" r="71" fill="url(#d-discwarm)"/></g>',
+            '<circle class="ring lux" cx="100" cy="100" r="72" fill="none" stroke="url(#d-ringlit)" stroke-width="9" stroke-opacity=".05" pathLength="100"/>',
+            '<circle class="ring lux" cx="100" cy="100" r="72" fill="none" stroke="url(#d-ringlit)" stroke-width="3.6" stroke-opacity=".12" pathLength="100"/>',
+            '<circle class="ring" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>',
+            `<g class="tr"><path d="M46.5 51.8 A72 72 0 0 1 163 63.5" fill="none" stroke="url(#d-trail)" stroke-width="3.2" stroke-linecap="round"/><image class="world" href="${image("dawn/planet-gold.webp")}" x="145" y="45.5" width="36" height="36"/></g></svg></div>`,
+          ] : [
             '<circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>',
             '<g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g></svg></div>',
           ],
           '<div class="name">orbit</div>',
-          `<div class="gate-wrap">${gate}</div>`,
+          ...(asDawn ? [`<div class="gate-wrap">${gate}`, words, "</div>"] : [`<div class="gate-wrap">${gate}</div>`]),
         ],
         "</div>",
-        '<div class="farewell">',
-        [
-          `<div class="said">${farewell.said}</div>`,
-          `<div class="sub">${farewell.sub}</div>`,
-        ],
-        "</div>",
+        ...(asDawn ? [] : words),
       ],
       "</div>",
       raw(foot),
