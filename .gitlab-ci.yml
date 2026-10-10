@@ -33,6 +33,13 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
+    # The nightly import's merge requests (docs/import-*) are started by its project
+    # token's bot, which is not a member of the group and so cannot pull
+    # through the group dependency proxy: they pull the same digest-pinned
+    # images from Docker Hub instead (#13).
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\/import-/
+      variables:
+        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
