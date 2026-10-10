@@ -23,7 +23,7 @@
       "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
       "matchStrings": [
         "_IMAGE:\\s+\\$\\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\\}/(?<depName>[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
-        "_IMAGE:\\s+(?<depName>(?!\\$)[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+        "_IMAGE:\\s+(?<depName>[^\\s:@$][^\\s:@]*):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "datasourceTemplate": "docker"
     },

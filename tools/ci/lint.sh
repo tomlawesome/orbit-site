@@ -94,6 +94,8 @@ node -e '
   if (!(r.enabledManagers || []).includes("npm")) bad("renovate.json: enabledManagers lacks npm");
   for (const m of r.customManagers || []) {
     if ((m.matchStrings || []).some((s) => /marked|sharp/.test(s))) bad("renovate.json: a customManager still matches marked/sharp");
+    // Renovate compiles these with RE2, which has no look-arounds: one makes it reject the whole config
+    for (const s of m.matchStrings || []) if (/\(\?(=|!|<=|<!)/.test(s)) bad(`renovate.json: a matchString has a look-around, which Renovate cannot compile: ${s}`);
   }
 ' || fail=1
 
