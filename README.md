@@ -91,7 +91,7 @@ Words used in the table:
 | `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs and launcher screenshots (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
-| `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the probe at 0 s, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
+| `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the live door's probe, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
 | `tests/` | The machine tests: eight small tests, one task each, run from one page (`tests/index.html`). They are `machine` (what the browser says of the machine), `compile` (shader compile times, the real Earth shaders included), `draw` (draw speed at this screen's band), `upload` (map upload times), `upload-bands` (a picture put on in bands against the same picture put on whole, byte for byte), `stall` (whether a compile stalls the page), `worker` (whether a worker can compile without stalling the page) and `network` (the line's speed). The runner page runs them all and copies one report. Open on any device, Run all, Copy, send the text. `tests/crop.html` is used by the CI upload check |
 
 Routes: `#install`, `#docs`, `#info` arrive at a landing; `#docs/<source>` and
