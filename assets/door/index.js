@@ -10,20 +10,26 @@ import { mountDawn, mountDusk } from "./dawn.js";
 import { createJourney } from "./journey.js";
 
 export { settings };
+/* the background work (chores.js): a host's own worlds queue their GPU work here too, so it takes its turn with the door's */
 export { chore, fetchOnce, linked, counted, note, noteChores, quiet, openChores, openCompiles, openSoft, softRan, hurryChores, programs, compilesAside, holdReveal } from "./chores.js";
 export { uploadBanded } from "./upload.js";
+/* what this machine can carry (capability.js), and the level the door ships at */
 export { probe, level, liveDoor, lateDoor } from "./capability.js";
-export { seededRng, el, measureTile, mountFlightSky, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./stars.js";
-export { createFlight, UP, DOWN, PROPS_UP, UPDUR } from "./engine.js";
-export { T } from "./timeline.js";
-export { DAWN, DUSK, SUN } from "./glows.js";
-export { createJourney, descentFrom, DOWN_DAWN } from "./journey.js";
+/* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
+export { seededRng, el, measureTile } from "./stars.js";
+/* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */
+export { createFlight, UP, PROPS_UP, UPDUR } from "./engine.js";
+/* the glows' filter graphs, for the tool that draws them into pictures (tools/glows.cjs) */
+export { DAWN, DUSK } from "./glows.js";
+export { createJourney } from "./journey.js";
 export { mountDawn, mountDusk } from "./dawn.js";
+export { dawnMarkup, duskMarkup } from "./markup.js";
 export { decodeAhead } from "./decode-ahead.js";
 
 /**
  * The door, made once for the page with the host's settings (settings.js says what each is). Called before anything
- * else of the door is asked for.
+ * else of the door is asked for. Returns the door: dawn(host) and dusk(host) mount the surfaces on their markup
+ * (markup.js), journey(options) makes the flight between them (journey.js); README.md has the whole interface.
  */
 export function createDoor(given = {}) {
   configure(given);

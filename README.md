@@ -41,10 +41,11 @@ Words used in the table:
 | `index.html` | The sunrise (the hub: three more planets on their own orbits round the ring, each a section), the sky, the dusk, the three landings, and the flight's chrome |
 | `install.html` | Arrives at `./#install` |
 | `404.html` | Not found |
-| `assets/site.css` | The five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
+| `assets/door/` | The shared door (ADR-0001): the Earth door, the flight, their engine, timeline, stylesheet, markup and imagery, in one self-contained folder Orbit pulls in unchanged. `assets/door/README.md` is its interface. Also licensed AGPL-3.0 (`LICENSE`, section 3) |
+| `assets/site.css` | The site's own styles: the five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
 | `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today |
-| `assets/js/sky.js` | Star tiles, dawn and dusk fields, grain, packs |
+| `assets/js/sky.js` | The home sky's star tiles, grain, packs |
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
@@ -81,11 +82,12 @@ Words used in the table:
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
 | `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import and the weekly Renovate run |
-| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
+| `tools/door-markup.mjs` | Writes the door's markup into `index.html` from `assets/door/markup.js` (`node tools/door-markup.mjs`; `--check` is what the lint runs) |
+| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
 | `.github/workflows/codeql.yml` | CodeQL scans the JavaScript on the GitHub mirror |
 | `renovate.json` | What Renovate watches for newer versions of the pipeline's images and the import tool's packages |
 | `CONTRIBUTING.md`, `SECURITY.md` | How changes are made; how to report a security problem |
-| `LICENSE` | The licence, with the parts that carry their own terms |
+| `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs and launcher screenshots (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
 | `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the probe at 0 s, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |
