@@ -68,6 +68,10 @@ lint:
   script:
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-test.sh
+    - sh tools/ci/nightly-import-test.sh
+    - node tools/ci/fetch-once-test.mjs
+    - node tools/ci/dates-test.mjs
+    - node tools/ci/sanitise-html-test.mjs
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in Firefox: the door, each

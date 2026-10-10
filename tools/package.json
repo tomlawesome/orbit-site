@@ -1,0 +1,9 @@
+{
+  "name": "orbit-site-import",
+  "private": true,
+  "description": "the docs import's two packages; nothing here runs on the site",
+  "dependencies": {
+    "marked": "18.1.0",
+    "sharp": "0.34.5"
+  }
+}

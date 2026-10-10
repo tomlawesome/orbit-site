@@ -6,6 +6,8 @@ prints (`orbit · …`).
 
 ## Where the time goes
 
+*As of before the entries dated 8 October 2026 further down; where a later entry differs, the later entry is current (noted 2026-10-09).*
+
 - **Bytes are not the bottleneck.** A full first visit is about 3.7 MB. Images are about 3.2 MB of that, and the
   text files (HTML, CSS, JS, JSON) are about 200 KB once gzipped. At 20 Mbps, everything is in by about 2.7 s.
 - **Shader compilation is.** The 3D worlds are large GLSL programs. On Windows, browsers translate them to HLSL
@@ -21,6 +23,8 @@ prints (`orbit · …`).
   - The freeze runs behind the first-light loading ring, which keeps turning because it is animated on the compositor.
 
 ## Already done
+
+*As of before the entries dated 8 October 2026 further down; where a later entry differs, the later entry is current (noted 2026-10-09).*
 
 - **Early compile:** the journeys start compiling during the first-light loading ring, install first. On a first
   visit, or in a browser that compiles on the page's own thread, the ring keeps running until install and the
@@ -180,6 +184,9 @@ Tried, October 2026:
     a chore and measures it, and keeps it at 40 ms or less, asking the flight for the same (voyage.js: wantRich).
     The flight draws lean until its own rich program is made. Otherwise the door stays lean, drawn coarser if over
     40 ms, as before.
+    - *Superseded 2026-10: the 10 ms figure is not the rule now. `door3d.js` has `ROOM = 16` (a lean frame at 16 ms
+      or less makes rich), and which level a machine ships is decided at the page's start by `capability.js`: see
+      "The ladder" below.*
   - `&rich` forces rich (still measured); `&lean` forbids it.
 - SwiftShader (software rendering: relative only), 1440×900, deviceScaleFactor 2, band 2880×648: lean 1.1 s a frame
   in one load (then stepped to 1×) and 2.0 s in another; rich (forced) 3.3 s; the committed slab 3.3 s. Other runs
@@ -269,6 +276,8 @@ Tried, October 2026:
   - The two passes' small programs (voyage.js `passPrograms`) are compiled with them: the clouds' field with the lean
     weight and the flight's world, the cities' glow with the rich. Before this they compiled on the page's thread at
     their first upload, after the reveal.
+    - *Superseded 2026-10: `passPrograms` no longer exists. The pass programs live only in the RICH program
+      (`voyage.js`); see "Fewer programs, same picture" below.*
   - The ring waits for all of these on every visit (`waitCompiled`, via `compiledAll`, which now holds the door's and
     the docs' galaxy's), capped at 8 s so a failure never holds the door. `minLaps` is unchanged.
 - On every browser, the chores (uploads, bakes, first draws) and the live door (`liveDoorOf`) now start at `drawn()`,
@@ -392,12 +401,16 @@ Tried, October 2026:
     (still at `drawn()`), pump() runs only soft chores (and the compiles, where they may run). They run one a frame:
     the next starts on the next animation frame and `setTimeout(0)`, with no 20 ms rest. Once the queue is open they
     are ordinary chores, ranked by their tags as before. A journey chosen hurries them as it hurries the rest.
+    - *Superseded 2026-10: `openChores()` is no longer left to `drawn()`. `main.js` opens the chores at `light()`
+      unless they are held (on Firefox, or with `?open=late`); see "Three to see" below.*
   - **Bands** (new: upload.js `uploadBanded`). The texture is made at its full size at once (`texImage2D` with no
     data) with LINEAR filtering and the caller's own wrap modes. The picture then goes in with `texSubImage2D`, a band
     of rows at a time, each band a soft chore. Each band is its own small bitmap (`createImageBitmap` of the picture's
     rows, off the page's thread), cut while the band before waits its turn: at most two in flight per picture. A band
     starts at about 1 MB (4096 wide: 64 rows; 2048: 128; 1024: 256; never under 16). The first band is timed: over
     4 ms halves the rest, under 1.5 ms doubles them.
+    - *Superseded 2026-10: the bands are never doubled (a doubled band dropped frames in Edge); they are only halved
+      after any band that takes over 4 ms. See the comment in `upload.js`.*
   - **Mipmaps after**. After the last band, one ordinary chore with the same tag makes the mipmaps, sets
     LINEAR_MIPMAP_LINEAR and the caller's anisotropy. Until then the texture is complete at its first level and
     drawable. The helper's promise resolves only then.
@@ -457,6 +470,9 @@ Tried, October 2026:
   - The page-thread rule is the decision, not a threshold: a Windows Firefox pays about 6 s of compiles under the
     ring for the journeys alone, on the desktop and the laptop alike. The live door's own compiles could go nowhere
     but under the ring, and its loops would then run beside a page that stalls on every later compile.
+  - *Superseded 2026-10: a page-thread compiler (Firefox) is no longer level 0. `capability.js` gives it level 1,
+    the lean door, started late (`lateDoor`) once every way in is open, and "classic" is now called "lean". See "The
+    live door late, where compiles stall the page" below.*
   - The console says it on every page, with the flag or without: `level 0: still (compiles stall the page; probe
     197 ms)`, `level 2: live rich (predicted 12 ms of 40, background compiles)`, `level 1: live lean (rich predicted
     51 ms of 40, lean 14)`.

@@ -353,9 +353,10 @@ const arriveFocus = (root) => focusOn(root.querySelector("h1, h2") || root);
 const doorFocus = (id) => focusOn(id === "home" ? $("#gate") : $(`#door .planet[data-section="${id}"]`));
 /* one journey at a time: a second press (a key held down, a planet tabbed to mid-flight, the browser's back button
    mid-dive) waits for the first to land. It lets go by itself if a journey never reports landing */
-let moving = 0;
-const begin = () => { if (moving) return false; moving = setTimeout(() => { moving = 0; }, 15000); return true; };
-const done = () => { clearTimeout(moving); moving = 0; };
+let moving = 0, after = null;
+const begin = () => { if (moving) return false; moving = setTimeout(done, 15000); return true; };
+/* a Back or Forward kept for the landing runs once the landing has finished setting itself straight */
+const done = () => { clearTimeout(moving); moving = 0; const then = after; after = null; if (then) setTimeout(then, 0); };
 /* the browser's own back and forward: a journey from the door is a step in the history, so Back goes home the way
    it came, and Forward goes out again. The back links use it too, when the step is there to go back along */
 const step = (hash) => { try { history.pushState({ orbit: 1 }, "", hash); } catch { /* fine */ } };
@@ -548,13 +549,18 @@ function homeToDawn() {
 }
 home.onBackHome(goBack(homeToDawn));
 /* back and forward in the browser: the hash says where the visitor is to be */
-addEventListener("popstate", () => {
-  if (MAINTENANCE) return;
-  const h = location.hash.split("/")[0];
+const onPop = (h) => {
   if (!h || h === "#") { if (PADS[current]) backToDawn(); else if (current === "home") homeToDawn(); return; }
   if (current !== "door") return;
   if (h === "#home") launch(false);
   else { const id = { "#install": "install", "#docs": "docs", "#info": "info" }[h]; if (id) flyToPad(id, false); }
+};
+addEventListener("popstate", () => {
+  if (MAINTENANCE) return;
+  /* the hash as it is now: a journey still in flight rewrites it when it lands */
+  const h = location.hash.split("/")[0];
+  if (moving) { after = () => onPop(h); return; }
+  onPop(h);
 });
 if (!MAINTENANCE) $("#gate").addEventListener("click", launch);
 $("#signout").addEventListener("click", signOut);
@@ -570,6 +576,9 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
     navigator.clipboard?.writeText(el.dataset.copy).then(() => {
       el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = "copied";
       setTimeout(() => { delete el.dataset.done; if (el.tagName !== "CODE") el.textContent = was; }, 1600);
+    }).catch(() => {
+      /* a refused write says so, rather than failing silently */
+      if (el.tagName !== "CODE") { el.textContent = "not copied"; setTimeout(() => { el.textContent = was; }, 1600); }
     });
   });
 });
