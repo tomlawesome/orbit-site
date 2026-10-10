@@ -16,6 +16,10 @@
  * world reads "pending" the moment start() returns. #26: journey.descend({ homes, at: 5400 }) still fires released, surface, farewell and sets
  * showdusk/farewell, 30 homes without a throw.
  *
+ * Owner decision 3c (#25): the door's phone layout is used under 600px wide OR under 480px tall; 580x800, 844x390,
+ * 599x800 and 800x479 must give it, 1280x560, 1280x800, 600x800 and 800x480 the desktop one (layoutSigns says how it
+ * is told: the padding under the lockup, the hidden name, the farewell's place).
+ *
  * Without the option the same page is measured too, as controls: the glyph is 420px, the gate sits inside the ring,
  * the farewell's bottom is 240px below the viewport's middle (desktop), the ring and name keep their plain colours
  * whatever html.rich says. The phone control's numbers were taken from the code before the option (8e1bd13).
@@ -96,6 +100,7 @@ const MEASURE = () => {
     trOpacity: tr && parseFloat(cs(tr).opacity), fwOpacity: fw && parseFloat(cs(fw).opacity),
     trAnim: tr && cs(tr).animationName, worldAnim: world && cs(world).animationName, hasWorld: !!world,
     hasDawn: !!dawn,
+    dawnPad: dawn && parseFloat(cs(dawn.querySelector(".loginchrome")).paddingBottom), duskPad: parseFloat(cs(dusk.querySelector(".loginchrome")).paddingBottom),
   };
 };
 /* adds the farewell beat and says, in ms, when the planet and the farewell first read opaque (null: not within `limit`) */
@@ -192,6 +197,34 @@ function phoneControl(s, m) {
   s.want("(control) .name is visible", m.nameVisibility === "visible", `visibility ${m.nameVisibility}`);
   s.want("(control) the ring is where it is today", near(m.duskRing?.cx, PHONE_TODAY.ringCx, 1) && near(m.duskRing?.cy, PHONE_TODAY.ringCy, 1) && near(m.duskRing?.w, PHONE_TODAY.ringW, 1), `ring centre (${f(m.duskRing?.cx)}, ${f(m.duskRing?.cy)}), ${f(m.duskRing?.w)} across (today (${PHONE_TODAY.ringCx}, ${PHONE_TODAY.ringCy}), ${PHONE_TODAY.ringW})`);
   s.want("(control) the farewell's bottom is where it is today", near(m.fw?.b, PHONE_TODAY.fwBottom, 1), `bottom ${f(m.fw?.b)} (today ${PHONE_TODAY.fwBottom})`);
+}
+
+/* #25, owner 3c: the door's sign-in (#door) and goodbye (#dusk) use their phone layout when the window is under 600px
+   wide OR under 480px tall ((max-width: 599.98px), (max-height: 479.98px)). The signs of each layout, whatever the
+   window's size (measured at 390x844 and 1280x800, and not at the sizes below, where --R is the same in both):
+     dawn and asDawn dusk, phone: the .loginchrome's bottom padding is 4% of the window's height; desktop 8%;
+     asDawn dusk, phone: .name is hidden, the said stands on the ring's centre, the sub 26px under the ring, the gate
+       24px under the sub; desktop: .name shows, the farewell is 22px under the way back in, on the ring's axis, and
+       the gate is the dawn's.
+   The plain dusk has no sign that differs between the two at these sizes (its glyph is 420 wide in both, bar the
+   narrowest), so it is checked as a control: unchanged. */
+function layoutSigns(s, m, phone, tag) {
+  const share = phone ? 0.04 : 0.08;
+  s.want(`${tag}the dawn's .loginchrome has bottom padding of ${share * 100}% of the height`, near(m.dawnPad / m.vh, share, 0.003), `padding ${f(m.dawnPad)} in ${m.vh} (${f(m.dawnPad / m.vh)})`);
+  s.want(`${tag}the goodbye's .loginchrome has bottom padding of ${share * 100}% of the height`, near(m.duskPad / m.vh, share, 0.003), `padding ${f(m.duskPad)} in ${m.vh} (${f(m.duskPad / m.vh)})`);
+  if (phone) {
+    const R = m.duskSvg?.w;
+    s.want(`${tag}the goodbye's .name is visibility:hidden`, m.nameVisibility === "hidden", `visibility ${m.nameVisibility}`);
+    s.want(`${tag}.said's centre is on the ring's centre, within 2px`, near(m.said?.cx, m.duskRing?.cx, 2) && near(m.said?.cy, m.duskRing?.cy, 2), `said (${f(m.said?.cx)}, ${f(m.said?.cy)}), ring (${f(m.duskRing?.cx)}, ${f(m.duskRing?.cy)})`);
+    s.want(`${tag}.said is no wider than .6R`, m.said && m.said.w <= 0.6 * R + 1, `said ${f(m.said?.w)} wide, .6R = ${f(0.6 * R)}`);
+    s.want(`${tag}.sub is 26px under the ring's foot, within 2px`, near(m.sub?.t - m.duskRing?.b, 26, 2), `sub top ${f(m.sub?.t)}, ring foot ${f(m.duskRing?.b)}`);
+    s.want(`${tag}the gate's top is 24px under .sub's bottom, within 2px`, near(m.duskGate?.t - m.sub?.b, 24, 2), `gate top ${f(m.duskGate?.t)}, sub bottom ${f(m.sub?.b)}`);
+  } else {
+    s.want(`${tag}the goodbye's .name shows`, m.nameVisibility === "visible", `visibility ${m.nameVisibility}`);
+    s.want(`${tag}the farewell's top is 22px under the way back in's box`, near(m.fw?.t - m.wrap?.b, 22, 1), `farewell top ${f(m.fw?.t)}, .gate-wrap bottom ${f(m.wrap?.b)}`);
+    s.want(`${tag}the farewell is centred on the ring's axis, within 1px`, near(m.fw?.cx, m.duskRing?.cx, 1), `farewell centre ${f(m.fw?.cx)}, ring ${f(m.duskRing?.cx)}`);
+    s.want(`${tag}the goodbye's gate is where the dawn's is, within 1px`, near(m.duskGate?.t, m.dawnGate?.t, 1), `dusk gate top ${f(m.duskGate?.t)}, dawn ${f(m.dawnGate?.t)}`);
+  }
 }
 const PHONE_TODAY = { glyph: 327.6, ringCx: 195, ringCy: 422, ringW: 239.17, fwBottom: 662 };
 
@@ -295,6 +328,39 @@ try {
     }
     await desk.close();
     await phone.close();
+  }
+
+  /* ---- owner 3c: phone layout under 600px wide OR under 480px tall, desktop otherwise ---- */
+  {
+    const SIZES = [
+      [580, 800, true, "narrow, tall"], [844, 390, true, "wide, short"], [599, 800, true, "just under 600 wide"], [800, 479, true, "just under 480 tall"],
+      [1280, 560, false, "wide, not short"], [1280, 800, false, "desktop"], [600, 800, false, "600 wide"], [800, 480, false, "480 tall"],
+    ];
+    for (const [width, height, phone, why] of SIZES) {
+      const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
+      const s = scenario(`${width}x${height} (${why}), asDawn: the dawn and the goodbye have the ${phone ? "phone" : "desktop"} layout`);
+      await withPage(ctx, "asdawn=1", s, async (page) => {
+        await page.evaluate(() => window.beat("showdusk", "farewell"));
+        await sleep(SETTLE);
+        layoutSigns(s, await page.evaluate(MEASURE), phone, "");
+      });
+      s.done();
+      if (["580x800", "844x390", "1280x560", "1280x800"].includes(`${width}x${height}`)) {
+        /* the plain goodbye is unchanged at the four sizes the owner named (a control: it has no phone sign here) */
+        const c = scenario(`${width}x${height} (${why}), no option (control): the site's goodbye is as it was`);
+        await withPage(ctx, "asdawn=0", c, async (page) => {
+          await page.evaluate(() => window.beat("showdusk", "farewell"));
+          await sleep(SETTLE);
+          const m = await page.evaluate(MEASURE);
+          c.want("(control) the glyph is 420 wide", near(m.duskSvg?.w, 420, 0.6), `glyph ${f(m.duskSvg?.w)} wide`);
+          c.want("(control) .name shows and there is no padding added", m.nameVisibility === "visible" && m.duskPad === 0, `visibility ${m.nameVisibility}, padding ${m.duskPad}`);
+          c.want("(control) the farewell's bottom is 240px below the viewport's middle", near(m.fw?.b, m.vh / 2 + 240, 1), `bottom ${f(m.fw?.b)}, middle + 240 = ${m.vh / 2 + 240}`);
+          c.want("(control) the gate sits inside the ring", m.duskGate.l >= m.duskRing.l && m.duskGate.r <= m.duskRing.r && m.duskGate.t >= m.duskRing.t && m.duskGate.b <= m.duskRing.b, "gate vs ring");
+        });
+        c.done();
+      }
+      await ctx.close();
+    }
   }
 
   /* ---- 11a. the Earth photo: a dusk page with no dawn on it ---- */
