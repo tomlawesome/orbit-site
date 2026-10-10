@@ -84,7 +84,9 @@ star fields and sets the glows' origin.
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from
   the 13 s backstop or any other timer or promise of that light), no error;
   the ring's `body.loading` is taken off if the light put it on; a later
-  `light()` on the destroyed dawn does nothing.
+  `light()` on the destroyed dawn does nothing, and neither does `start()`
+  (one asked for but not yet run when `destroy()` comes is dropped, so the
+  dead world is never drawn and no resize listener is added after it).
 
 ### The dusk: `door.dusk(host)` → `{ start, destroy, held, world, host }`
 

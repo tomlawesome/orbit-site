@@ -5,7 +5,7 @@
  * drawn, once, after the next frame is on screen (so the sky is up before the work behind it starts). light(): first
  * light, below. live: the live door (door3d.js), where the host's flag asks for it. destroy(): the surface taken down
  * (a host that remounts its door): nothing of it listens any more, and a first light under way stops (no body.lit,
- * no onLit, no onOpen, from its 13 s backstop or anything else of it; a light() after it does nothing).
+ * no onLit, no onOpen, from its 13 s backstop or anything else of it; a start() or light() after it does nothing).
  *
  * FIRST LIGHT. The ring is a light running its circle (body.loading) while the dawn's first pieces come (the type,
  * the Earth's first picture), a lap at a time, each lap ending in a breath; when they have come it finishes the lap
@@ -63,9 +63,10 @@ export function mountDawn(host) {
   let started = false, litOnce = false;
   /* destroy() also stops a first light under way: every continuation of it (a timer, a frame, a promise) is made with
      `alive` and does nothing once the dawn is gone; the timers and the ring's listener are also let go at once */
-  let gone = false, stopLight = () => {};
+  let gone = false;
+  const stops = new Set();
   const alive = (fn) => (...a) => { if (!gone) return fn(...a); };
-  const start = () => { if (started) return; started = true; afterFirstFrame(() => { loadEarth(); rasters.start(); }); };
+  const start = () => { if (started || gone) return; started = true; afterFirstFrame(alive(() => { loadEarth(); rasters.start(); })); };
   /* the pieces the door is made of, which would change its face as they arrived: the fonts, and the Earth's first picture */
   const critical = () => {
     const pre = world.querySelector(".earth image.pre");
@@ -84,12 +85,12 @@ export function mountDawn(host) {
     if (gone) return;
     const firstLight = !litOnce; litOnce = true;
     const crit = critical();
-    let backstop = null, lap = null, ring = null, added = false, lit = false;
-    stopLight = () => {
+    let backstop = null, lap = null, ring = null, loadingOn = false, lit = false;
+    stops.add(() => {
       clearTimeout(backstop);
       if (lap) ring?.removeEventListener("animationiteration", lap);
-      if (added) document.body.classList.remove("loading");
-    };
+      if (loadingOn) document.body.classList.remove("loading");   /* only the one this light put on, and not yet taken off */
+    });
     const RING = flag("ring") || "", OPEN_EARLY = aside && flag("open") !== "late";
     let arrived = () => {};
     /* a first visit's first light is always at least a lap of the ring */
@@ -118,7 +119,7 @@ export function mountDawn(host) {
       } catch { return Promise.resolve(); }
     };
     const go = alive(() => { openChores(); onOpen(); });
-    const lightNow = alive(() => { if (lit) return; lit = true; requestAnimationFrame(alive(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
+    const lightNow = alive(() => { if (lit) return; lit = true; requestAnimationFrame(alive(() => { document.body.classList.remove("loading"); loadingOn = false; document.body.classList.add("lit");
       if (!holdReveal()) openSoft();
       let gap = 0, last = 0, timing = firstLight;
       const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing && !gone) requestAnimationFrame(frame); };
@@ -131,7 +132,7 @@ export function mountDawn(host) {
       })); })); });
     within(crit, 250).then(alive(() => {
       if (here && !minLaps) { lightNow(); return; }
-      document.body.classList.add("loading"); added = true;
+      document.body.classList.add("loading"); loadingOn = true;
       ring = host.querySelector(".lockup .runner");
       let laps = 0;
       lap = () => {
@@ -161,7 +162,7 @@ export function mountDawn(host) {
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  const destroy = () => { gone = true; stopLight(); unsky(); rasters.stop(); };
+  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); };
   return { host, world, start, light, live, destroy };
 }
 
