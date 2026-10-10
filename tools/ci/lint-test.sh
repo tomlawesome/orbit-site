@@ -1,8 +1,9 @@
 #!/bin/sh
 # Test for tools/ci/lint.sh, section "nothing stray at the root": it judges
-# what git tracks, not what is on disk (issue #5); and section "Renovate
-# watches where the npm pins live": a pin in a file renovate.json does not
-# watch fails and names that file; and section "the imported docs carry no
+# what git tracks, not what is on disk (issue #5); section "the npm pins live
+# in tools/package.json only": a version named in a script, a lockfile entry
+# without integrity, a range in the manifest, or npm dropped from Renovate's
+# managers fails and names the file; and section "the imported docs carry no
 # script": a handler or script tag in a stored section fails and names it.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
@@ -107,22 +108,117 @@ else
   failed=1
 fi
 
-# Case 3: the marked/sharp pin moved to a file renovate.json does not watch
-# (tools/ci/pins.sh) -> the section fails and names it.
-pin=$(grep 'npm i .*marked' tools/ci/nightly-import.sh)
-grep -v 'npm i .*marked' tools/ci/nightly-import.sh > nightly.tmp
-mv nightly.tmp tools/ci/nightly-import.sh
-printf '%s\n' "$pin" > tools/ci/pins.sh
-git add -A
-git -c user.name=t -c user.email=t@t commit -q -m "move the npm pins"
-rc=0
-sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
-if [ "$rc" -eq 1 ] && grep -q "tools/ci/pins.sh pins marked/sharp" "$out"; then
-  echo "ok   an npm pin renovate.json does not watch fails"
+# Cases (a)-(d) judge section "the npm pins live in tools/package.json only".
+# Each commits one fault, runs the lint, then restores the previous state.
+# Before the manifest and lockfile exist the cases FAIL with a clear line
+# instead of stopping the run.
+commit_all() {
+  git add -A
+  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+}
+lint_to_out() {
+  rc=0
+  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+}
+
+# Case (a): a package version named in a script (an install line for marked
+# added to tools/ci/nightly-import.sh)
+# (the line is built from parts: this file is itself a script the lint reads)
+printf '%s\n' "npm i $(printf '%s@%s' marked 18.0.0)" >> tools/ci/nightly-import.sh
+commit_all "pin in a script"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "tools/ci/nightly-import.sh" "$out"; then
+  echo "ok   a marked@ pin in a script fails"
 else
-  echo "FAIL an npm pin renovate.json does not watch fails (exit $rc)"
+  echo "FAIL a marked@ pin in a script fails (exit $rc, want 1 naming tools/ci/nightly-import.sh)"
   sed 's/^/     /' "$out"
   failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (b): an entry of the lockfile with no integrity -> fails, names the
+# lockfile and the entry.
+if [ ! -f tools/package-lock.json ]; then
+  echo "FAIL a lockfile entry without integrity fails (tools/package-lock.json missing)"
+  failed=1
+else
+  entry=$(node -e '
+    const fs = require("fs");
+    const f = "tools/package-lock.json";
+    const j = JSON.parse(fs.readFileSync(f, "utf8"));
+    const k = Object.keys(j.packages || {}).find((p) => p !== "" && j.packages[p].integrity);
+    if (!k) process.exit(1);
+    delete j.packages[k].integrity;
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+    console.log(k);
+  ') || entry=""
+  if [ -z "$entry" ]; then
+    echo "FAIL a lockfile entry without integrity fails (tools/package-lock.json has no entry with integrity to remove)"
+    failed=1
+  else
+    commit_all "lockfile entry without integrity"
+    lint_to_out
+    if [ "$rc" -eq 1 ] && grep -q "tools/package-lock.json" "$out" && grep -q "$entry" "$out"; then
+      echo "ok   a lockfile entry without integrity fails"
+    else
+      echo "FAIL a lockfile entry without integrity fails (exit $rc, want 1 naming tools/package-lock.json and $entry)"
+      sed 's/^/     /' "$out"
+      failed=1
+    fi
+    git reset -q --hard HEAD~1
+  fi
+fi
+
+# Case (c): a range instead of an exact version in tools/package.json ->
+# fails, names the manifest.
+if [ ! -f tools/package.json ]; then
+  echo "FAIL a range for marked in tools/package.json fails (tools/package.json missing)"
+  failed=1
+else
+  node -e '
+    const fs = require("fs");
+    const f = "tools/package.json";
+    const j = JSON.parse(fs.readFileSync(f, "utf8"));
+    j.dependencies = j.dependencies || {};
+    j.dependencies.marked = "^18.0.0";
+    fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+  '
+  commit_all "range for marked"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "tools/package.json" "$out"; then
+    echo "ok   a range for marked in tools/package.json fails"
+  else
+    echo "FAIL a range for marked in tools/package.json fails (exit $rc, want 1 naming tools/package.json)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+fi
+
+# Case (d): Renovate no longer watches npm -> fails, names renovate.json.
+if ! node -e '
+  const j = JSON.parse(require("fs").readFileSync("renovate.json", "utf8"));
+  process.exit((j.enabledManagers || []).includes("npm") ? 0 : 1);
+'; then
+  echo "FAIL removing npm from enabledManagers fails (renovate.json does not list npm in enabledManagers)"
+  failed=1
+else
+  node -e '
+    const fs = require("fs");
+    const j = JSON.parse(fs.readFileSync("renovate.json", "utf8"));
+    j.enabledManagers = j.enabledManagers.filter((m) => m !== "npm");
+    fs.writeFileSync("renovate.json", JSON.stringify(j, null, 2) + "\n");
+  '
+  commit_all "renovate without npm"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "renovate.json" "$out"; then
+    echo "ok   removing npm from enabledManagers fails"
+  else
+    echo "FAIL removing npm from enabledManagers fails (exit $rc, want 1 naming renovate.json)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
 fi
 rm -f "$out"
 
