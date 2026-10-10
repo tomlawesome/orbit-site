@@ -6,17 +6,20 @@
  */
 import { configure, settings } from "./settings.js";
 import { choresNow, watchTyping } from "./chores.js";
+import { mountDawn, mountDusk } from "./dawn.js";
+import { createJourney } from "./journey.js";
 
 export { settings };
 export { chore, fetchOnce, linked, counted, note, noteChores, quiet, openChores, openCompiles, openSoft, softRan, hurryChores, programs, compilesAside, holdReveal } from "./chores.js";
 export { uploadBanded } from "./upload.js";
 export { probe, level, liveDoor, lateDoor } from "./capability.js";
 export { seededRng, el, measureTile, mountFlightSky, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./stars.js";
-export { createFlight, UP, DOWN, PROPS_UP, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP } from "./engine.js";
-export { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, T, D } from "./timeline.js";
-
-/** the live door's module (?door3d), fetched only when asked for: nothing of it is loaded otherwise */
-export const loadLiveDoor = () => import("./door3d.js");
+export { createFlight, UP, DOWN, PROPS_UP, UPDUR } from "./engine.js";
+export { T } from "./timeline.js";
+export { DAWN, DUSK, SUN } from "./glows.js";
+export { createJourney, descentFrom, DOWN_DAWN } from "./journey.js";
+export { mountDawn, mountDusk } from "./dawn.js";
+export { decodeAhead } from "./decode-ahead.js";
 
 /**
  * The door, made once for the page with the host's settings (settings.js says what each is). Called before anything
@@ -27,5 +30,5 @@ export function createDoor(given = {}) {
   if (settings.typingWait > 0) watchTyping();
   /* for the live door's test (?door3d): the chores as they are now */
   if (settings.flags?.door3d) { try { window.__chores = choresNow; } catch { /* not a page */ } }
-  return { settings };
+  return { settings, dawn: mountDawn, dusk: mountDusk, journey: createJourney };
 }

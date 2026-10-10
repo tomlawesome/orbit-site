@@ -2,13 +2,13 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { createDoor, loadLiveDoor, probe, level, lateDoor, mountFlightSky, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR, openChores, openCompiles, openSoft, softRan, hurryChores, note, programs, compilesAside, holdReveal } from "../door/index.js";
+import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside } from "../door/index.js";
 import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
 import * as law from "./law.js";
-import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
+import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 
@@ -19,7 +19,7 @@ for (const k of ["door3d", "rich", "lean", "holdreveal", "mainthread"]) FLAGS[k]
 FLAGS.level = location.search.match(/[?&]level=([012])\b/)?.[1] ?? null;
 FLAGS.ring = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] ?? null;
 FLAGS.open = /[?&]open=late\b/.test(location.search) ? "late" : null;
-createDoor({ image: (p) => `assets/door/img/${p}`, flags: FLAGS });
+const door = createDoor({ image: (p) => `assets/door/img/${p}`, flags: FLAGS });
 /* first of all, before anything else asks the GPU for anything: how fast it is here (capability.js; kept a week), so
    the live door's weight, and so what is compiled, is known from the start; and from it the level this machine ships
    (capability.js: level, said in the console on every page) */
@@ -39,17 +39,16 @@ const doorLive = () => probe().then(() => DOOR3D && level() >= 1);
    light's ring (compileFirst); made live once the door's painted reveal is over (liveDoorOf). (The modules are fetched
    under the flag whatever the level; at level 0 nothing of theirs is made.) The world planets start only once the
    door has been measured and shown (door3d.js: doorMeasured), so the door's measure is its own, not theirs beside it */
-const door3d = DOOR3D ? loadLiveDoor() : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
+const planets3d = DOOR3D ? import("./planets3d.js") : null;
 const liveDoorOf = () => {
   /* late (capability.js: where compiles stall the page): nothing of it until every journey is ready, the ways in open */
   if (lateDoor() && warmingAll) return warmingAll.then(() => { note("door: the journeys are ready, the live door may begin"); return startLiveDoor(); });
   return startLiveDoor();
 };
 const startLiveDoor = () => {
-  const measured = door3d.then((m) => m.doorMeasured, () => null);
   planets3d.then((m) => m.mountPlanets($("#door"))).catch((e) => console.warn("orbit: no live planets", e))
-    .then(() => PADS.install.ring.doorPlanets($("#door"), measured)).catch((e) => console.warn("orbit: no world planets", e));
-  return door3d.then((m) => { liveDoor = m.liveDoor($("#door .world")); }).catch((e) => console.warn("orbit: no live door", e));
+    .then(() => PADS.install.ring.doorPlanets($("#door"), dawn.live.measured)).catch((e) => console.warn("orbit: no world planets", e));
+  return dawn.live.start().then((l) => { liveDoor = l; }).catch((e) => console.warn("orbit: no live door", e));
 };
 if (MAINTENANCE) {
   /* the message, if the attribute gives one ("Launching soon"); "Back shortly" if not */
@@ -65,22 +64,9 @@ bindSwatches();
 
 const skyCams = mountTiledSky($("#sky"), "home");
 mountGrain($(".grain"));
-mountFlightSky($("#door .dsky"), DAWN_FAR, DAWN_NEAR, "lg");
-mountFlightSky($("#dusk .dsky"), DUSK_FAR, DUSK_NEAR, "dk");
-/* each surface's glows are drawn the first time it is shown, after its first
-   frame is on screen, so the picture is up before the work behind it starts */
-/* the glows are pictures now (tools/glows.cjs), all but the sun's own: drawn here, per size, dithered, so its dark
-   gradient does not step into rings (flight.js: rasterise); and mountRasters keeps the rays turning about the sunrise point */
-const dawnRasters = mountRasters($("#door .world"), { sun: SUN }, "dawn");
-/* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
-function loadEarth() {
-  const world = $("#door .world");
-  for (const im of world.querySelectorAll(".earth image[data-href]")) {
-    im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); }, { once: true });
-    im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
-  }
-}
-const startDawn = () => { loadEarth(); dawnRasters.start(); };
+/* the dawn and the dusk, mounted on their markup (assets/door/dawn.js): each surface's stars, its glows and its
+   pictures, drawn the first time it is shown (start), after its first frame is on screen */
+const dawn = door.dawn($("#door")), dusk = door.dusk($("#dusk"));
 
 /* ── every journey ready before it is asked for ─────────────────────────────
    Once the door's first picture is in, each journey is fetched and made ready
@@ -123,7 +109,7 @@ function warmJourneys() {
   /* (?door3d) how many programs were compiled before the door: all the ring waits for, and the live door's first
      weight and its planets' (where compiles are in the background these come after the reveal, still before the door
      is live) */
-  if (DOOR3D) doorLive().then((live) => live && Promise.all([compiledAll, door3d.then((m) => m.doorFirstCompiled()), planets3d.then((m) => m.planetsCompiled())])
+  if (DOOR3D) doorLive().then((live) => live && Promise.all([compiledAll, dawn.live.firstCompiled(), planets3d.then((m) => m.planetsCompiled())])
     .then(() => { const p = programs(); note(`programs compiled before the door: ${p.n} (${p.by})`); })).catch(() => {});
   return warmingAll;
 }
@@ -145,9 +131,6 @@ $("#door .planets")?.addEventListener("click", (e) => { const a = e.target.close
 if (!MAINTENANCE) $("#gate").disabled = true;
 /* a journey waits for what it needs, but never long: past the cap it goes with what it has */
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
-const duskRasters = mountRasters($("#dusk .world"), {}, "dusk");
-let dawnDrawn = false, duskDrawn = false;
-const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
 recall();
 home.mountHome(skyCams);
 const player = createPlayer();
@@ -194,7 +177,7 @@ for (const [id, pad] of Object.entries(PADS)) {
 const shotOf = (pad) => pad.world || pad.ring;
 let current = null;   /* "door" | "home" | a pad id */
 
-const journey = createJourney({
+const journey = door.journey({
   canvas: $("#warp"), name: $("#launchname"),
   dawnGlyph: () => $("#login-glyph svg"), duskGlyph: () => $("#dusk-glyph svg"),
   on: {
@@ -226,7 +209,7 @@ if (!asideHere) openCompiles();
    maps and loops still wait for the reveal (liveDoorOf). The live door's only once the probe has said the level (at
    most its one compile, under the ring that is already running), and only at level 1 or 2 */
 function compileFirst() {
-  if (DOOR3D) doorCompiled = doorLive().then((live) => live && Promise.all([door3d.then((m) => m.compileDoor()), planets3d.then((m) => m.compilePlanets($("#door")))]))
+  if (DOOR3D) doorCompiled = doorLive().then((live) => live && Promise.all([dawn.live.compile(), planets3d.then((m) => m.compilePlanets($("#door")))]))
     .catch((e) => console.warn("orbit: the live door's compiles failed", e));
   warmJourneys();
 }
@@ -234,111 +217,31 @@ function showDoor() {
   journey.reset(); hideAll(); current = "door"; done();
   $("#gate").classList.remove("flash");
   const door = $("#door");
-  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
+  dawn.start();
   door.hidden = false; door.classList.add("shown");
   document.body.classList.add("at-door"); document.body.classList.remove("lit");
-  /* first light. The ring is a light running its circle (body.loading) while the dawn's first pieces come (the type,
-     the Earth's first picture), a lap at a time, each lap ending in a breath; when they have come it finishes the lap
-     it is on and goes straight into its own drawing, and the rest comes up after it. On a first visit it always runs
-     at least a lap, and keeps on (three at most) until the first journey is ready too: the journeys start coming the
-     moment the dawn's pieces are in, so the laps, and then the reveal, and then the time spent taking the door in,
-     are when they come. On a later visit, with everything kept (sw.js), it comes straight up. */
-  const world = $("#door .world"), pre = world.querySelector(".earth image.pre");
-  const earthHere = world.classList.contains("earthy") || !pre ? Promise.resolve()
-    : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
-  const critical = Promise.all([document.fonts?.ready, earthHere]);
+  /* first light (assets/door/dawn.js). The journeys start coming the moment the dawn's pieces are in, so on a first
+     visit the ring runs on until the first journey is ready too, and until its shaders are compiled (in the
+     background). Where they would stop the page, on every visit: they are compiled under the ring, and the door is
+     lit only once they are (never past 8 s: a compile that fails or hangs never holds the door) */
   const firstLight = !doorLitOnce; doorLitOnce = true;
   if (firstLight && !asideHere) compileFirst();
-  /* the ring runs on a first visit until the shaders are compiled too (in the background). Where they would stop the
-     page, on every visit: they are compiled under it, and the door is lit only once they are (never past 8 s: a
-     compile that fails or hangs never holds the door) */
   const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !asideHere);
-  /* where compiles are in the background, every chore and the ways in run from the moment the door is lit, not from
-     the reveal's end (chosen by eye on the laptop in Edge, 8 October, against the held reveal and the two ring
-     endings; ?open=late holds them to the reveal's end, to compare). Where a compile stalls the page (Firefox), held
-     as before. To see, each at its own address: ?ring=stop, the ring ends the moment the work is done and the drawn
-     ring takes over from where the runner is; ?ring=rush, the runner speeds up (x3) to finish its lap within about
-     half a second */
-  const RING = FLAGS.ring || "", OPEN_EARLY = asideHere && FLAGS.open !== "late";
-  let arrived = () => {};
-  /* a first visit's first light is always at least a lap of the ring */
-  const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
-  let here = false;
-  /* the journeys are readied once the ring is up and running (one frame shown), so a page stopped by a compile
-     stops behind it */
-  critical.then(() => {
-    if (!waitCompiled) here = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
+  dawn.light({
+    firstVisit, wait: waitCompiled, aside: asideHere,
+    /* the journeys are readied once the ring is up and running; where the ring waits for their shaders, this is what it waits for */
+    after() { warmJourneys(); return waitCompiled ? within(compiledAll, asideHere ? 9000 : 8000) : null; },
+    onLit() {
+      /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
+      planetsIn = new Promise((r) => requestAnimationFrame(() => {
+        const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
+        (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
+      }));
       warmJourneys();
-      if (waitCompiled) within(compiledAll, asideHere ? 9000 : 8000).then(() => { here = true; arrived(); });
-    }));
+    },
+    /* the live door's canvas and its context's first textures are the GPU's, so they wait with the rest of the chores */
+    onOpen() { if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); },
   });
-  let lit = false;
-  /* the chores (the GPU's share of readying the journeys: uploads, bakes, first draws, the live door) begin the moment
-     the reveal's painted part has finished, on every browser: what only moves or fades is carried by the compositor,
-     and nothing on the page's thread can stutter it, but what is painted (the ring's stroke drawing in, the name's
-     blur clearing, anything inside an SVG) is drawn on the page's own thread, and a chore under it stutters it. So
-     each such animation is waited for, by its own end, not by a guess. A journey chosen sooner has its own chores
-     done at once (hurryChores). Only the soft chores (a band of a picture put on the GPU, under ~5 ms: upload.js) run
-     during the reveal, one a frame, from the moment the door is lit (openSoft; not with ?holdreveal); and the reveal's
-     longest gap between two frames is said with them when it ends (the proof it stayed smooth: 16.7 ms is a whole
-     frame at 60 Hz) */
-  const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
-  const painted = (a) => {
-    try {
-      const t = a.effect.target;
-      if (t instanceof SVGElement && !(t instanceof SVGSVGElement)) return true;
-      const props = a.transitionProperty ? [a.transitionProperty] : a.effect.getKeyframes().flatMap(Object.keys);
-      return props.some((k) => !COMPOSITED.has(k));
-    } catch { return true; }
-  };
-  const drawn = () => {
-    try {
-      const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime) && painted(a));
-      return Promise.all(ends.map((a) => a.finished.catch(() => {})));
-    } catch { return Promise.resolve(); }
-  };
-  const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
-    if (!holdReveal()) openSoft();
-    let gap = 0, last = 0, timing = firstLight;
-    const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing) requestAnimationFrame(frame); };
-    if (timing) requestAnimationFrame(frame);
-    /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
-    planetsIn = new Promise((r) => requestAnimationFrame(() => {
-      const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
-      (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
-    }));
-    warmJourneys();
-    /* (the live door too: its canvas and its context's first textures are the GPU's, so they wait with the rest) */
-    const go = () => { openChores(); if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); };
-    if (OPEN_EARLY) go();
-    drawn().then(() => {
-      if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (the chores open with the reveal)" : " (held to the reveal's end)"}`); }
-      if (!OPEN_EARLY) go();
-    }); }); };
-  within(critical, 250).then(() => {
-    if (here && !minLaps) { light(); return; }
-    document.body.classList.add("loading");
-    const ring = $("#door .lockup .runner");
-    let laps = 0;
-    const lap = () => {
-      laps++;
-      const enough = here && laps >= minLaps;
-      if (enough || laps >= 7) { ring?.removeEventListener("animationiteration", lap); light(); }
-    };
-    ring?.addEventListener("animationiteration", lap);
-    /* ?ring=stop: lit the moment the work is done; ?ring=rush: the runner's lap finished at three times its pace */
-    arrived = () => {
-      if (lit || !ring) return;
-      if (RING === "stop") { ring.removeEventListener("animationiteration", lap); note("ring: stopped where it was"); light(); }
-      else if (RING === "rush") { try { ring.getAnimations().forEach((a) => { a.playbackRate = 3; }); note("ring: rushed to the lap's end"); } catch { /* the lap as it is */ } }
-    };
-    if (here) arrived();
-    /* without the animation (reduced motion), just the pieces */
-    if (!ring || getComputedStyle(ring).animationName === "none") within(critical, 8000).then(light);
-    setTimeout(light, 13000);
-  });
-  /* the docs' chart is read early, so the flight there can carry it; the world is baked while the door is quiet */
 }
 /* leaving whatever is on screen: the door is let go by the flight, a landing is left behind it */
 function leaveCurrent() {
@@ -379,7 +282,7 @@ function goToWorld(id = "install") {
   /* from anywhere but the door, the dawn comes up under what is leaving */
   if (current !== "door") {
     leaveCurrent();
-    if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
+    dawn.start();
     door.hidden = false; door.classList.add("shown"); document.body.classList.add("at-door", "lit");
   }
   const scene = planetOf(id);
@@ -410,7 +313,7 @@ function leaveWorld() {
   if (!begin()) return;
   const id = current, pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   clearTimeout(sceneTimer);
-  if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); }
+  dawn.start();
   if (pad.world) { pad.ring.stop(); pad.el.querySelector(".scroll").scrollTop = 0; pad.el.style.setProperty("--worldA", 1); shot.start(); }
   const scene = planetOf(id);
   scene.planet.classList.add("chosen");
@@ -437,7 +340,7 @@ function flyToPad(id, push = true) {
   if (current !== "door" || !begin()) return;
   if (push) step(`#${id}`);
   /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
-     world is ready (install.js: form); the flights hold on the mark lifting to the centre (flight.js: fly) */
+     world is ready (install.js: form); the flights hold on the mark lifting to the centre (assets/door/journey.js: fly) */
   hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
   flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null, id === "docs" ? journey.warmDocs() : null]));
@@ -486,7 +389,7 @@ function backToDawn() {
   }
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
-    surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
+    surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { done(); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } },
   } });
 }
@@ -528,7 +431,7 @@ function arrive() {
 }
 
 function signOut() {
-  if (!duskDrawn) { duskDrawn = true; afterFirstFrame(duskRasters.start); }
+  dusk.start();
   player.stop(false);
   home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
@@ -543,7 +446,7 @@ function homeToDawn() {
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
-    surface() { const door = $("#door"); if (!dawnDrawn) { dawnDrawn = true; afterFirstFrame(startDawn); } door.hidden = false; document.body.classList.add("at-door", "lit"); },
+    surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
       done();
       const h = $("#home"); h.classList.remove("shown"); h.hidden = true; player.hide();

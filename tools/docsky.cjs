@@ -16,7 +16,7 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".webp": "image/
 const page = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{position:fixed;inset:0;width:100vw;height:100vh}</style>
 <canvas id="c"></canvas><script type="module">
 import { createDoor, openChores } from "./assets/door/index.js";
-import { docsFlight } from "./assets/js/flight.js";
+import { docsFlight } from "./assets/js/journeys.js";
 createDoor({ image: (p) => "assets/door/img/" + p });
 openChores();
 const { createFlight } = await import("./assets/door/index.js");
