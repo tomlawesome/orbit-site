@@ -1049,7 +1049,7 @@ export function createVoyage(under) {
      fitness test's, said when the test has ended and the world was still there to be judged) */
   let offSaid = false, madeOk = false;
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  canvas.addEventListener("webglcontextlost", () => { dead = true; ok = false; ready = false; sayOff("the context was lost"); });
+  canvas.addEventListener("webglcontextlost", () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); });
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile): asked for here,
      and only looked at once they are done (made, below), so making them never holds the page up */
@@ -1097,6 +1097,7 @@ export function createVoyage(under) {
      first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
   const makeGal = () => {
+    if (gone) return galMade ?? Promise.resolve();   /* (stopped: no galaxy compiled for a journey taken down) */
     if (!galMade) {
       const g0 = performance.now();
       const G = { gal: program(GAL, vs, "galaxy"), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV), "galaxy") };
@@ -1194,10 +1195,12 @@ export function createVoyage(under) {
   const load = (key) => fetchOnce(pictures()[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => {
+      if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       const wh = [bm.width, bm.height];
       return uploadBanded(gl, bm, { tag: "flight", name: key, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
     .then(() => {
+      if (gone) return;
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
@@ -1223,7 +1226,7 @@ export function createVoyage(under) {
       loading = Promise.all([made, loaded])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
         .then(() => richOnly && chore(richMaps, 60, "flight"))
-        .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
+        .then(() => chore(() => { if (gone) return; try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         .then(() => {});
     }
     if (!prove) return loading;
