@@ -11,7 +11,7 @@
  *
  * MEDIA changes name when the pictures are replaced, which clears them.
  */
-const MEDIA = "orbit-media-1", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
+const MEDIA = "orbit-media-2", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
 const isMedia = (u) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(u.pathname);
 
 self.addEventListener("install", () => self.skipWaiting());
