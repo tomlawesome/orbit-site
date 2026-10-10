@@ -35,9 +35,14 @@ const GAINS = [1, 2, 4, 8, 16, 32];
 /* below a quarter of a step a glow is invisible; dithering it only scatters dots over the whole file */
 const FLOOR = 0.25;
 
-/** Every opacity in an SVG fragment multiplied by `gain` (the browser clamps at 1). */
+/**
+ * The stop, stroke and fill opacities in an SVG fragment multiplied by `gain` (the browser clamps each at 1). A bare
+ * `opacity` (the dawn fans' group and path opacity) is left alone: it multiplies the whole layer linearly, so scaling
+ * it too would make it clamp at 1 from gain 2 while the others kept scaling, and the exposures would stop being
+ * multiples of each other (sway1's gain 2 came out 3.57x gain 1 instead of 2x).
+ */
 function brighten(svg, gain) {
-  return svg.replace(/((?:stop-|stroke-|fill-)?opacity)="([0-9.]+)"/g, (_, attr, value) => `${attr}="${Number(value) * gain}"`);
+  return svg.replace(/((?:stop|stroke|fill)-opacity)="([0-9.]+)"/g, (_, attr, value) => `${attr}="${Number(value) * gain}"`);
 }
 
 /**
