@@ -198,6 +198,15 @@ export const PROPS_UP = [
   { kind: "sys", t0: 2120, dur: 1350, ang: 108, z: 0.62, k: 5, spin: -0.16 },
 ];
 
+/* The other households passing on a flight (the demo's climb, Orbit's own): one "home" prop per household, each with
+   its items as bodies, entering a little after the last and bearing off at one of a few fixed angles and distances.
+   `homes` is [{ name, bodies:[[x,y,colour,r]] }]; a home's prop depends on its place in the list only. */
+const BEAR = [44, 136, 74, 106, 58, 122], ZED = [0.5, 0.42, 0.62, 0.46, 0.56, 0.4];
+/** @param {Array<{ name: string, bodies: Array<[number, number, string, number]> }>} homes @returns {Prop[]} */
+export function homeProps(homes) {
+  return homes.map((h, i) => ({ kind: "home", name: h.name, bodies: h.bodies, t0: 760 + i * 380, dur: 2000 + (i % 3) * 350, ang: BEAR[i % BEAR.length], z: ZED[i % ZED.length], spin: 0 }));
+}
+
 /* ── the two profiles ─────────────────────────────────────────────────────
    UP · 4800ms.  0–300 ignition (the ship is barely moving; the mark flares
    and the card dissolves) · 300–1350 hard acceleration out of the dawn ·

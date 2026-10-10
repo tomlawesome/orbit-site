@@ -138,8 +138,11 @@ For a host's own worlds and skies, so their work takes its turn with the
 door's: the chores (`chore`, `fetchOnce`, `openChores`, `hurryChores`,
 `note`, `quiet`, `compilesAside`, …), `uploadBanded`, the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
-`measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`), the
-glows' graphs (`DAWN`, `DUSK`) and `decodeAhead`.
+`measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
+`homeProps(homes)`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+`homeProps(homes)` is the other households passing on a flight: one `"home"`
+prop each from `[{ name, bodies: [[x, y, colour, r]] }]`, a home's prop
+depending only on its place in the list (the site's `demoFlight` uses it).
 
 ## Files
 
