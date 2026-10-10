@@ -21,12 +21,14 @@
  *
  * What it checks (the ADR's numbers):
  *   1-4  software GL, `/`: one webgl2 call, with the caveat, after #door.shown and before body.lit; no long task
- *        over 50 ms in the 10 s after lit and at most one, under 1 s, before; the refusal in one console line, no
+ *        over 50 ms in the 10 s after lit (the ADR's bound on the ones before it was dropped by owner decision 10a: they are
+ *        logged, and tracked in their own issue); the refusal in one console line, no
  *        console.error, no flight pictures, no #warpgl, nothing kept in localStorage; then a click on the gate flies
  *        on the 2D canvas (showwarp, then bare, within 20 s) with no further webgl2 context
  *   5    ?gpu=force: a webgl2 context without the caveat, #warpgl, and the install world logs `install: ready`
  *   6    ?door3d without force: no probe runs, and the `level 0` line is there
  *   7    save-data: no webgl2 context until the gate is clicked, then one
+ *   -    a descent with no flight before it proves the world as a flight up does (tests/gate.html, a bent clock)
  *   11   journey.later: not called before `after`; a descent or a flight started first drops it (tests/gate.html)
  *   12   the speculative warm makes no readPixels; the proved one does (tests/gate.html)
  * Behaviours 8 (the real-GPU control) and 9 (frameCost) are in tools/ci/gpu-gate-test.mjs and by hand.
@@ -70,6 +72,7 @@ const RECORD = () => {
     if (/webgl/.test(String(type))) {
       rec.gl.push({
         at: performance.now(), type: String(type), attrs: attrs ? JSON.parse(JSON.stringify(attrs)) : null,
+        paint: performance.getEntriesByType("paint").find((e) => e.name === "first-paint")?.startTime ?? null,
         doorShown: !!document.getElementById("door")?.classList.contains("shown"),
         lit: !!document.body?.classList.contains("lit"),
       });
@@ -171,6 +174,7 @@ try {
       if (c) {
         want(c.attrs?.failIfMajorPerformanceCaveat === true, `that call has failIfMajorPerformanceCaveat: true -- its attributes are ${short(c.attrs)}`);
         want(c.doorShown && !c.lit, `it comes after #door.shown and before body.lit -- door shown ${c.doorShown}, lit ${c.lit}`);
+        want(c.paint !== null && c.paint < c.at, `it comes after the first paint (the door's stills are on screen) -- first-paint at ${c.paint === null ? "none yet" : Math.round(c.paint)} ms, getContext at ${Math.round(c.at)} ms`);
       }
       want(s.gl.length === gl2.length, `no other kind of WebGL context (webgl, experimental-webgl) -- ${short(s.gl.filter((g) => g.type !== "webgl2"))}`);
 
@@ -181,7 +185,10 @@ try {
       const before = s.long.filter((t) => t.start < lit);
       info(`long tasks after the light (10 s): ${short(after.map((t) => Math.round(t.dur)))} ms; before it: ${short(before.map((t) => Math.round(t.dur)))} ms`);
       want(after.length === 0, `no long task over 50 ms in the 10 s after body.lit -- ${after.length} (${short(after.map((t) => Math.round(t.dur)))} ms)`);
-      want(before.length <= 1 && before.every((t) => t.dur < 1000), `before body.lit at most one long task, under 1000 ms -- ${before.length} (${short(before.map((t) => Math.round(t.dur)))} ms)`);
+      /* before the light: logged, not asserted. Issue #2 asks for no long task once the door is lit; the start-up
+         painting's own stalls before it are not the GPU's and are tracked in their own issue ("The door's start-up
+         painting stalls the page before it is lit", owner decision 10a), which wants this baseline. */
+      info(`BASELINE long tasks before the light (not asserted): ${before.length}, ${short(before.map((t) => Math.round(t.dur)))} ms`);
 
       /* 3: the console, the requests, the page, the storage */
       const refusal = said(log, /orbit · flight world: off: software renderer \(/);
@@ -342,6 +349,33 @@ try {
       want((r.afterSpeculative?.contexts ?? []).some((c) => c.type === "webgl2"), "the speculative warm took the gate's webgl2 context (else it did nothing)");
       want(r.afterSpeculative?.pixels === 0, `no readPixels after warm({ prove: false }) -- ${r.afterSpeculative?.pixels}`);
       want((r.afterProve?.pixels ?? 0) > (r.afterSpeculative?.pixels ?? 0), `warm() afterwards makes its test frames (more readPixels than before) -- ${r.afterSpeculative?.pixels} then ${r.afterProve?.pixels}`);
+    });
+    await ctx.close();
+  }
+
+  /* ---- a descent proves the world as a flight up does (review of the build; tests/gate.html, ?gpu=force) ----
+     A visitor who lands on the home page and signs out has had no flight up: the world has been readied without test
+     frames, and the descent must ask it to prove itself -- the timed frames (a readPixels sync each) run between the
+     call and the warp, and a fit world is drawn for the descent (draw calls, frame after frame, after the last of those
+     syncs). The page bends the clock so the software renderer is judged "fast" (fit) or "slow" (unfit): fit draws the
+     world, unfit draws none. The flight up is the control for the page's method: it proves the world today. */
+  for (const [kind, mode, name, fitWants] of [
+    ["fly", "fast", "prove: a flight up on a fit machine draws the world (control for the method)", true],
+    ["fly", "slow", "prove: a flight up on an unfit machine draws no world (control)", false],
+    ["descend", "fast", "prove: a descent with no flight before it, on a fit machine, proves the world and draws it", true],
+    ["descend", "slow", "prove: a descent with no flight before it, on an unfit machine, proves the world and draws none", false],
+  ]) {
+    const { ctx, page } = await open({ viewport: { width: 800, height: 500 } });
+    await page.goto(`${SITE}tests/gate.html?gpu=force`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.gateReady, null, { timeout: 30000 });
+    await scenario(name, async (want, info) => {
+      const r = await page.evaluate(([k, m]) => window.proveTest(k, m), [kind, mode]);
+      info(`result ${short(r)}`);
+      want(!r.error, `the journey runs -- ${r.error}`);
+      want(r.hooks && Object.keys(r.hooks).length > 0, "the journey's hooks fire");
+      want((r.pixels ?? 0) > 0, `the timed frames ran during the ${kind} (readPixels made) -- ${r.pixels}`);
+      if (fitWants) want((r.drawsAfterProof ?? 0) >= 20, `a fit world is drawn after the proof (at least 20 draw calls after the last sync) -- ${r.drawsAfterProof}`);
+      else want((r.drawsAfterProof ?? 0) <= 2, `an unfit world is not drawn (at most 2 draw calls after the last sync) -- ${r.drawsAfterProof}`);
     });
     await ctx.close();
   }
