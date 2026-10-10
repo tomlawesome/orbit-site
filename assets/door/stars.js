@@ -22,14 +22,16 @@ export function el(name, attrs, parent) {
 /* the drift is a transform on the layer's own <svg> element, not on a group
    inside one: an element the compositor can move on its own, so the sky
    costs nothing per frame. The tile is 1600 units wide; `--tile` says how
-   many pixels that is at this size, so the seam never shows */
+   many pixels that is at this size, so the seam never shows. Returns a function that stops measuring */
 export function measureTile(host) {
   const set = () => {
     const scale = Math.max(host.clientWidth / 1600, host.clientHeight / 1000);
     host.style.setProperty("--tile", `${(1600 * scale).toFixed(1)}px`);
   };
   set();
-  let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(set, 100); });
+  let t; const onResize = () => { clearTimeout(t); t = setTimeout(set, 100); };
+  addEventListener("resize", onResize);
+  return () => { clearTimeout(t); removeEventListener("resize", onResize); };
 }
 
 /* The dawn's and the dusk's tiled fields, drawn off ONE stream in the sheet's own order. */
@@ -65,5 +67,5 @@ export function mountFlightSky(host, far, near, idPrefix) {
   const twinklers = far.filter((s) => s.delay);
   for (let k = 0; k < 3; k++) layer("far tws", "var(--star-far, #e9edf8)", `${idPrefix}-tw${k}`, twinklers.filter((_, i) => i % 3 === k), -k * 1.5);
   layer("near", "var(--star-near, #f4f0ff)", `${idPrefix}-near`, near);
-  measureTile(host);
+  return measureTile(host);
 }

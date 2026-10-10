@@ -58,13 +58,18 @@ function journeyClock() {
     schedule(fn, ms) { const id = ++ids; pending.set(id, { at: now() + ms, fn }); if (!raf) raf = requestAnimationFrame(poll); return id; },
     holdAt(ms, until) { const h = { at: now() + ms, done: false, since: null }; hold = h; const free = () => { h.done = true; }; until.then(free, free); return h; },
     cancel(id) { pending.delete(id); },
+    /** the hold let go: a journey that starts after one still pending is not clamped at it */
+    release() { hold = null; },
+    /** everything still pending dropped (the journey is going) */
+    dispose() { pending.clear(); if (raf) cancelAnimationFrame(raf); raf = 0; hold = null; },
   };
 }
 
 export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const clock = journeyClock();
   const engine = createFlight(canvas, { now: clock.now });
-  addEventListener("resize", () => engine.resize());
+  const onResize = () => engine.resize();
+  addEventListener("resize", onResize);
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const body = document.body;
   let cancelTimeline = () => {};
@@ -99,7 +104,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   };
   function reset() {
     cancelTimeline(); cancelTimeline = () => {};
-    engine.clear(); clock.stalls(false);
+    engine.clear(); clock.stalls(false); clock.release();
     body.classList.remove(...CLASSES);
     name.classList.remove("on");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
@@ -107,7 +112,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
   /* fly: any profile, to whichever landing `on` describes */
   function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null } = {}) {
-    cancelTimeline();
+    cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");
     flight = { profile, on: hooks };
     write(title, subtitle);
@@ -125,8 +130,9 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const ascend = (o = {}) => fly(UP, o);
   function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {} } = {}) {
     cancelTimeline();
-    /* the climb's warp left the stall cap on: the descent keeps real time, or a slowly drawn world stretches it out of reach */
-    clock.stalls(false);
+    /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
+       drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
+    clock.stalls(false); clock.release();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
     descent = { onto, from, on: hooks, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
@@ -140,5 +146,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     }
     cancelTimeline = runTimeline(reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, descent.rate), descentStep, clock);
   }
-  return { fly, ascend, descend, reset, reduced, warm: () => engine.warm(), warmDocs: () => engine.warmDocs(), compiled: () => engine.compiled() };
+  /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
+  function destroy() { reset(); clock.dispose(); removeEventListener("resize", onResize); }
+  return { fly, ascend, descend, reset, destroy, reduced, warm: () => engine.warm(), warmDocs: () => engine.warmDocs(), compiled: () => engine.compiled() };
 }

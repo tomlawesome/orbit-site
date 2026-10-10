@@ -32,6 +32,8 @@ const door = createDoor({
   image: (path) => `assets/door/img/${path}`,   // where a picture is; see Settings
   flags: {},                                     // the debug switches, read by the host
 });
+// createDoor may run on a server too (it touches no document); call it again freely: the settings are
+// replaced and nothing is listened to twice
 const dawn = door.dawn(document.querySelector("#door"));
 const dusk = door.dusk(document.querySelector("#dusk"));
 const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, farewell } });
@@ -47,7 +49,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
 
-### The dawn: `door.dawn(host)` → `{ start, light, live, world, host }`
+### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, world, host }`
 
 `host` is the `#door` element rendered from `dawnMarkup`. Mounting draws the
 star fields and sets the glows' origin.
@@ -66,12 +68,18 @@ star fields and sets the glows' origin.
   says). The flags `ring` and `open` apply here.
 - `live`: the live door (`door3d.js`), only where `flags.door3d` is set,
   else `null`: `compile()`, `start()` → the live door, `measured` (a promise:
-  it has been measured and shown), `firstCompiled()`.
+  it has been measured and shown), `firstCompiled()`. The live door is an
+  experiment behind its flag and has no teardown yet.
+- `destroy()`: the surface taken down (a host that remounts its door): its
+  resize listeners removed, a glow build under way stopped.
 
-### The dusk: `door.dusk(host)` → `{ start, world, host }`
+### The dusk: `door.dusk(host)` → `{ start, destroy, held, world, host }`
 
 `start()`: the dusk's pictures decoded ahead of the beat that shows them
 (`decode-ahead.js`), its glows' origin set. Call it when the sign-out begins.
+`held`: what `decodeAhead` returned (`{ ready, held }`), `null` before
+`start()`; the decoded pictures are kept until `destroy()`, which also
+removes the resize listeners.
 
 ### The journey: `door.journey({ canvas, name, dawnGlyph, duskGlyph, on })`
 
@@ -93,6 +101,12 @@ reduced, warm, warmDocs, compiled }`.
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
 - `warm()`: the flight's world made ready; `warmDocs()`: and the galaxy;
   `compiled()`: its shaders compiled. `reset()`: everything off.
+- `destroy()`: the journey taken down: `reset()`, its clock's pending beats
+  dropped, its resize listener removed. A single-page host calls it when
+  the component unmounts; a page that keeps one journey never needs it.
+
+A `fly()` whose `ready` never settles holds the clock at most eight
+seconds; a `descend()`, `reset()` or later `fly()` lets the hold go at once.
 
 The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
 `showwarp`, `launching`, `bare`, `instrument`, `withdrawing`, `dispersing`,

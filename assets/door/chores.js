@@ -120,8 +120,12 @@ export function chore(fn, rest = 60, tag = "", { soft: frameSized = false } = {}
   if (emptyAt) { empty += performance.now() - emptyAt; emptyAt = 0; }
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag, soft: frameSized }); pump(); });
 }
-/** the keyboard watched (index.js, once): capture, so a field that stops propagation still counts as typing */
+/** the keyboard watched (index.js), once however often the door is made, and never off a page (a server has no
+    keyboard): capture, so a field that stops propagation still counts as typing */
+let watching = false;
 export function watchTyping() {
+  if (watching || typeof addEventListener !== "function") return;
+  watching = true;
   for (const type of ["keydown", "input", "compositionupdate"]) addEventListener(type, () => { lastInput = performance.now(); }, { capture: true, passive: true });
 }
 /* the door is lit and the painted part of its reveal done: the chores may begin (the rest is carried by the compositor) */
@@ -163,15 +167,19 @@ export function quiet() {
 export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open, soft, compiling, openedAt });
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
+/* (keyed by the address resolved against the page, so a relative and an absolute spelling of one picture share
+   the one fetch; off a page, by the string as given) */
 const fetched = new Map();
+const keyOf = (url) => { try { return new URL(url, document.baseURI).href; } catch { return url; } };
 export function fetchOnce(url) {
-  if (!fetched.has(url)) {
+  const key = keyOf(url);
+  if (!fetched.has(key)) {
     const p = fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); });
-    fetched.set(url, p);
+    fetched.set(key, p);
     /* a failed fetch is forgotten, so the next ask tries the network again */
-    p.catch(() => { if (fetched.get(url) === p) fetched.delete(url); });
+    p.catch(() => { if (fetched.get(key) === p) fetched.delete(key); });
   }
-  return fetched.get(url);
+  return fetched.get(key);
 }
 
 /** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as

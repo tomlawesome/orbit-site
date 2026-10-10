@@ -3,7 +3,8 @@
  *
  * mountDawn(host): the star fields and the glows on the dawn's markup. start(): its pictures asked for and its glows
  * drawn, once, after the next frame is on screen (so the sky is up before the work behind it starts). light(): first
- * light, below. live: the live door (door3d.js), where the host's flag asks for it.
+ * light, below. live: the live door (door3d.js), where the host's flag asks for it. destroy(): the surface taken down
+ * (a host that remounts its door): nothing of it listens any more.
  *
  * FIRST LIGHT. The ring is a light running its circle (body.loading) while the dawn's first pieces come (the type,
  * the Earth's first picture), a lap at a time, each lap ending in a breath; when they have come it finishes the lap
@@ -40,7 +41,7 @@ const afterFirstFrame = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
 const within = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 
 export function mountDawn(host) {
-  mountFlightSky(host.querySelector(".dsky"), DAWN_FAR, DAWN_NEAR, "lg");
+  const unsky = mountFlightSky(host.querySelector(".dsky"), DAWN_FAR, DAWN_NEAR, "lg");
   const world = host.querySelector(".world");
   const rasters = mountRasters(world, { sun: SUN }, "dawn");
   /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
@@ -141,12 +142,13 @@ export function mountDawn(host) {
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  return { host, world, start, light, live };
+  const destroy = () => { unsky(); rasters.stop(); };
+  return { host, world, start, light, live, destroy };
 }
 
 /* the dusk: its star field, its glows' origin, and its pictures decoded ahead of the beat that shows them */
 export function mountDusk(host) {
-  mountFlightSky(host.querySelector(".dsky"), DUSK_FAR, DUSK_NEAR, "dk");
+  const unsky = mountFlightSky(host.querySelector(".dsky"), DUSK_FAR, DUSK_NEAR, "dk");
   const world = host.querySelector(".world");
   const rasters = mountRasters(world, {}, "dusk");
   let started = false, held = null;
@@ -155,5 +157,6 @@ export function mountDusk(host) {
     held = decodeAhead([...world.querySelectorAll("image[href]")].map((im) => im.getAttribute("href")));
     afterFirstFrame(rasters.start);
   };
-  return { host, world, start, get held() { return held; } };
+  const destroy = () => { unsky(); rasters.stop(); held = null; };
+  return { host, world, start, destroy, get held() { return held; } };
 }

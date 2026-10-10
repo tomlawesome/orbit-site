@@ -15,6 +15,8 @@
  *   foot          a line at the foot of the surface (the site: its credit). Nothing by default
  *   farewell      the dusk's words: { said, sub }
  *   indent        the whitespace before each line (the page's own), "" for none
+ *
+ * A slot is put in as given, its own whitespace and all: the host indents it as it likes.
  */
 const DEFS_DAWN = [
   '<linearGradient id="rimg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffd989"/><stop offset="100%" stop-color="#e2772b"/></linearGradient>',
@@ -39,14 +41,14 @@ const picture = (name, href, cls = "") => `<image${cls ? ` class="${cls}"` : ""}
 /* a compositor layer of its own, holding one picture */
 const layer = (cls, inner) => `<svg class="wl ${cls}" ${SLICE}>${inner}</svg>`;
 
-/* lines joined with the page's indent: a nested array is one level deeper; a string with its own newlines (a slot)
-   is kept as it came */
+/* lines joined with the page's indent: a nested array is one level deeper; a slot (raw) is kept as it came */
+const raw = (s) => ({ raw: s });
 function lines(indent, items, depth = 0) {
   const out = [];
   for (const it of items) {
     if (it === null || it === undefined || it === "") continue;
     if (Array.isArray(it)) out.push(lines(indent, it, depth + 1));
-    else if (typeof it === "string" && it.includes("\n")) out.push(it);
+    else if (typeof it === "object") { if (it.raw) out.push(it.raw); }
     else out.push(indent + "  ".repeat(depth) + it);
   }
   return out.join("\n");
@@ -118,14 +120,14 @@ export function dawnMarkup({ image = (p) => p, lockup = "", gate = "", foot = ""
             '<circle class="ring" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>',
           ],
           '</svg><i class="runner" aria-hidden="true"></i></div>',
-          lockup,
+          raw(lockup),
           '<h1 class="name">orbit</h1>',
           `<div class="gate-wrap">${gate}</div>`,
         ],
         "</div>",
       ],
       "</div>",
-      foot,
+      raw(foot),
     ],
     "</div>",
   ]);
@@ -176,7 +178,7 @@ export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = 
         "</div>",
       ],
       "</div>",
-      foot,
+      raw(foot),
     ],
     "</div>",
   ]);
