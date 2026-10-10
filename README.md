@@ -80,7 +80,7 @@ Words used in the table:
 | `tools/doorcrop.py` | Cuts them (`python3 tools/doorcrop.py`; `pip install pillow`): each cloud hemisphere is a 211 MB PNG, so they can be given one at a time, the strips kept with `--strips`. Its docstring has the sources, the box and the command |
 | `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
-| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
+| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`npm ci --prefix tools --ignore-scripts && node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
 | `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import and the weekly Renovate run |
 | `tools/door-markup.mjs` | Writes the door's markup into `index.html` from `assets/door/markup.js` (`node tools/door-markup.mjs`; `--check` is what the lint runs) |
 | `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
@@ -105,6 +105,14 @@ The walk is optional, and puts the sky back as it found it when it ends.
 
 Default pack: after dark. Links are relative; the `og:image` tags and the
 404's link are the only absolute URLs.
+
+## Approved third-party content
+
+- NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
+  credited in the layout table above and in `LICENSE`.
+- `marked` (MIT), `sharp` (Apache-2.0; the import tool only) and `playwright`
+  (Apache-2.0; CI only). None ships to a visitor. Their versions are pinned in
+  `tools/package.json` and nowhere else.
 
 ## Publishing
 
