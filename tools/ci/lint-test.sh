@@ -12,7 +12,8 @@
 # "the shared door is self-contained" (ADR-0001, issue #16): a file in
 # assets/door/ that imports from outside the folder, reads location.search or
 # uses import.meta.url fails and is named, as is a site module that imports a
-# file of the folder other than its index.js.
+# file of the folder other than its index.js, a url() in door.css that reaches
+# outside the folder, and an index.html whose door differs from markup.js.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -332,6 +333,20 @@ door_case "a door module reading location.search" assets/door/stars.js 'export c
 door_case "a door module using import.meta.url" assets/door/stars.js 'export const Y = new URL("./img/dawn/dawn.webp", import.meta.url).href;' "assets/door/stars.js:.*import.meta.url"
 # Case (l): a site module importing a file of the folder other than index.js -> fails, names the module.
 door_case "a site module importing inside the folder" assets/js/sky.js 'import { DAWN_FAR as Z } from "../door/stars.js";' "assets/js/sky.js:.*index.js"
+# Case (n): a url() in door.css reaching outside the folder -> fails, names door.css.
+door_case "a door.css url outside the folder" assets/door/door.css '#door .x{background:url(../img/mark.svg)}' "assets/door/door.css -> ../img/mark.svg"
+# Case (o): the page's copy of the door edited by hand -> fails, names index.html.
+sed -i 's/<svg class="wl wash" /<svg class="wl washed" /' index.html
+commit_all "index.html door edited by hand"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "index.html: the door's markup differs" "$out"; then
+  echo "ok   a hand-edited door in index.html fails"
+else
+  echo "FAIL a hand-edited door in index.html fails (exit $rc, want 1 naming index.html)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
 # Case (m): the committed tree as it is -> the section runs and passes.
 lint_to_out
 if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'shared door'; then
