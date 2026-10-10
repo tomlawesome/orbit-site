@@ -32,8 +32,10 @@ const door = createDoor({
   image: (path) => `assets/door/img/${path}`,   // where a picture is; see Settings
   flags: {},                                     // the debug switches, read by the host
 });
-// createDoor may run on a server too (it touches no document); call it again freely: the settings are
-// replaced and nothing is listened to twice
+// createDoor may run on a server too (it touches no document). Call it again freely: each setting given replaces
+// the earlier value (one left out, or undefined, keeps it) and the keyboard is watched once. Each dawn(), dusk()
+// and journey() adds its own resize listeners; its destroy() removes them (not the live door's, which the
+// door3d debug flag starts and nothing stops).
 const dawn = door.dawn(document.querySelector("#door"));
 const dusk = door.dusk(document.querySelector("#dusk"));
 const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, farewell } });
