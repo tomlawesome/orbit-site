@@ -57,6 +57,11 @@ compiles)`. `liveDoor()` is the one test every module asks: `?door3d`, and level
 | **1 Live lean** | the live Earth with flat clouds, turning slowly; sphere and world planets; the flight's lean Earth (the rich one never compiled); near maps, the small lights strip and the device's own faded in | compiles in the background; the probe's ms per million pixels, scaled to the band, predicts lean <= 16 ms a frame and rich over 40, *before* the maps are fetched; then the first lean frame drawn unseen and measured (drawn coarser, to half, if over 40 ms) before it is shown; the world planets start only once that measure is taken |
 | **2 Live rich** | the cloud slab (dawn.py's physics); the device's sharp lights strip, faded in | as 1, with the rich predicted <= 40 ms; the weight then by the same prediction (`doorWeight`): the rich alone at 24 ms or less, its first frames drawn unseen and measured, kept at 40 (coarser first, to half), else the lean one made and shown instead; "both" at 40 or less, the lean shown first as at 1 and the rich tried after (that measure is on the shown canvas) |
 
+*Superseded 2026-10: the ladder above sends a browser that compiles on the page's thread (Firefox) to level 0. Now
+`assets/js/capability.js` gives it level 1, the lean door, started late (`lateDoor`) once every way in is open, and
+what is called "classic" above is now called "lean". See PERFORMANCE.md, "The live door late, where compiles stall the
+page".*
+
 `?level=0`, `?level=1` or `?level=2` in the address overrides the rule (the console then says `level 2: live rich
 (?level=2)`); at level 2 `&rich` and `&lean` still force the weight, at level 1 the weight is lean whatever they say.
 While the live door is tried it is drawn only with `?door3d`: without it every level ships the still door, and the
@@ -83,15 +88,20 @@ button 6.0 s; desktop Firefox 8.7 s / 9.3 s (before compiles were moved under th
 laptop Firefox 15.4 s / 16.1 s. The flight's compile grew from ~1.9 s to 3.1 s on Firefox with the slab Earth: level
 0 restores the classic Earth to the flight.
 
+*Superseded 2026-10: the Firefox rows above (level 0) and the sentence about level 0 and the classic Earth predate
+the late lean door: Firefox now lands on level 1. See PERFORMANCE.md, "The live door late, where compiles stall the
+page", and `assets/js/capability.js`.*
+
 ## Testing across devices
 
-The tests live at `tests/` (`https://tomlawesome.github.io/orbit-site/tests/`): seven small pages, one task each, and a
+The tests live at `tests/` (`https://tomlawesome.github.io/orbit-site/tests/`): eight small tests, one task each, and a
 runner that runs them all and copies one report: `machine` (what the browser says, WebGL2 and its extensions, the GPU's
 name), `compile` (the probe shader and the real door and flight Earth shaders, salted against the shader cache),
 `draw` (the probe at 512x512 for ms per million pixels, then the real lean and rich door shaders at this screen's own
 band with maps of noise so every path runs), `upload` (maps of the site's sizes put on the GPU with their mipmaps), `upload-bands` (a map put on
 the GPU in bands as the site does, against whole: 0 bytes apart is the pass),
-`stall` (a spinner turns while the rich shader compiles: the frame gaps, and the eye's verdict on the spinner), and
+`stall` (a spinner turns while the rich shader compiles: the frame gaps, and the eye's verdict on the spinner),
+`worker` (whether a worker can compile a shader without the page standing still), and
 `network` (two of the maps fetched fresh). Numbers from each device go into the table above. A laptop's power state changes everything: the 4700U on battery
 compiled the probe in 315 ms and drew the rich door at 24 ms a frame, on mains 197 ms and 11 ms. Say which when
 pasting a run, and compare runs in the same state only (or against the probe in the same run).

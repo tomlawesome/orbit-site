@@ -26,6 +26,11 @@ export const SECTIONS = {
    A constellation's name filters the list. */
 const R = "https://github.com/tomlawesome/orbit";
 const DOCS_DIR = "assets/docs/";
+/* the docs' diagrams: mermaid from jsDelivr, the file the npm package carries (cdnjs lags majors behind), pinned and
+   checked against its hash, so a changed file is refused, not run (#3). Renovate bumps the version (renovate.json);
+   the hash it cannot, so a bump fails the journey's diagram step until the hash is set to the new file's:
+   curl -s <src> | openssl dgst -sha384 -binary | base64 */
+const MERMAID = { src: "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js", integrity: "sha384-EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4" };
 /* start here: the sections worth a first click, when the import has them */
 const KEYS = ["#docs/readme/quick-start", "#docs/readme/run-with-docker", "#docs/readme/configuration", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
 const SEED = 20260929;
@@ -129,7 +134,7 @@ export function createDocs(pad) {
   function load() {
     if (loading) return loading;
     /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
-    loading = fetch(DOCS_DIR + "index.json").then((r) => r.json()).then((data) => chore(() => {
+    loading = fetch(DOCS_DIR + "index.json").then((r) => { if (!r.ok) throw new Error(`index.json: ${r.status}`); return r.json(); }).then((data) => chore(() => {
       DOCS = data.sources; generated = data.generated; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
         GROUPS[d.name] = { c: d.c, slug: d.slug };
@@ -138,7 +143,10 @@ export function createDocs(pad) {
       keys.innerHTML = KEYS.map((h) => ENTRIES.find((e) => e.href === h)).filter(Boolean).map((e) => `<a class="key" href="${e.href}" style="--c:${GROUPS[e.g].c}">${esc(e.t)}</a>`).join("");
       if (stamp) stamp.textContent = generated ? `charted from the repositories · ${when(generated)}` : "";
       drawChart(); render();
-    }, 60, "docs")).catch(() => { results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
+    }, 60, "docs")).catch(() => {
+      /* a failed fetch is not remembered: the next look tries again */
+      loading = null;
+      results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
     return loading;
   }
 
@@ -373,7 +381,7 @@ export function createDocs(pad) {
     if (window.mermaid) { draw(); return; }
     if (!mermaid) {
       mermaid = new Promise((resolve, reject) => {
-        const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.4.1/mermaid.min.js"; s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+        const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
       }).then(() => {
         const dark = document.documentElement.dataset.theme !== "day";
         window.mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables: { darkMode: dark, background: "transparent", primaryColor: dark ? "#131c3a" : "#eef2fb", primaryTextColor: dark ? "#e9edf8" : "#0b1020", primaryBorderColor: dark ? "#3a4a7a" : "#9aa8c8", lineColor: dark ? "#8791b3" : "#5a6684", fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" } });

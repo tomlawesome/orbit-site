@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+</head>
+<body>
+  <!-- Hand-run by tools/ci/upload-test.mjs: does this browser's WebGL honour an ImageBitmap's crop on upload, and does
+       the site's own probe agree? The result is written to document.title as JSON. -->
+  <script type="module">
+    const result = { direct: null, pixels: null, probe: null, bands: null, error: null };
+    try {
+      /* the truth: a 2x4 picture of four solid rows, rows 2-3 cropped out, uploaded, read back */
+      const ROWS = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0]];
+      const data = new ImageData(2, 4);
+      ROWS.forEach((c, y) => { for (let x = 0; x < 2; x++) data.data.set([c[0], c[1], c[2], 255], (y * 2 + x) * 4); });
+      const whole = await createImageBitmap(data);
+      const crop = await createImageBitmap(whole, 0, 2, 2, 2);
+      const gl = document.createElement("canvas").getContext("webgl2");
+      if (!gl) throw new Error("no webgl2");
+      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, crop);
+      const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+      const px = new Uint8Array(2 * 2 * 4);
+      gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const row = (y) => Array.from(px.slice(y * 8, y * 8 + 3));
+      const same = (a, b) => a.every((v, i) => v === b[i]);
+      /* texture row 0 and 1 (no flip on upload) are the rows that arrived; honoured means they are picture rows 2 and 3 */
+      result.pixels = [row(0), row(1)];
+      result.direct = same(row(0), ROWS[2]) && same(row(1), ROWS[3]);
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      /* the site's probe, on its own context */
+      const g2 = document.createElement("canvas").getContext("webgl2");
+      /* imported here, so a missing export is reported in the JSON rather than leaving the page blank */
+      try {
+        const { cropHonoured } = await import("../assets/js/upload.js");
+        if (typeof cropHonoured !== "function") throw new Error("upload.js does not export cropHonoured");
+        result.probe = await cropHonoured(g2);
+      } catch (e) { result.error = String(e && e.message || e); }
+      g2.getExtension("WEBGL_lose_context")?.loseContext();
+      /* the existing banded-against-whole test */
+      result.bands = await (await import("./t-upload-bands.js")).run();
+    } catch (e) { result.error = String(e && e.message || e); }
+    document.title = JSON.stringify(result);
+  </script>
+</body>
+</html>

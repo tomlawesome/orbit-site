@@ -29,9 +29,74 @@ if [ -f assets/docs/index.json ]; then
   ' || fail=1
 fi
 
-echo "== nothing stray at the root"
-for f in node_modules package.json package-lock.json .agents; do
-  [ ! -e "$f" ] || { echo "   $f must not be committed"; fail=1; }
+echo "== the imported docs carry no script"
+# the stored pages are what Pages serves; a handler or script tag here would
+# run on every visitor, whatever the importer let through
+node -e '
+  const fs = require("fs");
+  const bad = [/<[a-z][^>]*\son[a-z]+\s*=/i, /<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i,
+    /(href|src)\s*=\s*["\x27]?\s*(javascript|vbscript|data):/i];
+  const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
+  for (const f of files) {
+    for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
+      if (bad.some((re) => re.test(s.html || ""))) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
+    }
+  }
+' || fail=1
+
+echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
+for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
+  [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
 done
+[ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
+for f in index.html 404.html install.html README.md LICENSE; do
+  if grep -q -i -E 'gaia|CC BY-NC 3\.0 IGO|by-nc/3\.0/igo' "$f"; then
+    echo "   $f still mentions Gaia or its CC BY-NC 3.0 IGO licence"; fail=1
+  fi
+done
+if grep -q 'svs\.gsfc\.nasa\.gov/4851' index.html; then
+  echo "   index.html still links svs.gsfc.nasa.gov/4851"; fail=1
+fi
+grep -q 'svs\.gsfc\.nasa\.gov/4720' index.html \
+  || { echo "   index.html has no link to svs.gsfc.nasa.gov/4720"; fail=1; }
+
+echo "== nothing stray at the root"
+# what git tracks, not what is on disk: a local, ignored .agents/ or
+# node_modules/ is fine; a committed one is not (#5)
+for f in node_modules package.json package-lock.json .agents; do
+  [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
+done
+
+echo "== the npm pins live in tools/package.json only"
+# the docs import installs marked and sharp with npm ci from tools/, so the
+# manifest names exact versions, the lockfile holds a hash for every package,
+# and Renovate's npm manager bumps both; a version named anywhere else
+# escapes all three
+for f in $(grep -l -E '(marked|sharp)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs AGENTS.md 2>/dev/null || true); do
+  echo "   $f names a marked/sharp version; the pins live in tools/package.json"; fail=1
+done
+node -e '
+  const fs = require("fs");
+  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+  const lock = "tools/package-lock.json";
+  if (!fs.existsSync(lock)) bad(`${lock} is missing`);
+  else {
+    const j = JSON.parse(fs.readFileSync(lock, "utf8"));
+    if (!(j.lockfileVersion >= 3)) bad(`${lock} is lockfileVersion ${j.lockfileVersion}, want 3`);
+    for (const [k, p] of Object.entries(j.packages || {})) if (k !== "" && !p.integrity) bad(`${lock}: ${k} has no integrity`);
+  }
+  const man = "tools/package.json";
+  const deps = fs.existsSync(man) ? JSON.parse(fs.readFileSync(man, "utf8")).dependencies || {} : {};
+  for (const n of ["marked", "sharp"]) {
+    if (!/^\d+\.\d+\.\d+$/.test(deps[n] || "")) bad(`${man}: ${n} is ${JSON.stringify(deps[n])}, want an exact x.y.z`);
+  }
+  const r = require("./renovate.json");
+  if (!(r.enabledManagers || []).includes("npm")) bad("renovate.json: enabledManagers lacks npm");
+  for (const m of r.customManagers || []) {
+    if ((m.matchStrings || []).some((s) => /marked|sharp/.test(s))) bad("renovate.json: a customManager still matches marked/sharp");
+    // Renovate compiles these with RE2, which has no look-arounds: one makes it reject the whole config
+    for (const s of m.matchStrings || []) if (/\(\?(=|!|<=|<!)/.test(s)) bad(`renovate.json: a matchString has a look-around, which Renovate cannot compile: ${s}`);
+  }
+' || fail=1
 
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }
