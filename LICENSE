@@ -55,11 +55,16 @@ licence does. Nothing here restricts any right you hold under them.
   - The screenshots under assets/img/launcher/ are refreshed from the
     orbit-launcher repository, which is published under AGPL-3.0 (its
     LICENSE file).
-  - Some code and styles are carried from Orbit: the theme packs in
-    assets/site.css, the chart law (assets/js/law.js), and the flight's
-    engine (assets/js/engine.js) and timeline (assets/js/timeline.js).
-    Orbit is the copyright holder's own work, published under AGPL-3.0 in
-    its own repository; those parts remain available under AGPL-3.0 from
+  - The shared door under assets/door/ (the Earth door, the flight,
+    their engine, timeline, stylesheet, markup and imagery) is shared
+    with Orbit, which pulls it from this site. It is licensed under the
+    GNU Affero General Public License v3.0 or later as well as under
+    this licence: take it under either. The NASA imagery in it keeps
+    its public-domain terms above.
+  - Some other code and styles are carried from Orbit: the theme packs
+    in assets/site.css and the chart law (assets/js/law.js). Orbit is
+    the copyright holder's own work, published under AGPL-3.0 in its
+    own repository; those parts remain available under AGPL-3.0 from
     there.
   - Fonts (Space Grotesk, Inter, JetBrains Mono) are served by Google
     Fonts under the SIL Open Font License 1.1, and Mermaid, which draws
