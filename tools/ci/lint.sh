@@ -103,6 +103,11 @@ wf=$(awk '/^workflow:/{w=1} /^[a-z]/&&!/^workflow:/{w=0} w' .gitlab-ci.yml)
 printf '%s\n' "$wf" | grep -q 'CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\\/import-/' \
   && printf '%s\n' "$wf" | grep -q '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$' \
   || { echo "   .gitlab-ci.yml: no workflow rule sends docs/import- merge requests to Docker Hub"; fail=1; }
+# its merge request merges itself as that bot, so main's push pipeline runs
+# as the bot too: the bot's merge commit on main must pull from Docker Hub
+printf '%s\n' "$wf" | grep -q 'CI_COMMIT_AUTHOR =~ /project_\[0-9\]+_bot_/' \
+  && [ "$(printf '%s\n' "$wf" | grep -c '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$')" -eq 2 ] \
+  || { echo "   .gitlab-ci.yml: no workflow rule sends the import bot's own pushes (its self-merge on main) to Docker Hub"; fail=1; }
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 
