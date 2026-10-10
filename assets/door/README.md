@@ -80,7 +80,11 @@ star fields and sets the glows' origin.
   it has been measured and shown), `firstCompiled()`. The live door is an
   experiment behind its flag and has no teardown yet.
 - `destroy()`: the surface taken down (a host that remounts its door): its
-  resize listeners removed, a glow build under way stopped.
+  resize listeners removed, a glow build under way stopped, and a first light
+  under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from
+  the 13 s backstop or any other timer or promise of that light), no error;
+  the ring's `body.loading` is taken off if the light put it on; a later
+  `light()` on the destroyed dawn does nothing.
 
 ### The dusk: `door.dusk(host)` → `{ start, destroy, held, world, host }`
 

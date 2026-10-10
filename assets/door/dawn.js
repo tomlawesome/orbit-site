@@ -4,7 +4,8 @@
  * mountDawn(host): the star fields and the glows on the dawn's markup. start(): its pictures asked for and its glows
  * drawn, once, after the next frame is on screen (so the sky is up before the work behind it starts). light(): first
  * light, below. live: the live door (door3d.js), where the host's flag asks for it. destroy(): the surface taken down
- * (a host that remounts its door): nothing of it listens any more.
+ * (a host that remounts its door): nothing of it listens any more, and a first light under way stops (no body.lit,
+ * no onLit, no onOpen, from its 13 s backstop or anything else of it; a light() after it does nothing).
  *
  * FIRST LIGHT. The ring is a light running its circle (body.loading) while the dawn's first pieces come (the type,
  * the Earth's first picture), a lap at a time, each lap ending in a breath; when they have come it finishes the lap
@@ -60,6 +61,10 @@ export function mountDawn(host) {
     earthSettled = Promise.all(settled);
   };
   let started = false, litOnce = false;
+  /* destroy() also stops a first light under way: every continuation of it (a timer, a frame, a promise) is made with
+     `alive` and does nothing once the dawn is gone; the timers and the ring's listener are also let go at once */
+  let gone = false, stopLight = () => {};
+  const alive = (fn) => (...a) => { if (!gone) return fn(...a); };
   const start = () => { if (started) return; started = true; afterFirstFrame(() => { loadEarth(); rasters.start(); }); };
   /* the pieces the door is made of, which would change its face as they arrived: the fonts, and the Earth's first picture */
   const critical = () => {
@@ -76,21 +81,27 @@ export function mountDawn(host) {
    * start what waits for them (the live door's planets). aside: whether compiles here are in the background.
    */
   function light({ firstVisit = true, wait = false, after = () => null, onLit = () => {}, onOpen = () => {}, aside = compilesAside() } = {}) {
+    if (gone) return;
     const firstLight = !litOnce; litOnce = true;
     const crit = critical();
+    let backstop = null, lap = null, ring = null, added = false, lit = false;
+    stopLight = () => {
+      clearTimeout(backstop);
+      if (lap) ring?.removeEventListener("animationiteration", lap);
+      if (added) document.body.classList.remove("loading");
+    };
     const RING = flag("ring") || "", OPEN_EARLY = aside && flag("open") !== "late";
     let arrived = () => {};
     /* a first visit's first light is always at least a lap of the ring */
     const minLaps = wait || (firstLight && firstVisit) ? 1 : 0;
     let here = false;
-    crit.then(() => {
+    crit.then(alive(() => {
       if (!wait) here = true;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
+      requestAnimationFrame(alive(() => requestAnimationFrame(alive(() => {
         const until = after();
-        if (wait) Promise.resolve(until).catch(() => {}).then(() => { here = true; arrived(); });
-      }));
-    });
-    let lit = false;
+        if (wait) Promise.resolve(until).catch(() => {}).then(alive(() => { here = true; arrived(); }));
+      }))));
+    }));
     const COMPOSITED = new Set(["transform", "opacity", "offset", "easing", "composite", "computedOffset"]);
     const painted = (a) => {
       try {
@@ -106,24 +117,24 @@ export function mountDawn(host) {
         return Promise.all(ends.map((a) => a.finished.catch(() => {})));
       } catch { return Promise.resolve(); }
     };
-    const go = () => { openChores(); onOpen(); };
-    const lightNow = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
+    const go = alive(() => { openChores(); onOpen(); });
+    const lightNow = alive(() => { if (lit) return; lit = true; requestAnimationFrame(alive(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
       if (!holdReveal()) openSoft();
       let gap = 0, last = 0, timing = firstLight;
-      const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing) requestAnimationFrame(frame); };
+      const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing && !gone) requestAnimationFrame(frame); };
       if (timing) requestAnimationFrame(frame);
       onLit();
       if (OPEN_EARLY) go();
-      drawn().then(() => {
+      drawn().then(alive(() => {
         if (timing) { timing = false; const s = softRan(); note(`reveal: ${s.n} soft chores ran, ${Math.round(s.ms)} ms; longest frame gap ${gap.toFixed(1)} ms${OPEN_EARLY ? " (the chores open with the reveal)" : " (held to the reveal's end)"}`); }
         if (!OPEN_EARLY) go();
-      }); }); };
-    within(crit, 250).then(() => {
+      })); })); });
+    within(crit, 250).then(alive(() => {
       if (here && !minLaps) { lightNow(); return; }
-      document.body.classList.add("loading");
-      const ring = host.querySelector(".lockup .runner");
+      document.body.classList.add("loading"); added = true;
+      ring = host.querySelector(".lockup .runner");
       let laps = 0;
-      const lap = () => {
+      lap = () => {
         laps++;
         const enough = here && laps >= minLaps;
         if (enough || laps >= 7) { ring?.removeEventListener("animationiteration", lap); lightNow(); }
@@ -138,8 +149,8 @@ export function mountDawn(host) {
       if (here) arrived();
       /* without the animation (reduced motion), just the pieces */
       if (!ring || getComputedStyle(ring).animationName === "none") within(crit, 8000).then(lightNow);
-      setTimeout(lightNow, 13000);
-    });
+      backstop = setTimeout(lightNow, 13000);
+    }));
   }
   /* the live door (door3d.js), fetched only where the host's flag asks for it: its compiles, its start, and when it
      has been measured and shown (the host's own planets start only after that, so the door's measure is its own) */
@@ -150,7 +161,7 @@ export function mountDawn(host) {
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  const destroy = () => { unsky(); rasters.stop(); };
+  const destroy = () => { gone = true; stopLight(); unsky(); rasters.stop(); };
   return { host, world, start, light, live, destroy };
 }
 
