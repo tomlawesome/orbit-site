@@ -108,10 +108,13 @@ reduced, warm, warmDocs, compiled }`.
   most eight seconds. Hooks, each optional, in order: `release` (the surface
   flown from may go), `land` (the bare sky is readable), `settled` (the
   instrument has arrived).
-- `descend({ title, subtitle, onto, from, on, at })`: the descent, `onto`
+- `descend({ title, subtitle, onto, from, homes, on, at })`: the descent, `onto`
   `"dusk"` or `"dawn"`, `from` the profile flown up (mirrored on the way
-  down). Hooks: `released`, `surface` (the dusk or the dawn comes up),
-  `farewell`.
+  down). `homes`: the other households met again on the way down,
+  `mirrored(homeProps(homes))` added to the end of the props, whatever the
+  base; with `from`, only if the climb did not carry them (both would pass
+  them twice). Left out, the descent is exactly as before. Hooks:
+  `released`, `surface` (the dusk or the dawn comes up), `farewell`.
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
 - `warm()`: the flight's world made ready; `warmDocs()`: and the galaxy;
@@ -164,6 +167,10 @@ door's: the chores (`chore`, `fetchOnce`, `openChores`, `hurryChores`,
 `homeProps(homes)` is the other households passing on a flight: one `"home"`
 prop each from `[{ name, bodies: [[x, y, colour, r]] }]`, a home's prop
 depending only on its place in the list (the site's `demoFlight` uses it).
+`descentProfile({ onto, from, homes })` is the profile `descend` flies (pure,
+for tests: `DOWN` itself, `DOWN_DAWN` itself, or the climb `from` run
+backwards, with the `homes` on the end); `DOWN`, `DOWN_DAWN`, `DOWNDUR` and
+`mirrored(props)` come with it.
 
 ## Files
 

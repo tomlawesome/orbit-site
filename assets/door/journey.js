@@ -5,7 +5,7 @@
  * named points. The flights themselves (the profiles) are the host's too: the climb and the descent are here (UP,
  * DOWN, DOWN_DAWN), and a host makes its own from them (the site: assets/js/journeys.js).
  */
-import { createFlight, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP } from "./engine.js";
+import { createFlight, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP, homeProps } from "./engine.js";
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
 
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
@@ -13,11 +13,21 @@ export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
 /* the descent from a landing: that landing's own climb run backwards — its
    vanishing point, its bearings, its traffic met the other way, and its own
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
-const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
+export const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
 /* out of the docs' galaxy it starts past its still first part (engine.js: DEEP_SKIP) */
 const DEEP_SKIP_T = (DOWNDUR * DEEP_SKIP) / UPDUR;
 export const descentFrom = (P) => ({ ...DOWN_DAWN, rate: P.rate ? DOWNDUR / (DOWNDUR - 1000) : undefined, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props),
   ...(P.ending === "chart" ? { skip: DEEP_SKIP_T, skipTu: DEEP_SKIP } : {}) });
+
+/* the profile descend() starts the engine with (pure, so a test in Node can read it). Without `homes` it is the descent
+   the site has always flown: DOWN itself, DOWN_DAWN itself, or the climb `from` run backwards. With homes (the other
+   households met again on the way down, Orbit's #26) their props, mirrored, are added on the end of the base's, so
+   whatever the base is, it is never changed. With `from`, the climb's own homes are already mirrored in: a host gives
+   `homes` as well only if the climb did not carry them */
+export function descentProfile({ onto = "dusk", from = null, homes = [] } = {}) {
+  const base = from ? descentFrom(from) : onto === "dawn" ? DOWN_DAWN : DOWN;
+  return homes && homes.length ? { ...base, props: [...base.props, ...mirrored(homeProps(homes))] } : base;
+}
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
 
@@ -97,13 +107,13 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       case "instrument": body.classList.remove("bare"); body.classList.add("instrument"); (flight.on.settled ?? on.settled)?.(); break;
     }
   };
-  let descent = { onto: "dusk", from: null, on: {} };
+  let descent = { onto: "dusk", from: null, homes: [], on: {} };
   const descentStep = (act, beat) => {
     switch (act) {
       case "withdraw": body.classList.remove("instrument"); body.classList.add("withdrawing"); break;
       case "disperse": body.classList.add("dispersing"); break;
       case "warp": {
-        const P = descent.from ? descentFrom(descent.from) : descent.onto === "dawn" ? DOWN_DAWN : DOWN;
+        const P = descentProfile(descent);
         body.classList.add("showwarp"); if (descent.gone) { engine.clear(); clock.stalls(false); } else engine.start(P, pinnedFlight(P, descent.at, beat.at)); break;
       }
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
@@ -144,13 +154,13 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   }
   const ascend = (o = {}) => fly(UP, o);
   /* `at` as for fly(): ms into the descent's own (quickened) time */
-  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, on: hooks = {}, at } = {}) {
+  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, homes = [], on: hooks = {}, at } = {}) {
     cancelTimeline();
     /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
        drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
     clock.stalls(false); clock.release();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
-    descent = { onto, from, on: hooks, at, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
+    descent = { onto, from, homes, on: hooks, at, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
     let beats = descentBeats();
     /* out of the docs' galaxy: under way at once. The page lets go as the flight comes up beneath it (the same sky,

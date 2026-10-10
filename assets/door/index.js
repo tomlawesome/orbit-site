@@ -18,10 +18,10 @@ export { probe, level, liveDoor, lateDoor } from "./capability.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";
 /* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */
-export { createFlight, UP, PROPS_UP, UPDUR, homeProps } from "./engine.js";
+export { createFlight, UP, PROPS_UP, UPDUR, DOWN, DOWNDUR, homeProps } from "./engine.js";
 /* the glows' filter graphs, for the tool that draws them into pictures (tools/glows.cjs) */
 export { DAWN, DUSK } from "./glows.js";
-export { createJourney } from "./journey.js";
+export { createJourney, descentProfile, DOWN_DAWN, mirrored } from "./journey.js";
 export { mountDawn, mountDusk } from "./dawn.js";
 export { dawnMarkup, duskMarkup } from "./markup.js";
 export { decodeAhead } from "./decode-ahead.js";
