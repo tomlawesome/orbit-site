@@ -23,6 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="assets/door/door.css" />
   <link rel="stylesheet" href="assets/site.css" />
   <!-- the door's Earth comes with the page, the sunrise picture just after it -->
   <link rel="preload" as="image" href="assets/door/img/dawn/dawn-pre.webp" fetchpriority="high" />
@@ -57,6 +58,10 @@
   <div class="vignette" aria-hidden="true"></div>
 
   <!-- ═══ THE DOOR: the sign-in's dawn ═══════════════════════════════ -->
+  <!-- the shared door's markup (assets/door/markup.js), written between the door markers by `node tools/door-markup.mjs`
+       and checked by the lint: edit the module, not this copy. The site's own parts are between the slot markers, and
+       are edited here -->
+  <!-- door -->
   <div id="door">
     <div class="dsky" aria-hidden="true"></div>
     <div class="world" aria-hidden="true">
@@ -105,6 +110,7 @@
           <circle class="ring lux" cx="100" cy="100" r="72" fill="none" stroke="url(#ringlit)" stroke-width="3.6" stroke-opacity=".12" pathLength="100"/>
           <circle class="ring" cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2" pathLength="100"/>
         </svg><i class="runner" aria-hidden="true"></i></div>
+        <!-- slot:lockup -->
         <!-- the bodies: the gold planet on the ring, and the three doors on their orbits, each a layer the compositor turns -->
         <div class="planets" aria-label="The sections">
           <span class="trdot" aria-hidden="true"><b class="trail"></b><i></i></span>
@@ -112,12 +118,16 @@
           <a class="planet" href="#install" data-r="104" data-section="install" aria-label="Install" style="--c:#7c3aed;--r:104;--dur:46s;--delay:-33s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span class="tag">install</span></a>
           <a class="planet" href="#info" data-r="120" data-section="info" aria-label="Information" style="--c:#f87171;--r:120;--dur:67s;--delay:-40s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span class="tag">information</span></a>
         </div>
+        <!-- /slot:lockup -->
         <h1 class="name">orbit</h1>
-        <div class="gate-wrap"><button class="gate" id="gate" type="button">Get into Orbit</button><p class="notice"><span class="t">Back shortly</span><span class="d" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p></div>
+        <div class="gate-wrap"><!-- slot:gate --><button class="gate" id="gate" type="button">Get into Orbit</button><p class="notice"><span class="t">Back shortly</span><span class="d" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p><!-- /slot:gate --></div>
       </div>
     </div>
+    <!-- slot:foot -->
     <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project · Earth: <a href="https://earthobservatory.nasa.gov/features/NightLights" title="Black Marble city lights, Blue Marble land and clouds: NASA Earth Observatory" target="_blank" rel="noopener">NASA</a></p>
+    <!-- /slot:foot -->
   </div>
+  <!-- /door -->
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->
   <main id="home" hidden>
@@ -292,6 +302,7 @@
   </main>
 
   <!-- ═══ THE DUSK: the goodbye ══════════════════════════════════════ -->
+  <!-- dusk --> <!-- the shared door's too (markup.js: duskMarkup) -->
   <div id="dusk" hidden>
     <div class="dsky" aria-hidden="true"></div>
     <div class="world" aria-hidden="true">
@@ -315,7 +326,7 @@
           <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>
           <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g></svg></div>
         <div class="name">orbit</div>
-        <div class="gate-wrap"><button class="gate" id="gate-back" type="button">Sign back in</button></div>
+        <div class="gate-wrap"><!-- slot:gate --><button class="gate" id="gate-back" type="button">Sign back in</button><!-- /slot:gate --></div>
       </div>
       <div class="farewell">
         <div class="said">You are signed out.</div>
@@ -323,6 +334,7 @@
       </div>
     </div>
   </div>
+  <!-- /dusk -->
 
   <!-- ═══ THE FILM ═══════════════════════════════════════════════════ -->
   <div id="veil" aria-hidden="true"><svg><defs><mask id="veilmask"><rect width="100%" height="100%" fill="white"/></mask></defs><rect class="sheet" width="100%" height="100%" mask="url(#veilmask)"/></svg></div>

@@ -38,6 +38,13 @@ done
 for f in sw.js assets/js/*.js; do
   none_of "$f" '(from|import\() *"[^"]*door/([a-z0-9-]+\.js)?"' "must import assets/door/index.js alone" '"\.\./door/index\.js"'
 done
+# its stylesheet reaches nothing outside the folder either: every url() in it is a fragment, data, or a file in it
+for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^url\("?//; s/"?\)$//' | sort -u); do
+  case "$ref" in \#*|data:*) continue ;; /*|../*|*://*) echo "   assets/door/door.css -> $ref reaches outside the folder"; fail=1; continue ;; esac
+  [ -e "assets/door/$ref" ] || { echo "   assets/door/door.css -> $ref is missing"; fail=1; }
+done
+# and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
+node tools/door-markup.mjs --check || fail=1
 
 echo "== the docs index names pages that exist"
 if [ -f assets/docs/index.json ]; then
