@@ -75,8 +75,8 @@ star fields and sets the glows' origin.
   the reveal begins. `onOpen()`: the chores are open (`openChores` has been
   called); the host may start what waits for them. `aside`: whether shader
   compiles here are in the background (`compilesAside()` unless the host
-  says: asking it is what makes the GPU gate decide, so a host that cares
-  when passes its own). The flags `ring` and `open` apply here.
+  says: asking it makes the GPU gate decide, unless the `mainthread` flag
+  answers first, so a host that cares when passes its own). The flags `ring` and `open` apply here.
 - `live`: the live door (`door3d.js`), only where `flags.door3d` is set,
   else `null`: `compile()`, `start()` → the live door, `measured` (a promise:
   it has been measured and shown), `firstCompiled()`. The live door is an
@@ -119,7 +119,7 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   `mirrored(homeProps(homes))` added to the end of the props, whatever the
   base; with `from`, only if the climb did not carry them (both would pass
   them twice). Left out, the descent is exactly as before. Hooks:
-  `released`, `surface` (the dusk or the dawn comes up), `farewell`.
+  `released`, `surface` (the dusk or the dawn comes up), `farewell`. A descent proves the flight's world as a climb does (`warm()`): a visitor who never flew up (landed on the home page, signs out) still gets a fit world drawn and an unfit one not; the clock holds just before the warp until the proof is done (at most eight seconds), and not at all once it has been done or there is no world.
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
 - `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: and the galaxy;
@@ -127,7 +127,8 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
   `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
   put on the GPU (as chores, so as the host opens them), and no frame drawn, no test pixel read back. The default
-  proves it, and is the flight's own ask: it hurries the flight's chores (`hurryChores("flight")`), draws the
+  proves it, and is the flight's own ask: it hurries the flight's chores (`hurryChores("flight")`, which adds to
+  what is already wanted), draws the
   warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
   world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
   own canvas, as it always could.
@@ -205,7 +206,7 @@ machine that is software on purpose, the site's own live check); `level` never g
 
 `compilesAside()`: whether shaders compile off the page's thread, read from `gpu().parallel`; `true` when the GPU
 is refused or absent (nothing will compile), `false` under the `mainthread` flag.
-`probe()`: only with the `door3d` flag and an accepted GPU, on the gate's context (left as found, not lost); else
+`probe()`: only with the `door3d` flag and an accepted GPU, on the gate's context (its bindings and viewport put back, not lost); else
 nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
 `FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
 (in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the

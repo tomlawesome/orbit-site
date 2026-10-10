@@ -22,39 +22,62 @@ const CUT = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
 const say = () => !!flag("door3d");
 
 /* whether this browser's WebGL honours a cut bitmap's crop when it is put on the GPU: a picture two rows high, its second
-   row cut out and read back. Firefox (2026-10) puts the source's top rows in instead, so every band of a picture came out
-   as its first rows: the install's planet drew as smooth violet stripes, the top of its map over and over (#4); a 2D
-   canvas there honours the crop. Where it is not honoured the picture goes whole, as ?holdreveal sends it; asked once
-   per context, and a probe that fails counts as not honoured */
+   row cut out and put on the GPU, and what the GPU holds read. Firefox (2026-10) puts the source's top rows in instead, so
+   every band of a picture came out as its first rows: the install's planet drew as smooth violet stripes, the top of its
+   map over and over (#4); a 2D canvas there honours the crop. Where it is not honoured the picture goes whole, as
+   ?holdreveal sends it; asked once per context, and a probe that fails counts as not honoured.
+   The GPU's texel is read by a vertex shader into a transform-feedback buffer, never by readPixels: a pixel read back is
+   the test frames' sync (ADR-0002: the speculative warm draws and reads nothing back), and this probe is made while the
+   pictures are put on the GPU, whoever asked for them. `run(fn)` is how the part that touches the GPU is run (the host's
+   chore, so it takes its turn: uploadBanded); the bitmaps for it are made first, off the page's thread */
 const probes = new WeakMap();
-export function cropHonoured(gl) {
+const TF_VERT = `#version 300 es
+uniform sampler2D t; out vec2 v;
+void main(){ v = texelFetch(t, ivec2(0, 0), 0).rg; gl_Position = vec4(0.0); }`;
+const TF_FRAG = `#version 300 es
+precision mediump float; out vec4 o;
+void main(){ o = vec4(0.0); }`;
+/* the first texel of a bitmap as the GPU holds it, red and green in 0..1 (the state it touches put back) */
+function texel(gl, bitmap) {
+  const T = gl.TEXTURE_2D, B = gl.TRANSFORM_FEEDBACK_BUFFER, R = gl.COPY_READ_BUFFER;
+  const was = { unit: gl.getParameter(gl.ACTIVE_TEXTURE), program: gl.getParameter(gl.CURRENT_PROGRAM), vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING),
+    discard: gl.isEnabled(gl.RASTERIZER_DISCARD) };
+  gl.activeTexture(gl.TEXTURE0);
+  const tex0 = gl.getParameter(gl.TEXTURE_BINDING_2D), buf0 = gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING), read0 = gl.getParameter(gl.COPY_READ_BUFFER_BINDING);
+  const t = gl.createTexture(), buf = gl.createBuffer(), p = gl.createProgram(), out = new Float32Array(2);
+  const sh = (type, src) => { const x = gl.createShader(type); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(p, x); return x; };
+  const shaders = [sh(gl.VERTEX_SHADER, TF_VERT), sh(gl.FRAGMENT_SHADER, TF_FRAG)];
+  try {
+    gl.transformFeedbackVaryings(p, ["v"], gl.SEPARATE_ATTRIBS);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "crop probe: no program");
+    gl.bindTexture(T, t); gl.texImage2D(T, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+    gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(T, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindBuffer(B, buf); gl.bufferData(B, 8, gl.DYNAMIC_READ); gl.bindBufferBase(B, 0, buf);
+    gl.bindVertexArray(null); gl.useProgram(p); gl.uniform1i(gl.getUniformLocation(p, "t"), 0);
+    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.beginTransformFeedback(gl.POINTS); gl.drawArrays(gl.POINTS, 0, 1); gl.endTransformFeedback();
+    gl.bindBufferBase(B, 0, null); gl.bindBuffer(R, buf);
+    gl.getBufferSubData(R, 0, out);
+    return out;
+  } finally {
+    if (!was.discard) gl.disable(gl.RASTERIZER_DISCARD);
+    gl.useProgram(was.program); gl.bindVertexArray(was.vao); gl.bindBuffer(B, buf0); gl.bindBuffer(R, read0);
+    gl.bindTexture(T, tex0); gl.activeTexture(was.unit);
+    gl.deleteTexture(t); gl.deleteBuffer(buf); for (const x of shaders) gl.deleteShader(x); gl.deleteProgram(p);
+  }
+}
+export function cropHonoured(gl, run = (fn) => fn()) {
   let p = probes.get(gl);
   if (!p) probes.set(gl, (p = (async () => {
     const two = await createImageBitmap(new ImageData(new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255]), 1, 2), CUT);
     const row = await createImageBitmap(two, 0, 1, 1, 1, CUT); two.close?.();
-    const T = gl.TEXTURE_2D, F = gl.FRAMEBUFFER, t = gl.createTexture(), f = gl.createFramebuffer(), px = new Uint8Array(4);
-    const wasT = gl.getParameter(gl.TEXTURE_BINDING_2D), wasF = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-    try {
-      gl.bindTexture(T, t); gl.texImage2D(T, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, row);
-      gl.bindFramebuffer(F, f); gl.framebufferTexture2D(F, gl.COLOR_ATTACHMENT0, T, t, 0);
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    } finally {
-      row.close?.(); gl.bindTexture(T, wasT); gl.bindFramebuffer(F, wasF); gl.deleteTexture(t); gl.deleteFramebuffer(f);
-    }
-    const ok = px[0] < 128 && px[1] > 128;
+    let rg;
+    try { rg = await run(() => texel(gl, row)); } finally { row.close?.(); }
+    const ok = rg[0] < 0.5 && rg[1] > 0.5;
     if (say() || !ok) note(`upload: a cut picture's crop ${ok ? "honoured" : "ignored on upload: pictures go whole"}`);
     return ok;
   })().catch(() => false)));
-  return p;
-}
-
-/* the probe, but not before the chores may run: a pixel read back is a wait for the GPU to finish all it has been given,
-   so it is not made the moment a picture arrives (ahead of the door's reveal, or on a machine nothing has yet decided
-   can draw the world: ADR-0002, "no test frames on the door") but at the first turn the chores are given, once a context */
-const turns = new WeakMap();
-function cropWhenChoresRun(gl, tag) {
-  let p = turns.get(gl);
-  if (!p) turns.set(gl, (p = chore(() => {}, 0, tag, { soft: true }).then(() => cropHonoured(gl))));
   return p;
 }
 
@@ -85,7 +108,8 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     return t;
   }, 60, tag);
   if (holdReveal()) return whole();
-  return cropWhenChoresRun(gl, tag).then((ok) => (ok ? inBands() : whole()));
+  /* (the probe's GPU part is a chore of its own, once a context: it takes its turn like a band, and not before the chores may run) */
+  return cropHonoured(gl, (fn) => chore(fn, 0, tag, { soft: true })).then((ok) => (ok ? inBands() : whole()));
   function inBands() {
     let t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
     /* (seen once on the laptop in Firefox and not again: a first band of 1012 ms, with the browser's warning that a

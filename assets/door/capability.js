@@ -109,6 +109,7 @@ async function measure(gl) {
     /* (the context is not lost: the flight's world is built on it) */
     try {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.bindVertexArray(null); gl.useProgram(null);
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
       for (const unit of [1, 0]) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, null); }
       for (const [kind, thing] of made) gl[`delete${kind}`](thing);
     } catch { /* fine */ }
@@ -118,12 +119,13 @@ async function measure(gl) {
 /* the result, once the probe has resolved (doorWeight reads it) */
 let got = null, memo = null;
 /** the probe, once a page view: { background, compileMs, msPerMpx, ok } (ok false, the rest null, where it could not be
-    had); a week's stored one where there is one. Only for the live door (the host's flag door3d) on a page whose GPU
-    gate accepted (fitness.js: gpu(), asked here if not yet), measured on that gate's context; otherwise nothing is
+    had); a week's stored one where there is one. Only for the live door (the host's flag door3d, not under save-data)
+    on a page whose GPU gate accepted (fitness.js: gpu(), asked here if not yet), measured on that gate's context; otherwise nothing is
     made or drawn and it resolves { ok: false } at once, without a line in the console (ADR-0002) */
 export function probe() {
   if (memo) return memo;
-  const g = flag("door3d") ? gpu() : null;
+  /* (under save-data the level is 0 whatever the probe finds, so it is not asked of the GPU either) */
+  const g = flag("door3d") && !navigator.connection?.saveData ? gpu() : null;
   if (!g) { got = FAILED; return (memo = Promise.resolve(FAILED)); }
   return (memo = (async () => {
     let r = null, how = "fresh";
@@ -175,7 +177,7 @@ const DOOR3D = () => !!flag("door3d");
 const LEAN_MAX = 16;
 const NAMES = ["still", "live lean", "live rich"];
 /* the level, chosen once a page view, after the probe, and said with why (CAPABILITIES.md: the ladder). 0, still:
-   no WebGL2 or no probe, reduced motion or save-data, compiles on the page's own thread (each one stalls the page:
+   no WebGL2 or no probe (whatever ?level= says), reduced motion or save-data, compiles on the page's own thread (each one stalls the page:
    the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on
    every later compile), or a lean frame predicted over 16 ms. Else 2, live rich, where the rich is predicted to fit
    the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which, whatever the probe */
@@ -188,8 +190,9 @@ export function level() {
   const asked = /^[012]$/.test(String(flag("level"))) ? String(flag("level")) : null;
   const quiet = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
   const p = predicted(...band());
-  if (asked) { lvl = +asked; why = `?level=${asked}`; }
-  else if (!got.ok) { lvl = 0; why = "no WebGL2, or no probe"; }
+  /* (no probe, no level: ?level= chooses among the live door's weights once the GPU is accepted, it never grants it) */
+  if (!got.ok) { lvl = 0; why = navigator.connection?.saveData ? "save-data" : "no WebGL2, or no probe"; }
+  else if (asked) { lvl = +asked; why = `?level=${asked}`; }
   else if (quiet) { lvl = 0; why = "reduced motion"; }
   else if (navigator.connection?.saveData) { lvl = 0; why = "save-data"; }
   else if (p.lean > LEAN_MAX) { lvl = 0; why = `lean predicted ${Math.round(p.lean)} ms of ${LEAN_MAX}`; }

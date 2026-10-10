@@ -1042,7 +1042,11 @@ export function createVoyage(under) {
   /* dead: it can no longer be drawn (a lost context, shaders that would not link, a machine too slow for it); ready: it
      has been proved fit and may be drawn (warm); the flight draws on its own canvas without it */
   let ok = false, dead = false, ready = false, fit = false;
-  canvas.addEventListener("webglcontextlost", () => { dead = true; ok = false; ready = false; });
+  /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
+     fitness test's, said when the test has ended and the world was still there to be judged) */
+  let offSaid = false;
+  const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
+  canvas.addEventListener("webglcontextlost", () => { dead = true; ok = false; ready = false; sayOff("the context was lost"); });
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile): asked for here,
      and only looked at once they are done (made, below), so making them never holds the page up */
@@ -1077,7 +1081,7 @@ export function createVoyage(under) {
   const core = Object.values(P).filter(Boolean);
   const made = compiled(core).then(() => {
     if (dead) return false;
-    try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); }
+    try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
     if (ok && richOnly) P.overRich = P.over;
     if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
@@ -1227,11 +1231,16 @@ export function createVoyage(under) {
         /* and whether this machine can draw it at all (Orbit's #1253): whole frames, the median judged. A world that
            cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
-        .then(() => chore(() => { fit = fitness(); }, 60, "flight"))
-        .then(() => {
+        .then(() => chore(() => fitness(), 60, "flight"))
+        .then(({ fit: fits, ms }) => {
+          fit = fits;
           ready = ok && !dead && fit;
+          /* one verdict: a world that was lost or never made says so (above), not that it was too slow or fit */
+          if (dead) sayOff("the world is gone");
+          else if (fit) sayVerdict(`on (frame ${Math.round(ms)} ms)`);
+          else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
+          note(`flight: world ${ready ? "proved" : dead ? "not made" : "too slow here, drawn without it"}`);
           if (ok && !fit) retire();
-          note(`flight: world ${ready ? "proved" : fit ? "not made" : "too slow here, drawn without it"}`);
         });
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
       warming.then(() => chore(calibrate, 200, "measure"));
@@ -1264,16 +1273,15 @@ export function createVoyage(under) {
   }
   /* the fitness test: whole frames at the heaviest point of the flight, at the smallest drawing the measure would ever
      choose, warmed first and judged on their median (fitness.js: frameCost); fit if that leaves room for about 30
-     frames a second. Says its verdict in the console. Returns whether it is fit (not kept: asked on every visit) */
+     frames a second. Returns { fit, ms } (not kept: asked on every visit); warm says the verdict */
   function fitness() {
-    if (!ok) return false;
+    if (!ok) return { fit: false, ms: Infinity };
     if (W < 2) resize(innerWidth, innerHeight);
     const was = part;
     part = 0.4; CW = 0; resize(W, H);
     const { fit: fits, ms } = frameCost(gl, () => draw(ST()));
     part = was; CW = 0; resize(W, H); lastDraw = 0;
-    sayVerdict(fits ? `on (frame ${Math.round(ms)} ms)` : `off: ${Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "frame failed to draw"}`);
-    return fits;
+    return { fit: fits, ms };
   }
   /* a world too slow for the machine is let go: its canvas out of the page and its context lost, the flight drawn
      without it from then on */
