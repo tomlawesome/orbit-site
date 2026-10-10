@@ -58,7 +58,8 @@ star fields and sets the glows' origin.
 
 - `start()`: the Earth's pictures asked for and the glows drawn, once, after
   the next frame is on screen. Call it whenever the door is shown.
-  `world.dataset.rasterised` reads `"pending"` from then, and `"ready"` once
+  `world.dataset.rasterised` reads `"pending"` from the moment `start()`
+  returns (set at once, not after the frame), and `"ready"` once
   the door is drawn: the glows are drawn AND the Earth's pictures `start()`
   asked for (`dawn/dawn-pre.webp`, `dawn/dawn.webp`) have each loaded. A
   picture that fails to load counts as settled, as the first light already
@@ -94,7 +95,7 @@ star fields and sets the glows' origin.
 (`decode-ahead.js`), its glows' origin set. Call it when the sign-out begins.
 A dusk made with `asDawn` (Markup, below) also asks for the dawn's two Earth
 pictures then and shows them as the dawn does, and `world.dataset.rasterised`
-reads `"pending"` from `start()` and `"ready"` once its glows are drawn and
+reads `"pending"` from the moment `start()` returns and `"ready"` once its glows are drawn and
 those pictures have loaded or failed (a plain dusk: its glows alone). `held`: what `decodeAhead` returned (`{ ready, held }`), `null` before
 `start()`; the decoded pictures are kept until `destroy()`, which also
 removes the resize listeners.
@@ -150,7 +151,13 @@ functions: the door's markup with the host's parts in the slots (`lockup`,
 between the glyph and the name; `gate`, inside `.gate-wrap`; `foot`, at the
 surface's foot). The site writes them into `index.html` with
 `node tools/door-markup.mjs` (the lint fails if the page differs); Orbit
-renders them in its components. `image` is the same resolver as the setting.
+renders them in its components. `image` is the same resolver as the setting; what it answers is escaped where it
+goes into an attribute, so it cannot add an attribute or an element.
+
+**Text and raw HTML.** `farewell.said` and `farewell.sub` are text: they are
+escaped, so a person's name in them is never markup. `lockup`, `gate` and `foot`
+are raw HTML, put in as given (the host's own markup: never put a person's words
+in them). `indent` is whitespace.
 
 `asDawn` dresses the goodbye as the sign-in (Orbit's; the site keeps its own
 and leaves it off, and without it the markup is byte for byte unchanged): the

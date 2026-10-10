@@ -8,12 +8,14 @@
  * the Earth's two pictures, each a compositor layer of its own), and the chrome over it (.loginchrome .lockup: the
  * glyph with its ring and runner, the name, the way in). What is the host's goes in the slots:
  *
- *   image(path)   where a picture is (the same resolver as createDoor's setting): "dawn/glow-zod.webp" → URL
+ *   image(path)   where a picture is (the same resolver as createDoor's setting): "dawn/glow-zod.webp" → URL. Its answer
+ *                 is escaped where it goes into an attribute: it cannot add an attribute or an element
  *   lockup        markup placed in the lockup between the glyph and the name (the site: the planets on their orbits)
  *   gate          the way in, inside .gate-wrap (the site: the gate button and the maintenance notice; Orbit: its
  *                 sign-in form). Nothing by default
  *   foot          a line at the foot of the surface (the site: its credit). Nothing by default
- *   farewell      the dusk's words: { said, sub }
+ *   farewell      the dusk's words: { said, sub }, TEXT: escaped, so a person's name in them is never markup. (lockup,
+ *                 gate and foot are RAW HTML, put in as given: the host's own markup, never a person's words)
  *   asDawn        the dusk dressed as the sign-in (Orbit's goodbye): see duskMarkup. Off by default (the site's own)
  *   indent        the whitespace before each line (the page's own), "" for none
  *
@@ -47,6 +49,12 @@ const picture = (name, href, cls = "") => `<image${cls ? ` class="${cls}"` : ""}
 /* a compositor layer of its own, holding one picture */
 const layer = (cls, inner) => `<svg class="wl ${cls}" ${SLICE}>${inner}</svg>`;
 
+/* text and attribute values: what a host gives as words (the dusk's farewell) is written as text, and what the picture
+   resolver answers goes into an attribute, so neither can add an element or an attribute. Plain paths and the default
+   words contain nothing it changes, so the site's own output is byte for byte what it was */
+const text = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const attr = (s) => text(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 /* lines joined with the page's indent: a nested array is one level deeper; a slot (raw) is kept as it came */
 const raw = (s) => ({ raw: s });
 function lines(indent, items, depth = 0) {
@@ -61,7 +69,8 @@ function lines(indent, items, depth = 0) {
 }
 
 /** the dawn: `<div id="door">…</div>` */
-export function dawnMarkup({ image = (p) => p, lockup = "", gate = "", foot = "", indent = "" } = {}) {
+export function dawnMarkup({ image: resolve = (p) => p, lockup = "", gate = "", foot = "", indent = "" } = {}) {
+  const image = (p) => attr(resolve(p));
   return lines(indent, [
     '<div id="door">',
     [
@@ -149,13 +158,14 @@ export function dawnMarkup({ image = (p) => p, lockup = "", gate = "", foot = ""
  * rim (loaded as the dawn's are: dawn.js), and the farewell hangs off the way back in, the last child of `.gate-wrap`.
  * Without it the markup is byte for byte what it always was.
  */
-export function duskMarkup({ image = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, asDawn = false, indent = "" } = {}) {
+export function duskMarkup({ image: resolve = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, asDawn = false, indent = "" } = {}) {
+  const image = (p) => attr(resolve(p));
   /* the farewell's lines: a block of its own beside the lockup, or (asDawn) nested in the way back in's box */
   const words = [
     '<div class="farewell">',
     [
-      `<div class="said">${farewell.said}</div>`,
-      `<div class="sub">${farewell.sub}</div>`,
+      `<div class="said">${text(farewell.said)}</div>`,
+      `<div class="sub">${text(farewell.sub)}</div>`,
     ],
     "</div>",
   ];

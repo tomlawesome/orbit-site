@@ -66,7 +66,7 @@ export function mountDawn(host) {
   let gone = false;
   const stops = new Set();
   const alive = (fn) => (...a) => { if (!gone) return fn(...a); };
-  const start = () => { if (started || gone) return; started = true; afterFirstFrame(alive(() => { loadEarth(); rasters.start(); })); };
+  const start = () => { if (started || gone) return; started = true; world.dataset.rasterised = "pending"; afterFirstFrame(alive(() => { loadEarth(); rasters.start(); })); };
   /* the pieces the door is made of, which would change its face as they arrived: the fonts, and the Earth's first picture */
   const critical = () => {
     const pre = world.querySelector(".earth image.pre");
@@ -181,7 +181,7 @@ export function mountDusk(host) {
     const settled = [];
     for (const im of earth()) {
       settled.push(new Promise((done) => {
-        im.addEventListener("load", () => { if (!gone) { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); } done(); }, { once: true });
+        im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); done(); }, { once: true });
         im.addEventListener("error", done, { once: true });
       }));
       im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
@@ -190,6 +190,7 @@ export function mountDusk(host) {
   };
   const start = () => {
     if (started || gone) return; started = true;
+    if (host.classList.contains("asdawn")) world.dataset.rasterised = "pending";
     held = decodeAhead([...[...world.querySelectorAll("image[href]")].map((im) => im.getAttribute("href")), ...earth().map((im) => im.dataset.href)]);
     afterFirstFrame(() => { if (gone) return; loadEarth(); rasters.start(); });
   };
