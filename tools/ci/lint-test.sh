@@ -4,7 +4,9 @@
 # in tools/package.json only": a version named in a script, a lockfile entry
 # without integrity, a range in the manifest, or npm dropped from Renovate's
 # managers fails and names the file; and section "the imported docs carry no
-# script": a handler or script tag in a stored section fails and names it.
+# script": a handler or script tag in a stored section fails and names it; and
+# the renovate.json section: a look-around in a customManagers matchString
+# fails and names renovate.json (Renovate compiles these with RE2).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -219,6 +221,49 @@ else
     failed=1
   fi
   git reset -q --hard HEAD~1
+fi
+
+# Cases (e)-(f) judge the renovate.json check that no matchString of a
+# customManagers item holds a look-around (Renovate compiles them with RE2,
+# which has none, and rejects the whole config over one).
+# The look-around is built from parts: this file is itself a script the lint reads.
+la='(?'
+
+# Case (e): a look-around in the first matchString -> fails, names renovate.json.
+LOOK="${la}!x" node -e '
+  const fs = require("fs");
+  const j = JSON.parse(fs.readFileSync("renovate.json", "utf8"));
+  j.customManagers[0].matchStrings[0] = process.env.LOOK;
+  fs.writeFileSync("renovate.json", JSON.stringify(j, null, 2) + "\n");
+'
+commit_all "look-around in a matchString"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "renovate.json" "$out"; then
+  echo "ok   a look-around in a matchString fails"
+else
+  echo "FAIL a look-around in a matchString fails (exit $rc, want 1 naming renovate.json)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (f): the committed renovate.json as it is -> no matchString holds a
+# look-around (named groups such as the depName one are fine), and the lint
+# reports none.
+bad=$(node -e '
+  const j = JSON.parse(require("fs").readFileSync("renovate.json", "utf8"));
+  const re = new RegExp("\\(\\?(?:=|!|<=|<!)");
+  for (const m of j.customManagers || [])
+    for (const s of m.matchStrings || [])
+      if (re.test(s)) console.log(s);
+')
+lint_to_out
+if [ -z "$bad" ] && ! grep -Eiq 'look-?(around|ahead|behind)' "$out"; then
+  echo "ok   the committed renovate.json has no look-around"
+else
+  echo "FAIL the committed renovate.json has no look-around (exit $rc, matchString: $bad)"
+  sed 's/^/     /' "$out"
+  failed=1
 fi
 rm -f "$out"
 
