@@ -4,6 +4,10 @@ Only what the global instructions and shared skills do not already cover.
 
 ## What this project is for
 
+Orbit, orbit-launcher and orbit-site are one project, split into three
+repositories for development reasons, each with its own purpose (owner,
+2026-10-10): reason about them as one product, not as neighbours.
+
 Orbit's public website: the door, the demo flight, the install page, the
 imported docs and the information page, as plain HTML, CSS and ES modules
 with no build step. `README.md` has the layout. The site *describes*
