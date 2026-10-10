@@ -6,7 +6,9 @@
 # managers fails and names the file; and section "the imported docs carry no
 # script": a handler or script tag in a stored section fails and names it; and
 # the renovate.json section: a look-around in a customManagers matchString
-# fails and names renovate.json (Renovate compiles these with RE2).
+# fails and names renovate.json (Renovate compiles these with RE2); and the
+# .gitlab-ci.yml section: the docs/import-* merge-request rule must set
+# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -262,6 +264,42 @@ if [ -z "$bad" ] && ! grep -Eiq 'look-?(around|ahead|behind)' "$out"; then
   echo "ok   the committed renovate.json has no look-around"
 else
   echo "FAIL the committed renovate.json has no look-around (exit $rc, matchString: $bad)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+
+# Cases (g)-(h) judge the .gitlab-ci.yml section "docs-import merge requests
+# pull without the dependency proxy" (issue #13): the workflow rule for source
+# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io.
+proxy_line='^[[:space:]]*CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:[[:space:]]*docker\.io[[:space:]]*$'
+
+# Case (g): the docs/import rule loses its prefix override -> fails, names
+# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
+# a clear line instead of stopping the run.
+if ! grep -q 'docs/import-' .gitlab-ci.yml || ! grep -Eq "$proxy_line" .gitlab-ci.yml; then
+  echo "FAIL removing the docs/import prefix override fails (no docs/import rule to remove: .gitlab-ci.yml has no docs/import- rule setting CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io)"
+  failed=1
+else
+  sed -i -E "/$proxy_line/d" .gitlab-ci.yml
+  commit_all "docs/import rule without the prefix override"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
+    echo "ok   removing the docs/import prefix override fails"
+  else
+    echo "FAIL removing the docs/import prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+fi
+
+# Case (h): the committed tree as it is -> the lint passes and has a heading
+# for the section, a "==" line naming both "import" and "dependency proxy".
+lint_to_out
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'import' | grep -iq 'dependency proxy'; then
+  echo "ok   the committed .gitlab-ci.yml has the docs-import proxy section and passes"
+else
+  echo "FAIL the committed .gitlab-ci.yml has the docs-import proxy section and passes (exit $rc, want 0 with a == heading naming import and dependency proxy)"
   sed 's/^/     /' "$out"
   failed=1
 fi
