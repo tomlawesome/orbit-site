@@ -1,6 +1,8 @@
 # Move orbit-site to GitLab: MRs and CI on the owner's runner, GitHub as mirror and Pages host
 
-Tracking plan, written here because the agent credential cannot file issues on this repository yet. Becomes the tracking issue once it can.
+**Status: complete (2026-10-10), kept as the record of the move.**
+
+Tracking plan, written here because the agent credential could not file issues on this repository at the time.
 
 ## Goal
 
@@ -24,6 +26,7 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 ## Progress
 
+- 2026-10-10: the scheduled import merged itself into `main` for the first time (!25, after #13 and #15); orbit's `AGENTS.md` describes the site as part of the project, on GitLab (orbit !1053). CodeQL runs on the mirror.
 - 2026-10-09: !4 (nightly import MR, licence fixes, closes #1) merged; !5 promoted `dev` to `main` and the mirror carried it to GitHub in seconds. Owner accepted the licence (decision (c), 16).
 - 2026-10-09: !1 (CI, scaffolding) and !3 (GitHub main's last import, back-merged) merged into `dev`. GitHub's `import-docs.yml` disabled by the owner. Owner settings done: default branch `dev`, `dev` and `main` protected, pipelines must succeed, merge commits, 60-minute timeout, push mirror added (first push refused by GitHub: deploy key to check).
 - 2026-10-09, decision 13a: the runner cannot reach GitLab over SSH and the owner will not open it, so the import cannot push with a deploy key (9a). It opens a merge request into `main` that merges itself when the gate passes, with a Maintainer project access token, `ORBIT_SITE_IMPORT_TOKEN`.
@@ -62,7 +65,7 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 - [x] `ai/orbit-site` exists on GitLab with every branch, issue and label; `dev` is the default and protected.
 - [x] The gate (lint + live Firefox journey) runs on every MR and is required to merge.
 - [x] The push mirror has delivered one merge to GitHub `main` and Pages served it.
-- [ ] `import-docs.yml` is gone from GitHub and the GitLab schedule has committed one nightly import.
-- [ ] GitHub issues are off; CodeQL runs on the mirror.
-- [ ] orbit's `AGENTS.md` no longer says the site is GitHub-only.
+- [x] `import-docs.yml` is gone from GitHub and the GitLab schedule has committed one nightly import.
+- [x] GitHub issues are off; CodeQL runs on the mirror. Private vulnerability reporting is on (owner, 2026-10-10).
+- [x] orbit's `AGENTS.md` no longer says the site is GitHub-only.
 
