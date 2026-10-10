@@ -33,7 +33,7 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
-**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, every file the pages name exists), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import_docs` (schedule-only, commits to `main`), `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
+**Step 1 — scaffolding and `.gitlab-ci.yml` on a feature branch, GitHub still the source.** `AGENTS.md` (project id, remotes, how to run and check the site), `SECURITY.md`, `CONTRIBUTING.md`, `LICENSE` (decision (c)), `renovate.json`, `.gitignore` adds `.agents/`. CI: `lint` (`node --check` on every module, every file the pages name exists), `live` (a Playwright journey in Firefox against the site served locally: the door lights, `#install`, `#docs`, `#info` arrive, no console errors — never optional), `import_docs` (schedule-only, commits to `main`) *(superseded 2026-10-09 by decision 13a: a self-merging merge request; see Progress)*, `renovate` (schedule-only). Tags `light` only; nothing needs Docker.
 
 **Step 2 — import.** Owner creates `ai/orbit-site` with GitLab's GitHub importer (repo, branches, issues, labels). The agent cannot: the importer needs a GitHub token handed to GitLab. Milestone `M1 — Foundation on GitLab` is created on GitLab afterwards (the agent credential cannot create milestones on GitHub).
 
@@ -45,7 +45,7 @@ Each step is its own MR/PR (`Cut: risk`) and leaves the previous setup working.
 
 ## Decisions (owner, 2026-10-08)
 
-- **(a) The import commits to `main`** through a project access token the owner allows to push (1b): docs stay nightly-fresh. One host, so one writer.
+- **(a) The import commits to `main`** through a project access token the owner allows to push (1b): docs stay nightly-fresh. One host, so one writer. *(Superseded 2026-10-09 by decision 13a: the import opens a merge request into `main` that merges itself; see Progress.)*
 - **(b) `dev -> main`, no `preview`** (2b): Pages serves one branch; a `preview` would deploy nowhere.
 - **(c) A noncommercial licence of the owner's own** that leaves third-party terms intact (3): `LICENSE`, adapted from birdcage's, with the NASA and ESA/Gaia terms named. Accepted by the owner as it stands after !4 (16, 2026-10-09): the priority is not infringing anyone's licence.
 - **(d) The GitHub token stays narrow** (4, recommendation accepted by default): after the import nothing is filed or pushed on GitHub by hand, so orbit-site is not added to the agent's GitHub token. This plan and the step-1 branch go to GitLab after the import.

@@ -90,10 +90,12 @@ for (const h of Object.values(households)) if (!h.pos) h.pos = constellationPosO
 /* What a visit changes, written down for the next one — this browser only. */
 const STATE_KEY = "orbit-site-state";
 const STATE_VERSION = 1;
+/* the local calendar date; toISOString gives the UTC one, yesterday east of Greenwich */
+export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export function serialise() {
   return {
     v: STATE_VERSION,
-    households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: it.dueDate.toISOString().slice(0, 10), completedOn: it.completedOn ? it.completedOn.toISOString().slice(0, 10) : undefined }))])),
+    households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: ymd(it.dueDate), completedOn: it.completedOn ? ymd(it.completedOn) : undefined }))])),
     review: inbox.review.map((r) => r.id),
   };
 }

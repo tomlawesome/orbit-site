@@ -12,7 +12,7 @@
 # merge into main), scopes api and write_repository, held as a Masked +
 # Protected CI/CD variable. Pushes read it from a mode-600 credential file
 # and API calls from a header file, so it is never in a URL, an argument
-# list or the log.
+# list or the log. The npm install and the import run with it withheld.
 #
 #   DRY_RUN=1 sh tools/ci/nightly-import.sh   import and report, write nothing
 set -eu
@@ -24,16 +24,18 @@ DRY_RUN=${DRY_RUN:-}
 
 umask 077
 hdr=$(mktemp); cred=$(mktemp); scratch=$(mktemp -d); trap 'rm -rf "$hdr" "$cred" "$scratch"' EXIT
-printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
 api() { m=$1; p=$2; shift 2; curl -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
 echo "== import"
-if [ ! -d node_modules/marked ]; then
-  npm i --no-save --no-package-lock --no-audit --no-fund marked@18 sharp@0.34 >/dev/null
-fi
-node tools/import-docs.mjs
-rm -rf node_modules
+# Exact versions from the lockfile, hashes checked, no install scripts, and
+# the token withheld from the install and the import: a bad release of a
+# package, or of one it pulls in, runs here before anything is pushed.
+[ -d tools/node_modules/marked ] || env -u ORBIT_SITE_IMPORT_TOKEN \
+  npm ci --prefix tools --ignore-scripts --no-audit --no-fund >/dev/null
+env -u ORBIT_SITE_IMPORT_TOKEN node tools/import-docs.mjs
+rm -rf tools/node_modules
+printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
 git add assets/docs assets/img/launcher
 if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
 git diff --cached --stat | tail -1
