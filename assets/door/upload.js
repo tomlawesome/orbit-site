@@ -26,10 +26,11 @@ const say = () => !!flag("door3d");
    every band of a picture came out as its first rows: the install's planet drew as smooth violet stripes, the top of its
    map over and over (#4); a 2D canvas there honours the crop. Where it is not honoured the picture goes whole, as
    ?holdreveal sends it; asked once per context, and a probe that fails counts as not honoured.
-   The GPU's texel is read by a vertex shader into a transform-feedback buffer, never by readPixels: a pixel read back is
-   the test frames' sync (ADR-0002: the speculative warm draws and reads nothing back), and this probe is made while the
-   pictures are put on the GPU, whoever asked for them. `run(fn)` is how the part that touches the GPU is run (the host's
-   chore, so it takes its turn: uploadBanded); the bitmaps for it are made first, off the page's thread */
+   The GPU's texel is read by a vertex shader into a transform-feedback buffer, never by readPixels (a pixel read back is
+   the test frames' sync: ADR-0002), and the buffer is read only once a fence says the GPU has finished with it, so the
+   page never waits on the GPU for it. `run(fn)` is how the part that touches the GPU is run (the host's chore, so it takes
+   its turn: uploadBanded); the bitmaps for it are made first, off the page's thread, and the wait for the fence is between
+   chores */
 const probes = new WeakMap();
 const TF_VERT = `#version 300 es
 uniform sampler2D t; out vec2 v;
@@ -37,35 +38,61 @@ void main(){ v = texelFetch(t, ivec2(0, 0), 0).rg; gl_Position = vec4(0.0); }`;
 const TF_FRAG = `#version 300 es
 precision mediump float; out vec4 o;
 void main(){ o = vec4(0.0); }`;
-/* the first texel of a bitmap as the GPU holds it, red and green in 0..1 (the state it touches put back) */
-function texel(gl, bitmap) {
-  const T = gl.TEXTURE_2D, B = gl.TRANSFORM_FEEDBACK_BUFFER, R = gl.COPY_READ_BUFFER;
+/* the state a probe touches, taken and put back */
+function keepState(gl) {
   const was = { unit: gl.getParameter(gl.ACTIVE_TEXTURE), program: gl.getParameter(gl.CURRENT_PROGRAM), vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING),
     discard: gl.isEnabled(gl.RASTERIZER_DISCARD) };
   gl.activeTexture(gl.TEXTURE0);
-  const tex0 = gl.getParameter(gl.TEXTURE_BINDING_2D), buf0 = gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING), read0 = gl.getParameter(gl.COPY_READ_BUFFER_BINDING);
-  const t = gl.createTexture(), buf = gl.createBuffer(), p = gl.createProgram(), out = new Float32Array(2);
-  const sh = (type, src) => { const x = gl.createShader(type); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(p, x); return x; };
-  const shaders = [sh(gl.VERTEX_SHADER, TF_VERT), sh(gl.FRAGMENT_SHADER, TF_FRAG)];
+  const tex = gl.getParameter(gl.TEXTURE_BINDING_2D), tf = gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING), read = gl.getParameter(gl.COPY_READ_BUFFER_BINDING);
+  return () => {
+    if (!was.discard) gl.disable(gl.RASTERIZER_DISCARD);
+    gl.useProgram(was.program); gl.bindVertexArray(was.vao);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, tf); gl.bindBuffer(gl.COPY_READ_BUFFER, read);
+    gl.bindTexture(gl.TEXTURE_2D, tex); gl.activeTexture(was.unit);
+  };
+}
+/* the bitmap put on the GPU and its first texel sent to a buffer: what was made, with a fence behind it */
+function submitTexel(gl, bitmap) {
+  const T = gl.TEXTURE_2D, B = gl.TRANSFORM_FEEDBACK_BUFFER;
+  const restore = keepState(gl);
+  const made = { t: gl.createTexture(), buf: gl.createBuffer(), p: gl.createProgram(), shaders: [], sync: null };
   try {
-    gl.transformFeedbackVaryings(p, ["v"], gl.SEPARATE_ATTRIBS);
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "crop probe: no program");
-    gl.bindTexture(T, t); gl.texImage2D(T, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+    for (const [type, src] of [[gl.VERTEX_SHADER, TF_VERT], [gl.FRAGMENT_SHADER, TF_FRAG]]) {
+      const x = gl.createShader(type); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(made.p, x); made.shaders.push(x);
+    }
+    gl.transformFeedbackVaryings(made.p, ["v"], gl.SEPARATE_ATTRIBS);
+    gl.linkProgram(made.p);
+    if (!gl.getProgramParameter(made.p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(made.p) || "crop probe: no program");
+    gl.bindTexture(T, made.t); gl.texImage2D(T, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
     gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(T, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.bindBuffer(B, buf); gl.bufferData(B, 8, gl.DYNAMIC_READ); gl.bindBufferBase(B, 0, buf);
-    gl.bindVertexArray(null); gl.useProgram(p); gl.uniform1i(gl.getUniformLocation(p, "t"), 0);
+    gl.bindBuffer(B, made.buf); gl.bufferData(B, 8, gl.DYNAMIC_READ); gl.bindBufferBase(B, 0, made.buf);
+    gl.bindVertexArray(null); gl.useProgram(made.p); gl.uniform1i(gl.getUniformLocation(made.p, "t"), 0);
     gl.enable(gl.RASTERIZER_DISCARD);
     gl.beginTransformFeedback(gl.POINTS); gl.drawArrays(gl.POINTS, 0, 1); gl.endTransformFeedback();
-    gl.bindBufferBase(B, 0, null); gl.bindBuffer(R, buf);
-    gl.getBufferSubData(R, 0, out);
+    gl.bindBufferBase(B, 0, null);
+    made.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    return made;
+  } catch (e) { letGo(gl, made); throw e; }
+  finally { restore(); }
+}
+function letGo(gl, made) {
+  if (made.sync) gl.deleteSync(made.sync);
+  gl.deleteTexture(made.t); gl.deleteBuffer(made.buf); for (const x of made.shaders) gl.deleteShader(x); gl.deleteProgram(made.p);
+}
+/* red and green of the texel, once the fence has passed (never waited for longer than the cap) */
+async function readTexel(gl, made) {
+  try {
+    for (const t0 = performance.now(); ;) {
+      const s = gl.clientWaitSync(made.sync, 0, 0);
+      if (s === gl.ALREADY_SIGNALED || s === gl.CONDITION_SATISFIED) break;
+      if (s === gl.WAIT_FAILED || performance.now() - t0 > 3000) throw new Error("crop probe: the GPU did not finish");
+      await new Promise((r) => setTimeout(r, 4));
+    }
+    const restore = keepState(gl), out = new Float32Array(2);
+    try { gl.bindBuffer(gl.COPY_READ_BUFFER, made.buf); gl.getBufferSubData(gl.COPY_READ_BUFFER, 0, out); } finally { restore(); }
     return out;
-  } finally {
-    if (!was.discard) gl.disable(gl.RASTERIZER_DISCARD);
-    gl.useProgram(was.program); gl.bindVertexArray(was.vao); gl.bindBuffer(B, buf0); gl.bindBuffer(R, read0);
-    gl.bindTexture(T, tex0); gl.activeTexture(was.unit);
-    gl.deleteTexture(t); gl.deleteBuffer(buf); for (const x of shaders) gl.deleteShader(x); gl.deleteProgram(p);
-  }
+  } finally { letGo(gl, made); }
 }
 export function cropHonoured(gl, run = (fn) => fn()) {
   let p = probes.get(gl);
@@ -73,7 +100,7 @@ export function cropHonoured(gl, run = (fn) => fn()) {
     const two = await createImageBitmap(new ImageData(new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255]), 1, 2), CUT);
     const row = await createImageBitmap(two, 0, 1, 1, 1, CUT); two.close?.();
     let rg;
-    try { rg = await run(() => texel(gl, row)); } finally { row.close?.(); }
+    try { rg = await readTexel(gl, await run(() => submitTexel(gl, row))); } finally { row.close?.(); }
     const ok = rg[0] < 0.5 && rg[1] > 0.5;
     if (say() || !ok) note(`upload: a cut picture's crop ${ok ? "honoured" : "ignored on upload: pictures go whole"}`);
     return ok;
