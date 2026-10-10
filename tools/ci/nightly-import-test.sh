@@ -13,13 +13,17 @@ set -eu
 
 root=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+aux=$(mktemp -d)          # shims, state and logs for the runs that push; outside the scratch repo
+trap 'rm -rf "$tmp" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
 cd "$tmp"
 git init -q
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
+base=$(git rev-parse --abbrev-ref HEAD)
+realgit=$(command -v git)
+realnode=$(command -v node)
 
 fake=not-a-real-token-test-only
 mkdir bin scratch-tmp
@@ -115,6 +119,173 @@ rc2=$rc
 rc=0; [ "$rc2" -ne 0 ] && grep -q "ORBIT_SITE_IMPORT_TOKEN is not set" "$out" || rc=1
 check "without the token the script fails and says ORBIT_SITE_IMPORT_TOKEN is not set (exit $rc2)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Runs 3 and 4 go past the dry-run stop: the script pushes a docs/import-*
+# branch, opens a merge request and asks GitLab to merge it when its pipeline
+# passes. Shims on PATH stand in for GitLab (curl), the GitLab remote (git push
+# to an https URL), the import (node) and the wait between attempts (sleep).
+pbin="$aux/bin"
+mkdir -p "$pbin"
+cp bin/npm "$pbin/npm"
+cat > "$pbin/node" <<'SHIM'
+#!/bin/sh
+# node -e (the script parsing JSON) is real; the import changes a tracked page.
+case "$*" in
+  *import-docs.mjs*)
+    echo "node import-docs" >> "$STATE/shim.log"
+    echo "imported $$" >> "$APPEND_FILE"
+    exit 0 ;;
+esac
+exec "$REAL_NODE" "$@"
+SHIM
+cat > "$pbin/git" <<'SHIM'
+#!/bin/sh
+# Real git, except a push to an https URL: that is GitLab, and is only logged.
+case "$1" in
+  push) ;;
+  *) case " $* " in *" push "*) ;; *) exec "$REAL_GIT" "$@" ;; esac ;;
+esac
+case "$*" in
+  *https://*) echo "git $*" | sed "s/$FAKE/<token>/g" >> "$STATE/shim.log"; exit 0 ;;
+esac
+exec "$REAL_GIT" "$@"
+SHIM
+cat > "$pbin/sleep" <<'SHIM'
+#!/bin/sh
+echo "sleep $*" >> "$STATE/shim.log"
+exit 0
+SHIM
+cat > "$pbin/curl" <<'SHIM'
+#!/bin/sh
+# A small imitation of curl against a fake GitLab. Logs method, path and data
+# arguments to $STATE/api.log; never the contents of a header file.
+method=GET; url=; fail=; failbody=; outf=; wfmt=; data=
+takes() { # takes <flag> <value>
+  case $1 in
+    X) method=$2 ;;
+    o) outf=$2 ;;
+    w) wfmt=$2 ;;
+    d|data-urlencode|data|data-raw) data="$data|$2" ;;
+    H|header|m|max-time) ;;
+    *) echo "curl: ignored $1 $2" >> "$STATE/api.log" ;;
+  esac
+}
+while [ $# -gt 0 ]; do
+  a=$1; shift
+  case $a in
+    --) while [ $# -gt 0 ]; do url=$1; shift; done ;;
+    --fail) fail=1 ;;
+    --fail-with-body) fail=1; failbody=1 ;;
+    --request) takes X "$1"; shift ;;
+    --output) takes o "$1"; shift ;;
+    --write-out) takes w "$1"; shift ;;
+    --header) shift ;;
+    --data-urlencode|--data|--data-raw|--max-time|--retry|--connect-timeout|--retry-delay)
+      case $a in --data-urlencode|--data|--data-raw) takes "${a#--}" "$1" ;; esac; shift ;;
+    --*=*) ;;
+    --*) echo "curl: ignored flag $a" >> "$STATE/api.log" ;;
+    -?*)
+      rest=${a#-}
+      while [ -n "$rest" ]; do
+        c=${rest%"${rest#?}"}; rest=${rest#?}
+        case $c in
+          f) fail=1 ;;
+          s|S|L|k|v|i|g) ;;
+          X|H|o|w|d|m)
+            if [ -n "$rest" ]; then val=$rest; rest=; else val=$1; shift; fi
+            takes "$c" "$val" ;;
+          *) echo "curl: ignored flag -$c" >> "$STATE/api.log" ;;
+        esac
+      done ;;
+    *) url=$a ;;
+  esac
+done
+path=${url#"$CI_API_V4_URL/projects/$CI_PROJECT_ID"}
+route=${path%%\?*}
+code=404; body='{"message":"404 Not Found"}'; note=
+case "$method $route" in
+  "GET /merge_requests") code=200; body='[]' ;;
+  "POST /merge_requests") code=201; body='{"iid":42}' ;;
+  "PUT /merge_requests/42/merge")
+    n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
+    if [ "$SCENARIO" = second ] && [ "$n" -ge 2 ]; then
+      code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
+    else
+      code=405; body='{"message":"405 Method Not Allowed"}'
+    fi ;;
+  *) note=" UNEXPECTED" ;;
+esac
+echo "$method $route$data$note" >> "$STATE/api.log"
+if [ -z "$fail" ] || [ "$code" -lt 400 ] || [ -n "$failbody" ]; then
+  if [ -n "$outf" ]; then printf '%s\n' "$body" > "$outf"; else printf '%s\n' "$body"; fi
+fi
+if [ -n "$wfmt" ]; then
+  printf '%b' "$(printf '%s' "$wfmt" | sed -e "s/%{http_code}/$code/g" -e "s/%{response_code}/$code/g")"
+fi
+if [ -n "$fail" ] && [ "$code" -ge 400 ]; then
+  echo "curl: (22) The requested URL returned error: $code" >&2
+  exit 22
+fi
+exit 0
+SHIM
+chmod +x "$pbin"/*
+
+appendfile=$(git ls-files assets/docs | head -n 1)
+run_push() { # run_push <outfile> <scenario: refused | second>
+  outfile=$1
+  # a clean scratch repository and state for every run
+  "$realgit" checkout -q -f "$base"
+  "$realgit" clean -qfd -e bin -e scratch-tmp
+  for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/docs/import-*'); do
+    "$realgit" branch -q -D "$b"
+  done
+  rm -rf scratch-tmp; mkdir scratch-tmp
+  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n
+  : > "$aux/api.log"; : > "$aux/shim.log"
+  rc=0
+  env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
+    REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
+    TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
+    GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+    sh tools/ci/nightly-import.sh > "$outfile" 2>&1 || rc=$?
+  merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
+  bare_puts=$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)
+  if grep -q UNEXPECTED "$aux/api.log"; then
+    echo "     note: unexpected API calls in this run:"; grep UNEXPECTED "$aux/api.log" | sed 's/^/       /'
+  fi
+}
+
+# Run 3: GitLab refuses every auto-merge request (405). The job must fail and
+# show why: the merge request, GitLab's status code and its message.
+run_push "$out" refused
+rc3=$rc
+rc=0; [ "$rc3" -ne 0 ] || rc=1
+check "when GitLab keeps refusing, the job fails (exit $rc3)" "$rc"
+rc=0; grep -q '!42' "$out" || rc=1
+check "the failure names the merge request (!42)" "$rc"
+rc=0; grep -q '405' "$out" || rc=1
+check "the failure shows GitLab's HTTP status (405)" "$rc"
+rc=0; grep -q 'Method Not Allowed' "$out" || rc=1
+check "the failure shows GitLab's error message (Method Not Allowed)" "$rc"
+rc=0; ! grep -rq "$fake" "$out" "$aux" || rc=1
+check "the token is in neither the output nor any log" "$rc"
+rc=0; [ "$merge_puts" -gt 1 ] || rc=1
+check "it retried the auto-merge request (saw $merge_puts attempts)" "$rc"
+rc=0; [ "$merge_puts" -gt 0 ] && [ "$bare_puts" -eq 0 ] || rc=1
+check "every auto-merge attempt sent auto_merge=true" "$rc"
+[ "$rc3" -ne 0 ] && grep -q '405' "$out" || sed 's/^/     /' "$out"
+
+# Run 4: GitLab refuses once, then accepts (200). The job succeeds and stops.
+run_push "$out" second
+rc4=$rc
+rc=0; [ "$rc4" -eq 0 ] || rc=1
+check "when GitLab accepts on the second try, the job exits 0 (exit $rc4)" "$rc"
+rc=0; grep -q 'set to merge when the pipeline passes' "$out" || rc=1
+check "it says the merge request is set to merge when the pipeline passes" "$rc"
+rc=0; [ "$merge_puts" -eq 2 ] || rc=1
+check "it stopped retrying once GitLab accepted (saw $merge_puts attempts)" "$rc"
+[ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
 
 rm -f "$out"
 exit "$failed"
