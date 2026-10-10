@@ -65,6 +65,7 @@ const MEASURE = () => {
     const b = el.getBoundingClientRect();
     return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height, cx: b.left + b.width / 2, cy: b.top + b.height / 2 };
   };
+  const settled = (el) => { if (!el) return null; const was = el.style.transform; el.style.transform = "none"; const r = box(el); el.style.transform = was; return r; };
   const ringOf = (root) => root && (root.querySelector(".glyph .ring:not(.lux)") || root.querySelector('.glyph circle[r="72"]'));
   const dusk = document.querySelector("#dusk"), dawn = document.querySelector("#door");
   const cs = (el) => (el ? getComputedStyle(el) : null);
@@ -74,7 +75,9 @@ const MEASURE = () => {
   return {
     vw: innerWidth, vh: innerHeight,
     scrollW: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
-    dawnSvg: box(dawn && dawn.querySelector(".glyph svg")), dawnRing: box(ringOf(dawn)), dawnGate: box(dawn && dawn.querySelector(".gate")),
+    /* the dawn's gate as it stands once lit: until body.lit.ready-flight it rests translateY(10px) low, and this page
+       never lights the dawn, so its transform is set aside while it is measured (the row, not the entrance) */
+    dawnSvg: box(dawn && dawn.querySelector(".glyph svg")), dawnRing: box(ringOf(dawn)), dawnGate: settled(dawn && dawn.querySelector(".gate")),
     duskSvg: box(dusk.querySelector(".glyph svg")), duskRing: box(ring), duskGate: box(dusk.querySelector(".gate")),
     wrap: box(dusk.querySelector(".gate-wrap")), fw: box(fw), said: box(dusk.querySelector(".farewell .said")), sub: box(dusk.querySelector(".farewell .sub")),
     name: box(name),
