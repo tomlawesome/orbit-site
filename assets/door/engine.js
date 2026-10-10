@@ -365,6 +365,8 @@ export function createFlight(canvas, options = {}) {
      flight under way draws with, chosen as a flight begins (prime), so a world that is too slow, or lost, or not yet
      proved is never drawn, and the flight draws on this canvas as it always could */
   let world3d = null;
+  /* destroyed (journey.js: destroy): no world is made after it, and the one made is stopped */
+  let destroyed = false;
   /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
   let worldGL = null;
 
@@ -1180,6 +1182,7 @@ export function createFlight(canvas, options = {}) {
            with the flight's own), its shaders looked at in the same chore (voyage.js: made) */
         if (!options.plain) fetchVoyage();
         const make = () => {
+          if (destroyed) return undefined;
           try { world3d = createVoyage(canvas); world3d?.resize(W || innerWidth, H || innerHeight); } catch (e) { world3d = null; }
           return world3d?.made;
         };
@@ -1233,6 +1236,13 @@ export function createFlight(canvas, options = {}) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       voyage?.clear();
+    },
+    /* taken down with its journey: its world stopped, so a proof still under way never retires the page's one context
+       under a journey mounted after it (voyage.js: stop) */
+    destroy() {
+      this.stop();
+      destroyed = true;
+      world3d?.stop(); world3d = null; voyage = null;
     },
     /* a resize mid-flight re-seeds the field, as the mockup does */
     resize() {

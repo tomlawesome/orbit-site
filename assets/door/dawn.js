@@ -81,8 +81,10 @@ export function mountDawn(host) {
    * nothing). onLit(): body.lit is set, the reveal begins. onOpen(): the chores are open (openChores), the host may
    * start what waits for them (the live door's planets). aside: whether compiles here are in the background.
    */
-  function light({ firstVisit = true, wait = false, after = () => null, onLit = () => {}, onOpen = () => {}, aside = compilesAside() } = {}) {
+  function light({ firstVisit = true, wait = false, after = () => null, onLit = () => {}, onOpen = () => {}, aside } = {}) {
     if (gone) return;
+    /* (asked only here: compilesAside() runs the page's GPU test, which a destroyed dawn never starts) */
+    aside ??= compilesAside();
     const firstLight = !litOnce; litOnce = true;
     const crit = critical();
     let backstop = null, lap = null, ring = null, loadingOn = false, lit = false;

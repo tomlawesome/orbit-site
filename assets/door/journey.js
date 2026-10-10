@@ -196,6 +196,6 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
-  function destroy() { dropLeisure(); reset(); clock.dispose(); removeEventListener("resize", onResize); }
+  function destroy() { dropLeisure(); reset(); engine.destroy(); clock.dispose(); removeEventListener("resize", onResize); }
   return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => engine.warm(how), warmDocs: (how) => engine.warmDocs(how), compiled: () => engine.compiled() };
 }

@@ -86,7 +86,8 @@ star fields and sets the glows' origin.
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from
   the 13 s backstop or any other timer or promise of that light), no error;
   the ring's `body.loading` is taken off if the light put it on; a later
-  `light()` on the destroyed dawn does nothing, and neither does `start()`
+  `light()` on the destroyed dawn does nothing (it does not even run the
+  page's GPU test, with or without `aside`), and neither does `start()`
   (one asked for but not yet run when `destroy()` comes is dropped, so the
   dead world is never drawn and no resize listener is added after it).
 
@@ -140,7 +141,10 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   every pending `later`: a compile on the page's own thread, started mid-flight, would be a pause in the middle
   of it). A host that needs its readying after a descent makes it in the descent's hook.
 - `destroy()`: the journey taken down: `reset()`, its clock's pending beats
-  dropped, its resize listener removed. A single-page host calls it when
+  dropped, its resize listener removed, every pending `later` dropped, and
+  its flight's world stopped: a warm-up still under way draws and judges
+  nothing more, and never gives up the page's one WebGL context, so a journey
+  mounted after it still has its world. A single-page host calls it when
   the component unmounts; a page that keeps one journey never needs it.
 
 `at` (both): pin the journey at a moment, in milliseconds into the journey
@@ -149,7 +153,12 @@ chart descent has moved its beats). The beats at or before `at` are applied at
 once, in order, with their hooks, and the flight is drawn as it stands then;
 nothing after them is scheduled, so a pinned journey stands still (for a
 screenshot or a test). Left out, the journey plays live. A pinned `fly()` does
-not wait for `ready`.
+not wait for `ready`. A pinned journey never asks for the world either: it is
+drawn with the world only if a warm-up has already proved it fit, and painted
+otherwise, so the same `at` can look different before and after the host's
+leisure warm-up. Like any `fly()` or `descend()`, a pinned one drops every
+pending `later`; a host that pins and still wants the warm-up asks for it
+again.
 
 A `fly()` whose `ready` never settles holds the clock at most eight
 seconds; a `descend()`, `reset()` or later `fly()` lets the hold go at once.

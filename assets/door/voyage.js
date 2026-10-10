@@ -1042,6 +1042,9 @@ export function createVoyage(under) {
   /* dead: it can no longer be drawn (a lost context, shaders that would not link, a machine too slow for it); ready: it
      has been proved fit and may be drawn (warm); the flight draws on its own canvas without it */
   let ok = false, dead = false, ready = false, fit = false;
+  /* gone: its journey was taken down (stop): it draws nothing more, judges nothing and never retires the context,
+     which is the page's one and may already be a later journey's world */
+  let gone = false;
   /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
      fitness test's, said when the test has ended and the world was still there to be judged) */
   let offSaid = false, madeOk = false;
@@ -1235,6 +1238,7 @@ export function createVoyage(under) {
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
         .then(() => chore(() => fitness(), 60, "flight"))
         .then(({ fit: fits, ms }) => {
+          if (gone) return;
           fit = fits;
           ready = ok && !dead && fit;
           /* one verdict: a world that was lost or never made says so (above), not that it was too slow or fit */
@@ -1288,6 +1292,7 @@ export function createVoyage(under) {
   /* a world too slow for the machine is let go: its canvas out of the page and its context lost, the flight drawn
      without it from then on */
   function retire() {
+    if (gone) return;
     dead = true; ok = false; ready = false;
     canvas.remove();
     try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* fine */ }
@@ -1484,5 +1489,7 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  /* its journey taken down: what is still queued finds it dead and does nothing (nor does a link still to come) */
+  function stop() { gone = true; dead = true; ok = false; ready = false; }
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }
