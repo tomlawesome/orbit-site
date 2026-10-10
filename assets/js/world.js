@@ -12,7 +12,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { fetchOnce, linked, uploadBanded } from "../door/index.js";
+import { fetchOnce, linked, uploadBanded, gpu } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -498,11 +498,15 @@ function picturesOf(opts) {
 }
 /** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */
 export function fetchWorld(opts = {}) {
+  /* none where the page may not use the GPU at all (the door's gate: gpu()): the world is not made, so its maps are not wanted */
+  if (!gpu()) return;
   const p = picturesOf(opts);
   for (const url of [p.MAP, p.RINGS, p.MOON]) fetchOnce(url).catch(() => {});
 }
 
 export function createWorld(canvas, opts = {}) {
+  /* the door's gate first (assets/door/fitness.js): a page it refused draws no world, and makes no context here */
+  if (!gpu()) return null;
   const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "high-performance" });
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");

@@ -30,13 +30,18 @@ Uploads during the door's reveal are bounded per frame: one band of a picture, u
 | **GPU speed**: the probe shader drawn four times into 512x512, read back | measured | ~0.15 s | predicts ms per million pixels, scaled to this screen's band |
 | The real compiles and draws, timed as they happen | measured | 0.5 s on | confirmation; the real measures still gate every step |
 
-## The probe (step one, at 0 s, before the ring turns)
+## The probe (step one, before the ring turns; the live door's alone)
 
-One context (the one that asks about background compiling), one shader of known moderate size, a few thousand
+Since #2 (ADR-0002) the probe runs only for the live door (`?door3d`) and only where the GPU gate accepted the page
+(`assets/door/fitness.js`, `gpu()`: one WebGL2 context asked with `failIfMajorPerformanceCaveat`, a software renderer
+refused). It is measured on that gate's context, which it leaves as it found it. Without `?door3d`, or on a refused page,
+it makes and draws nothing and the level is 0. Below, as it was measured:
+
+One context (the gate's, which also says whether compiles are in the background), one shader of known moderate size, a few thousand
 characters of the same arithmetic and texture reads the Earth does. Compile it, timed: on a page-thread compiler a
 stall of 50-150 ms while nothing moves yet. Draw it four times into a 512x512 target with a read-back, timed. Two
-numbers: compile ms (predicts the ring budget) and ms per million pixels (predicts frame cost). Then release the
-context. Calibration points from the real shaders: see the measurements.
+numbers: compile ms (predicts the ring budget) and ms per million pixels (predicts frame cost). Then release what it
+made. Calibration points from the real shaders: see the measurements.
 
 As built (`assets/door/capability.js`, `probe()`, 8 October 2026): where compiles are in the background the probe is
 compiled twice (salted, two programs) and the second is the one timed, since a fresh context's first compile is

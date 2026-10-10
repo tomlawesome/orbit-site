@@ -50,7 +50,8 @@ Words used in the table:
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |
 | `assets/js/main.js` | The switch between the stages |
 | `assets/door/chores.js` | The background work, a piece at a time: each journey's pictures put on the GPU, its shaders checked, its first frames drawn unseen, starting the moment the door is lit; a chosen journey's own pieces go first. Each world also prints how long it took to the console (`orbit · …`) |
-| `assets/door/capability.js` | What this machine can carry, found by one small timed shader test at the page's start and kept for a week in the browser. It picks the level: the still door, the live door lean, or the live door rich (`CAPABILITIES.md`) |
+| `assets/door/fitness.js` | Whether the page may use the GPU at all, decided once from one context before any other WebGL (a software renderer is refused: the door then draws without it and fetches none of the flight's world), and the fitness test that decides, each visit, whether the flight's world is drawn (`docs/adr/0002-the-door-tests-the-gpu-once-per-visit.md`) |
+| `assets/door/capability.js` | What this machine can carry, for the live door only (`?door3d`, on a page whose GPU was accepted): one small timed shader test kept for a week in the browser. It picks the level: the still door, the live door lean, or the live door rich (`CAPABILITIES.md`) |
 | `assets/door/upload.js` | Puts a big picture on the GPU a band of rows at a time, so the door's reveal is not held up |
 | `assets/js/tilt.js` | On Android phones, the phone's tilt moves the worlds as a mouse pointer would (iOS is never asked) |
 | `assets/door/door3d.js` | The live door, while it is tried (add `door3d` to the address): the door's Earth drawn as it is, from the flight's own shader, turning slowly against the stars, its clouds drifting and the sun at the edge of rising; the picture stays until its first frame is drawn |
