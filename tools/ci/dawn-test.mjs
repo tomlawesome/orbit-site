@@ -17,6 +17,11 @@
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
  *
+ * Also (#27), a destroyed dawn stops all of it: destroy() straight after start() (same task), and start() after destroy(),
+ * leave the world never "ready" and a resize does not rebuild it (no new glow pictures asked for); control: start()
+ * alone does reach "ready" and a resize rebuilds it ("pending", then "ready" again). And with light() called twice,
+ * destroy() soon after the second call leaves no body.loading, no body.lit, no onLit and no onOpen from either light.
+ *
  * (sh tools/ci/journey-local.sh dawn does exactly that.) BROWSER=chromium for a second engine; HEADED=1 as the other
  * live tests: Firefox has no WebGL headless here. The whole run takes about a minute: the light cases wait out the
  * backstop in real time.
@@ -39,6 +44,17 @@ const CANCELLED_WATCH = 16000;
 /* the Earth's pictures: held this long, then let go; "ready" is waited for this long after */
 const HOLD = 4000;
 const READY_WITHIN = 20000;
+/* a destroyed dawn: watched this long, resized, then watched this long again */
+const DEAD_WATCH = 3000;
+const RESIZE_WATCH = 3000;
+/* two lights, destroy() this long after the second; body.loading is looked for at these times (ms after the second
+   light) and the callbacks are watched to the end */
+const TWO_GAP = 100;
+const TWO_CHECKS = [1000, 14000];
+const TWO_WATCH = 16000;
+/* and once with the ring surely up (body.loading comes on within about 300 ms): it must be taken off */
+const RING_GAP = 600;
+const GLOW = /\/assets\/door\/img\/dawn\/glow-/;
 /* the pictures start() asks for, as a normal run's network log shows them */
 const EARTH = /\/assets\/door\/img\/dawn\/dawn(-pre)?\.webp(\?|$)/;
 
@@ -110,6 +126,39 @@ try {
     } finally { await page.close(); }
   };
 
+  /* kind: "start", "start-destroy" or "destroy-start" (tests/dawn.html); then a resize, and what it brings */
+  const dead = async (kind) => {
+    const { page, problems } = await open();
+    try {
+      const glowAsks = [];
+      page.on("request", (req) => { if (GLOW.test(req.url())) glowAsks.push(Date.now()); });
+      const began = await page.evaluate((k) => window.destroyRun(k), kind);
+      await new Promise((ok) => setTimeout(ok, DEAD_WATCH));
+      const before = await page.evaluate(() => window.drawLog());
+      const resized = Date.now();
+      await page.setViewportSize({ width: 1000, height: 700 });
+      await new Promise((ok) => setTimeout(ok, RESIZE_WATCH));
+      const after = await page.evaluate(() => window.drawLog());
+      const values = (log) => log.map((x) => x.v);
+      return { r: {
+        thrown: began.thrown, errors: [], began: began.at,
+        values: values(after), valuesBefore: values(before),
+        /* what the world read when the resize came, and the values it took on after it */
+        atResize: before[before.length - 1].v,
+        afterResize: after.filter((x) => x.at >= resized).map((x) => x.v),
+        glowAsksAfterResize: glowAsks.filter((t) => t >= resized).length,
+      }, problems };
+    } finally { await page.close(); }
+  };
+
+  const twoLights = async (gap, checks, watch) => {
+    const { page, problems } = await open();
+    try {
+      const r = await page.evaluate(([g, c, w]) => window.twoLights(g, c, w), [gap, checks, watch]);
+      return { r, problems };
+    } finally { await page.close(); }
+  };
+
   const scenarios = [
     ["light, no destroy() (control): the backstop lights it by 15 s", () => light(null, CONTROL_WATCH), (r) => [
       ["body.lit is set by 15 s", r.lit && r.at.lit !== undefined],
@@ -141,6 +190,43 @@ try {
       ["every Earth request had finished before ready", r.earth.length > 0 && r.seen.ready !== undefined && r.earth.every((e) => e.finished !== null && e.finished <= r.seen.ready)],
       ["no error was thrown", !r.thrown && r.errors.length === 0],
     ], (r) => `held ${JSON.stringify(r.earth.map((e) => e.url))}; at the end of the hold ${JSON.stringify(r.atHold)}; ready at ${r.seen.ready === undefined ? "never" : `+${r.seen.ready - r.began} ms`}, released at +${r.releasedAt - r.began} ms, requests finished at ${JSON.stringify(r.earth.map((e) => e.finished === null ? null : e.finished - r.began))}`],
+
+    ["dawn, start() alone (control): ready, and a resize rebuilds it", () => dead("start"), (r) => [
+      ["data-rasterised reached ready", r.valuesBefore.includes("ready")],
+      ["a resize took it back to pending", r.afterResize.includes("pending")],
+      ["and then to ready again", r.afterResize.lastIndexOf("ready") > r.afterResize.indexOf("pending") && r.afterResize.includes("pending")],
+      ["no error was thrown", !r.thrown],
+    ], (r) => `values to the resize ${JSON.stringify(r.valuesBefore)}; after it ${JSON.stringify(r.afterResize)}; glow pictures asked for after the resize: ${r.glowAsksAfterResize}`],
+
+    ["dawn, start() then destroy() in the same task: never ready, and a resize does not rebuild it", () => dead("start-destroy"), (r) => [
+      ["data-rasterised never read ready", !r.values.includes("ready")],
+      ["the resize left data-rasterised as it was", r.afterResize.every((v) => v === r.atResize)],
+      ["the resize asked for no glow pictures", r.glowAsksAfterResize === 0],
+      ["no error was thrown", !r.thrown],
+    ], (r) => `values ${JSON.stringify(r.values)}; at the resize ${JSON.stringify(r.atResize)}, after it ${JSON.stringify(r.afterResize)}; glow pictures asked for after the resize: ${r.glowAsksAfterResize}`],
+
+    ["dawn, start() after destroy(): never ready, and a resize does not rebuild it", () => dead("destroy-start"), (r) => [
+      ["data-rasterised never read ready", !r.values.includes("ready")],
+      ["the resize left data-rasterised as it was", r.afterResize.every((v) => v === r.atResize)],
+      ["the resize asked for no glow pictures", r.glowAsksAfterResize === 0],
+      ["no error was thrown", !r.thrown],
+    ], (r) => `values ${JSON.stringify(r.values)}; at the resize ${JSON.stringify(r.atResize)}, after it ${JSON.stringify(r.afterResize)}; glow pictures asked for after the resize: ${r.glowAsksAfterResize}`],
+
+    [`light() twice, destroy() ${TWO_GAP} ms after the second: no body.loading left, nothing lit or opened`, () => twoLights(TWO_GAP, TWO_CHECKS, TWO_WATCH), (r) => [
+      ["destroy() was called", r.destroyedAt !== null],
+      ...r.loading.map((l) => [`body.loading is off at ${l.at} ms`, !l.on]),
+      ["body.lit is not set", !r.lit && r.litAt === null],
+      ["neither light called onLit or onOpen", r.called.length === 0],
+      ["the watch ran past the 13 s backstop", r.end >= 15000],
+      ["no error was thrown (by the call, or uncaught after it)", !r.thrown && r.errors.length === 0],
+    ], (r) => `destroyed at ${r.destroyedAt} ms (body.loading just before: ${r.loadingBefore}); body.loading ${JSON.stringify(r.loading)}; lit at ${r.litAt}; callbacks ${JSON.stringify(r.called)}; end ${r.end}`],
+
+    [`light() twice, destroy() ${RING_GAP} ms after the second, the ring up: body.loading is taken off`, () => twoLights(RING_GAP, [1000], 2000), (r) => [
+      ["the ring was up when destroy() came (body.loading was on)", r.loadingBefore === true],
+      ["destroy() was called", r.destroyedAt !== null],
+      ...r.loading.map((l) => [`body.loading is off at ${l.at} ms`, !l.on]),
+      ["no error was thrown (by the call, or uncaught after it)", !r.thrown && r.errors.length === 0],
+    ], (r) => `destroyed at ${r.destroyedAt} ms (body.loading just before: ${r.loadingBefore}); body.loading ${JSON.stringify(r.loading)}; callbacks ${JSON.stringify(r.called)}`],
   ];
 
   for (const [name, go, wants, show] of scenarios) {

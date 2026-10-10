@@ -72,6 +72,65 @@
       removeEventListener("error", onerror);
       return { seen, now: dawn.world.dataset.rasterised ?? null, thrown, errors: drawErrors };
     };
+
+    /* #27: a destroyed dawn. destroyRun(kind) does one of
+         "start"          start() only (the control),
+         "start-destroy"  start() then destroy() at once, in the same task,
+         "destroy-start"  destroy() then start(),
+       and watches the world's data-rasterised from then on: drawLog() answers with every value it has read, each with
+       its epoch ms (the runner's clock). */
+    const log = [];
+    let logWatcher = null;
+    const logLook = () => { const v = dawn.world.dataset.rasterised ?? null; if (!log.length || log[log.length - 1].v !== v) log.push({ v, at: Date.now() }); };
+    window.destroyRun = (kind) => {
+      logLook();
+      logWatcher = setInterval(logLook, 10);
+      let thrown = null;
+      try {
+        if (kind === "destroy-start") { dawn.destroy(); dawn.start(); }
+        else { dawn.start(); if (kind === "start-destroy") dawn.destroy(); }
+      } catch (e) { thrown = String(e && e.message || e); }
+      logLook();
+      return { thrown, at: Date.now() };
+    };
+    window.drawLog = () => { logLook(); return log.slice(); };
+
+    /* #27: two lights on one dawn, then destroy() `gap` ms after the second. Answers, at each of `checks` (ms from the
+       second light), whether body.loading was on, and at the end when body.lit showed and which callbacks were called. */
+    window.twoLights = async (gap, checks, watch) => {
+      const t0 = performance.now();
+      const ms = () => Math.round(performance.now() - t0);
+      const called = [], lit = { at: null }, loading = [], errors = [];
+      const onerror = (e) => errors.push(String(e.message || e));
+      const onrejection = (e) => errors.push(String(e.reason && e.reason.message || e.reason));
+      addEventListener("error", onerror);
+      addEventListener("unhandledrejection", onrejection);
+      const look = () => { if (document.body.classList.contains("lit")) lit.at ??= ms(); };
+      const watcher = setInterval(look, 50);
+      let thrown = null, loadingBefore = null, destroyedAt = null;
+      try {
+        dawn.start();
+        for (const n of [1, 2]) {
+          dawn.light({
+            firstVisit: false, wait: true,
+            after: () => new Promise(() => {}),
+            onLit() { called.push(`onLit${n}@${ms()}`); },
+            onOpen() { called.push(`onOpen${n}@${ms()}`); },
+          });
+        }
+        await sleep(gap);
+        loadingBefore = document.body.classList.contains("loading");
+        dawn.destroy();
+        destroyedAt = ms();
+      } catch (e) { thrown = String(e && e.message || e); }
+      for (const c of checks) { await sleep(Math.max(0, c - ms())); loading.push({ at: c, on: document.body.classList.contains("loading") }); }
+      await sleep(Math.max(0, watch - ms()));
+      look();
+      clearInterval(watcher);
+      removeEventListener("error", onerror);
+      removeEventListener("unhandledrejection", onrejection);
+      return { called, litAt: lit.at, lit: document.body.classList.contains("lit"), loading, loadingBefore, destroyedAt, thrown, errors, end: ms() };
+    };
     window.dawnReady = true;
   </script>
 </body>
