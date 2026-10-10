@@ -72,6 +72,7 @@ function pump() {
   const now = performance.now();
   /* what the chosen journey needs, first */
   let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => want.includes(t))) : -1;
+  if (want && i < 0 && now >= until) want = null;
   const hurried = i >= 0;
   if (!hurried) {
     if (!open && !compiling && !soft) { if (!heldAt) heldAt = now; return; }
@@ -139,11 +140,15 @@ export const softRan = () => ({ n: softN, ms: softMs });
 /* the page has started, where compiles freeze it (main.js, COMPILES_ASIDE false): the "compile" chores may run now,
    while the first light's ring runs, and nothing else until openChores */
 export function openCompiles() { compiling = true; pump(); }
-/** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms). Each call adds to what is
-    wanted, never replaces it: the proving warm() hurries "flight" after a flight to the docs hurried ["flight", "docs"] */
+/** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms). A call made while the
+    opening of the last still runs adds to what is wanted (a flight to the docs hurries ["flight", "docs"], and its
+    proving warm() then "flight" again); one made after it starts afresh. What is wanted ends with its need: once the
+    opening is over and nothing queued has a wanted tag, nothing is wanted, so a tag hurried once (the install's, on
+    arriving there) does not skip the opening of every later journey */
 export function hurryChores(tags, opening = 6000) {
-  want = [...new Set([...(want || []), ...[].concat(tags || [])])];
-  until = Math.max(until, performance.now() + opening);
+  const now = performance.now();
+  want = [...new Set([...(want && now < until ? want : []), ...[].concat(tags || [])])];
+  until = Math.max(until, now + opening);
   if (!open) openedAt = performance.now();
   open = true; pump();
 }
