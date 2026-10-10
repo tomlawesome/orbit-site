@@ -139,9 +139,10 @@ export const softRan = () => ({ n: softN, ms: softMs });
 /* the page has started, where compiles freeze it (main.js, COMPILES_ASIDE false): the "compile" chores may run now,
    while the first light's ring runs, and nothing else until openChores */
 export function openCompiles() { compiling = true; pump(); }
-/** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms) */
+/** a journey is chosen: what it needs (its tags) is done now, the rest after its opening (ms). Each call adds to what is
+    wanted, never replaces it: the proving warm() hurries "flight" after a flight to the docs hurried ["flight", "docs"] */
 export function hurryChores(tags, opening = 6000) {
-  want = [].concat(tags || []);
+  want = [...new Set([...(want || []), ...[].concat(tags || [])])];
   until = Math.max(until, performance.now() + opening);
   if (!open) openedAt = performance.now();
   open = true; pump();
@@ -159,10 +160,11 @@ const painted = (a) => {
     return props.some((k) => !COMPOSITED.has(k));
   } catch { return true; }
 };
-export function drawnIn() {
+export function drawnIn(cap = 10000) {
   try {
     const ends = document.getAnimations().filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime) && painted(a));
-    return Promise.all(ends.map((a) => a.finished.catch(() => {})));
+    /* (never past cap ms: an animation that does not end, or a hidden tab's that does not run, holds nothing for long) */
+    return Promise.race([Promise.all(ends.map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, cap))]);
   } catch { return Promise.resolve([]); }
 }
 
