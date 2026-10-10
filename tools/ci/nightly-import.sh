@@ -45,9 +45,10 @@ branch="docs/import-$stamp"
 
 echo "== older import merge requests"
 old=$(api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
-  | json 'for (const m of j) if (/^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)')
+  | json 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)')
 # Closing leaves the branch behind, so it goes too (#12): the name is checked
-# above, so only an import's own branch is ever deleted.
+# above, and a fork's merge request is never matched, so only an import's
+# own branch in this project is ever deleted.
 printf '%s\n' "$old" | while read -r iid ref; do
   [ -n "$iid" ] || continue
   echo "   closing !$iid and its branch $ref (superseded by $branch)"
