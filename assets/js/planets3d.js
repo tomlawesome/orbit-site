@@ -24,9 +24,7 @@
  * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note, linked, counted, COMPILES_ASIDE } from "./chores.js";
-import { uploadBanded } from "./upload.js";
-import { liveDoor, lateDoor } from "./capability.js";
+import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor } from "../door/index.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -160,7 +158,7 @@ function layersOf(door) {
   };
   /* both programs, then each finished (where the browser compiles on the page's own thread, "compile" chores, done
      first of all) */
-  const [crest, ctag] = COMPILES_ASIDE || lateDoor() ? [60, "door"] : [20, "compile"];
+  const [crest, ctag] = compilesAside() || lateDoor() ? [60, "door"] : [20, "compile"];
   let took = 0;
   const ready = chore(() => { const t0 = performance.now(); layers.forEach(make); return Promise.all(layers.map(compiled)).then(() => { took = performance.now() - t0; }); }, crest, ctag)
     .then(() => chore(() => {
@@ -175,7 +173,7 @@ function layersOf(door) {
     the programs compiled under the first light's ring; resolves when they are (main.js holds the door until then).
     Elsewhere, nothing */
 export function compilePlanets(door) {
-  if (COMPILES_ASIDE || lateDoor()) return Promise.resolve();
+  if (compilesAside() || lateDoor()) return Promise.resolve();
   return layersOf(door)?.ready ?? Promise.resolve();
 }
 
@@ -190,7 +188,7 @@ export function mountPlanets(door) {
   const small = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800;
   const MAPS = {
     install: new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
-    docs: new URL("../img/install/moon.webp", import.meta.url).href,
+    docs: new URL("../door/img/flight/moon.webp", import.meta.url).href,
   };
   const bitmaps = Object.keys(MAPS).map((key) => fetchOnce(MAPS[key])
     .then((b) => createImageBitmap(b, { resizeWidth: MAP_W, resizeHeight: MAP_W / 2, resizeQuality: "high", colorSpaceConversion: "none", premultiplyAlpha: "none" }))

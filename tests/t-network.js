@@ -3,7 +3,7 @@ import { line, round } from "./common.js";
 export const name = "network";
 export async function run() {
   const out = [];
-  for (const [path, label] of [["../assets/img/door/lights-strip-180.webp", "lights strip 180 (1.2 MB)"], ["../assets/img/door/clouds-near.webp", "near clouds (0.5 MB)"]]) {
+  for (const [path, label] of [["../assets/door/img/dawn/lights-strip-180.webp", "lights strip 180 (1.2 MB)"], ["../assets/door/img/dawn/clouds-near.webp", "near clouds (0.5 MB)"]]) {
     try {
       const t0 = performance.now();
       const r = await fetch(`${path}?t=${Date.now()}`, { cache: "no-store" }); const b = await r.blob();

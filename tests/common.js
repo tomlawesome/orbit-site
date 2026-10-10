@@ -62,8 +62,8 @@ export function timeDraws(gl, prog, fbo, w, h, set, n = 4) {
 }
 
 /* the probe shader (about two thousand characters, an Earth-like march), the one the site probes with at its start */
-export { PROBE } from "../assets/js/capability.js";
-import { PROBE as P0 } from "../assets/js/capability.js";
+export { PROBE } from "../assets/door/capability.js";
+import { PROBE as P0 } from "../assets/door/capability.js";
 /* the smallest program there is: what a program costs before any of its code does */
 export const TRIVIAL = `#version 300 es
 precision highp float;

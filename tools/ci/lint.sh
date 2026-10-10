@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 fail=0
 
 echo "== modules parse"
-for f in sw.js assets/js/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
+for f in sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
   node --experimental-default-type=module --check "$f" 2>/dev/null \
     || node --check "$f" || { echo "   $f does not parse"; fail=1; }
 done
@@ -18,6 +18,25 @@ for page in index.html install.html 404.html tests/index.html; do
     case "$ref" in /*|data:*) continue ;; esac
     [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
   done || fail=1
+done
+
+echo "== the shared door is self-contained (assets/door, ADR-0001)"
+# the folder is copied into Orbit unchanged: nothing in it may reach outside it, read the address, or make a URL
+# from import.meta.url (a bundler leaks that into server-rendered pages); the site's own modules use only its entry
+# point, so the interface is one file. tests/ and tools/ may reach in: they are not the site
+# none_of <file> <pattern> <message> [<except>]: every line of the file matching the (extended) pattern, and not
+# the exception, fails and is named
+none_of() {
+  hits=$(grep -n -E "$2" "$1" | grep -v -E "${4:-^\$}" || true)
+  [ -z "$hits" ] || { printf '%s\n' "$hits" | sed "s|^|   $1:|; s|\$| $3|"; fail=1; }
+}
+for f in assets/door/*.js; do
+  none_of "$f" '(import|export)[^;]*from *"\.\./|import\("\.\./' "imports from outside the folder"
+  none_of "$f" 'location\.search' "reads the address (a flag is a setting: settings.js)"
+  none_of "$f" 'import\.meta\.url' "uses import.meta.url (a picture's place is a setting: settings.js)"
+done
+for f in sw.js assets/js/*.js; do
+  none_of "$f" '(from|import\() *"[^"]*door/([a-z0-9-]+\.js)?"' "must import assets/door/index.js alone" '"\.\./door/index\.js"'
 done
 
 echo "== the docs index names pages that exist"

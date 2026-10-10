@@ -2,7 +2,7 @@
    and rich, the flight's lean head), then three of its programs whole (the flight's rush, the install's world, the
    docs' galaxy), each salted so the browser's cache cannot answer for the compiler */
 import { context, release, program, PROBE, PROBE_ROLLED, TRIVIAL, line, round } from "./common.js";
-import { sceneHead, SOURCES } from "../assets/js/voyage.js";
+import { sceneHead, SOURCES } from "../assets/door/voyage.js";
 import { RENDER_SRC, RENDER_VERT } from "../assets/js/world.js";
 export const name = "compile";
 const DOOR_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;

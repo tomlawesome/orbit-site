@@ -2,7 +2,7 @@
    compositor is meant to carry) while the door's rich shader compiles; frames are timed before, during and after.
    Watch the spinner: whether it freezes is the one thing this test cannot see for itself */
 import { context, release, program, line, round } from "./common.js";
-import { sceneHead } from "../assets/js/voyage.js";
+import { sceneHead } from "../assets/door/voyage.js";
 export const name = "stall";
 const DOOR_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
 const gaps = (ms) => new Promise((resolve) => { const g = []; let last = performance.now(), t0 = last; const f = (t) => { g.push(t - last); last = t; if (t - t0 < ms) requestAnimationFrame(f); else resolve(g); }; requestAnimationFrame(f); });

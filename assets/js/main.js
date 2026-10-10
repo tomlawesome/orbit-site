@@ -2,8 +2,8 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { probe, level, lateDoor } from "./capability.js";
-import { initTheme, bindSwatches, mountTiledSky, mountFlightSky, mountGrain, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR } from "./sky.js";
+import { createDoor, loadLiveDoor, probe, level, lateDoor, mountFlightSky, DAWN_FAR, DAWN_NEAR, DUSK_FAR, DUSK_NEAR, openChores, openCompiles, openSoft, softRan, hurryChores, note, programs, compilesAside, holdReveal } from "../door/index.js";
+import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
 import { recall, households } from "./data.js";
@@ -11,8 +11,15 @@ import * as law from "./law.js";
 import { mountRasters, createJourney, UP, UP_RING, RIGHT, LEFT, docsFlight, demoFlight, SUN } from "./flight.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
-import { openChores, openCompiles, openSoft, softRan, hurryChores, note, programs, COMPILES_ASIDE, HOLD_REVEAL } from "./chores.js";
 
+/* the shared door (assets/door/index.js), with what differs here: where its pictures are, and the debug switches read
+   from the address (the folder itself never reads the address) */
+const FLAGS = {};
+for (const k of ["door3d", "rich", "lean", "holdreveal", "mainthread"]) FLAGS[k] = new RegExp(`[?&]${k}\\b`).test(location.search);
+FLAGS.level = location.search.match(/[?&]level=([012])\b/)?.[1] ?? null;
+FLAGS.ring = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] ?? null;
+FLAGS.open = /[?&]open=late\b/.test(location.search) ? "late" : null;
+createDoor({ image: (p) => `assets/door/img/${p}`, flags: FLAGS });
 /* first of all, before anything else asks the GPU for anything: how fast it is here (capability.js; kept a week), so
    the live door's weight, and so what is compiled, is known from the start; and from it the level this machine ships
    (capability.js: level, said in the console on every page) */
@@ -21,7 +28,7 @@ const $ = (s) => document.querySelector(s);
 /* maintenance (index.html: data-maintenance): the door alone, opening nothing, and nothing readied for journeys */
 const MAINTENANCE = document.documentElement.hasAttribute("data-maintenance");
 /* the live door, while it is tried (?door3d): the Earth under the door drawn as it is (door3d.js), not a picture */
-const DOOR3D = /[?&]door3d\b/.test(location.search);
+const DOOR3D = FLAGS.door3d;
 let liveDoor = null;
 /* and whether it is live here: the flag, and the level the probe allows (1 or 2; at 0 the door stays the painted one,
    and nothing of door3d.js's or planets3d.js's is compiled or drawn). Resolves once the probe has */
@@ -32,7 +39,7 @@ const doorLive = () => probe().then(() => DOOR3D && level() >= 1);
    light's ring (compileFirst); made live once the door's painted reveal is over (liveDoorOf). (The modules are fetched
    under the flag whatever the level; at level 0 nothing of theirs is made.) The world planets start only once the
    door has been measured and shown (door3d.js: doorMeasured), so the door's measure is its own, not theirs beside it */
-const door3d = DOOR3D ? import("./door3d.js") : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
+const door3d = DOOR3D ? loadLiveDoor() : null, planets3d = DOOR3D ? import("./planets3d.js") : null;
 const liveDoorOf = () => {
   /* late (capability.js: where compiles stall the page): nothing of it until every journey is ready, the ways in open */
   if (lateDoor() && warmingAll) return warmingAll.then(() => { note("door: the journeys are ready, the live door may begin"); return startLiveDoor(); });
@@ -206,14 +213,14 @@ function hideAll() {
 /* a first visit: nothing of the site's kept in this browser yet (sw.js keeps the pictures for 36 hours) */
 const firstVisit = (() => { try { const seen = localStorage.getItem("orbit-site-seen"); localStorage.setItem("orbit-site-seen", String(Date.now())); return !seen || Date.now() - +seen > 36 * 3600e3; } catch { return true; } })();
 let doorLitOnce = false;
-/* whether this browser compiles shaders in the background (chores.js: COMPILES_ASIDE). Where it does not (Firefox),
+/* whether this browser compiles shaders in the background (chores.js: compilesAside). Where it does not (Firefox),
    the page stands still while a shader compiles, and even the compositor's animations stall (measured), so every
    compile is a chore, all of them asked for at the page's start and done under the first light's ring, which runs
    on until they are (showDoor: waitCompiled), the "compile" chores alone let run before the rest (openCompiles); the
    reveal then plays with nothing of the GPU's on the page's thread. Done after the reveal instead, they cost some 3 s
    on the ways in, and the drifting stars still hitched three times (Firefox, measured) */
-const compilesAside = MAINTENANCE || COMPILES_ASIDE;
-if (!compilesAside) openCompiles();
+const asideHere = MAINTENANCE || compilesAside();
+if (!asideHere) openCompiles();
 /* every compile, queued now: the journeys' (warmJourneys: the install's world, the flight's, the docs' galaxy) and the
    live door's two weights and its planets' (door3d.js: compileDoor; planets3d.js: compilePlanets), whose canvases,
    maps and loops still wait for the reveal (liveDoorOf). The live door's only once the probe has said the level (at
@@ -241,18 +248,18 @@ function showDoor() {
     : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
   const critical = Promise.all([document.fonts?.ready, earthHere]);
   const firstLight = !doorLitOnce; doorLitOnce = true;
-  if (firstLight && !compilesAside) compileFirst();
+  if (firstLight && !asideHere) compileFirst();
   /* the ring runs on a first visit until the shaders are compiled too (in the background). Where they would stop the
      page, on every visit: they are compiled under it, and the door is lit only once they are (never past 8 s: a
      compile that fails or hangs never holds the door) */
-  const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !compilesAside);
+  const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !asideHere);
   /* where compiles are in the background, every chore and the ways in run from the moment the door is lit, not from
      the reveal's end (chosen by eye on the laptop in Edge, 8 October, against the held reveal and the two ring
      endings; ?open=late holds them to the reveal's end, to compare). Where a compile stalls the page (Firefox), held
      as before. To see, each at its own address: ?ring=stop, the ring ends the moment the work is done and the drawn
      ring takes over from where the runner is; ?ring=rush, the runner speeds up (x3) to finish its lap within about
      half a second */
-  const RING = location.search.match(/[?&]ring=(stop|rush)\b/)?.[1] || "", OPEN_EARLY = compilesAside && !/[?&]open=late\b/.test(location.search);
+  const RING = FLAGS.ring || "", OPEN_EARLY = asideHere && FLAGS.open !== "late";
   let arrived = () => {};
   /* a first visit's first light is always at least a lap of the ring */
   const minLaps = waitCompiled || (firstLight && firstVisit) ? 1 : 0;
@@ -263,7 +270,7 @@ function showDoor() {
     if (!waitCompiled) here = true;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       warmJourneys();
-      if (waitCompiled) within(compiledAll, compilesAside ? 9000 : 8000).then(() => { here = true; arrived(); });
+      if (waitCompiled) within(compiledAll, asideHere ? 9000 : 8000).then(() => { here = true; arrived(); });
     }));
   });
   let lit = false;
@@ -292,7 +299,7 @@ function showDoor() {
     } catch { return Promise.resolve(); }
   };
   const light = () => { if (lit) return; lit = true; requestAnimationFrame(() => { document.body.classList.remove("loading"); document.body.classList.add("lit");
-    if (!HOLD_REVEAL) openSoft();
+    if (!holdReveal()) openSoft();
     let gap = 0, last = 0, timing = firstLight;
     const frame = (now) => { if (last) gap = Math.max(gap, now - last); last = now; if (timing) requestAnimationFrame(frame); };
     if (timing) requestAnimationFrame(frame);
