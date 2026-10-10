@@ -14,7 +14,7 @@ every other module reads its level from; nothing decides on its own.)
 2. **Probe before you pay.** Cheap checks come before expensive work: a compile's duration before the next compile, a
    small synthetic draw before megabytes of maps are fetched or uploaded.
 
-Uploads during the door's reveal are bounded per frame: one band of a picture, under ~5 ms (upload.js). The
+Uploads during the door's reveal are bounded per frame: one band of a picture, under ~5 ms (assets/door/upload.js). The
 `reveal:` line in the console measures them: how many ran, and the reveal's longest frame gap.
 
 ## What a browser can tell us
