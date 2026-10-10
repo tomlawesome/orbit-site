@@ -1198,7 +1198,8 @@ export function createFlight(canvas, options = {}) {
       prime(P);
       if (typeof at === "number") {
         if (flight) flight.pinned = true;
-        for (let t = 0; t <= at; t += PINNED_STEP) step(t, PINNED_STEP / 1000, t + PINNED_STEP > at);
+        /* from where the live flight starts (P.skip, its own time: the stretch it skips is never integrated) */
+        for (let t = Math.min(P.skip || 0, at); t <= at; t += PINNED_STEP) step(t, PINNED_STEP / 1000, t + PINNED_STEP > at);
         flight = null;
         return;
       }
