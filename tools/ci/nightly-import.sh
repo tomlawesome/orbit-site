@@ -84,11 +84,17 @@ iid=$(api POST "/merge_requests" \
   | json 'console.log(j.iid)')
 echo "   !$iid"
 
-# Auto-merge can only be set once the merge request's pipeline exists.
+# Auto-merge can only be set once the merge request's pipeline exists. Each
+# answer is kept, so a refusal says why (#15): its status and body, never
+# the request, so the token stays out of the log.
+resp="$scratch/merge-answer"
 for i in $(seq 1 30); do
-  if api PUT "/merge_requests/$iid/merge" --data-urlencode "auto_merge=true" >/dev/null 2>&1; then
-    echo "   set to merge when the pipeline passes"; exit 0
-  fi
+  code=$(curl -sS -o "$resp" -w '%{http_code}' -X PUT -H @"$hdr" \
+    "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$iid/merge" \
+    --data-urlencode "auto_merge=true" 2>"$resp.err") || code=000
+  case $code in 2??) echo "   set to merge when the pipeline passes"; exit 0 ;; esac
   sleep 10
 done
-echo "could not set !$iid to merge itself; it is open for a maintainer"; exit 1
+echo "could not set !$iid to merge itself; it is open for a maintainer"
+echo "   GitLab's last answer: HTTP $code $(cat "$resp" "$resp.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300)"
+exit 1
