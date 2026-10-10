@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "description": [
-    "Renovate for ai/orbit-site on gitlab.tomlawson.io, run by the `renovate` job in .gitlab-ci.yml on a weekly schedule. The site has no package manifest: what it depends on is the pipeline's own images and the two npm packages the docs import installs, plus the GitHub Actions on the mirror (CodeQL). Orbit's renovate.json is the model; this is the small subset that applies here.",
+    "Renovate for ai/orbit-site on gitlab.tomlawson.io, run by the `renovate` job in .gitlab-ci.yml on a weekly schedule. The site has no package manifest: what it depends on is the pipeline's own images and the two npm packages the docs import installs (tools/package.json), plus the GitHub Actions on the mirror (CodeQL). Orbit's renovate.json is the model; this is the small subset that applies here.",
     "The dependency dashboard is off (owner, 2026-09-08, orbit): a bot-written issue with no done state."
   ],
   "timezone": "Europe/London",
@@ -15,7 +15,7 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "osvVulnerabilityAlerts": true,
-  "enabledManagers": ["gitlabci", "github-actions", "custom.regex"],
+  "enabledManagers": ["npm", "gitlabci", "github-actions", "custom.regex"],
   "customManagers": [
     {
       "description": "The pipeline pins its job images in the variables block (NODE_IMAGE, PLAYWRIGHT_IMAGE) and the jobs reference them as $NODE_IMAGE, which the gitlabci manager cannot see through. The first pattern strips the dependency-proxy prefix; the second is for a pin that names its registry directly (the leading-$ exclusion tells them apart). Same as orbit's.",
@@ -23,7 +23,7 @@
       "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
       "matchStrings": [
         "_IMAGE:\\s+\\$\\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\\}/(?<depName>[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
-        "_IMAGE:\\s+(?<depName>(?!\\$)[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+        "_IMAGE:\\s+(?<depName>[^\\s:@$][^\\s:@]*):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "datasourceTemplate": "docker"
     },
@@ -36,14 +36,15 @@
       "datasourceTemplate": "npm"
     },
     {
-      "description": "The two npm packages the docs import installs inline (`npm i marked@18 sharp@0.34`), pinned to a major or minor in the job script.",
+      "description": "Mermaid, which the docs load from jsDelivr for their diagrams (assets/js/pads.js: MERMAID). Renovate bumps the version but cannot recompute the integrity hash beside it, so the bump's merge request fails the journey's diagram step until the hash is updated by hand (the command is in pads.js).",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
-      "matchStrings": ["\\s(?<depName>marked|sharp)@(?<currentValue>[0-9.]+)"],
+      "managerFilePatterns": ["/^assets/js/pads\\.js$/"],
+      "matchStrings": ["cdn\\.jsdelivr\\.net/npm/(?<depName>mermaid)@(?<currentValue>[0-9.]+)/"],
       "datasourceTemplate": "npm",
       "versioningTemplate": "npm"
     }
   ],
+  "lockFileMaintenance": { "enabled": true, "schedule": ["after 5:00am and before 6:15am on monday"] },
   "vulnerabilityAlerts": { "enabled": true, "schedule": ["at any time"] },
   "packageRules": [
     {

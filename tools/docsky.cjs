@@ -6,8 +6,8 @@
  * across the sky; this draws that last frame once, with no constellations on it, so the page the flight
  * fades into wears the very sky the flight arrived in.
  *
- *   NODE_PATH=$(npm root -g) node tools/docsky.cjs     (needs playwright)
- *   → assets/img/docs/milkyway-sky.webp
+ *   NODE_PATH=$(npm root -g) node tools/docsky.cjs [--out <path>]     (needs playwright)
+ *   → assets/img/docs/milkyway-sky.webp, or <path>
  */
 const { chromium } = require("playwright");
 const http = require("http"), fs = require("fs"), path = require("path");
@@ -20,7 +20,9 @@ import { docsFlight } from "./assets/js/flight.js";
 import { openChores } from "./assets/js/chores.js";
 openChores();
 const e = createFlight(document.getElementById("c"));
-await e.warm();
+/* the docs' galaxy is warmed on its own, after the flight (voyage.js: warmDocs); warm() alone leaves it undrawn and
+   the picture black (#7) */
+await e.warmDocs();
 const P = docsFlight({ rect: { x: 0, y: 0, w: innerWidth, h: innerHeight }, geometry: { W: 1600, H: 900, field: { dots: [], arcs: [] }, cons: [] } });
 window.draw = () => { e.start(P, { at: 4790 }); return true; };
 window.ready = true;
@@ -47,7 +49,7 @@ const srv = http.createServer((req, res) => {
     const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; c.getContext("2d").drawImage(img, 0, 0);
     return c.toDataURL("image/webp", 0.86);
   }, shot.toString("base64"));
-  const out = path.join(root, "assets/img/docs/milkyway-sky.webp");
+  const at = process.argv.indexOf("--out"), out = at > 0 ? path.resolve(process.argv[at + 1]) : path.join(root, "assets/img/docs/milkyway-sky.webp");
   fs.writeFileSync(out, Buffer.from(url.split(",")[1], "base64"));
   console.log("wrote", path.relative(root, out), Math.round(fs.statSync(out).size / 1024) + " KB");
   await b.close(); srv.close();

@@ -62,22 +62,26 @@ only; `dev` picks them up by back-merge after a promotion.
     node tools/ci/serve.mjs                   # the site at :8787, as Pages serves it
     PLAYWRIGHT_ROOT=<playwright package dir> node tools/ci/journey.mjs   # Firefox
 
+The gate runs Firefox headed under Xvfb with software GL, the only way it gets
+WebGL here (headless it has none and never draws a world): prefix both
+`journey.mjs` and `tools/ci/upload-test.mjs` with
+`HEADED=1 WEBGL=required LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a` to run them as
+the gate does.
+
 The journey is the gate's live check and is never optional. Locally,
 playwright comes from a sibling checkout (orbit's
 `node_modules/.pnpm/playwright@<version>/node_modules/playwright`); CI
 installs it to match `$PLAYWRIGHT_IMAGE`. `BROWSER=chromium` for a second
 engine.
 
-The docs import by hand: `npm i --no-save --no-package-lock marked@18
-sharp@0.34 && node tools/import-docs.mjs` (or `--from ../orbit` to read a
-local checkout). Never commit `node_modules` or a `package.json`; the lint
-refuses both.
+The docs import by hand: `npm ci --prefix tools --ignore-scripts && node
+tools/import-docs.mjs` (or `--from ../orbit` to read a local checkout).
+Never commit `node_modules`, or a `package.json` anywhere but `tools/`,
+where the import's manifest and lockfile live; the lint refuses both.
 
 ## Approved third-party content
 
-- NASA imagery (Black Marble, Blue Marble, Cassini, LRO, Deep Star Maps):
+- NASA imagery (Black Marble, Blue Marble, Cassini, LRO):
   public domain, credited in `README.md` and `LICENSE`.
-- ESA Gaia DR2 in the Deep Star Maps: CC BY-NC 3.0 IGO, which the
-  noncommercial `LICENSE` is consistent with; the credit line is #1.
 - `marked`, `sharp` (import tool only), `playwright` (CI only): MIT, Apache-2.0,
   Apache-2.0. None ships to a visitor.
