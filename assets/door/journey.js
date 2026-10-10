@@ -87,7 +87,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const ascentStep = (act, beat) => {
     switch (act) {
       case "arming": body.classList.add("arming"); break;
-      case "warp": body.classList.add("showwarp"); if (!flight.gone) engine.start(flight.profile, pinnedFlight(flight.profile, flight.at, beat.at)); clock.stalls(engine.drawingWorld); break;
+      case "warp": body.classList.add("showwarp"); if (flight.gone) { engine.clear(); clock.stalls(false); } else { engine.start(flight.profile, pinnedFlight(flight.profile, flight.at, beat.at)); clock.stalls(engine.drawingWorld); } break;
       /* the door's ring is not lifted out of it: it goes as the door goes, as on the install's and the information's shots */
       case "mark": body.classList.remove("arming"); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
@@ -104,7 +104,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       case "disperse": body.classList.add("dispersing"); break;
       case "warp": {
         const P = descent.from ? descentFrom(descent.from) : descent.onto === "dawn" ? DOWN_DAWN : DOWN;
-        body.classList.add("showwarp"); if (!descent.gone) engine.start(P, pinnedFlight(P, descent.at, beat.at)); break;
+        body.classList.add("showwarp"); if (descent.gone) { engine.clear(); clock.stalls(false); } else engine.start(P, pinnedFlight(P, descent.at, beat.at)); break;
       }
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
@@ -122,8 +122,8 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
   }
   const write = (title, subtitle) => name.replaceChildren(document.createTextNode(title), Object.assign(document.createElement("i"), { textContent: subtitle }));
-  /* fly: any profile, to whichever landing `on` describes. `at` (ms into the journey, in its own time) starts it there:
-     the beats up to `at` are applied at once, the flight drawn as it stands then, and the rest play out from there */
+  /* fly: any profile, to whichever landing `on` describes. `at` (ms into the journey, in its own time) pins it there:
+     the beats up to `at` are applied at once, the flight drawn as it stands then, and nothing after is scheduled */
   function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null, at } = {}) {
     cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");
