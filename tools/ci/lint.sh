@@ -100,14 +100,41 @@ echo "== docs-import merge requests pull without the dependency proxy"
 # the import's bot cannot use the group proxy: its merge requests must pull
 # from Docker Hub, and the node pin must keep the prefix that rule swaps
 wf=$(awk '/^workflow:/{w=1} /^[a-z]/&&!/^workflow:/{w=0} w' .gitlab-ci.yml)
-printf '%s\n' "$wf" | grep -q 'CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\\/import-/' \
-  && printf '%s\n' "$wf" | grep -q '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$' \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends docs/import- merge requests to Docker Hub"; fail=1; }
-# its merge request merges itself as that bot, so main's push pipeline runs
-# as the bot too: the bot's merge commit on main must pull from Docker Hub
-printf '%s\n' "$wf" | grep -q 'CI_COMMIT_AUTHOR =~ /project_\[0-9\]+_bot_/' \
-  && [ "$(printf '%s\n' "$wf" | grep -c '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$')" -eq 2 ] \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends the import bot's own pushes (its self-merge on main) to Docker Hub"; fail=1; }
+# GitLab takes the first workflow rule that matches, so each rule is judged as
+# one block (its condition, its variables, no `when: never`) and by its place:
+# the docs/import rule must come before the general merge-request rule, and
+# the bot-author rule before the closing `if: $CI_COMMIT_BRANCH` rule, or the
+# general rule matches first and the override never applies.
+WF="$wf" node -e '
+  const bad = (m) => { console.log(`   .gitlab-ci.yml: ${m}`); process.exitCode = 1; };
+  const rules = [];
+  let inRules = false;
+  for (const l of process.env.WF.split("\n")) {
+    if (/^\s*#/.test(l) || !l.trim()) continue;
+    if (/^  rules:/.test(l)) { inRules = true; continue; }
+    if (!inRules) continue;
+    if (/^    - /.test(l)) rules.push(l.trim().replace(/^- /, "") + "\n");
+    else if (rules.length) rules[rules.length - 1] += l.trim() + "\n";
+  }
+  const sets = (r) => /^variables:\n(?:.*\n)*?CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker\.io\n/m.test(r) && !/^when: never$/m.test(r);
+  const first = (r) => r.split("\n")[0];
+  const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
+  const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
+  const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
+  const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
+  if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
+  else {
+    if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
+    if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
+    else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
+  }
+  if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
+  else {
+    if (!sets(rules[bot])) bad("the bot-author rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
+    if (last < 0) bad("no closing `if: $CI_COMMIT_BRANCH` workflow rule to order the bot-author rule before");
+    else if (bot > last) bad("the bot-author rule comes after the general `if: $CI_COMMIT_BRANCH` rule, which matches first, so its Docker Hub override never applies");
+  }
+' || fail=1
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 

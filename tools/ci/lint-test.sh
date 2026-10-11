@@ -321,6 +321,49 @@ else
   git reset -q --hard HEAD~1
 fi
 
+# Cases (g3)-(g6): the rules are judged as blocks, in order (GitLab takes the
+# first workflow rule that matches). Each edit leaves every line of the old
+# checks in the file, so only a block-and-order check catches it. rule_case
+# <label> <named> <js>: <js> edits the string y (the file) and must change it.
+rule_case() {
+  Y="$(cat .gitlab-ci.yml)" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    new Function("y", "return y")(y);
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml: .*$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming .gitlab-ci.yml: $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# (g3) the docs/import rule moved below the general merge-request rule
+rule_case "the docs/import rule after the general merge-request rule" "comes after the general merge-request rule" '
+  const m = y.match(/    - if: \$CI_PIPELINE_SOURCE == "merge_request_event" && \$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n/);
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(m[0], "").replace(g, g + m[0]);'
+# (g4) its override moved to another rule: every old line is still in the file
+rule_case "the docs/import rule's override moved to the general merge-request rule" "docs/import- merge-request rule does not set" '
+  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const d = "=~ /^docs\\/import-/\n";
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(d + o, d).replace(g, g + o);'
+# (g5) the docs/import rule turned off
+rule_case "the docs/import rule with when: never" "docs/import- merge-request rule does not set" '
+  y = y.replace("=~ /^docs\\/import-/\n      variables:", "=~ /^docs\\/import-/\n      when: never\n      variables:");'
+# (g6) the bot-author rule moved below the closing rule
+rule_case "the bot-author rule after the general branch rule" "bot-author rule comes after" '
+  const b = "    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const c = "    - if: $CI_COMMIT_BRANCH\n";
+  y = y.replace(b, "").replace(c, c + b);'
+
 # Case (h): the committed tree as it is -> the lint passes and has a heading
 # for the section, a "==" line naming both "import" and "dependency proxy".
 lint_to_out
