@@ -43,9 +43,13 @@ echo "node ${ORBIT_SITE_IMPORT_TOKEN+SET}${ORBIT_SITE_IMPORT_TOKEN-UNSET} $*" >>
 grep -rl not-a-real-token-test-only "$TMPDIR" >> "$HITS" 2>/dev/null || true
 exit 0
 SHIM
-# A stray network call fails loudly instead of leaving the machine.
+# The two listings the script makes read-only answer with an empty list; any
+# other call fails loudly instead of leaving the machine.
 cat > bin/curl <<'SHIM'
 #!/bin/sh
+case "$*" in
+  *"-X GET"*"/merge_requests?"*|*"-X GET"*"/repository/branches?"*) echo '[]'; exit 0 ;;
+esac
 echo "curl called: $*" >&2
 exit 22
 SHIM
@@ -239,6 +243,9 @@ code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
     if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi ;;
+  "GET /repository/branches") code=200; body='[]'
+    if [ -n "$STALE" ]; then body='[{"name":"docs/import-20260101-0000"},{"name":"docs/import-20260102-0000"},{"name":"docs/import-20260103-0000"},{"name":"docs/importer"},{"name":"main"}]'; fi ;;
+  "DELETE /repository/branches/docs%2Fimport-20260103-0000"|"DELETE /repository/branches/docs%2Fimport-20260102-0000") code=204; body= ;;
   "PUT /merge_requests/7") code=200; body='{"iid":7,"state":"closed"}' ;;
   "DELETE /repository/branches/docs%2Fimport-20260101-0000") code=204; body= ;;
   "POST /merge_requests") code=201; body='{"iid":42}' ;;
@@ -256,6 +263,7 @@ case "$method $route" in
   *) note=" UNEXPECTED" ;;
 esac
 echo "$method $route$data$note" >> "$STATE/api.log"
+echo "api $method $route" >> "$STATE/git.log"
 if [ -n "$ismerge" ]; then # one line per merge PUT: header ok?, timeout flags, sha sent
   query=; case $path in *\?*) query=${path#*\?} ;; esac
   sha=$(printf '%s|%s' "$data" "$query" | tr '|&' '\n\n' | sed -n 's/^sha=//p' | head -n 1)
@@ -303,7 +311,7 @@ run_push() { # run_push <outfile> <scenario: refused | second | conn>
   env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
-    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" \
     GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
     sh tools/ci/nightly-import.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
@@ -466,6 +474,27 @@ rc=0; ! grep -q -e '^POST /merge_requests' -e 'import-20260102' "$aux/api.log" |
 check "run 10: no new merge request is opened, and the fork's is left alone" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 oldmr=
+
+# Run 11: branches an earlier run left behind. !7 (open) keeps its branch; the
+# branch of a fork's merge request (!8) does not count; another name and main
+# are not import branches. The clean-up comes before the import.
+oldmr=1; stale=1
+run_push "$out" second
+rc11=$rc
+rc=0; [ "$rc11" -eq 0 ] || rc=1
+check "run 11: with stale branches about, the job exits 0 (exit $rc11)" "$rc"
+rc=0; grep -q '^DELETE /repository/branches/docs%2Fimport-20260103-0000' "$aux/api.log" \
+  && grep -q '^DELETE /repository/branches/docs%2Fimport-20260102-0000' "$aux/api.log" || rc=1
+check "run 11: import branches with no open merge request of this project are deleted" "$rc"
+n_stale=$(grep -n '^api DELETE /repository/branches/docs%2Fimport-20260103' "$aux/git.log" | head -n 1 | cut -d: -f1)
+n_import=$(grep -n '^import$' "$aux/git.log" | head -n 1 | cut -d: -f1)
+rc=0; [ -n "$n_stale" ] && [ -n "$n_import" ] && [ "$n_stale" -lt "$n_import" ] || rc=1
+check "run 11: they are deleted at the start, before the import" "$rc"
+rc=0; [ "$(grep -c '^DELETE /repository/branches/docs%2Fimport-20260101' "$aux/api.log")" -eq 1 ] \
+  && ! grep -q -e 'branches/main' -e 'branches/docs%2Fimporter' "$aux/api.log" || rc=1
+check "run 11: the branch of an open merge request is kept until that merge request is closed, and others are not touched" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+oldmr=; stale=
 
 rm -f "$out"
 exit "$failed"

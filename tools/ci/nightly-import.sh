@@ -56,14 +56,17 @@ cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "
 # every value git would read for the checkout, with the file each came from
 # (includes followed): the same before and after the import, or it tampered
 gitcfg() { cgit config --list --show-origin; }
+# The API answer is parsed only after the call has returned and the header file
+# is gone, so node never runs while the token is on disk.
+apij() { js=$1; shift; ans=$(api "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
 # Older import merge requests still open, as "iid branch" lines. Only a merge
 # request whose source and target are both this project and whose branch is
 # named like an import's is ever matched, so a fork's is never touched (#12).
 older_mrs() {
-  api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
-    | json 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)'
+  apij 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)' \
+    GET "/merge_requests?state=opened&target_branch=main&per_page=100"
 }
 # Close every older import merge request but !$1 and delete its branch (closing
 # leaves the branch behind, #12); $2 says what replaces them. Under DRY_RUN
@@ -77,12 +80,34 @@ close_older() {
     echo "   closing !$oiid and its branch $ref (superseded by $by)"
     [ -z "$DRY_RUN" ] || continue
     if api PUT "/merge_requests/$oiid" --data-urlencode "state_event=close" >/dev/null; then
-      api DELETE "/repository/branches/$(printf '%s' "$ref" | sed 's|/|%2F|g')" >/dev/null || echo "   (could not delete $ref)"
+      delete_branch "$ref" || echo "   (could not delete $ref)"
     else
       echo "   (could not close !$oiid)"
     fi
   done
 }
+
+# A run that failed after pushing leaves a docs/import-* branch with no merge
+# request. Delete those at the start of the next run (#12). A branch is kept
+# if any open merge request of this project has it as its source. If there are
+# 100 open merge requests, not all are seen, so nothing is deleted.
+delete_branch() { api DELETE "/repository/branches/$(printf '%s' "$1" | sed 's|/|%2F|g')" >/dev/null; }
+clean_stale_branches() {
+  open=$(apij 'console.log(j.length); for (const m of j) if (m.source_project_id === m.target_project_id) console.log(m.source_branch)' \
+    GET "/merge_requests?state=opened&per_page=100") || return 1
+  [ "$(printf '%s\n' "$open" | head -n 1)" -lt 100 ] || { echo "   (100 open merge requests: too many to tell which branches are unused; none deleted)"; return 0; }
+  found=$(apij 'for (const b of j) if (/^docs\/import-[0-9-]+$/.test(b.name)) console.log(b.name)' \
+    GET "/repository/branches?search=%5Edocs%2Fimport-&per_page=100") || return 1
+  printf '%s\n' "$found" | while read -r b; do
+    [ -n "$b" ] || continue
+    printf '%s\n' "$open" | grep -qx -e "$b" && continue
+    echo "   deleting $b: no open merge request has it"
+    [ -z "$DRY_RUN" ] || continue
+    delete_branch "$b" || echo "   (could not delete $b)"
+  done
+}
+echo "== import branches left by an earlier run"
+clean_stale_branches || echo "   (could not check; the next run will)"
 
 echo "== import"
 gitcfg > "$scratch/gitcfg.before"
@@ -142,12 +167,11 @@ nogit -C "$scratch/repo" -c "credential.helper=store --file=$cred" \
 rm -f "$cred"
 
 echo "== merge request"
-iid=$(api POST "/merge_requests" \
+iid=$(apij 'console.log(j.iid)' POST "/merge_requests" \
   --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
   --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
   --data-urlencode "remove_source_branch=true" \
-  --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass." \
-  | json 'console.log(j.iid)')
+  --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass.")
 echo "   !$iid"
 
 # Only now, with the new merge request open, are the older ones closed: a push
