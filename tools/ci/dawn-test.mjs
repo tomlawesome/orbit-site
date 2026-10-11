@@ -22,6 +22,14 @@
  * alone does reach "ready" and a resize rebuilds it ("pending", then "ready" again). And with light() called twice,
  * destroy() soon after the second call leaves no body.loading, no body.lit, no onLit and no onOpen from either light.
  *
+ * Also (#32), the dawn's pictures are decoded before the light: a browser decodes a picture only when first drawn, so the
+ * glow pictures (the SVG <image> elements in #door .world) and the Earth's, invisible until body.lit fades them in, were
+ * decoded right after the light, stalling the page. The door must ask each to be decoded ahead, with
+ * HTMLImageElement.prototype.decode() on an image of the same address. Recorded from an init script: every decode() call
+ * (the image's src, absolute, and performance.now()) and when body first has class lit. Read 3 s after the light: every
+ * #door .world image's address (href, else xlink:href), absolute. At least 3 exist, and each had a decode() call on the
+ * same address before body.lit. The light is the 13 s backstop's (lightIt with an after() that never settles).
+ *
  * (sh tools/ci/journey-local.sh dawn does exactly that.) BROWSER=chromium for a second engine; HEADED=1 as the other
  * live tests: Firefox has no WebGL headless here. The whole run takes about a minute: the light cases wait out the
  * backstop in real time.
@@ -73,8 +81,9 @@ try {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
 
   /* each scenario on a fresh page, so no dawn inherits another's state */
-  const open = async () => {
+  const open = async (init) => {
     const page = await ctx.newPage();
+    if (init) await page.addInitScript(init);
     const problems = [];
     page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
     await page.goto(`${SITE}tests/dawn.html`, { waitUntil: "load" });
@@ -167,7 +176,55 @@ try {
     } finally { await page.close(); }
   };
 
+  /* #32: recorded before the page loads: every decode() call (absolute src, performance.now()) and when body first has lit */
+  const recordDecodes = () => {
+    window.__decodes = [];
+    window.__litAt = null;
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      try { window.__decodes.push({ url: new URL(this.src || this.currentSrc || "", document.baseURI).href, at: performance.now() }); } catch {}
+      return decode.apply(this, arguments);
+    };
+    const check = () => { if (window.__litAt === null && document.body && document.body.classList.contains("lit")) window.__litAt = performance.now(); };
+    new MutationObserver(check).observe(document, { attributes: true, subtree: true, attributeFilter: ["class"] });
+    check();
+  };
+  const LIT_WITHIN = 25000;
+  const AFTER_LIT = 3000;
+  const decodedAhead = async () => {
+    const { page, problems } = await open(recordDecodes);
+    try {
+      page.evaluate(() => window.lightIt(null, 0)).catch(() => {});
+      let waited = null;
+      try { await page.waitForFunction(() => window.__litAt !== null, null, { timeout: LIT_WITHIN, polling: 50 }); }
+      catch { waited = `body never had class lit within ${LIT_WITHIN} ms`; }
+      await new Promise((ok) => setTimeout(ok, AFTER_LIT));
+      const seen = await page.evaluate(() => {
+        const abs = (u) => new URL(u, document.baseURI).href;
+        const pictures = [];
+        for (const el of document.querySelectorAll("#door .world image")) {
+          const u = el.getAttribute("href") || el.getAttribute("xlink:href");
+          if (u) pictures.push(abs(u));
+        }
+        return { pictures, decodes: window.__decodes, litAt: window.__litAt };
+      });
+      const early = (url) => seen.decodes.some((d) => d.url === url && seen.litAt !== null && d.at < seen.litAt);
+      const late = (url) => seen.decodes.filter((d) => d.url === url && (seen.litAt === null || d.at >= seen.litAt)).map((d) => Math.round(d.at - seen.litAt));
+      const missing = [...new Set(seen.pictures)].filter((u) => !early(u))
+        .map((u) => ({ url: u.replace(/^.*\/assets\//, "assets/"), decodedAfterLight: late(u) }));
+      return { r: { ...seen, missing, waited, thrown: null, errors: [] }, problems };
+    } finally { await page.close(); }
+  };
+
   const scenarios = [
+    ["the dawn's pictures are decoded before the light (#32)", () => decodedAhead(), (r) => [
+      ["body.lit came", r.litAt !== null],
+      ["at least 3 pictures are in #door .world", r.pictures.length >= 3],
+      ["every picture had a decode() call before body.lit", r.missing.length === 0],
+    ], (r) => r.missing.length
+      ? `${r.pictures.length} pictures, ${r.decodes.length} decode() calls, lit at ${r.litAt === null ? "never" : Math.round(r.litAt)} ms; no decode before the light: ${r.missing.map((m) => `${m.url} (${m.decodedAfterLight.length ? `decoded at ${m.decodedAfterLight.map((t) => `+${t}`).join(", ")} ms after the light` : "never decoded"})`).join("; ")}`
+      : `${r.pictures.length} pictures, all decoded before the light (${r.decodes.length} decode() calls; lit at ${Math.round(r.litAt)} ms)`],
+
     ["light, no destroy() (control): the backstop lights it by 15 s", () => light(null, CONTROL_WATCH), (r) => [
       ["body.lit is set by 15 s", r.lit && r.at.lit !== undefined],
       ["onLit was called", r.at.onLit !== undefined],
