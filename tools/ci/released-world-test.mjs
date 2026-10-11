@@ -182,7 +182,7 @@ if (process.argv[2] === "--child") {
   let release; const gate = new Promise((r) => { release = r; });
   globalThis.fetch = () => gate.then(() => ({ ok: true, blob: async () => ({ size: 1 }) }));
   const said = [];
-  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (name !== "t8") swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link says so */
+  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (!(name === "t8" && a.length === 1 && a[0] instanceof Error)) swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link warns of that one error and says so; any other warning there is a fault too */
   console.error = (...a) => { swallowed.push("console.error: " + a.join(" ").slice(0, 160)); };
   process.on("uncaughtException", (e) => swallowed.push("uncaught: " + (e && e.message))); process.on("unhandledRejection", (e) => swallowed.push("unhandled rejection: " + (e && e.message)));
 
@@ -287,6 +287,7 @@ const run = (name) => {
   return JSON.parse(line.slice(7));
 };
 const show = (live) => (live ? KINDS.map((k) => `${k} ${live[k]}`).join(", ") : "no counts");
+const linkSaid = (r) => (r.said || []).some((x) => /shaders would not link/.test(x));
 const check = (label, r, ok, want, extra = "") => {
   const pass = !r.error && !r.swallowed?.length && ok(r);
   const seen = r.error ? r.error : `live ${show(r.live)}; faults ${r.nfaults}${r.faults?.length ? ` (${r.faults.join("; ")})` : ""}${r.others?.length ? `; other contexts (not judged): ${r.others.map(show).join(" | ")}` : ""}${extra}${r.threw ? `; threw ${r.threw}` : ""}${r.swallowed?.length ? `; SWALLOWED (a harness gap or a hidden fault): ${r.swallowed.join(" | ")}` : ""}`;
@@ -342,8 +343,9 @@ for (const [label, name] of [["T7 released mid-upload: destroy at the first chor
 {
   const r = run("t8");
   check("T8 a world whose shaders do not link: warm, quiet, destroy", r,
-    (r) => none(r) && r.loseCalls === 0 && r.isContextLost === false, "every kind 0, no fault, loseContext never called, context not lost",
-    `; live at quiet before destroy: ${show(r.liveQuiet)} (not judged); warm ${r.warmed}; loseContext calls ${r.loseCalls}, isContextLost ${r.isContextLost}`);
+    (r) => none(r) && r.loseCalls === 0 && r.isContextLost === false && linkSaid(r),
+    "the page says its shaders would not link; every kind 0, no fault, loseContext never called, context not lost",
+    `; said it would not link: ${linkSaid(r)}; live at quiet before destroy: ${show(r.liveQuiet)} (not judged); warm ${r.warmed}; loseContext calls ${r.loseCalls}, isContextLost ${r.isContextLost}`);
 }
 {
   const r = run("t9");
