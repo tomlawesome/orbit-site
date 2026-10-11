@@ -28,8 +28,8 @@
  *   T9 stopped in the gap  destroy once a picture has its last band in and not its mipmaps: no fault (no bind of a
  *                          released handle), nothing live, no mipmap or texParameter call afterwards on a texture the
  *                          stopped world did not make
- *   T10 the live-door flags  door3d, level 2, rich: the world is built (T1's counts at least) and given back; the page's
- *                          probe fails under this fake, so a richer world than T1's is not reached (see the comment at T10)
+ *   T10 a rich world       the flags that make the live door rich (door3d, level 2, rich) make the flight's rich Earth: at
+ *                          least two textures more than T1's (the programs are T1's); all given back on destroy
  *   Every case also fails if the page swallows anything while the world is made: a warning, an error, an unhandled
  *   rejection, or a read of a document member the fake page lacks (so a gap in this fake cannot hide).
  *
@@ -59,7 +59,7 @@ if (process.argv[2] === "--child") {
   const makeGl = (made) => {
   const boundTex = {}, boundBuf = {};
   const glBase = {
-    RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01, LINK_STATUS: 0x8b82, COMPILE_STATUS: 0x8b81,
+    RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01, NO_ERROR: 0, LINK_STATUS: 0x8b82, COMPILE_STATUS: 0x8b81,
     TEXTURE_2D: TEX2D, TEXTURE_3D: 0x806f, TEXTURE_2D_ARRAY: 0x8c1a, TEXTURE_CUBE_MAP: 0x8513,
     isContextLost: () => lost,
     getError: () => 0,
@@ -162,6 +162,8 @@ if (process.argv[2] === "--child") {
     createElement: () => mkCanvas(), createTextNode: () => any(),
   }, { get: (t, k) => { if (typeof k === "string" && !(k in t) && k !== "then") swallowed.push(`document.${k} is not in the fake page`); return t[k]; } });
   globalThis.window = globalThis;
+  globalThis.devicePixelRatio = 1; globalThis.screen = { width: 1280, height: 800 };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
   globalThis.innerWidth = 1280; globalThis.innerHeight = 800;
   globalThis.addEventListener = () => {}; globalThis.removeEventListener = () => {};
   globalThis.requestAnimationFrame = (f) => setTimeout(f, 2);
@@ -351,13 +353,14 @@ for (const [label, name] of [["T7 released mid-upload: destroy at the first chor
     `; pictures in the gap at destroy ${r.pendingAtDestroy}; mipmap/texParameter calls after destroy ${r.lateTexCalls}, on a foreign texture ${r.nforeign}${r.foreign?.length ? " (" + r.foreign.join(", ") + ")" : ""}${ev(r) ? "; " + ev(r) : ""}`);
 }
 {
-  /* The aim was a rich flight world (CAPABILITIES.md: door3d, level 2, rich) with more programs and textures than T1's. Under
-     this fake the live-door probe those flags start still ends "probe: failed" (the console line says no more), so the page
-     falls to level 0 and builds the same world as T1; the "more than T1" control cannot be made, and is not claimed. What is
-     judged is that, with the flags set, the world is built (T1's counts, printed) and given back whole. */
-  const r = run("t10");
-  check("T10 the live-door flags (door3d, level 2, rich): built as T1's, then given back", r,
-    (r) => none(r) && !!t1.liveBefore && KINDS.every((k) => r.liveBefore[k] >= t1.liveBefore[k]), `at quiet before destroy at least T1's counts (${show(t1.liveBefore)}), then every kind 0, no fault`,
-    `; at quiet before destroy: ${show(r.liveBefore)}; the page said: ${(r.said || []).slice(0, 2).join(" / ")}`);
+  /* The flags make the live door rich (CAPABILITIES.md: door3d, level 2, rich). The rich Earth replaces the lean one in the
+     same program count (the cloud field and glow are folded into it), so the programs are T1's and the extra is textures
+     (the cloud fields, the city glow): at least two more. The page must also have said it chose the rich weight. */
+  const r = run("t10"), b = t1.liveBefore, l = r.liveBefore;
+  const rich = (r.said || []).some((x) => /level 2: live rich/.test(x)) && (r.said || []).some((x) => /weight rich/.test(x));
+  check("T10 a rich world (door3d, level 2, rich): built richer than T1's, then given back", r,
+    (r) => none(r) && !!b && !!l && rich && l.program >= b.program && l.texture >= b.texture + 2,
+    `the page says level 2 and weight rich; at quiet before destroy programs >= ${b?.program} and textures >= ${b?.texture + 2} (T1's ${show(b)}; programs the same, textures plus 2), then every kind 0, no fault`,
+    `; at quiet before destroy: ${show(l)}; chose rich: ${rich}`);
 }
 process.exit(failed ? 1 : 0);
