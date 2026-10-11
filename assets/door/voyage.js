@@ -1249,16 +1249,29 @@ export function createVoyage(under) {
       /* drawn without it. Whatever it had put on the GPU is let go (upload.js deletes the texture of an upload that
          failed, so the map is forgotten here, and given back if the world has stopped), and the key is remembered for
          the one retry (warm) */
-      landing.delete(key);
+      landing.delete(key); mipped.delete(key);
       if (maps[key]) { giveBack("Texture", maps[key]); delete maps[key]; delete dims[key]; }
       if (!gone) failed.add(key);
     });
   let unhide = null;
-  const whenVisible = () => (!document.hidden ? undefined : new Promise((resolve) => {
-    const on = () => { if (document.hidden) return; unhide(); resolve(); };
-    unhide = () => { document.removeEventListener("visibilitychange", on); unhide = null; };
+  /* resolves when the tab is shown, or at once if it is, or if the world has stopped (stop() ends a wait; no listener is
+     left registered either way) */
+  const whenVisible = () => (!document.hidden || gone ? undefined : new Promise((resolve) => {
+    const on = () => { if (!document.hidden) done(); };
+    const done = () => { document.removeEventListener("visibilitychange", on); unhide = null; resolve(); };
+    unhide = done;
     document.addEventListener("visibilitychange", on);
   }));
+  /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed
+     frames (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and asks again */
+  const fitWhenShown = async () => {
+    for (;;) {
+      await whenVisible();
+      if (gone) return { fit: false, ms: Infinity };
+      const verdict = await chore(() => (document.hidden ? null : fitness()), 60, "flight");
+      if (verdict) return verdict;
+    }
+  };
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
      back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
@@ -1274,9 +1287,9 @@ export function createVoyage(under) {
     if (loading && allIn && !retried && !gone && [...failed].some((k) => k !== "lightsS")) {
       retried = true;
       const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
-      const retry = loaded.then(() => Promise.all(again.map(load)));
-      loaded = retry;
-      loading = loading.then(() => retry).then(() => P.overRich && !glowT && chore(richMaps, 60, "flight")).then(() => {});
+      /* beside the proof, never in front of it: a download that hangs must not hold the verdict back. Whatever lands is
+         used from then on, and the cities' glow made if it was waiting for the lights map */
+      Promise.all(again.map(load)).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
     }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
@@ -1306,7 +1319,7 @@ export function createVoyage(under) {
         /* and whether this machine can draw it at all (Orbit's #1253): whole frames, the median judged. A world that
            cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
-        .then(() => chore(() => fitness(), 60, "flight"))
+        .then(fitWhenShown)
         .then(({ fit: fits, ms, skipped }) => {
           if (gone) return;
           fit = fits;
