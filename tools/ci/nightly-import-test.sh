@@ -491,7 +491,7 @@ pin_run() {
   dir=$1; shift
   : > "$aux/api.log"; : > "$aux/tok.log"
   rc=0
-  ( cd "$dir" && env -i PATH="$pbin:$PATH" HOME="$aux" TMPDIR="$tmp/scratch-tmp" STATE="$aux" SCENARIO=none \
+  ( cd "$dir" && env -i PATH="$pbin:$PATH" REAL_GIT="$realgit" REAL_NODE="$realnode" HOME="$aux" TMPDIR="$tmp/scratch-tmp" STATE="$aux" SCENARIO=none \
       FAKE="$fake" FAKE_JOB="$fakejob" \
       ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
