@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="../assets/door/door.css" />
+</head>
+<body class="at-door">
+  <!-- Driven by tools/ci/pin-test.mjs (#23): a door and a journey made through assets/door/index.js alone, as a host
+       makes them. window.pin(mode, at) starts a journey, "fly" or "descend", pinned at `at` ms (or not pinned: at left
+       out), and answers with when each hook fired and each body class first showed, in ms from the call. It watches
+       for `watch` ms (default 2500). Nothing else on the page flies. -->
+  <div id="stage"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div id="launchname" aria-hidden="true"></div>
+  <script type="module">
+    import { createDoor, dawnMarkup, duskMarkup, UP } from "../assets/door/index.js";
+
+    const image = (path) => `../assets/door/img/${path}`;
+    const door = createDoor({ image, flags: {} });
+    document.getElementById("stage").innerHTML = dawnMarkup({ image }) + duskMarkup({ image });
+    /* the lockups' glyphs, as the host's functions return them: an SVG element each */
+    const glyph = () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 10 10");
+      svg.setAttribute("width", "10");
+      svg.setAttribute("height", "10");
+      return svg;
+    };
+    door.dawn(document.querySelector("#door"));
+    door.dusk(document.querySelector("#dusk"));
+    const journey = door.journey({
+      canvas: document.getElementById("warp"), name: document.getElementById("launchname"),
+      dawnGlyph: glyph, duskGlyph: glyph,
+      on: { dusk() { document.querySelector("#dusk").hidden = false; }, farewell() {} },
+    });
+    const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
+
+    window.pin = async (mode, at, watch = 2500) => {
+      const t0 = performance.now();
+      const ms = () => Math.round(performance.now() - t0);
+      const hooks = {}, classes = {};
+      const note = (name) => () => { hooks[name] ??= ms(); };
+      const look = () => { for (const c of CLASSES) if (document.body.classList.contains(c)) classes[c] ??= ms(); };
+      const given = typeof at === "number" ? { at } : {};
+      const names = mode === "fly" ? ["release", "land", "settled"] : ["released", "surface", "farewell"];
+      const on = Object.fromEntries(names.map((n) => [n, note(n)]));
+      const watcher = setInterval(look, 20);
+      let error = null;
+      try {
+        if (mode === "fly") journey.fly(UP, { ...given, title: "Test", subtitle: "pin", on });
+        else journey.descend({ ...given, title: "Test", subtitle: "pin", onto: "dusk", from: UP, on });
+      } catch (e) { error = String(e && e.message || e); }
+      look();
+      await new Promise((ok) => setTimeout(ok, watch));
+      look();
+      clearInterval(watcher);
+      const now = CLASSES.filter((c) => document.body.classList.contains(c));
+      const reduced = typeof journey.reduced === "function" ? journey.reduced() : journey.reduced;
+      journey.reset();
+      return { mode, at: at ?? null, hooks, classes, now, reduced, error };
+    };
+    window.pinReady = true;
+  </script>
+</body>
+</html>

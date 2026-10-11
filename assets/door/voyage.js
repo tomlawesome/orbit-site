@@ -23,6 +23,7 @@ import { chore, fetchOnce, note, linked, counted, compilesAside } from "./chores
 import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
+import { frameCost, gpu, sayVerdict } from "./fitness.js";
 
 /* the pictures, where the host says they are (settings.js: image), resolved once they are first wanted, never at load */
 let textures = null;
@@ -89,7 +90,9 @@ function sharpen() {
     .finally(() => { sharp.busy = false; sharpen(); });
 }
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
-export function fetchVoyage() { for (const url of Object.values(pictures())) fetchOnce(url).catch(() => {}); }
+/* (only where the page may use the GPU at all, fitness.js: gpu(), asked here if not yet; a refused page draws without the
+   world and fetches none of its pictures) */
+export function fetchVoyage() { if (!gpu()) return; for (const url of Object.values(pictures())) fetchOnce(url).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 export const EURO = [2, 24, 38, 55];
 /* the near maps (lights, clouds, land) cover lon -25..45, lat 28..66: all the door's ground can turn to in a while */
@@ -1024,14 +1027,29 @@ export function doorCamera(sunUnder = SUN_UNDER) {
   return { B: [...R, ...H, ...mul(Z, -1)], S, D0 };
 }
 
+/* The flight's world, built on the page's one context (fitness.js: gpu(), the GPU gate), never a second one made here;
+   null where the page may not use the GPU, or the context has no float colour buffers. Its canvas (#warpgl) is the
+   gate's own, put under the flight's. The one world a page has: a second call would build on the same canvas */
 export function createVoyage(under) {
   if (typeof document === "undefined" || !under?.parentNode) return null;
-  const canvas = document.createElement("canvas");
+  const g = gpu();
+  if (!g || g.gl.isContextLost()) return null;
+  if (!g.gl.getExtension("EXT_color_buffer_float")) { sayVerdict("off: no float colour buffers (EXT_color_buffer_float)"); return null; }
+  const { canvas, gl } = g;
   canvas.id = "warpgl"; canvas.setAttribute("aria-hidden", "true");
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, powerPreference: "high-performance" });
-  if (!gl || !gl.getExtension("EXT_color_buffer_float")) return null;
   gl.getExtension("OES_texture_float_linear");
   under.parentNode.insertBefore(canvas, under);
+  /* dead: it can no longer be drawn (a lost context, shaders that would not link, a machine too slow for it); ready: it
+     has been proved fit and may be drawn (warm); the flight draws on its own canvas without it */
+  let ok = false, dead = false, ready = false, fit = false;
+  /* gone: its journey was taken down (stop): it draws nothing more, judges nothing and never retires the context,
+     which is the page's one and may already be a later journey's world */
+  let gone = false;
+  /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
+     fitness test's, said when the test has ended and the world was still there to be judged) */
+  let offSaid = false, madeOk = false;
+  const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
+  canvas.addEventListener("webglcontextlost", () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); });
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile): asked for here,
      and only looked at once they are done (made, below), so making them never holds the page up */
@@ -1060,13 +1078,13 @@ export function createVoyage(under) {
   const P = { scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null };
   const compiled = (list) => new Promise((resolve) => {
     if (!par) { resolve(); return; }
-    const poll = () => (list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
+    const poll = () => (dead || list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
     poll();
   });
-  let ok = false, dead = false;
   const core = Object.values(P).filter(Boolean);
   const made = compiled(core).then(() => {
-    try { core.forEach(finish); ok = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); }
+    if (dead) return false;
+    try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
     if (ok && richOnly) P.overRich = P.over;
     if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
@@ -1079,10 +1097,12 @@ export function createVoyage(under) {
      first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
   const makeGal = () => {
+    if (gone) return galMade ?? Promise.resolve();   /* (stopped: no galaxy compiled for a journey taken down) */
     if (!galMade) {
       const g0 = performance.now();
       const G = { gal: program(GAL, vs, "galaxy"), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV), "galaxy") };
       galMade = compiled(Object.values(G)).then(() => {
+        if (dead) return;   /* (the world was let go while it compiled: nothing to link on) */
         try {
           Object.values(G).forEach(finish); Object.assign(P, G); galOK = true;
           note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms${counted("galaxy")}`);
@@ -1129,8 +1149,8 @@ export function createVoyage(under) {
     : () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
   richMake = () => richMade || (richMade = made.then((good) => {
     if (!good || weight === "lean") return false;
-    warm();
-    if (richOnly) return warming.then(() => richOK);
+    warm({ prove: false });
+    if (richOnly) return loading.then(() => richOK);
     return richProgram("door").then((p) => p && loaded.then(() => chore(richMaps, 60, "door")));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
   richWaiting.splice(0).forEach((go) => go());
@@ -1175,21 +1195,26 @@ export function createVoyage(under) {
   const load = (key) => fetchOnce(pictures()[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => {
+      if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       const wh = [bm.width, bm.height];
       return uploadBanded(gl, bm, { tag: "flight", name: key, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
     .then(() => {
+      if (gone) return;
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
     }).catch(() => { /* drawn without it */ });
-  /* the maps, the warm-up and the measure, asked for once (main.js asks while the door is quiet); `ready` says when */
-  let warming = null, warmingDocs = null, loaded = null;
-  const warmDocs = () => { warm(); return warmingDocs; };
-  function warm() {
-    if (!warming) {
-      const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
-        progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
+  /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
+     programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
+     back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
+     measure wait for the first call that proves: the host's leisure warm-up after the door is lit, or a flight up that comes
+     first (owner decision 12d). Resolves when done */
+  let loading = null, warming = null, docsLoading = null, warmingDocs = null, loaded = null;
+  const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
+    progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
+  function warm({ prove = true } = {}) {
+    if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
          device's own after everything (sharpStrip) */
       if (live) stripS = sharpStrip();
@@ -1198,22 +1223,48 @@ export function createVoyage(under) {
       });
       loaded = Promise.all([...["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
         .then(() => { allIn = true; });
-      warming = Promise.all([made, loaded])
+      loading = Promise.all([made, loaded])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
         .then(() => richOnly && chore(richMaps, 60, "flight"))
-        .then(() => chore(() => { try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
+        .then(() => chore(() => { if (gone) return; try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
+        .then(() => {});
+    }
+    if (!prove) return loading;
+    if (!warming) {
+      warming = loading
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
         .then(() => chore(() => touch(ST()), 60, "flight"))
-        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"));
-      /* the docs' galaxy after it, the docs' own (warmDocs): the flight is ready before it */
-      warmingDocs = warming
-        .then(() => galaxy)
-        .then(() => chore(() => { if (galOK) touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }); }, 60, "docs"));
+        .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"))
+        /* and whether this machine can draw it at all (Orbit's #1253): whole frames, the median judged. A world that
+           cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
+           length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
+        .then(() => chore(() => fitness(), 60, "flight"))
+        .then(({ fit: fits, ms }) => {
+          if (gone) return;
+          fit = fits;
+          ready = ok && !dead && fit;
+          /* one verdict: a world that was lost or never made says so (above), not that it was too slow or fit */
+          if (dead) sayOff("the world is gone");
+          else if (fit) sayVerdict(`on (frame ${Math.round(ms)} ms)`);
+          else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
+          note(`flight: world ${ready ? "proved" : dead ? (madeOk ? "lost" : "not made") : "too slow here, drawn without it"}`);
+          if (ok && !fit) retire();
+        });
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
       warming.then(() => chore(calibrate, 200, "measure"));
     }
     return warming;
+  }
+  /* the docs' galaxy after it, the docs' own: the flight is ready before it. The speculative ask has its shaders and
+     stars made; the proving one draws it once, unseen */
+  function warmDocs({ prove = true } = {}) {
+    warm({ prove });
+    docsLoading ??= loading.then(() => galaxy).then(() => {});
+    if (!prove) return docsLoading;
+    warmingDocs ??= Promise.all([warming, docsLoading])
+      .then(() => chore(() => { if (galOK && ready) touch({ ...ST(), tu: 3000, galaxy3d: galaxyAt([0.8, 0.08, 0.38]), cstars: [[W / 2, H / 2, 2, 1, 1, 1, 1]] }); }, 60, "docs"));
+    return warmingDocs;
   }
   /* a camera in the docs' galaxy, looking at its core */
   function galaxyAt(P) {
@@ -1229,10 +1280,30 @@ export function createVoyage(under) {
     try { draw(st); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); } catch { /* fine */ }
     gl.disable(gl.SCISSOR_TEST); lastDraw = 0;
   }
+  /* the fitness test: whole frames at the heaviest point of the flight, at the smallest drawing the measure would ever
+     choose, warmed first and judged on their median (fitness.js: frameCost); fit if that leaves room for about 30
+     frames a second. Returns { fit, ms } (not kept: asked on every visit); warm says the verdict */
+  function fitness() {
+    if (!ok) return { fit: false, ms: Infinity };
+    if (W < 2) resize(innerWidth, innerHeight);
+    const was = part;
+    part = 0.4; CW = 0; resize(W, H);
+    const { fit: fits, ms } = frameCost(gl, () => draw(ST()));
+    part = was; CW = 0; resize(W, H); lastDraw = 0;
+    return { fit: fits, ms };
+  }
+  /* a world too slow for the machine is let go: its canvas out of the page and its context lost, the flight drawn
+     without it from then on */
+  function retire() {
+    if (gone) return;
+    dead = true; ok = false; ready = false;
+    canvas.remove();
+    try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* fine */ }
+  }
   /* then the measure: a few whole frames at the heaviest point of the flight (the nebula, the streaks at full speed),
      timed, and the drawing's size chosen so a frame takes about 11 ms here; the galaxy's own drawing in proportion */
   function calibrate() {
-    if (!ok || document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
+    if (!ok || !fit || document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
     if (W < 2) resize(innerWidth, innerHeight);
     const st = { t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
       progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 };
@@ -1271,6 +1342,7 @@ export function createVoyage(under) {
 
   function resize(w, h) {
     W = w; H = h;
+    if (dead) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     /* the whole frame is moving: drawn at a part of the screen's density, no more than about 1.6 million pixels */
     const px = Math.min(dpr * part, Math.sqrt(1.6e6 / Math.max(1, W * H)));
@@ -1420,5 +1492,7 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, made, galaxy, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  /* its journey taken down: what is still queued finds it dead and does nothing (nor does a link still to come) */
+  function stop() { gone = true; dead = true; ok = false; ready = false; }
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }

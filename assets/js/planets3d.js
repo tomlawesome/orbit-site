@@ -24,7 +24,7 @@
  * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor } from "../door/index.js";
+import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor, gpu } from "../door/index.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -129,7 +129,8 @@ function layersOf(door) {
     const canvas = document.createElement("canvas");
     canvas.className = `planets3d ${side}`;
     canvas.setAttribute("aria-hidden", "true");
-    const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" });
+    /* (only where the door's gate lets the page have the GPU at all) */
+    const gl = gpu() ? canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) : null;
     return gl && { canvas, gl, prog: null, sh: [], u: {}, maps: {}, vao: null, par: gl.getExtension("KHR_parallel_shader_compile") };
   };
   const far = layer("far"), near = layer("near");
