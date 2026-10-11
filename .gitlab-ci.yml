@@ -96,6 +96,10 @@ lint:
     - node tools/ci/destroyed-world-test.mjs
     - node tools/ci/released-world-test.mjs
     - node tools/ci/local-server-test.mjs
+    - node tools/ci/site-world-test.mjs
+    - node tools/ci/site-home-date-test.mjs
+    - node tools/ci/site-lock-test.mjs
+    - node tools/ci/site-pads-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/glow-banding-test.mjs
 
