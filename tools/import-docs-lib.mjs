@@ -29,6 +29,25 @@ const word = (t) => {
 };
 export const plain = (tokens) => words(tokens).replace(/\s+/g, " ").trim();
 
+/* heading ids: GitHub's anchor, then folded to plain letters and digits: an id
+   is a route and an attribute the pad trusts (tools/ci/docs-shape.mjs), so it
+   can carry nothing else; the repository's own links are folded the same way
+   in resolveLink, so they still land. Known limits: "Über" and "Uber" in one
+   page both fold to "uber", so a link to the second lands on the first; and a
+   fragment GitHub never made ("#Quick-Start") now works where GitHub's would
+   not. May return "". */
+export const slugOf = (text) => text.toLowerCase().trim().replace(/<[^>]+>/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "")
+  .replace(/\s+/g, "-").normalize("NFKD").replace(/[^a-z0-9-]/g, "");
+/* each heading of one page its id: never empty, a repeat numbered */
+export function slugger() {
+  const seen = new Map();
+  return (text) => {
+    const s = slugOf(text) || "section";
+    const n = seen.get(s) ?? 0; seen.set(s, n + 1);
+    return n ? `${s}-${n}` : s;
+  };
+}
+
 /* a link inside a source: to a heading of its own, to another imported
    source, or out to the repository; an image stays on GitHub's raw host.
    A data: address is not passed on: it is read as the path it looks like,
@@ -37,12 +56,13 @@ export function resolveLink(href, src, bySourcePath, isImage) {
   // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
   if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
   if (/^(https?:|mailto:)/i.test(href)) return href;
-  if (href.startsWith("#")) return `#docs/${src.slug}/${href.slice(1)}`;
+  // a fragment that folds to nothing points at the page itself
+  if (href.startsWith("#")) { const a = slugOf(href.slice(1)); return `#docs/${src.slug}${a ? `/${a}` : ""}`; }
   const [file, anchor] = href.split("#");
   const base = posix.dirname(src.path);
   const target = posix.normalize(posix.join(base, file)).replace(/^\.\//, "");
   const hit = bySourcePath.get(`${src.repo}:${target}`);
-  if (hit && !isImage) return `#docs/${hit.slug}${anchor ? `/${anchor}` : ""}`;
+  if (hit && !isImage) { const a = slugOf(anchor ?? ""); return `#docs/${hit.slug}${a ? `/${a}` : ""}`; }
   return isImage
     ? `https://raw.githubusercontent.com/${src.repo}/main/${target}`
     : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;

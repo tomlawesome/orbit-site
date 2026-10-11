@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
-import { plain, resolveLink, droppedBlockWarning, logSafe } from "./import-docs-lib.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe, slugger } from "./import-docs-lib.mjs";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
 
@@ -37,15 +37,6 @@ async function fetchSource(src) {
   return res.text();
 }
 
-/* heading ids the way GitHub makes them, so the repository's own anchors keep working */
-function slugger() {
-  const seen = new Map();
-  return (text) => {
-    let s = text.toLowerCase().trim().replace(/<[^>]+>/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");
-    const n = seen.get(s) ?? 0; seen.set(s, n + 1);
-    return n ? `${s}-${n}` : s;
-  };
-}
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
