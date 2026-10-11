@@ -1307,13 +1307,13 @@ export function createVoyage(under) {
            cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
         .then(() => chore(() => fitness(), 60, "flight"))
-        .then(({ fit: fits, ms }) => {
+        .then(({ fit: fits, ms, skipped }) => {
           if (gone) return;
           fit = fits;
           ready = ok && !dead && fit;
           /* one verdict: a world that was lost or never made says so (above), not that it was too slow or fit */
           if (dead) sayOff("the world is gone");
-          else if (fit) sayVerdict(`on (frame ${Math.round(ms)} ms)`);
+          else if (fit) sayVerdict(skipped ? "on (fitness skipped)" : `on (frame ${Math.round(ms)} ms)`);
           else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
           note(`flight: world ${ready ? "proved" : dead ? (madeOk ? "lost" : "not made") : "too slow here, drawn without it"}`);
           if (ok && !fit) retire();
@@ -1352,6 +1352,8 @@ export function createVoyage(under) {
      frames a second. Returns { fit, ms } (not kept: asked on every visit); warm says the verdict */
   function fitness() {
     if (!ok) return { fit: false, ms: Infinity };
+    /* the host's flag `fit: "skip" (a tool that draws pictures on software GL): the world is taken as fit, no frame timed */
+    if (flag("fit") === "skip") return { fit: true, ms: 0, skipped: true };
     if (W < 2) resize(innerWidth, innerHeight);
     const was = part;
     part = 0.4; CW = 0; resize(W, H);
