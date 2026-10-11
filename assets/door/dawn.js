@@ -49,13 +49,17 @@ export function mountDawn(host) {
   let earthSettled = Promise.resolve();
   const rasters = mountRasters(world, { sun: SUN }, "dawn", { until: () => earthSettled, drawn: (url, name) => holdRaster(url, name) });
   /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
+  let preSettled = null;
   const loadEarth = () => {
-    const settled = [];
+    const settled = [], pre = world.querySelector(".earth image.pre");
     for (const im of world.querySelectorAll(".earth image[data-href]")) {
-      settled.push(new Promise((done) => {
+      const one = new Promise((done) => {
         im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); done(); }, { once: true });
         im.addEventListener("error", done, { once: true });
-      }));
+      });
+      settled.push(one);
+      /* (remembered from here: a light() that comes after the picture has loaded or failed would miss the event) */
+      if (im === pre) preSettled = one;
       im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
     }
     earthSettled = Promise.all(settled);
@@ -87,6 +91,7 @@ export function mountDawn(host) {
   const critical = () => {
     const pre = world.querySelector(".earth image.pre");
     const earthHere = world.classList.contains("earthy") || !pre ? Promise.resolve()
+      : preSettled ? preSettled
       : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
     return Promise.all([document.fonts?.ready, earthHere]);
   };
