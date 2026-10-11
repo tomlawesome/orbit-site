@@ -66,7 +66,19 @@ export function mountDawn(host) {
   let gone = false;
   const stops = new Set();
   const alive = (fn) => (...a) => { if (!gone) return fn(...a); };
-  const start = () => { if (started || gone) return; started = true; world.dataset.rasterised = "pending"; afterFirstFrame(alive(() => { loadEarth(); rasters.start(); })); };
+  /* its pictures decoded ahead of the light (decode-ahead.js, as the dusk's): the glows and the Earth sit invisible until
+     body.lit fades them in, and a browser decodes a picture only when it is first drawn, so without this they were all
+     decoded in the frames after the light, the page held until they were (a 25-80 ms stall there, #32) */
+  let held = [];
+  const start = () => {
+    if (started || gone) return; started = true; world.dataset.rasterised = "pending";
+    held.push(decodeAhead([...world.querySelectorAll("image[href]")].map((im) => im.getAttribute("href"))));
+    afterFirstFrame(alive(() => {
+      const hrefs = [...world.querySelectorAll(".earth image[data-href]")].map((im) => im.dataset.href);
+      loadEarth(); rasters.start();
+      held.push(decodeAhead(hrefs));
+    }));
+  };
   /* the pieces the door is made of, which would change its face as they arrived: the fonts, and the Earth's first picture */
   const critical = () => {
     const pre = world.querySelector(".earth image.pre");
@@ -149,8 +161,8 @@ export function mountDawn(host) {
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); };
-  return { host, world, start, light, live, destroy };
+  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); held = []; };
+  return { host, world, start, light, live, destroy, get held() { return held; } };
 }
 
 /* the dusk: its star field, its glows' origin, and its pictures decoded ahead of the beat that shows them. A dusk dressed
