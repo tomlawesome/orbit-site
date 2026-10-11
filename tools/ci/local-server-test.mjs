@@ -9,6 +9,7 @@
  * "../" and encoded variants reach the server exactly as written.
  */
 import http from "node:http";
+import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -45,6 +46,22 @@ const get = (port, p, extra = {}) =>
     });
     req.on("error", reject);
     req.end();
+  });
+
+// http.request swaps an empty Host for the real one, so the empty Host goes over a bare socket.
+const rawGet = (port, p, hostLine) =>
+  new Promise((resolve, reject) => {
+    const sock = net.connect({ host: "127.0.0.1", port });
+    const chunks = [];
+    sock.on("connect", () => sock.write(`GET ${p} HTTP/1.1\r\n${hostLine}\r\nConnection: close\r\n\r\n`));
+    sock.on("data", (c) => chunks.push(c));
+    sock.on("error", reject);
+    sock.on("close", () => {
+      const all = Buffer.concat(chunks);
+      const cut = all.indexOf("\r\n\r\n");
+      const head = all.subarray(0, cut < 0 ? all.length : cut).toString("latin1");
+      resolve({ status: Number((/^HTTP\/1\.[01] (\d{3})/.exec(head) || [])[1]) || 0, type: "", body: cut < 0 ? Buffer.alloc(0) : all.subarray(cut + 4) });
+    });
   });
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "local-server-test-"));
@@ -134,7 +151,7 @@ try {
     [`127.0.0.1:${port + 1}`, { headers: { host: `127.0.0.1:${port + 1}` } }],
     ["127.0.0.1", { headers: { host: "127.0.0.1" } }],
     ["localhost", { headers: { host: "localhost" } }],
-    ["(empty)", { headers: { host: "" } }],
+    ["(empty)", { raw: "Host: " }],
     ["(no Host header)", { setHost: false }],
   ];
   const served = (b) => b.toString("latin1").includes("<title>page</title>") || b.includes(bytes);
@@ -142,7 +159,7 @@ try {
     for (const p of ["/", "/sub/file.js"]) {
       stage = `8 Host ${label} ${p}`;
       try {
-        r = await get(port, p, extra);
+        r = extra.raw ? await rawGet(port, p, extra.raw) : await get(port, p, extra);
       } catch (e) {
         check(`Host ${label} ${p}`, false, `request failed: ${e.message}`);
         continue;
