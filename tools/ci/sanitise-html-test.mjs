@@ -141,4 +141,44 @@ eq("14 headings, lists, hr, blockquote and pre lose their attributes",
 // 15. an allowed heading beside a tag outside the list still fails closed.
 eq("15 a heading beside a video returns an empty string", "<h3>x</h3><video src=y></video>", std, "");
 
+// 16. (#12 T1) the align value is read in any case.
+eq("16 align=Center keeps the centring on a paragraph", '<p align="Center">x</p>', std, '<p class="centred">x</p>');
+eq("16 align=CENTER keeps the centring on a cell", '<td align="CENTER">c</td>', std, '<td class="centred">c</td>');
+
+// 17. (#12 T2) an unclosed pre or details does not swallow the rest: it is closed at the end and a warning is
+// reported. Interface assumed: an optional `warn(message)` function among the resolvers.
+for (const [tag, input, tail] of [
+  ["pre", "<p>before</p><pre>code and <p>after</p>", "after"],
+  ["details", "<p>before</p><details><summary>S</summary>body<p>after</p>", "after"],
+]) {
+  const warnings = [];
+  let got;
+  try { got = sanitiseHtml(input, { link: id, image: id, warn: (m) => warnings.push(String(m)) }); }
+  catch (e) { got = `threw: ${e.message}`; }
+  const opens = (got.match(new RegExp(`<${tag}[ >]`, "g")) || []).length;
+  const closes = (got.match(new RegExp(`</${tag}>`, "g")) || []).length;
+  check(`17 an unclosed ${tag} is closed at the end of the output`,
+    opens === 1 && closes === 1 && got.trimEnd().endsWith(`</${tag}>`) && got.includes(tail) && got.startsWith("<p>before</p>"),
+    `${JSON.stringify(input)} gave ${JSON.stringify(got)} (want one ${tag} open and close, closing last, text kept)`);
+  check(`17 an unclosed ${tag} reports a warning`, warnings.length >= 1, `warnings: ${JSON.stringify(warnings)} (want at least one)`);
+}
+{
+  const warnings = [];
+  sanitiseHtml("<pre>fine</pre><details><summary>S</summary>b</details>",
+    { link: id, image: id, warn: (m) => warnings.push(String(m)) });
+  check("17 closed pre and details report no warning", warnings.length === 0, `warnings: ${JSON.stringify(warnings)} (want none)`);
+}
+
+// 18. (#12 T3) run time stays linear on crafted input.
+for (const [name, input] of [
+  ["40,000 comment openers with no end", "<p>x</p>" + "<!--".repeat(40000)],
+  ["20,000 tag openers with no >", "<p>x</p>" + "<a ".repeat(20000)],
+]) {
+  const t0 = performance.now();
+  let note = "";
+  try { sanitiseHtml(input, std); } catch (e) { note = ` (threw: ${e.message})`; }
+  const ms = performance.now() - t0;
+  check(`18 ${name} finishes in under 1 s`, ms < 1000, `took ${ms.toFixed(0)} ms (want < 1000)${note}`);
+}
+
 process.exit(failed ? 1 : 0);

@@ -18,7 +18,7 @@ const page = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;bac
 <canvas id="c"></canvas><script type="module">
 import { createDoor, openChores } from "./assets/door/index.js";
 import { docsFlight } from "./assets/js/journeys.js";
-createDoor({ image: (p) => "assets/door/img/" + p });
+createDoor({ image: (p) => "assets/door/img/" + p, flags: { gpu: "force", fit: "skip" } });
 openChores();
 const { createFlight } = await import("./assets/door/index.js");
 const e = createFlight(document.getElementById("c"));
@@ -40,8 +40,6 @@ localServer({ root, page, types }).then(async ({ server: srv, url: home }) => {
   await pg.evaluate(() => window.draw());
   await pg.waitForTimeout(500);
   const shot = await pg.screenshot({ type: "png", timeout: 0 });
-  const tmp = path.join(require("os").tmpdir(), "docsky.png");
-  fs.writeFileSync(tmp, shot);
   /* to webp through the browser itself */
   const url = await pg.evaluate(async (b64) => {
     const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();

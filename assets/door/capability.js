@@ -78,7 +78,11 @@ async function measure(gl) {
       const sh = (type, src) => { const s = keep("Shader", gl.createShader(type)); gl.shaderSource(s, src); gl.compileShader(s); return s; };
       const p = keep("Program", gl.createProgram());
       gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, salted(PROBE))); gl.linkProgram(p);
-      if (par) while (!gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) await new Promise((r) => setTimeout(r, 4));
+      if (par) while (!gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) {
+        /* (a context lost mid-compile never reports complete: the probe fails, it does not poll for ever) */
+        if (gl.isContextLost()) throw new Error("probe: context lost");
+        await new Promise((r) => setTimeout(r, 4));
+      }
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "probe: no program");
       return { p, ms: performance.now() - t0 };
     };

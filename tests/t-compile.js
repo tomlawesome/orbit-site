@@ -2,16 +2,18 @@
    and rich, the flight's lean head), then three of its programs whole (the flight's rush, the install's world, the
    docs' galaxy), each salted so the browser's cache cannot answer for the compiler */
 import { context, release, program, PROBE, PROBE_ROLLED, TRIVIAL, line, round } from "./common.js";
-import { sceneHead, SOURCES } from "../assets/door/voyage.js";
+import { sceneHead, PASS_SWITCH, SOURCES } from "../assets/door/voyage.js";
 import { RENDER_SRC, RENDER_VERT } from "../assets/js/world.js";
 export const name = "compile";
-const DOOR_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
+/* (the rich door shader draws its own fields and glow first: PASS_SWITCH, as t-draw.js builds it) */
+const DOOR_MAIN = `void main(){
+${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; float cov; vec3 e=earthAA(css,cov); o=vec4(1.0-exp(-e*0.35),cov); }`;
 const FLIGHT_MAIN = `void main(){ vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx; vec3 c=sky(css); float cov; vec3 e=earthAA(css,cov); o=vec4(c*(1.0-cov)+e,1.0); }`;
 export async function run() {
   const out = [];
   const { gl } = context();
   if (!gl) return [line("webgl2", "none")];
-  out.push(line("compiles in background", gl.getExtension("KHR_parallel_shader_compile") ? "yes (the times below are how long it took, not how long the page stood still)" : "no (each time below is a stall of the page)"));
+  out.push(line("compiles in background", gl.getExtension("KHR_parallel_shader_compile") ? "yes (but each time below reads LINK_STATUS at once, which waits for the compile on the page's own thread: a stall of the page, ended when LINK_STATUS is known)" : "no (each time below, which ends when LINK_STATUS is known, is a stall of the page)"));
   const each = [
     ["trivial (the fixed cost of a program)", TRIVIAL],
     ["trivial again", TRIVIAL],

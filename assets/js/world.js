@@ -565,7 +565,8 @@ export function createWorld(canvas, opts = {}) {
       } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
     if (!par) { done(); return; }
-    const poll = () => (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? done() : setTimeout(poll, 40));
+    /* a lost context never completes them: give up rather than poll for ever */
+    const poll = () => { if (gl.isContextLost()) { resolve(false); return; } if (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR))) done(); else setTimeout(poll, 40); };
     poll();
   });
 
@@ -618,9 +619,13 @@ export function createWorld(canvas, opts = {}) {
   const bind = (unit, t, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); };
 
   /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
-  const loadMap = fetchOnce(MAP)
+  /* a failed load is not kept: bake() reports it once, and the next bake() asks for the map again (as fetchOnce does for
+     the fetch) */
+  let mapLoad = null;
+  const loadMap = () => mapLoad || (mapLoad = fetchOnce(MAP)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
-    .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); });
+    .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); }));
+  loadMap().catch(() => {});   /* asked for now; a failure is bake()'s to report */
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const loadRings = fetchOnce(RINGS)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
@@ -635,8 +640,12 @@ export function createWorld(canvas, opts = {}) {
   /* the galaxy painted, a strip a frame */
   const jobs = [];
   const STRIPS = 4;
+  let skyProgram = null;
   function paintSky() {
-    try { P.sky = ready(program(SKY)); } catch (e) { console.warn(e); skyDone = true; return; }
+    if (!skyProgram) skyProgram = program(SKY);
+    /* the link status is not read until the program is done (as made's poll does the others); called again next frame */
+    if (par && !gl.getProgramParameter(skyProgram.p, par.COMPLETION_STATUS_KHR)) return;
+    try { P.sky = ready(skyProgram); } catch (e) { console.warn(e); skyDone = true; return; }
     skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
     for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
     jobs.push(() => mip(skyT));
@@ -652,7 +661,13 @@ export function createWorld(canvas, opts = {}) {
   /* ready when the map is in and the galaxy is baked; resolves false if the map cannot be had */
   function bake() {
     if (!baking) baking = new Promise((res) => {
-      const step = () => { if (!P.sky) paintSky(); if (!skyDone) bakeSome(1); if (!skyDone) requestAnimationFrame(step); else Promise.all([loadMap, loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); res(false); }); };
+      const step = () => {
+        if (gl.isContextLost()) { baking = null; res(false); return; }
+        if (!P.sky && !skyDone) paintSky();
+        if (P.sky && !skyDone) bakeSome(1);
+        if (!skyDone) requestAnimationFrame(step);
+        else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
+      };
       made.then((ok) => (ok ? requestAnimationFrame(step) : res(false)));
     });
     return baking;

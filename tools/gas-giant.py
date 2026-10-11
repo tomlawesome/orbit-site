@@ -18,7 +18,7 @@ The result is written as the planet's map, equirectangular, north at the top:
   assets/img/install/planet-2k.webp   2048 wide, for phones
 
   pip install numpy scipy pillow
-  python3 tools/gas-giant.py [--n 2048] [--time 0.3] [--out assets/img/install/planet.webp] [--preview p.png]
+  python3 tools/gas-giant.py [--n 2048] [--time 0.3] [--out assets/img/install/planet.webp] [--out2k assets/img/install/planet-2k.webp] [--preview p.png]
 
 The map on the site is Cassini's map of Jupiter, regraded (credit NASA/JPL/Space Science Institute):
   curl -O https://images-assets.nasa.gov/image/PIA07782/PIA07782~orig.jpg
@@ -33,6 +33,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--n", type=int, default=2048, help="cells round the equator; the grid is n by n/2")
 ap.add_argument("--time", type=float, default=0.45, help="how long the winds blow (model time)")
 ap.add_argument("--out", default="assets/img/install/planet.webp")
+ap.add_argument("--out2k", default=None, help="the 2048-wide map, resized from the finished (sharpened) big one; default: --out with -2k before .webp")
 ap.add_argument("--size", type=int, default=4096, help="width of the written map")
 ap.add_argument("--preview", default=None)
 ap.add_argument("--seed", type=int, default=1729)
@@ -261,5 +262,5 @@ if args.preview:
     big.save(args.preview)
 if args.out:
     big.save(args.out, "WEBP", quality=88, method=6)
-    img.resize((2048, 1024), Image.LANCZOS).save(args.out.replace(".webp", "-2k.webp"), "WEBP", quality=88, method=6)
+    (big if args.base else img).resize((2048, 1024), Image.LANCZOS).save(args.out2k or args.out.replace(".webp", "-2k.webp"), "WEBP", quality=88, method=6)
 print("done", round(time.time() - t0), "s")

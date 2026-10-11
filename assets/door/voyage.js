@@ -58,15 +58,18 @@ export function theStrip() {
    door and the flight never show two sharpnesses at once. The box is the same for every tier.
    sharpStrip(): a context that will draw it says so as it is made, then ready(take) once its small one is on the GPU
    (take(bitmap): the sharp one put on its GPU, kept beside the small one), or fail() if it never will be; the sharp one
-   is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore */
+   is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore.
+   leave(): a context that is taken down before it has settled (or after, with the sharp one still on its way) leaves the
+   queue at once, so it holds nobody up and its take is never called; the queue looks again so the others are served */
 const strip0 = () => image("dawn/lights-strip-120.webp"), FADE = 1000;
 const sharp = { wants: new Set(), busy: false };
 export function sharpStrip() {
-  const me = { settled: false, take: null, served: false, at: 0 };
-  const settle = (take) => { if (me.settled) return; me.settled = true; me.take = take; sharpen(); };
-  if (theStrip().url === strip0()) return { ready() {}, fail() {}, mix: () => 0 };
+  const me = { settled: false, take: null, served: false, left: false, at: 0 };
+  const settle = (take) => { if (me.settled || me.left) return; me.settled = true; me.take = take; sharpen(); };
+  const leave = () => { if (me.left) return; me.left = true; me.take = null; sharp.wants.delete(me); sharpen(); };
+  if (theStrip().url === strip0()) return { ready() {}, fail() {}, leave() {}, mix: () => 0 };
   sharp.wants.add(me);
-  return { ready: settle, fail: () => settle(null), mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
+  return { ready: settle, fail: () => settle(null), leave, mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
 }
 function sharpen() {
   const all = [...sharp.wants];
@@ -78,10 +81,10 @@ function sharpen() {
   fetchOnce(strip.url)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => chore(() => {
-      for (const w of todo) { try { w.take(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
+      for (const w of todo) { try { if (!w.left) w.take(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
       /* the fade's start, the same moment for all of them */
       const at = performance.now();
-      for (const w of todo) w.at = at;
+      for (const w of todo) if (!w.left) w.at = at;
       bm.close?.();
       note(`strip: ${strip.ppd} px a degree in, fading over ${FADE / 1000} s`);
     }, 60, "rich"))
@@ -226,6 +229,7 @@ uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;`],
 const PARTS = {
   common: `out vec4 o;
 const float PI=3.14159265, TAU=6.2831853;
+float sq(float x){return x*x;}   /* (a square is x*x: pow(x,2.0) is undefined for x<0) */
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float hash12(vec2 p){return hash13(vec3(p,7.31));}
 float vnoise(vec3 p){
@@ -346,7 +350,7 @@ vec3 sunT(float hh,float mu){
   return exp(-(BR*c.r+BMX*c.g+BO*c.b));
 }
 vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c; if(d<0.0) return vec2(-1.0); d=sqrt(d); return vec2(-b-d,-b+d); }
-float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(1.0+g*g-2.0*g*c,1.5)); }
+float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(max(1.0+g*g-2.0*g*c,0.0),1.5)); }
 
 /* the maps come in tiers: the whole Earth; a box about where the door looks, finer (uNearBox: lon0, lon1, lat0, lat1);
    and, for the lights, Europe, finer (uEuroBox), then the door's own ground, finest (uStripBox). Each box's map takes over from the one beneath across a margin
@@ -462,7 +466,7 @@ vec3 airAt(vec3 x,float pr,float pm,out vec3 ext,out vec3 Ts){
   ext=BR*dr+BMX*dm+BO*dz;
   Ts=sunT(hh,ms);
   return ((BR*dr*pr+BM*dm*pm)*Ts*SUNL+BR*dr*SUNL*0.012*exp(min(ms,0.0)*38.0)
-          +vec3(0.35,1.0,0.45)*(0.7e-4*6371.0)*exp(-0.5*pow((hk-95.0)/2.2,2.0)));
+          +vec3(0.35,1.0,0.45)*(0.7e-4*6371.0)*exp(-0.5*sq((hk-95.0)/2.2)));
 }
 vec3 earth(vec2 css,out float cover){
   cover=0.0;
@@ -647,7 +651,7 @@ vec3 arrival(vec2 css){
     c+=mix(vec3(1.0,0.46,0.14),vec3(1.0,0.89,0.7),pow(mu,0.6))*I*mix(16.0,4.2,smoothstep(0.0,0.35,e))*lum;
   }
   /* the chromosphere: a thin red rim */
-  c+=vec3(1.0,0.4,0.18)*exp(-pow((r-Rd)/(Rd*0.025+0.5),2.0))*mix(3.0,1.2,smoothstep(0.0,0.4,e))*lum;
+  c+=vec3(1.0,0.4,0.18)*exp(-sq((r-Rd)/(Rd*0.025+0.5)))*mix(3.0,1.2,smoothstep(0.0,0.4,e))*lum;
   /* the corona: streamers in two scales, drifting outwards and turning slowly, white-gold to amber to a faint violet */
   float lr=log(max(r,Rd)/Rd);
   float n1=vnoise(vec3(cos(a)*5.0,sin(a)*5.0,lr*1.4-uTime*0.12)), n2=vnoise(vec3(cos(a)*17.0,sin(a)*17.0,lr*2.6-uTime*0.2+3.0));
@@ -672,7 +676,7 @@ vec3 arrival(vec2 css){
     float len=H*(0.05+0.24*e), w=0.7+al*0.003;
     vec3 L3=len*vec3(1.0,0.86,0.72);
     vec3 spike=exp(-pow(vec3(al)/L3,vec3(1.6)))*exp(-pe*pe/(w*w));
-    float band=0.7+0.3*pow(sin(al/(H*0.012)),2.0);
+    float band=0.7+0.3*sq(sin(al/(H*0.012)));
     c+=spike*band*(1.0-exp(-al/(Rd*2.0+4.0)))*2.4*lum;
   }
   /* and two faint secondary spikes, the support's, square to the rest */
@@ -683,7 +687,7 @@ vec3 arrival(vec2 css){
   c+=vec3(0.32,0.45,1.0)*exp(-abs(p.y)/(H*0.012))*exp(-abs(p.x)/(Wd*(0.08+0.3*e)))*0.22*lum;
   /* a lens halo: a faint ring, each colour at its own radius */
   float rh=H*(0.11+0.12*e);
-  c+=vec3(exp(-pow((r-rh*0.965)/(H*0.005),2.0)),exp(-pow((r-rh)/(H*0.005),2.0)),exp(-pow((r-rh*1.035)/(H*0.005),2.0)))*0.14*lum;
+  c+=vec3(exp(-sq((r-rh*0.965)/(H*0.005))),exp(-sq((r-rh)/(H*0.005))),exp(-sq((r-rh*1.035)/(H*0.005))))*0.14*lum;
   /* the sky takes the light: a wide warm scatter */
   c+=vec3(1.0,0.8,0.52)*exp(-r/(H*0.45))*0.16*lum+vec3(1.0,0.82,0.6)*exp(-max(r-Rd,0.0)/(H*0.05))*0.7*lum*smoothstep(Rd*0.9,Rd*1.1,r);
   return c;
@@ -695,7 +699,7 @@ vec2 shockBend(vec2 css,out float ring){
   ring=0.0; if(uBloom<=0.0||uBloom>=1.0) return css;
   vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx;
   float rs=uBloom*H*1.25, w=H*0.03, fade=1.0-uBloom;
-  float g=exp(-pow((r-rs)/w,2.0));
+  float g=exp(-sq((r-rs)/w));
   ring=g*fade;
   return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
@@ -762,7 +766,7 @@ const SCENE = sceneHead() + `void main(){
     /* the galaxy over the dawn's own sky, not in place of it, so the stars carry straight through; only as the flight
        comes to rest inside does that sky give way to the galaxy's own far stars, turning with the camera */
     vec4 g4=texture(uGalTex,gl_FragCoord.xy/uRes);
-    float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
+    float mid=exp(-sq((css.x/(uRes.x/uPx)-0.5)/0.2));
     vec3 back=c;
     if(uGalPage>0.001){
       float f=uRes.y/uPx*0.95;
@@ -780,7 +784,7 @@ const SCENE = sceneHead() + `void main(){
   float lanes=1.0-0.9*uGalPage;
   if(lanes>0.01) c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*lanes+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
-  float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
+  float dp=sq(max(sp-0.55,0.0)/0.45);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
   o=vec4(c,1.0);
 }`;
@@ -798,8 +802,12 @@ export const doorIsLive = () => !!door;
    first, capability.js, the flight's is too: made with the rest, in place of the lean one, and this resolves at once) */
 let richMake = null, richAsk = null, richOK = false, richCompile = null;
 const richWaiting = [];
+/* (each world answers its own ask: richAskBy is the world's richMake that was handed it. An ask made before any world
+   exists waits in richWaiting and goes to the next world made. When a world stops, what is still its own is cleared:
+   its richMake, richCompile and richOK, and the ask it answered, so the next world is never handed its answer) */
+let richAskBy = null;
 export function wantRich() {
-  if (!richAsk) richAsk = new Promise((resolve) => { const go = () => resolve(richMake()); if (richMake) go(); else richWaiting.push(go); });
+  if (!richAsk) richAsk = new Promise((resolve) => { const go = () => { richAskBy = richMake; resolve(richMake()); }; if (richMake) go(); else richWaiting.push(go); });
   return richAsk;
 }
 /* where the browser compiles on the page's own thread (chores.js: COMPILES_ASIDE false), the rich program is compiled
@@ -835,7 +843,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   /* the shock's own light: a bright edge, red outside and blue in */
   if(ring>0.001){
     vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, rs=uBloom*H*1.25, w=H*0.006;
-    vec3 band=vec3(exp(-pow((r-rs-w*0.5)/w,2.0)),exp(-pow((r-rs)/w,2.0)),exp(-pow((r-rs+w*0.5)/w,2.0)));
+    vec3 band=vec3(exp(-sq((r-rs-w*0.5)/w)),exp(-sq((r-rs)/w)),exp(-sq((r-rs+w*0.5)/w)));
     S+=mix(vec3(dot(band,vec3(0.34))),band,0.35)*vec3(1.0,0.86,0.66)*0.32*(1.0-uBloom)*(1.0-uBloom);
   }
   o=vec4(S,1.0-T);
@@ -895,7 +903,7 @@ float vnoise(vec3 p){
 /* two arms, a logarithmic spiral about 18 degrees open, with a phase to shift along them */
 float arm(vec3 p,float off,float k){
   float r=length(p.xz), th=atan(p.z,p.x), ph=th-log(max(r,0.03))*3.1+off;
-  return pow(0.5+0.5*cos(2.0*ph),k);
+  return pow(max(0.5+0.5*cos(2.0*ph),0.0),k);
 }
 vec4 field(vec3 p){
   float r=length(p.xz), y=p.y;
@@ -1159,22 +1167,31 @@ export function createVoyage(under) {
       return true;
     }, tag === "compile" ? 20 : 60, tag))));
   /* rich from the first: made with the rest (made), its fields and glow with the maps (warm); lean: never made */
-  richCompile = richOnly ? () => made
+  const myCompile = richCompile = richOnly ? () => made
     : weight === "lean" ? () => Promise.resolve(false)
     : () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
-  richMake = () => richMade || (richMade = made.then((good) => {
+  const myMake = richMake = () => richMade || (richMade = made.then((good) => {
     if (!good || weight === "lean") return false;
     warm({ prove: false });
     if (richOnly) return loading.then(() => richOK);
     return richProgram("door").then((p) => p && loaded.then(() => chore(richMaps, 60, "door")));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
   richWaiting.splice(0).forEach((go) => go());
+  /* its journey taken down: what of the rich Earth's state is still this world's goes with it (see wantRich) */
+  const richRelease = () => {
+    if (richAskBy === myMake) { richAsk = null; richAskBy = null; }
+    if (richMake === myMake) { richMake = null; richOK = false; }
+    if (richCompile === myCompile) richCompile = null;
+  };
 
   const tex = (w, h, fmt, f, type, data = null) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, f, type, data);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    /* (one whose upload fails is let go before the failure goes on: nothing is left alive that nothing will give back) */
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, f, type, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    } catch (e) { try { gl.deleteTexture(t); } catch { /* a lost context */ } throw e; }
     return t;
   };
   const target = (w, h) => { const t = tex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT); const f = gl.createFramebuffer();
@@ -1186,6 +1203,9 @@ export function createVoyage(under) {
   /* landing: the pictures still on their way to the GPU (a band, or their mipmaps, still to come), which give back their
      own texture when they land (load) rather than have it taken from under them (release) */
   const landing = new Set();
+  /* the maps that failed to load or to upload, retried once by the next warm (retried) */
+  const failed = new Set();
+  let retried = false;
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
@@ -1225,7 +1245,33 @@ export function createVoyage(under) {
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
-    }).catch(() => { /* drawn without it */ });
+    }).catch(() => {
+      /* drawn without it. Whatever it had put on the GPU is let go (upload.js deletes the texture of an upload that
+         failed, so the map is forgotten here, and given back if the world has stopped), and the key is remembered for
+         the one retry (warm) */
+      landing.delete(key); mipped.delete(key);
+      if (maps[key]) { giveBack("Texture", maps[key]); delete maps[key]; delete dims[key]; }
+      if (!gone) failed.add(key);
+    });
+  let unhide = null;
+  /* resolves when the tab is shown, or at once if it is, or if the world has stopped (stop() ends a wait; no listener is
+     left registered either way) */
+  const whenVisible = () => (!document.hidden || gone ? undefined : new Promise((resolve) => {
+    const on = () => { if (!document.hidden) done(); };
+    const done = () => { document.removeEventListener("visibilitychange", on); unhide = null; resolve(); };
+    unhide = done;
+    document.addEventListener("visibilitychange", on);
+  }));
+  /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed
+     frames (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and asks again */
+  const fitWhenShown = async () => {
+    for (;;) {
+      await whenVisible();
+      if (gone) return { fit: false, ms: Infinity };
+      const verdict = await chore(() => (document.hidden ? null : fitness()), 60, "flight");
+      if (verdict) return verdict;
+    }
+  };
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
      back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
@@ -1235,10 +1281,20 @@ export function createVoyage(under) {
   const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
     progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
   function warm({ prove = true } = {}) {
+    /* a map that failed (a dropped download; fetchOnce forgets a failed fetch) is asked for once more, by the next warm
+       once the first round is in; whatever then lands is used from the next frame, and the cities' glow made if it was
+       waiting for it */
+    if (loading && allIn && !retried && !gone && [...failed].some((k) => k !== "lightsS")) {
+      retried = true;
+      const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
+      /* beside the proof, never in front of it: a download that hangs must not hold the verdict back. Whatever lands is
+         used from then on, and the cities' glow made if it was waiting for the lights map */
+      Promise.all(again.map(load)).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+    }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
          device's own after everything (sharpStrip) */
-      if (live) stripS = sharpStrip();
+      if (live) { stripS = sharpStrip(); if (gone) stripS.leave(); }
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) stripS.ready((bm) => { if (!gone) maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
@@ -1253,6 +1309,9 @@ export function createVoyage(under) {
     if (!prove) return loading;
     if (!warming) {
       warming = loading
+        /* a hidden tab draws nothing and times nothing: its frames are throttled or paused, so a speed test there would
+           call a fit world too slow and retire it for the visit. Wait for the tab to be shown (stop() drops the wait) */
+        .then(whenVisible)
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
         .then(() => chore(() => touch(ST()), 60, "flight"))
@@ -1260,14 +1319,14 @@ export function createVoyage(under) {
         /* and whether this machine can draw it at all (Orbit's #1253): whole frames, the median judged. A world that
            cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
-        .then(() => chore(() => fitness(), 60, "flight"))
-        .then(({ fit: fits, ms }) => {
+        .then(fitWhenShown)
+        .then(({ fit: fits, ms, skipped }) => {
           if (gone) return;
           fit = fits;
           ready = ok && !dead && fit;
           /* one verdict: a world that was lost or never made says so (above), not that it was too slow or fit */
           if (dead) sayOff("the world is gone");
-          else if (fit) sayVerdict(`on (frame ${Math.round(ms)} ms)`);
+          else if (fit) sayVerdict(skipped ? "on (fitness skipped)" : `on (frame ${Math.round(ms)} ms)`);
           else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
           note(`flight: world ${ready ? "proved" : dead ? (madeOk ? "lost" : "not made") : "too slow here, drawn without it"}`);
           if (ok && !fit) retire();
@@ -1306,6 +1365,8 @@ export function createVoyage(under) {
      frames a second. Returns { fit, ms } (not kept: asked on every visit); warm says the verdict */
   function fitness() {
     if (!ok) return { fit: false, ms: Infinity };
+    /* the host's flag `fit: "skip" (a tool that draws pictures on software GL): the world is taken as fit, no frame timed */
+    if (flag("fit") === "skip") return { fit: true, ms: 0, skipped: true };
     if (W < 2) resize(innerWidth, innerHeight);
     const was = part;
     part = 0.4; CW = 0; resize(W, H);
@@ -1521,6 +1582,9 @@ export function createVoyage(under) {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
     canvas.removeEventListener("webglcontextlost", onLost);
+    unhide?.();   /* (a warm-up waiting for the tab to be shown waits no more, and draws nothing) */
+    stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */
+    richRelease();
     release();
   }
   function release() {

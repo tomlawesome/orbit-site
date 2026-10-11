@@ -12,9 +12,10 @@
  */
 import { marked } from "marked";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, dirname, posix } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe } from "./import-docs-lib.mjs";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
 
@@ -54,25 +55,7 @@ function slugger() {
   };
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const plain = (tokens) => (tokens || []).map((t) => t.type === "text" || t.type === "codespan" ? (t.tokens ? plain(t.tokens) : t.text) : t.type === "code" ? t.text : plain(t.tokens || t.items || t.rows?.flat() || [])).join(" ").replace(/\s+/g, " ").trim();
 const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-
-/* a link inside a source: to a heading of its own, to another imported
-   source, or out to the repository; an image stays on GitHub's raw host */
-function resolveLink(href, src, bySourcePath, isImage) {
-  // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
-  if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
-  if (/^(https?:|mailto:|data:)/i.test(href)) return href;
-  if (href.startsWith("#")) return `#docs/${src.slug}/${href.slice(1)}`;
-  const [file, anchor] = href.split("#");
-  const base = posix.dirname(src.path);
-  const target = posix.normalize(posix.join(base, file)).replace(/^\.\//, "");
-  const hit = bySourcePath.get(`${src.repo}:${target}`);
-  if (hit && !isImage) return `#docs/${hit.slug}${anchor ? `/${anchor}` : ""}`;
-  return isImage
-    ? `https://raw.githubusercontent.com/${src.repo}/main/${target}`
-    : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
-}
 
 function render(md, src, bySourcePath) {
   const id = slugger();
@@ -112,9 +95,14 @@ function render(md, src, bySourcePath) {
       return `<blockquote>${this.parser.parse(tokens)}</blockquote>\n`;
     },
     html({ text }) {
-      const out = sanitiseHtml(text, { link: (h) => resolveLink(h, src, bySourcePath, false), image: (h) => resolveLink(h, src, bySourcePath, true) });
-      // a dropped block is content the page no longer shows: say so in the import's log
-      if (!out && text.trim()) console.warn(`import-docs: ${src.repo}/${src.path}: raw html dropped: ${text.trim().slice(0, 80)}`);
+      const out = sanitiseHtml(text, {
+        link: (h) => resolveLink(h, src, bySourcePath, false),
+        image: (h) => resolveLink(h, src, bySourcePath, true),
+        warn: (m) => console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: ${m}`),
+      });
+      // text the page no longer shows is told in the import's log
+      const lost = droppedBlockWarning(src, text, out);
+      if (lost) console.warn(lost);
       return out;
     },
   };
@@ -176,23 +164,3 @@ const before = await readFile(join(OUT, "index.json"), "utf8").then(JSON.parse, 
 if (!changed && before && JSON.stringify(before.sources) === JSON.stringify(index.sources)) index.generated = before.generated;
 await writeFile(join(OUT, "index.json"), JSON.stringify(index));
 console.log(`index: ${index.sources.reduce((n, s) => n + s.sections.length, 0)} sections in ${index.sources.length} sources`);
-
-/* the launcher's own screens, for the install page: fetched from the
-   launcher's repository when they are there, kept as they are when not.
-   `sharp` sizes them for the web; without it the pictures are left alone. */
-const SHOTS = ["01-splash", "02-install-profile", "03-install-ready", "04-install-console", "05-install-success", "06-splash-alive",
-  "07-update-confirm", "08-update-console", "09-repair-proposed", "10-repair-applied", "11-remove-confirm", "12-remove-done"];
-const IMG = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "img", "launcher");
-let sharp = null; try { sharp = (await import("sharp")).default; } catch { /* not installed: the pictures stay */ }
-if (sharp && !localRoot) {
-  await mkdir(IMG, { recursive: true });
-  let got = 0;
-  for (const name of SHOTS) {
-    const res = await fetch(`https://raw.githubusercontent.com/tomlawesome/orbit-launcher/main/docs/assets/screenshots/${name}.png`);
-    if (!res.ok) continue;
-    const png = Buffer.from(await res.arrayBuffer());
-    await writeFile(join(IMG, `${name}.webp`), await sharp(png).resize(1280, 720).webp({ quality: 82 }).toBuffer());
-    got++;
-  }
-  console.log(`launcher: ${got} of ${SHOTS.length} screens${got ? "" : " (none on the launcher's main yet; the pictures kept)"}`);
-}

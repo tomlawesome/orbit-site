@@ -52,9 +52,6 @@ licence does. Nothing here restricts any right you hold under them.
     and NASA's Scientific Visualization Studio as README.md gives it.
   - The docs under assets/docs/ are imported from the Orbit repositories
     and carry Orbit's licence (AGPL-3.0).
-  - The screenshots under assets/img/launcher/ are refreshed from the
-    orbit-launcher repository, which is published under AGPL-3.0 (its
-    LICENSE file).
   - The shared door under assets/door/ (the Earth door, the flight,
     their engine, timeline, stylesheet, markup and imagery) is shared
     with Orbit, which pulls it from this site. It is licensed under the
