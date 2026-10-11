@@ -20,6 +20,17 @@
  *   T4 next mount whole    a second journey after T2 builds its world, loses none of it, and gives it all back
  *   T5 twice is harmless   destroy() twice: no throw, no fault, nothing live
  *   T6 a lost context      webglcontextlost, then destroy: no throw, no fault
+ *   T7 released mid-upload destroy at the first chore (they are run one at a time) that leaves a picture with some of
+ *                          its bands in and no mipmaps; T7b: right after the first texSubImage2D. Nothing live, no fault
+ *   T8 no link             every program fails to link: warm, quiet, destroy: nothing live, no fault, context kept
+ *   T9 stopped in the gap  destroy once a picture has its last band in and not its mipmaps: no fault (no bind of a
+ *                          released handle), nothing live, no mipmap or texParameter call afterwards on a texture the
+ *                          stopped world did not make
+ *   T10 the live-door flags  door3d, level 2, rich: the capability probe they start, and what follows, leave nothing
+ *                          live and no fault (a rich world itself could not be reached: see the comment at T10)
+ *
+ * The fake context also answers isTexture/isProgram/... as WebGL does, and treats a bind or useProgram of a released
+ * handle as a fault (in WebGL it is INVALID_OPERATION and leaves the old binding, so later writes go to another object).
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -31,7 +42,8 @@ const DEADLINE_MS = 45000;   /* per child; the child's own waits add up to well 
 if (process.argv[2] === "--child") {
   const name = process.argv[3];
   const made = [], faults = [], listeners = {};
-  let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, onBand = null;
+  let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, lateTexCalls = 0, onBand = null;
+  const foreign = [], noLink = name === "t8", TEX2D = 0x0de1;
   const boundTex = {}, boundBuf = {};
   const any = () => new Proxy(function () {}, {
     get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
@@ -40,7 +52,8 @@ if (process.argv[2] === "--child") {
   });
   const isProbeSrc = (s) => /texelFetch\(t, ivec2\(0, 0\), 0\)|precision mediump float; out vec4 o;/.test(String(s));
   const glBase = {
-    RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01,
+    RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01, LINK_STATUS: 0x8b82, COMPILE_STATUS: 0x8b81,
+    TEXTURE_2D: TEX2D, TEXTURE_3D: 0x806f, TEXTURE_2D_ARRAY: 0x8c1a, TEXTURE_CUBE_MAP: 0x8513,
     isContextLost: () => lost,
     getError: () => 0,
     getExtension(n) {
@@ -48,8 +61,8 @@ if (process.argv[2] === "--child") {
       if (n === "WEBGL_debug_renderer_info") return null;
       return { COMPLETION_STATUS_KHR: 0x91b1 };
     },
-    getParameter: () => "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0)",
-    getProgramParameter: () => true, getShaderParameter: () => true,
+    getParameter: (n) => (n === 0x1f01 ? "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0)" : 4096),
+    getProgramParameter: (p, n) => !(noLink && n === 0x8b82), getShaderParameter: () => true,
     getProgramInfoLog: () => "", getShaderInfoLog: () => "",
     getActiveUniform: (p, i) => ({ name: `u${i}` }),
     getUniformLocation: (p, n) => ({ n }),
@@ -59,27 +72,52 @@ if (process.argv[2] === "--child") {
     getBufferSubData(t, o, out) { const b = boundBuf[t]; if (b) b.probe = true; out[0] = 0; out[1] = 1; },
     shaderSource(s, src) { if (s && s.kind === "shader") { s.src = src; if (isProbeSrc(src)) s.probe = true; } },
     attachShader(p, s) { if (p && s?.probe) p.probe = true; },
-    bindTexture(t, h) { if (afterDestroy) touches++; boundTex[t] = h; },
-    generateMipmap(t) { if (afterDestroy) touches++; if (boundTex[t]) boundTex[t].mip = true; },
-    bindBuffer(t, h) { boundBuf[t] = h; },
-    texImage2D(...a) { if (afterDestroy) touches++; image(a[0], a.length === 6 ? a[5] : a[a.length - 1]); },
-    texSubImage2D(...a) { if (afterDestroy) touches++; image(a[0], a[a.length - 1], true); },
+    /* binding a released handle is INVALID_OPERATION in WebGL and leaves the old binding in place: a fault here */
+    bindTexture(t, h) { if (afterDestroy) touches++; if (bindOk("bindTexture", h)) boundTex[t] = h; },
+    bindBuffer(t, h) { if (bindOk("bindBuffer", h)) boundBuf[t] = h; },
+    bindFramebuffer(t, h) { bindOk("bindFramebuffer", h); },
+    bindVertexArray(h) { bindOk("bindVertexArray", h); },
+    useProgram(p) { bindOk("useProgram", p); },
+    generateMipmap(t) { if (afterDestroy) touches++; texCall(t); if (boundTex[t]) boundTex[t].mip = true; },
+    texParameteri(t) { texCall(t); }, texParameterf(t) { texCall(t); }, texParameteriv(t) { texCall(t); }, texParameterfv(t) { texCall(t); },
+    texStorage2D(t, lv, f, w, h) { const b = boundTex[t]; if (b) { b.height = h; b.alloc = true; } },
+    texImage2D(...a) { if (afterDestroy) touches++; image(a[0], a[a.length - 1], false, a); },
+    texSubImage2D(...a) { if (afterDestroy) touches++; image(a[0], a[a.length - 1], true, a); },
   };
-  /* a picture's pixels reaching a texture (a band): the texture is then a picture texture, until its mipmaps are made */
-  const image = (t, src, band) => {
+  const bindOk = (what, h) => { if (h && h.released) { faults.push(`${what} of released ${h.kind} #${h.id}`); return false; } return true; };
+  /* after destroy, a mipmap or parameter call must not land on a texture the stopped world did not make (a probe's, or none of its own) */
+  const texCall = (t) => {
+    if (!afterDestroy || t !== TEX2D) return;
+    lateTexCalls++;
+    const b = boundTex[t];
+    if (b && (b.probe || !made.includes(b))) foreign.push(`${b.kind} #${b.id}`);
+  };
+  /* a picture's pixels reaching a texture: it is then a picture texture ("got"), "last" once its whole height is in,
+     until its mipmaps are made */
+  const image = (t, src, band, a) => {
     const h = boundTex[t];
     if (!h) return;
     if (src?.probe) { h.probe = true; return; }
-    if (src && typeof src === "object" && !ArrayBuffer.isView(src)) { h.got = true; if (band && onBand) onBand(); }
+    const pixels = src && typeof src === "object" && !ArrayBuffer.isView(src);
+    if (!band && a.length >= 9 && a[1] === 0) h.height = a[4];                        /* an allocation */
+    if (!pixels) return;
+    h.got = true;
+    if (!band) h.last = true;
+    else if (a[1] === 0) {
+      h.cover = Math.max(h.cover || 0, a[3] + (a.length >= 9 ? a[5] : src.height));
+      if (h.height && h.cover >= h.height) h.last = true;
+    }
+    if (band && onBand) onBand();
   };
   for (const kind of KINDS) {
     const K = kind[0].toUpperCase() + kind.slice(1);
-    glBase["create" + K] = () => { if (afterDestroy && kind === "texture") touches++; const h = { kind, id: made.length, released: false, probe: false, src: "" }; made.push(h); return h; };
+    glBase["create" + K] = () => { if (afterDestroy && kind === "texture") touches++; const h = { kind, id: made.length, released: false, probe: false, pre: !afterDestroy, src: "" }; made.push(h); return h; };
+    glBase["is" + K] = (h) => !!h && h.kind === kind && made.includes(h) && !h.released;
     glBase["delete" + K] = (h) => {
       if (h == null) return;
       if (!h || !made.includes(h) || h.kind !== kind) faults.push(`delete${K} of a handle this context never made`);
       else if (h.released) faults.push(`delete${K} of #${h.id} twice`);
-      else h.released = true;
+      else { h.released = true; for (const m of [boundTex, boundBuf]) for (const k in m) if (m[k] === h) m[k] = null; }
     };
   }
   const gl = new Proxy(glBase, { get: (t, k) => (k in t ? t[k] : typeof k === "string" && /^[A-Z0-9_]+$/.test(k) ? 1 : () => any()) });
@@ -115,7 +153,8 @@ if (process.argv[2] === "--child") {
   /* the pictures' fetches are held until release() (T3 holds them past the destroy) */
   let release; const gate = new Promise((r) => { release = r; });
   globalThis.fetch = () => gate.then(() => ({ ok: true, blob: async () => ({ size: 1 }) }));
-  console.info = () => {}; console.warn = () => {};
+  const said = [];
+  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); };
 
   const hostCanvas = () => ({ width: 300, height: 150, style: {}, parentNode: { insertBefore() {} }, getContext: () => any(), addEventListener() {}, removeEventListener() {}, setAttribute() {} });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -125,38 +164,49 @@ if (process.argv[2] === "--child") {
   const out = { error: null, loseCalls: 0 };
   try {
     const door = await import(INDEX);
-    const d = door.createDoor({ typingWait: 0, flags: {} });
+    /* T10: the flags a page sets to have the live door rich (CAPABILITIES.md: ?door3d, ?level=2, &rich) */
+    const flags = name === "t10" ? { door3d: "1", level: "2", rich: "1" } : {};
+    const d = door.createDoor({ typingWait: 0, flags });
     const mount = () => d.journey({ canvas: hostCanvas(), name: any(), dawnGlyph: () => null, duskGlyph: () => null, on: {} });
     const quiet = async () => {
       await Promise.race([door.quiet(), sleep(6000)]); await sleep(300); await Promise.race([door.quiet(), sleep(6000)]);
     };
-    const warmed = (j, opts) => Promise.race([j.warm(opts).then(() => true), sleep(15000).then(() => false)]);
+    const warmed = (j, opts) => Promise.race([j.warm(opts).then(() => true, (e) => `rejected: ${e && e.message}`), sleep(15000).then(() => false)]);
     const finish = async (j) => { release(); door.openChores(); out.warmed = await warmed(j); await quiet(); };
     const tryDo = (what, fn) => { try { fn(); } catch (e) { out.threw = `${what}: ${e && e.message}`; } };
 
-    if (name === "t7" || name === "t7b") {
+    if (name === "t7" || name === "t7b" || name === "t9") {
       const j = mount();
       j.warm({ prove: false }).catch(() => {});
       await sleep(80);
-      const pending = () => made.filter((h) => h.kind === "texture" && !h.probe && h.got && !h.mip && !h.released).length;
+      const texes = () => made.filter((h) => h.kind === "texture" && !h.probe && !h.released);
+      const partway = () => texes().filter((h) => h.got && !h.mip).length;   /* some band in, mipmaps not yet */
+      const gap = () => texes().filter((h) => h.last && !h.mip).length;      /* the last band in, mipmaps not yet */
+      const here = name === "t9" ? gap : partway;
       const goDown = () => {
         if (afterDestroy) return;
-        out.pendingAtDestroy = pending();
-        out.bandsAtDestroy = made.filter((h) => h.got).length;
+        out.pendingAtDestroy = here();
         tryDo("destroy", () => j.destroy()); afterDestroy = true;
       };
       if (name === "t7b") onBand = () => { onBand = null; goDown(); };
       else manual = true;
       release(); door.openChores();
-      /* t7 runs the idle chores one at a time and goes down at the first chore that left a picture part-way */
-      for (let i = 0, t0 = Date.now(); !afterDestroy && Date.now() - t0 < 8000; i++) {
+      /* t7, t9 run the idle chores one at a time and go down at the first chore that leaves a picture where they want it */
+      for (let t0 = Date.now(); !afterDestroy && Date.now() - t0 < 8000;) {
         if (idle.length) idle.shift()();
         await sleep(idle.length ? 0 : 2);
-        if (name === "t7" && pending() > 0) goDown();
+        if (name !== "t7b" && here() > 0) goDown();
       }
-      out.reached = afterDestroy && out.pendingAtDestroy > 0; out.chores = 0;
+      out.reached = afterDestroy && out.pendingAtDestroy > 0;
       manual = false; while (idle.length) setTimeout(idle.shift(), 5);
       await quiet();
+    } else if (name === "t8") {
+      const j = mount();
+      await finish(j);
+      out.liveQuiet = live();
+      tryDo("destroy", () => j.destroy());
+      await quiet();
+      out.isContextLost = gl.isContextLost();
     } else if (name === "t3" || name === "t3control") {
       const j = mount();
       j.warm({ prove: false }).catch(() => {});
@@ -167,7 +217,8 @@ if (process.argv[2] === "--child") {
     } else {
       const j = mount();
       await finish(j);
-      if (name === "t1") out.liveBefore = live();
+      if (name === "t1" || name === "t10") out.liveBefore = live();
+      if (name === "t10") { tryDo("destroy", () => j.destroy()); await sleep(50); }
       if (name === "t2" || name === "t4") { tryDo("destroy", () => j.destroy()); await sleep(50); out.isContextLost = gl.isContextLost(); }
       if (name === "t5") { tryDo("first destroy", () => j.destroy()); tryDo("second destroy", () => j.destroy()); await sleep(50); }
       if (name === "t6") {
@@ -188,7 +239,7 @@ if (process.argv[2] === "--child") {
       }
     }
     out.live = live(); out.faults = faults.slice(0, 5); out.nfaults = faults.length; out.loseCalls = loseCalls;
-    out.touches = touches; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
+    out.said = said.slice(0, 8); out.touches = touches; out.lateTexCalls = lateTexCalls; out.foreign = foreign.slice(0, 5); out.nforeign = foreign.length; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
   } catch (e) { out.error = String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e); }
   process.stdout.write("RESULT " + JSON.stringify(out) + "\n");
   process.exit(0);
@@ -253,8 +304,29 @@ const t1 = run("t1");
 }
 for (const [label, name] of [["T7 released mid-upload: destroy at the first chore that leaves a picture part-way", "t7"], ["T7b released after the first band: destroy right after the first texSubImage2D", "t7b"]]) {
   const r = run(name);
-  const ev = (r) => (r.reached && r.touches > 0 ? "" : `did not reach mid-upload (pictures part-way at destroy ${r.pendingAtDestroy}, texture calls after destroy ${r.touches})`);
-  check(label, r, (r) => none(r) && !ev(r), "every kind 0, no fault; at destroy a picture without its mipmaps and a texture call after destroy",
-    `; part-way pictures at destroy ${r.pendingAtDestroy}, texture calls after destroy ${r.touches}${ev(r) ? "; " + ev(r) : ""}`);
+  const ev = (r) => (r.reached ? "" : `did not reach mid-upload (pictures part-way at destroy ${r.pendingAtDestroy})`);
+  check(label, r, (r) => none(r) && !ev(r), "every kind 0, no fault; a picture part-way at destroy",
+    `; part-way pictures at destroy ${r.pendingAtDestroy}, texture calls after destroy ${r.touches} (not judged)${ev(r) ? "; " + ev(r) : ""}`);
+}
+{
+  const r = run("t8");
+  check("T8 a world whose shaders do not link: warm, quiet, destroy", r,
+    (r) => none(r) && r.loseCalls === 0 && r.isContextLost === false, "every kind 0, no fault, loseContext never called, context not lost",
+    `; live at quiet before destroy: ${show(r.liveQuiet)} (not judged); warm ${r.warmed}; loseContext calls ${r.loseCalls}, isContextLost ${r.isContextLost}`);
+}
+{
+  const r = run("t9");
+  const ev = (r) => (r.reached ? "" : `did not reach the gap (pictures with their last band in and no mipmaps at destroy: ${r.pendingAtDestroy})`);
+  check("T9 stopped between a picture's last band and its mipmaps", r, (r) => none(r) && !ev(r) && r.nforeign === 0,
+    "every kind 0, no fault (no bind of a released handle), no mipmap or texParameter call after destroy on a texture the stopped world did not make",
+    `; pictures in the gap at destroy ${r.pendingAtDestroy}; mipmap/texParameter calls after destroy ${r.lateTexCalls}, on a foreign texture ${r.nforeign}${r.foreign?.length ? " (" + r.foreign.join(", ") + ")" : ""}${ev(r) ? "; " + ev(r) : ""}`);
+}
+{
+  /* The aim was a rich flight world (CAPABILITIES.md: door3d, level 2, rich) with more programs and textures than T1's. Under
+     this fake the live-door probe the flags start does not give a verdict ("probe: failed"), so no rich world is built and
+     that control cannot be made; what is judged is what the flags leave on the context once the page is warm and then torn down. */
+  const r = run("t10");
+  check("T10 the live-door flags (door3d, level 2, rich): the probe and whatever it starts leave nothing live and no fault", r, none, "every kind 0, no fault",
+    `; at quiet before destroy: ${show(r.liveBefore)}; the page said: ${(r.said || []).slice(0, 2).join(" / ")}`);
 }
 process.exit(failed ? 1 : 0);
