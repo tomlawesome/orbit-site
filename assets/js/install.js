@@ -467,9 +467,11 @@ export function createInstall(pad, opts = {}) {
             if (ok) chore(touch, 60, TAG);
             return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
           });
-        /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map) */
+        /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is
+           flat (no world, or its context lost) keeps the false: only a map failure is worth another try */
         const attempt = this.prepared;
-        attempt.then((ok) => { if (!ok && this.prepared === attempt) this.prepared = null; }, () => { if (this.prepared === attempt) this.prepared = null; });
+        const retry = () => { if (!failed && !shared?.lost && this.prepared === attempt) this.prepared = null; };
+        attempt.then((ok) => { if (!ok) retry(); }, retry);
       }
       return this.prepared;
     },
