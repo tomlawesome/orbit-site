@@ -110,9 +110,15 @@ export function serialise() {
     review: inbox.review.map((r) => r.id),
   };
 }
+/* the date a typed or saved "yyyy-mm-dd" gives: that day when it is a four-digit-year date that parses, otherwise 30 days
+   past `now` (a year of more than four digits, or "NaN-NaN-NaN" left by an old bug, reads as no date, not an invalid one) */
+export function createDate(value, now) {
+  const typed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
+  return typed && !Number.isNaN(typed.getTime()) ? typed : addDays(now, 30);
+}
 export function hydrate(saved) {
   if (!saved || saved.v !== STATE_VERSION) return false;
-  const revive = (it) => ({ ...it, dueDate: new Date(`${it.dueDate}T00:00:00`), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined });
+  const revive = (it) => ({ ...it, dueDate: createDate(it.dueDate, today), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined });
   /* a state saved from an older sample (or before versions were recorded) keeps only what the visitor added: the
      sample items come from the current sample. Same version: everything as saved */
   const older = !(saved.sampleVersion >= SAMPLE_VERSION);

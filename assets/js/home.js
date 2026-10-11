@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId, createDate } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -510,12 +510,8 @@ function wireExplore() {
 }
 
 /* ── the create form ──────────────────────────────────────────────────── */
-/* the date the form gives an item: the typed one, or 30 days past `now` when none is typed or it is not a date (a year of
-   more than four digits, typed past the input's max, reads as no date rather than an invalid one) */
-export function createDate(value, now) {
-  const typed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
-  return typed && !Number.isNaN(typed.getTime()) ? typed : law.addDays(now, 30);
-}
+/* the date the form gives an item (data.js: the typed one, or 30 days ahead when it is not a date) */
+export { createDate };
 /* the real create form, as the walk must leave it: read before the walk, written back when it stops (wireCreate sets it,
    since the chosen type lives in its closure) */
 let createForm = null;
