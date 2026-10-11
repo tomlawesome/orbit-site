@@ -124,12 +124,17 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     after?.(gl, t);
   };
+  /* a texture made for a picture whose upload then failed is let go before the failure is reported, so none is left alive
+     for a picture that will never be drawn (a lost context: nothing to delete) */
+  const drop = (t) => { if (t) try { gl.deleteTexture(t); } catch { /* fine */ } };
   /* whole, in one ordinary chore, its mipmaps with it: with ?holdreveal, or where a cut picture's crop is not honoured */
   const whole = () => chore(() => {
     const t = gl.createTexture(); gl.bindTexture(T, t);
-    gl.texImage2D(T, 0, internal, format, type, bitmap);
-    params(t);
-    if (mips) levels(t);
+    try {
+      gl.texImage2D(T, 0, internal, format, type, bitmap);
+      params(t);
+      if (mips) levels(t);
+    } catch (e) { drop(t); throw e; }
     if (!keep) bitmap.close?.();
     drawable?.(t);
     return t;
@@ -177,6 +182,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
         }
       } catch (e) {
         next?.then((b) => b.bm.close?.(), () => {});
+        drop(t);
         throw e;
       } finally {
         if (!keep) bitmap.close?.();
@@ -185,6 +191,6 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
       drawable?.(t);
       return t;
     })();
-    return mips ? bandsIn.then((tx) => chore(() => { levels(tx); return tx; }, 60, tag)) : bandsIn;
+    return mips ? bandsIn.then((tx) => chore(() => { try { levels(tx); } catch (e) { drop(tx); throw e; } return tx; }, 60, tag)) : bandsIn;
   }
 }

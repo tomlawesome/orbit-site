@@ -95,6 +95,17 @@ lint:
     - node tools/ci/retire-after-destroy-test.mjs
     - node tools/ci/destroyed-world-test.mjs
     - node tools/ci/released-world-test.mjs
+    - node tools/ci/rich-remount-test.mjs
+    - node tools/ci/sharp-strip-remount-test.mjs
+    - node tools/ci/fit-skip-test.mjs
+    - node tools/ci/door-context-restore-test.mjs
+    - node tools/ci/door-wordmark-test.mjs
+    - node tools/ci/door-shimmer-test.mjs
+    - node tools/ci/door-probe-chores-test.mjs
+    - node tools/ci/door-world-test.mjs
+    - node tools/ci/door-banded-upload-test.mjs
+    - node tools/ci/door-sky-test.mjs
+    - node tools/ci/door-live-teardown-test.mjs
     - node tools/ci/local-server-test.mjs
     - node tools/ci/site-world-test.mjs
     - node tools/ci/site-home-date-test.mjs

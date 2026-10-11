@@ -33,6 +33,8 @@ let softN = 0, softMs = 0;
    one a frame and no more */
 let frameAt = 0;
 const SHARE = 8, REVEAL_SHARE = 4;
+/* the longest a chore may hold the queue (ms): the longest real one is a texture upload or a compile, seconds on a slow GPU */
+const CAP = 15000;
 /* ?holdreveal: nothing during the reveal, as before (openSoft is never called, and upload.js puts each picture on the
    GPU whole): for the owner's A/B */
 export const holdReveal = () => !!flag("holdreveal");
@@ -99,7 +101,13 @@ function pump() {
     const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0 }; record.push(rec);
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
-    Promise.resolve(out).then(job.resolve, job.reject).finally(() => {
+    /* a job that never settles must not hold the queue for ever: after CAP the queue goes on. The chore's own promise
+       is left as it was (settling by what the job does, if it ever does): a caller waiting on it has its own limit, and
+       one that ignored the promise would otherwise be given a rejection nobody handles */
+    let over = false, cap = 0;
+    const end = () => {
+      if (over) return;
+      over = true; clearTimeout(cap);
       running = false; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
       if (early) { softN++; softMs += performance.now() - t0; }
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
@@ -111,7 +119,9 @@ function pump() {
       if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(pump, 0);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
-    });
+    };
+    cap = setTimeout(end, CAP);
+    Promise.resolve(out).then(job.resolve, job.reject).finally(end);
   };
   setTimeout(run, 0);
 }
