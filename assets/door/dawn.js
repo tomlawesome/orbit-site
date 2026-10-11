@@ -167,7 +167,7 @@ export function mountDawn(host) {
   let liveStarted = null;
   const live = door3d ? {
     compile: () => door3d.then((m) => m.compileDoor()),
-    start: () => (liveStarted = door3d.then((m) => m.liveDoor(world))),
+    start: () => (gone ? null : (liveStarted = door3d.then((m) => m.liveDoor(world)))),
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
