@@ -17,7 +17,7 @@
  * No dependencies and no browser; each case runs in a fresh Node process (this file again, as `--child`) against the
  * stub page in door-stub.mjs.
  */
-import { INDEX, any, installPage, installClock, sleep, realSetTimeout as realTimeout, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
+import { dawnHost, INDEX, any, installPage, installClock, sleep, realSetTimeout as realTimeout, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
 
 /* a host element for measureTile: its width is whatever the test says, however the function reads it */
 function widthHost(page, state) {
@@ -32,46 +32,6 @@ function widthHost(page, state) {
     get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
     set: (t, k, v) => { if (k === "style" || k in t) return true; t[k] = v; return true; },
   });
-}
-/*
- * The dawn's host for D7: querySelector(".world") -> a world whose ".earth image[data-href]" are the Earth's two
- * pictures (SVG <image> elements, the first the quick one: dawn-pre). A picture's href set = the picture asked for;
- * what it then does (load or error) is up to the test: onAsked(el, index).
- */
-function earthElement(name, onAsked) {
-  const attrs = { "data-href": `img/dawn/${name}.webp` };
-  const listeners = {};
-  const base = {
-    name, dataset: { href: attrs["data-href"] }, style: { setProperty() {}, removeProperty() {} }, listeners,
-    getAttribute: (k) => (k in attrs ? attrs[k] : null),
-    hasAttribute: (k) => k in attrs,
-    removeAttribute: (k) => { delete attrs[k]; },
-    setAttribute(k, v) { attrs[k] = String(v); if (/href$/.test(k)) onAsked(el); },
-    setAttributeNS(ns, k, v) { attrs[k] = String(v); if (/href$/.test(k)) onAsked(el); },
-    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
-    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
-    fire(type) { const ev = { type, target: el }; if (typeof el["on" + type] === "function") el["on" + type](ev); for (const f of [...(listeners[type] || [])]) f(ev); },
-    complete: false, naturalWidth: 0,
-  };
-  const el = new Proxy(base, {
-    get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
-    set: (t, k, v) => { t[k] = v; if (k === "href" || k === "src") { attrs.href = String(v); onAsked(el); } return true; },
-  });
-  return el;
-}
-function dawnHost(onAsked) {
-  const pics = [earthElement("dawn-pre", onAsked), earthElement("dawn", onAsked)];
-  const classes = new Set();
-  const world = new Proxy({
-    dataset: {}, style: { setProperty() {}, removeProperty() {} }, clientWidth: 1280, clientHeight: 800, classes,
-    classList: { add: (...n) => n.forEach((x) => classes.add(x)), remove: (...n) => n.forEach((x) => classes.delete(x)), contains: (x) => classes.has(x), toggle: (x, f) => { (f ?? !classes.has(x)) ? classes.add(x) : classes.delete(x); return classes.has(x); } },
-    querySelectorAll: (sel) => (/\.earth image\[data-href\]/.test(sel) ? pics : /image\.pre/.test(sel) ? [pics[0]] : []),
-    querySelector: (sel) => (/image\.pre|\.pre\b/.test(sel) ? pics[0] : any()),
-    getBoundingClientRect: () => ({ width: 1280, height: 800 }),
-  }, { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
-  const host = new Proxy({ querySelector: (sel) => (sel === ".world" ? world : any()), querySelectorAll: () => [], dataset: {}, style: { setProperty() {} } },
-    { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
-  return { host, pics, world };
 }
 const lastTile = (page) => {
   const sets = page.styleSets.filter((s) => s.k === "--tile");

@@ -32,7 +32,7 @@ export const isProbeSrc = (s) => /texelFetch\(t, ivec2\(0, 0\), 0\)|precision me
 export function installPage(opts = {}) {
   const page = {
     lines: [], shaders: [], tex: [], bufCalls: [], createdTextures: [], deletedTextures: [], readPixels: 0,
-    contexts: 0, removed: 0, docListeners: {}, winListeners: {}, canvasListeners: {}, bodyClasses: new Set(), bodyLog: [],
+    contexts: 0, removed: 0, glCalls: 0, draws: 0, glWhileLost: 0, mipped: [], docListeners: {}, winListeners: {}, canvasListeners: {}, bodyClasses: new Set(), bodyLog: [],
     images: [], blobURLs: [], revoked: [], paints: [], lost: false, boundTexture: null,
   };
   let sharedCanvas = null;
@@ -64,10 +64,21 @@ export function installPage(opts = {}) {
     texImage2D(...a) { const src = a.length === 6 ? a[5] : null; page.tex.push({ fn: "texImage2D", probe: !!src?.probe, texture: page.boundTexture }); },
     texSubImage2D(...a) { const src = a[a.length - 1]; page.tex.push({ fn: "texSubImage2D", probe: !!src?.probe, texture: page.boundTexture }); },
     texStorage2D() { page.tex.push({ fn: "texStorage2D", probe: false, texture: page.boundTexture }); },
+    generateMipmap() { page.mipped.push(page.boundTexture); },
     bufferData(t, data) { page.bufCalls.push({ vertex: ArrayBuffer.isView(data) }); },
   };
   page.glBase = glBase;
-  page.gl = new Proxy(glBase, { get: (t, k) => (k in t ? t[k] : typeof k === "string" && /^[A-Z0-9_]+$/.test(k) ? 1 : () => any()) });
+  /* every call on the context is counted (page.glCalls: all; page.draws: draw calls; page.glWhileLost: any call made while the context is lost) */
+  const quiet = new Set(["isContextLost", "getError"]);
+  const counted = (k, f) => (...a) => {
+    if (!quiet.has(k)) {
+      page.glCalls++;
+      if (/^draw/.test(k)) page.draws++;
+      if (page.lost) page.glWhileLost++;
+    }
+    return f(...a);
+  };
+  page.gl = new Proxy(glBase, { get: (t, k) => (k in t ? (typeof t[k] === "function" && typeof k === "string" ? counted(k, t[k]) : t[k]) : typeof k === "string" && /^[A-Z0-9_]+$/.test(k) ? 1 : typeof k === "string" ? counted(k, () => any()) : () => any()) });
 
   const mkCanvas = () => {
     const c = {
@@ -124,7 +135,9 @@ export function installPage(opts = {}) {
     removeEventListener(type, fn) { page.docListeners[type] = (page.docListeners[type] || []).filter((f) => f !== fn); },
     createElement: (tag) => (tag === "canvas" ? mkCanvas() : tag === "img" ? new StubImage() : any()),
     createElementNS: () => any(), createTextNode: () => any(),
+    querySelector: (sel) => page.query(sel), querySelectorAll: () => [], getElementById: () => null,
   };
+  page.query = () => any();                  /* tests answer document.querySelector */
   globalThis.document = doc;
   page.document = doc;
   page.setHidden = (h) => {
@@ -250,3 +263,79 @@ export const check = (name, ok, detail) => {
 };
 export const finish = () => process.exit(failed ? 1 : 0);
 export const errOf = (r) => (r.error ? `; ${r.error}` : "");
+
+/*
+ * The dawn's host for D7: querySelector(".world") -> a world whose ".earth image[data-href]" are the Earth's two
+ * pictures (SVG <image> elements, the first the quick one: dawn-pre). A picture's href set = the picture asked for;
+ * what it then does (load or error) is up to the test: onAsked(el, index).
+ */
+export function earthElement(name, onAsked) {
+  const attrs = { "data-href": `img/dawn/${name}.webp` };
+  const listeners = {};
+  const base = {
+    name, dataset: { href: attrs["data-href"] }, style: { setProperty() {}, removeProperty() {} }, listeners,
+    getAttribute: (k) => (k in attrs ? attrs[k] : null),
+    hasAttribute: (k) => k in attrs,
+    removeAttribute: (k) => { delete attrs[k]; },
+    setAttribute(k, v) { attrs[k] = String(v); if (/href$/.test(k)) onAsked(el); },
+    setAttributeNS(ns, k, v) { attrs[k] = String(v); if (/href$/.test(k)) onAsked(el); },
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
+    fire(type) { const ev = { type, target: el }; if (typeof el["on" + type] === "function") el["on" + type](ev); for (const f of [...(listeners[type] || [])]) f(ev); },
+    complete: false, naturalWidth: 0,
+  };
+  const el = new Proxy(base, {
+    get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
+    set: (t, k, v) => { t[k] = v; if (k === "href" || k === "src") { attrs.href = String(v); onAsked(el); } return true; },
+  });
+  return el;
+}
+export function dawnHost(onAsked) {
+  const pics = [earthElement("dawn-pre", onAsked), earthElement("dawn", onAsked)];
+  const classes = new Set();
+  const world = new Proxy({
+    dataset: {}, style: { setProperty() {}, removeProperty() {} }, clientWidth: 1280, clientHeight: 800, classes,
+    classList: { add: (...n) => n.forEach((x) => classes.add(x)), remove: (...n) => n.forEach((x) => classes.delete(x)), contains: (x) => classes.has(x), toggle: (x, f) => { (f ?? !classes.has(x)) ? classes.add(x) : classes.delete(x); return classes.has(x); } },
+    querySelectorAll: (sel) => (/\.earth image\[data-href\]/.test(sel) ? pics : /image\.pre/.test(sel) ? [pics[0]] : []),
+    querySelector: (sel) => (/image\.pre|\.pre\b/.test(sel) ? pics[0] : any()),
+    getBoundingClientRect: () => ({ width: 1280, height: 800 }),
+  }, { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
+  const host = new Proxy({ querySelector: (sel) => (sel === ".world" ? world : any()), querySelectorAll: () => [], dataset: {}, style: { setProperty() {} } },
+    { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
+  return { host, pics, world };
+}
+
+/* observers the page makes, recorded: ob.mutation / ob.resize hold every one, each with `.on` while it observes */
+export function installObservers() {
+  const ob = { mutation: [], resize: [] };
+  const make = (list) => class {
+    constructor(cb) { this.cb = cb; this.on = false; list.push(this); }
+    observe() { this.on = true; } unobserve() {} disconnect() { this.on = false; } takeRecords() { return []; }
+  };
+  globalThis.MutationObserver = make(ob.mutation);
+  globalThis.ResizeObserver = make(ob.resize);
+  ob.active = () => ob.mutation.filter((o) => o.on).length + ob.resize.filter((o) => o.on).length;
+  return ob;
+}
+/* what the page's listeners come to: resize on window, visibilitychange on window and document */
+export const listenerCounts = (page) => ({
+  resize: (page.winListeners.resize || []).length,
+  visibility: (page.docListeners.visibilitychange || []).length + (page.winListeners.visibilitychange || []).length,
+});
+/*
+ * Mount the dawn with the live door as a host does (flags door3d, the level asked for as high as the flag allows) on the
+ * stub page: returns { door, dawn, ob, baseline } with the listener counts taken before the dawn was mounted.
+ * The fake context cannot make the capability probe say ok (see the report), so the live door runs as its "lean" one.
+ */
+export async function mountLive(page) {
+  const ob = installObservers();
+  const { host, world } = dawnHost(() => {});
+  page.query = (sel) => (/#door .world/.test(sel) ? world : any());
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: { door3d: "1", level: "2" } });
+  door.gpu();
+  door.openChores();
+  const baseline = listenerCounts(page);
+  const dawn = d.dawn(host);
+  return { door, dawn, ob, baseline };
+}

@@ -19,57 +19,8 @@
  * stub page in door-stub.mjs. The journey is reached through assets/door/index.js alone, as a host does. D8 runs on a
  * virtual clock.
  */
-import { INDEX, isProbeSrc, installPage, installClock, sleep, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
-
-/* ---- D4: the lint (pure) ---- */
-const SAFE_CALLS = new Set(["abs", "max", "clamp", "exp", "exp2", "sqrt", "length", "smoothstep", "pow", "fract", "step", "min"]);
-const SIGNED_CALLS = new Set(["sin", "cos", "dot"]);
-/* is this expression's value possibly negative, going only by its top level? */
-function canBeNegative(expr) {
-  let depth = 0;
-  for (let i = 0; i < expr.length; i++) {
-    const c = expr[i];
-    if (c === "(") {
-      /* the name before the paren */
-      let j = i - 1; while (j >= 0 && /\s/.test(expr[j])) j--;
-      let k = j; while (k >= 0 && /[A-Za-z0-9_]/.test(expr[k])) k--;
-      const name = expr.slice(k + 1, j + 1);
-      /* find the matching paren */
-      let d = 1, e = i + 1;
-      while (e < expr.length && d > 0) { if (expr[e] === "(") d++; else if (expr[e] === ")") d--; e++; }
-      const inner = expr.slice(i + 1, e - 1);
-      if (name && SIGNED_CALLS.has(name)) return true;
-      if (!name && canBeNegative(inner)) return true;           /* plain parentheses: look inside */
-      i = e - 1;                                                /* any other call (abs, max, clamp, mix, ...): not looked into */
-      continue;
-    }
-    if (c === "-" ) {
-      /* the exponent of a literal (1e-3) is not a subtraction */
-      if (i > 0 && /[eE]/.test(expr[i - 1]) && /[0-9.]/.test(expr[i - 2] || "")) continue;
-      return true;
-    }
-    depth += 0;
-  }
-  return false;
-}
-/* the first argument of every pow( in a source: [{ base, at }] */
-function powBases(src) {
-  const out = [];
-  const re = /\bpow\s*\(/g;
-  let m;
-  while ((m = re.exec(src))) {
-    let d = 1, i = m.index + m[0].length, start = i;
-    while (i < src.length && d > 0) {
-      const c = src[i];
-      if (c === "(") d++; else if (c === ")") d--;
-      else if (c === "," && d === 1) break;
-      i++;
-    }
-    out.push({ base: src.slice(start, i).trim(), at: src.slice(Math.max(0, m.index - 20), Math.min(src.length, i + 24)).replace(/\s+/g, " ") });
-  }
-  return out;
-}
-const riskyPows = (src) => powBases(src).filter((p) => canBeNegative(p.base));
+import { riskyPows, riskyPowsStrict, powBases } from "./door-pow-lint.mjs";
+import { INDEX, isProbeSrc, mountLive, listenerCounts, installPage, installClock, sleep, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
 
 const CASES = {
   async "shaders"() {
@@ -118,6 +69,38 @@ const CASES = {
     };
   },
 
+  /* R1: the retry's download is held for ever; the proof must not wait for it */
+  async "retry-held"() { return retryProof({ hold: true }); },
+  async "retry-free"() { return retryProof({ hold: false }); },
+
+  /* R2: a stopped world's waits settle, and leave no listener */
+  async "stop-waiting"() { return stopCase("waiting"); },
+  async "stop-before-wait"() { return stopCase("before"); },
+  async "stop-control"() { return stopCase("control"); },
+
+  /* R3: visible when proving starts, hidden by the time the timed frames would run */
+  async "hide-midway"() { return midwayCase(); },
+
+  /* R6: a retried map is mipped like the others */
+  async "mips-control"() { return mipsCase({ fail: false }); },
+  async "mips-retry"() { return mipsCase({ fail: true }); },
+
+  /* R5: the live door's program */
+  async "live-shaders"() {
+    const page = installPage();
+    const clock = installClock();
+    const m = await mountLive(page);
+    const { sceneHead } = await import("../../assets/door/voyage.js");
+    m.dawn.start();
+    m.dawn.light({ firstVisit: false, aside: true, onLit() {}, onOpen() {}, after() {} });
+    m.dawn.live.compile();
+    await clock.advance(3000);
+    m.dawn.live.start();
+    await clock.advance(3000);
+    const sources = [...new Set(page.shaders.map((x) => x.src).filter((x) => x && !isProbeSrc(x)))];
+    return { sources, head: sceneHead({ door: true }) };
+  },
+
   /* D8: one flight, or two, each with a ready held */
   async "holding-single"() { return holdingCase(false); },
   async "holding-two"() { return holdingCase(true); },
@@ -130,6 +113,109 @@ const CASES = {
   async "upload-fails-stopped"() { return uploadCase({ fail: true }); },
   async "upload-control"() { return uploadCase({ fail: false }); },
 };
+
+/* R1: phase 1 as D6 (the first map refused every time); phase 2: the network is back for every map but that one, whose
+   fetch is held for ever (or, in the control, answers). The proving warm() must reach its verdict either way. */
+async function retryProof({ hold }) {
+  const calls = {};
+  let failedUrl = null, phase = 1;
+  const page = installPage({
+    fetch: (u) => {
+      calls[u] = (calls[u] || 0) + 1;
+      failedUrl ??= u;
+      if (u === failedUrl && phase === 1) return Promise.reject(new Error("the network dropped"));
+      if (u === failedUrl && hold) return new Promise(() => {});
+      return Promise.resolve({ ok: true, blob: async () => ({ size: 1 }) });
+    },
+  });
+  const clock = installClock();
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const journey = d.journey(page.journeyOptions());
+  door.openChores();
+  journey.warm({ prove: false }).catch(() => {});
+  await clock.advance(10000);
+  phase = 2;
+  const t0 = clock.now();
+  let settled = false;
+  journey.warm().then(() => { settled = true; }, () => { settled = true; });
+  const line = () => page.lines.find((l) => /flight world: (on|off)/.test(l));
+  await clock.advance(30000, () => !!line());
+  return { failedUrl, retried: (calls[failedUrl] || 0) >= 2, verdict: line() || null, verdictAfter: line() ? clock.now() - t0 : null, settled };
+}
+
+/* R2 */
+async function stopCase(how) {
+  const page = installPage({ hidden: how !== "control" });
+  const clock = installClock();
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const journey = d.journey(page.journeyOptions());
+  const baseline = listenerCounts(page);
+  let settled = false;
+  if (how === "waiting") {
+    door.openChores();
+    journey.warm().then(() => { settled = true; }, () => { settled = true; });
+    await clock.advance(4000);                                // the world is made and is waiting for the tab to show
+    var waitingBefore = { settled, listeners: listenerCounts(page) };
+    journey.destroy();
+  } else if (how === "before") {
+    journey.warm().then(() => { settled = true; }, () => { settled = true; });   // the chores are not open: the wait is not reached
+    journey.destroy();
+    door.openChores();
+  } else {
+    door.openChores();
+    journey.warm().then(() => { settled = true; }, () => { settled = true; });
+  }
+  await clock.advance(6000);
+  return { settled, baseline, after: listenerCounts(page), waitingBefore: typeof waitingBefore === "undefined" ? null : waitingBefore, verdicts: page.lines.filter((l) => /flight world/.test(l)).length };
+}
+
+/* R3: the tab is hidden at the first draw (the proof has started, the timed frames have not) */
+async function midwayCase() {
+  const page = installPage();
+  const spin = (ms) => { const t = performance.now(); while (performance.now() - t < ms) { /* a slow frame */ } };
+  page.glBase.readPixels = () => { page.readPixels++; spin(40); };
+  let flipped = false;
+  for (const fn of ["drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced"]) {
+    page.glBase[fn] = () => { page.draws++; if (!flipped) { flipped = true; page.setHidden(true); } };
+  }
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const journey = d.journey(page.journeyOptions());
+  door.openChores();
+  journey.warm().catch(() => {});
+  const verdict = () => page.lines.filter((l) => /flight world: off: frame/.test(l)).length;
+  await sleep(2500);
+  const during = { flipped, verdicts: verdict(), removed: page.removed, lost: page.lost, readPixels: page.readPixels };
+  page.setHidden(false);
+  for (let i = 0; i < 100 && !verdict(); i++) await sleep(100);
+  return { during, after: { verdicts: verdict(), removed: page.removed, lost: page.lost } };
+}
+
+/* R6 */
+async function mipsCase({ fail }) {
+  let failedUrl = null, refusing = fail;
+  const page = installPage({
+    fetch: (u) => {
+      failedUrl ??= u;
+      if (refusing && u === failedUrl) return Promise.reject(new Error("the network dropped"));
+      return Promise.resolve({ ok: true, blob: async () => ({ size: 1 }) });
+    },
+  });
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const journey = d.journey(page.journeyOptions());
+  door.openChores();
+  const settle = async () => { await Promise.race([door.quiet(), sleep(6000)]); await sleep(200); await Promise.race([door.quiet(), sleep(6000)]); };
+  await Promise.race([journey.warm({ prove: false }).catch(() => {}), sleep(6000)]);
+  await settle();
+  refusing = false;
+  await Promise.race([journey.warm({ prove: false }).catch(() => {}), sleep(6000)]);
+  await settle();
+  const maps = page.mapTextures();
+  return { maps: maps.size, mipped: [...maps].filter((t) => page.mipped.includes(t)).length };
+}
 
 async function holdingCase(two) {
   const page = installPage();
@@ -271,5 +357,47 @@ if (process.argv[2] === "--child") await childMain(CASES);
   const r = runCase(import.meta.url, "upload-fails-stopped");
   check("D10 (precondition): the world was stopped by the first picture upload, which then failed", !r.error && r.stopped === true && r.picturesTouched >= 1, `stopped ${r.stopped}, ${r.picturesTouched} picture texture(s) touched${errOf(r)}`);
   check("D10: a picture whose upload fails after the world stopped leaves no texture alive", !r.error && r.alive === 0, `${r.alive} of ${r.picturesTouched} picture texture(s) still alive (want 0)${errOf(r)}`);
+}
+/* R1 */
+{
+  const c = runCase(import.meta.url, "retry-free");
+  check("control (R1): with the retry answering, the proving warm() prints its verdict promptly (within 5 s)", !c.error && c.retried && c.verdictAfter !== null && c.verdictAfter < 5000, `retried ${c.retried}; verdict ${JSON.stringify(c.verdict)} after ${c.verdictAfter} ms${errOf(c)}`);
+  const r = runCase(import.meta.url, "retry-held");
+  check("R1 (precondition): the failed map was asked for again", !r.error && r.retried === true, `retried ${r.retried}${errOf(r)}`);
+  check("R1: with the retry's download held for ever, the proof still completes and prints its verdict (within 5 s)", !r.error && r.verdictAfter !== null && r.verdictAfter < 5000, `verdict ${JSON.stringify(r.verdict)} after ${r.verdictAfter} ms (virtual); warm() settled ${r.settled}${errOf(r)}`);
+  check("R1: ... and the verdict is `on`", !r.error && /flight world: on/.test(r.verdict || ""), `${JSON.stringify(r.verdict)}${errOf(r)}`);
+}
+/* R2 */
+{
+  const c = runCase(import.meta.url, "stop-control");
+  check("control (R2): a visible page's proving warm() settles", !c.error && c.settled === true, `settled ${c.settled}${errOf(c)}`);
+  const w = runCase(import.meta.url, "stop-waiting");
+  check("R2 (precondition): a hidden page's proving warm() is waiting (not settled) with a listener added", !w.error && w.waitingBefore && w.waitingBefore.settled === false && w.waitingBefore.listeners.visibility > w.baseline.visibility, `before stop: ${JSON.stringify(w.waitingBefore)}, baseline ${JSON.stringify(w.baseline)}${errOf(w)}`);
+  check("R2: the world stopped while warm() waits for the tab -> warm() settles", !w.error && w.settled === true, `settled ${w.settled}${errOf(w)}`);
+  check("R2: ... and no visibilitychange listener is left registered", !w.error && w.after.visibility <= w.baseline.visibility, `after ${JSON.stringify(w.after)}, baseline ${JSON.stringify(w.baseline)}${errOf(w)}`);
+  const b = runCase(import.meta.url, "stop-before-wait");
+  check("R2: a world stopped before the wait starts adds no visibilitychange listener", !b.error && b.after.visibility <= b.baseline.visibility, `after ${JSON.stringify(b.after)}, baseline ${JSON.stringify(b.baseline)}${errOf(b)}`);
+  check("R2: ... and its warm() settles", !b.error && b.settled === true, `settled ${b.settled}${errOf(b)}`);
+}
+/* R3 */
+{
+  const r = runCase(import.meta.url, "hide-midway");
+  check("R3 (precondition): the tab was hidden at the first draw, after proving began", !r.error && r.during.flipped === true, `flipped ${r.during?.flipped}${errOf(r)}`);
+  check("R3: hidden by the time the timed frames would run -> no timed frames, no verdict, no retire", !r.error && r.during.verdicts === 0 && r.during.removed === 0 && r.during.lost === false, `while hidden: ${JSON.stringify(r.during)}${errOf(r)}`);
+  check("R3: visible again -> the test runs (slow -> retired)", !r.error && r.after.verdicts >= 1, `after visible: ${JSON.stringify(r.after)}${errOf(r)}`);
+}
+/* R6 */
+{
+  const c = runCase(import.meta.url, "mips-control"), r = runCase(import.meta.url, "mips-retry");
+  check("control (R6): the maps are mipped when all load first time (the check can see mips)", !c.error && c.maps >= 1 && c.mipped >= 1, `${c.mipped} of ${c.maps} map texture(s) mipped${errOf(c)}`);
+  check("R6: a map whose download failed and was retried is mipped like the rest (as many mipped as in the control)", !r.error && !c.error && r.maps === c.maps && r.mipped === c.mipped, `retry run: ${r.mipped} of ${r.maps} mipped; control: ${c.mipped} of ${c.maps}${errOf(r)}`);
+}
+/* R5 */
+{
+  const r = runCase(import.meta.url, "live-shaders");
+  const sources = r.sources || [];
+  check("control (R5): the live door's shader sources were recorded", !r.error && sources.length >= 1, `${sources.length} source(s), ${sources.reduce((n, x) => n + powBases(x).length, 0)} pow( call(s), ${sources.filter((x) => /\bsq\s*\(/.test(x)).length} using sq(${errOf(r)}`);
+  const found = [...sources, r.head || ""].flatMap((x) => riskyPowsStrict(x));
+  check("R5: (stricter than D4: a square is written v*v) no pow( in the live door's program (sceneHead({ door: true }) and its own main) takes a base that can be negative", !r.error && found.length === 0, `${found.length} risky call(s): ${JSON.stringify(found.slice(0, 5).map((f) => f.at))}${errOf(r)}`);
 }
 finish();
