@@ -36,7 +36,7 @@ echo "== import"
 env -u ORBIT_SITE_IMPORT_TOKEN node tools/import-docs.mjs
 rm -rf tools/node_modules
 printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
-git add assets/docs assets/img/launcher
+git add assets/docs
 if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
 git diff --cached --stat | tail -1
 
