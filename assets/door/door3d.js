@@ -229,7 +229,7 @@ export function liveDoor(world) {
       /* a clouds map's slab field, made with it if the rich program is already there (else with it: richMaps) */
       if (key === "clouds" || key === "cloudsN") fieldOf(key);
     })
-    .catch(() => { /* drawn without it */ });
+    .catch(() => { /* drawn without it (upload.js has deleted the texture of an upload that failed) */ delete maps[key]; delete dims[key]; });
   const vao = gl.createVertexArray();
 
   /* the band the Earth fills: the frame's y 640..1000 (as the picture is laid), at the door's own scale */

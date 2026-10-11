@@ -1186,9 +1186,12 @@ export function createVoyage(under) {
 
   const tex = (w, h, fmt, f, type, data = null) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, f, type, data);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    /* (one whose upload fails is let go before the failure goes on: nothing is left alive that nothing will give back) */
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, f, type, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    } catch (e) { try { gl.deleteTexture(t); } catch { /* a lost context */ } throw e; }
     return t;
   };
   const target = (w, h) => { const t = tex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT); const f = gl.createFramebuffer();
@@ -1239,7 +1242,12 @@ export function createVoyage(under) {
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
-    }).catch(() => { /* drawn without it */ });
+    }).catch(() => {
+      /* drawn without it. Whatever it had put on the GPU is let go (upload.js deletes the texture of an upload that
+         failed, so the map is forgotten here, and given back if the world has stopped) */
+      landing.delete(key);
+      if (maps[key]) { giveBack("Texture", maps[key]); delete maps[key]; delete dims[key]; }
+    });
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
      back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
