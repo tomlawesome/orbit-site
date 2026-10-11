@@ -532,7 +532,8 @@ export function mountHome(skyCams) {
   $$(".drawer .close").forEach((c) => c.addEventListener("click", () => openDrawer(c.closest(".drawer").id, false)));
   $$("[data-open-drawer]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); $("#account").classList.remove("open"); openDrawer(b.dataset.openDrawer, true); }));
   $("#dial .sun-link").addEventListener("click", (e) => { e.preventDefault(); $("#today").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" }); });
-  addEventListener("resize", () => { if (!state.flying) renderGalaxy(); });
+  /* a burst of resizes draws the galaxy once, after the burst (as the docs chart does) */
+  let galaxyTimer; addEventListener("resize", () => { clearTimeout(galaxyTimer); galaxyTimer = setTimeout(() => { if (!state.flying) renderGalaxy(); }, 150); });
   /* from another household, back to yours; from yours, back to the dawn (main.js says how) */
   $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });
