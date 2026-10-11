@@ -11,6 +11,7 @@ import * as law from "./law.js";
 import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
+import { createLock } from "./lock.js";
 
 /* the shared door (assets/door/index.js), with what differs here: where its pictures are, and the debug switches read
    from the address (the folder itself never reads the address) */
@@ -233,7 +234,7 @@ function afterPaint(fn) {
   }));
 }
 function showDoor() {
-  journey.reset(); hideAll(); current = "door"; done();
+  journey.reset(); hideAll(); current = "door"; lock.release(); finish();
   $("#gate").classList.remove("flash");
   const door = $("#door");
   dawn.start();
@@ -307,10 +308,13 @@ function proveLater(after) {
   if (MAINTENANCE || saveData()) return;
   journey.later(() => { journey.warm(); journey.warmDocs(); }, { after });
 }
-let moving = 0, after = null;
-const begin = () => { if (moving) return false; moving = setTimeout(done, 15000); return true; };
+const lock = createLock();
+let letGo = 0, after = null;
+/* a token (never 0) when the lock is taken, 0 when a journey is already in flight; the 15 s let-go frees only its own */
+const begin = () => { if (lock.held()) return 0; const token = lock.begin(); letGo = setTimeout(() => done(token), 15000); return token; };
 /* a Back or Forward kept for the landing runs once the landing has finished setting itself straight */
-const done = () => { clearTimeout(moving); moving = 0; const then = after; after = null; if (then) setTimeout(then, 0); };
+const done = (token) => { if (!lock.done(token)) return; finish(); };
+const finish = () => { clearTimeout(letGo); const then = after; after = null; if (then) setTimeout(then, 0); };
 /* the browser's own back and forward: a journey from the door is a step in the history, so Back goes home the way
    it came, and Forward goes out again. The back links use it too, when the step is there to go back along */
 const step = (hash) => { try { history.pushState({ orbit: 1 }, "", hash); } catch { /* fine */ } };
@@ -319,7 +323,7 @@ const goBack = (fn) => () => { if (history.state?.orbit) history.back(); else fn
 /* the install is a shot rather than a flight: the camera goes to the planet that was clicked */
 let sceneTimer = 0;
 const planetOf = (id) => { const planet = $(`#door .planet[data-section="${id}"]`); return { planet, body: planet.querySelector(".body") }; };
-function goToWorld(id = "install") {
+function goToWorld(id, token) {
   const pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   planets.hide(); player.stop(true); home.closeDrawers();
   clearTimeout(sceneTimer);
@@ -338,7 +342,7 @@ function goToWorld(id = "install") {
   pad.el.classList.add("forming"); pad.el.classList.remove("formed"); pad.el.hidden = false; current = id;
   try { history.replaceState(null, "", `#${id}`); } catch { /* fine */ }
   shot.form(scene).then(() => {
-    done();
+    done(token);
     if (current !== id) return;
     pad.el.classList.remove("forming"); pad.el.classList.add("formed");
     document.body.classList.add("instrument", "arrived");
@@ -354,7 +358,7 @@ function goToWorld(id = "install") {
 }
 /* back to the dawn: the same shot out, the planet set down on its orbit wherever it has got to */
 function leaveWorld() {
-  if (!begin()) return;
+  const token = begin(); if (!token) return;
   const id = current, pad = PADS[id], door = $("#door"), shot = shotOf(pad);
   clearTimeout(sceneTimer);
   dawn.start();
@@ -375,26 +379,26 @@ function leaveWorld() {
   planets.layout();
   pad.el.classList.add("forming"); pad.el.classList.remove("formed");
   shot.unform(scene).then(() => {
-    done(); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door"; doorFocus(id);
+    done(token); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door"; doorFocus(id);
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     try { history.replaceState(null, "", " "); } catch { /* fine */ }
   });
 }
 function flyToPad(id, push = true) {
-  if (current !== "door" || !begin()) return;
+  const token = current === "door" ? begin() : 0; if (!token) return;
   if (push) step(`#${id}`);
   /* a journey starts the moment it is chosen. The dives hold on the planet swelling as the camera finds it until their
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (assets/door/journey.js: fly) */
   hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
-  if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id); return; }
-  flyNow(id, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null, id === "docs" ? journey.warmDocs() : null]));
+  if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id, token); return; }
+  flyNow(id, token, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null, id === "docs" ? journey.warmDocs() : null]));
 }
 /* the docs' chart, as the flights carry it: where it sits on the screen, measured when first wanted, and again
    if the window is resized on the way */
 let chartMemo = null;
 addEventListener("resize", () => { chartMemo = null; });
 const docsChart = () => chartMemo || (chartMemo = PADS.docs.ring.flight?.() || null);
-function flyNow(id, ready = null) {
+function flyNow(id, token, ready = null) {
   const pad = PADS[id], sec = SECTIONS[id];
   planets.hide(); player.stop(true); home.closeDrawers();
   /* the docs' flight carries the chart, asked for when it is first wanted (the flight may start before the chart
@@ -408,7 +412,7 @@ function flyNow(id, ready = null) {
       release: leaveCurrent,
       /* the docs are ready to read as the sky lands; the others wait for their instrument */
       land() { pad.el.hidden = false; current = id; if (id === "docs" && carry()) pad.ring.settle(); if (id === "docs") pad.ring.start(); try { if (!location.hash.startsWith(`#${id}/`)) history.replaceState(null, "", `#${id}`); } catch { /* fine */ } },
-      settled() { done(); document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); arriveFocus(pad.el); },
+      settled() { done(token); document.body.classList.remove("at-door"); document.body.classList.add("arrived"); if (id !== "docs") pad.ring.start(); arriveFocus(pad.el); },
     },
   });
 }
@@ -424,7 +428,7 @@ function arrivePad(id) {
 function backToDawn() {
   const pad = PADS[current]; if (!pad) { showDoor(); return; }
   if (current === "install" || current === "info") { leaveWorld(); return; }
-  if (!begin()) return;
+  const token = begin(); if (!token) return;
   hurryChores(["flight", "docs"]);
   /* the docs go back out through their galaxy, even if they were come to straight (a link), not flown to */
   if (current === "docs" && !pad.flown) {
@@ -434,20 +438,20 @@ function backToDawn() {
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { done(); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } readyDoor(); },
+    farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } readyDoor(); },
   } });
 }
 
 /* the gate: the flight, whole — 4.8 seconds of climb, the bare sky, the
    instrument as the dial settles (timeline.js: the site's own amendment) */
 function launch(push = true) {
-  if (current !== "door" || !begin()) return;
+  const token = current === "door" ? begin() : 0; if (!token) return;
   if (push) step("#home");
   $("#gate").classList.add("flash");
   hurryChores("flight");
-  launchNow(journey.warm());
+  launchNow(journey.warm(), token);
 }
-function launchNow(ready = null) {
+function launchNow(ready, token) {
   try { sessionStorage.setItem("orbit-site-arrived", "1"); } catch { /* this visit only */ }
   planets.hide();
   const h = home.household();
@@ -460,7 +464,7 @@ function launchNow(ready = null) {
   journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; try { if (!history.state?.orbit) history.replaceState(null, "", " "); } catch { /* fine */ } },
-    settled() { done(); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
+    settled() { done(token); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
   } });
 }
 
@@ -479,20 +483,20 @@ function signOut() {
   player.stop(false);
   home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
-  if (!begin()) return;
+  const token = begin(); if (!token) return;
   const h = home.household();
-  journey.descend({ title: h.name, on: { farewell() { done(); current = "dusk"; player.hide(); } } });
+  journey.descend({ title: h.name, on: { farewell() { done(token); current = "dusk"; player.hide(); } } });
 }
 
 /* from the sky back to the dawn: the climb run backwards, landing on the door as the landings' "— the dawn" does */
 function homeToDawn() {
-  if (current !== "home" || !begin()) return;
+  const token = current === "home" ? begin() : 0; if (!token) return;
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
-      done();
+      done(token);
       const h = $("#home"); h.classList.remove("shown"); h.hidden = true; player.hide();
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door"; doorFocus("home");
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
@@ -513,7 +517,7 @@ addEventListener("popstate", () => {
   if (MAINTENANCE) return;
   /* the hash as it is now: a journey still in flight rewrites it when it lands */
   const h = location.hash.split("/")[0];
-  if (moving) { after = () => onPop(h); return; }
+  if (lock.held()) { after = () => onPop(h); return; }
   onPop(h);
 });
 if (!MAINTENANCE) $("#gate").addEventListener("click", launch);
