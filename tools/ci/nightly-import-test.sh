@@ -523,6 +523,56 @@ pin_run "$tmp" SSL_CERT_FILE=/ca.pem CI_SERVER_TLS_CA_FILE=/ca.pem NODE_VERSION=
 rc=0; ! grep -q 'is set in the environment' "$out" || rc=1
 check "job 2: the runner's own CA file, NODE_VERSION, GIT_DEPTH and GIT_STRATEGY are not refused" "$rc"
 
+# The pipeline's own variables are not refused (#18). GitLab puts every variable
+# of .gitlab-ci.yml's top-level `variables:` and of publish_docs's own into the
+# job's shell, NODE_IMAGE (the job's image reference) among them; the guard must
+# let each through and still refuse the dangerous ones. The list is read from the
+# committed .gitlab-ci.yml, so a variable added there is tried here as well.
+# passes_guard <label> [VAR=value ...]: no "is set in the environment" line, and
+# the script got as far as its first line, "== the checkout".
+passes_guard() {
+  label=$1; shift
+  pin_run "$tmp" "$@"
+  rc=0
+  ! grep -q 'is set in the environment' "$out" && grep -q '^== the checkout' "$out" || rc=1
+  check "job 2: $label passes the environment guard" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+}
+ci_vars=$(awk '
+  function emit(   l, n, v) {
+    l = $0; sub(/^ +/, "", l); n = l; sub(/:.*/, "", n)
+    v = l; sub(/^[^:]*: */, "", v); sub(/ +#.*$/, "", v); sub(/ +$/, "", v)
+    if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
+    print n "=" v
+  }
+  /^[^ #]/ { s = ($0 ~ /^variables:/) ? "top" : (($0 ~ /^publish_docs:/) ? "pub" : ""); v = 0; next }
+  s == "top" && /^  [A-Za-z_][A-Za-z0-9_]*:/ { emit() }
+  s == "pub" && /^  [A-Za-z_]+:/ { v = ($0 ~ /^  variables:/); next }
+  s == "pub" && v && /^    [A-Za-z_][A-Za-z0-9_]*:/ { emit() }
+' "$tmp/.gitlab-ci.yml")
+rc=0; [ -n "$ci_vars" ] && printf '%s\n' "$ci_vars" | grep -q '^NODE_IMAGE=' || rc=1
+check "job 2: the variables read from .gitlab-ci.yml are not empty and hold NODE_IMAGE" "$rc"
+[ "$rc" -eq 0 ] || echo "     parsed: $ci_vars"
+# the pipeline's variables, then what the runner adds, as the job sees them
+# (none holds a space, so word splitting is safe)
+realvars="$(printf '%s' "$ci_vars" | tr '\n' ' ') NODE_VERSION=22.0.0 YARN_VERSION=1.22.22 IMPORT_DOCS=true GITLAB_CI=true GITLAB_USER_LOGIN=x FF_USE_FASTZIP=true CI_JOB_NAME=publish_docs CI_ENVIRONMENT_NAME=docs-import CI_RUNNER_ID=1 CI_SERVER_TLS_CA_FILE=/ca.pem"
+# E1: the real variables, all at once
+set -f; set -- $realvars; set +f
+passes_guard "the pipeline's real variables" "$@"
+# E2: NODE_IMAGE alone
+passes_guard "NODE_IMAGE alone" NODE_IMAGE=docker.io/library/node:22-bookworm@sha256:0000
+# E3: still refused with the real variables present
+for v in NODE_OPTIONS=--require=/x NODE_PATH=/x NODE_EXTRA_CA_CERTS=/x NODE_REPL_EXTERNAL_MODULE=/x LD_PRELOAD=/x.so \
+  LD_LIBRARY_PATH=/x PYTHONPATH=/x PYTHONSTARTUP=/x GIT_EXEC_PATH=/x GIT_CONFIG_GLOBAL=/x GIT_SSH_COMMAND=x BASH_ENV=/x \
+  OPENSSL_CONF=/x SSL_CERT_FILE=/other.pem; do
+  set -f; set -- $realvars "$v"; set +f
+  pinned "with ${v%%=*} set beside the pipeline's real variables" "$tmp" "refusing to run: ${v%%=*} is set" "$@"
+done
+# E4: a NODE_ variable added to the YAML is refused by name (and E1 above is the
+# lint-time gate: it fails on any new NODE_ variable in the YAML)
+set -f; set -- $realvars NODE_FUTURE=1; set +f
+pinned "with a new NODE_FUTURE beside the pipeline's real variables" "$tmp" "refusing to run: NODE_FUTURE is set" "$@"
+
 # Run 6: GitLab refuses every auto-merge request (405). The job must fail and
 # show why: the merge request, GitLab's status code and its message.
 run_push "$out" refused
