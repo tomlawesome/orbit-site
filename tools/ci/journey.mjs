@@ -14,6 +14,7 @@
  * site draws its stills, which is also what it must do for visitors.
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -26,7 +27,12 @@ const SITE = process.env.SITE || "http://127.0.0.1:8787/";
 const BROWSER = process.env.BROWSER || "firefox";
 const here = dirname(fileURLToPath(import.meta.url));
 
-let server = null;
+/* the server and the browser are closed whatever happens between: an exception
+   would otherwise leave the child serving and the browser open, and the job hung.
+   (The body of the try is not indented, to keep the diff of this step small.) */
+const problems = [];
+let server = null, browser = null;
+try {
 if (!process.env.SITE) {
   server = spawn(process.execPath, [join(here, "serve.mjs"), "8787"], { stdio: ["ignore", "inherit", "inherit"] });
   await new Promise((ok, no) => {
@@ -37,10 +43,9 @@ if (!process.env.SITE) {
   });
 }
 
-const problems = [];
 /* HEADED=1 runs the browser headed (the gate does so under Xvfb with software
    GL, so Firefox has a WebGL2 to draw the worlds with) */
-const browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
 /* Each step opens its own tab, as a visitor arriving from a link does: a
    hash change inside one tab is a different path (the site flies between
    landings on a click, not on the address alone). */
@@ -309,16 +314,24 @@ if (maintenance) {
   await landings("");
 }
 
+/* the page served for a missing address is 404.html's own: its title and its heading, read from the file */
 await step("404 is the site's own", async () => {
+  const file = readFileSync(join(here, "..", "..", "404.html"), "utf8");
+  const want = { title: /<title>([^<]+)<\/title>/.exec(file)?.[1], heading: /<h1[^>]*>([^<]+)<\/h1>/.exec(file)?.[1] };
+  if (!want.title || !want.heading) throw new Error("404.html has no title or heading to compare with");
   expectNotFound = true;
   try {
     const res = await page.goto(SITE + "no-such-page", { waitUntil: "load" });
     if (res.status() !== 404) throw new Error(`status ${res.status()}`);
+    const got = { title: await page.title(), heading: (await page.locator("h1").first().innerText()).trim() };
+    if (got.title !== want.title.trim()) throw new Error(`title ${JSON.stringify(got.title)}, 404.html's is ${JSON.stringify(want.title.trim())}`);
+    if (got.heading !== want.heading.trim()) throw new Error(`heading ${JSON.stringify(got.heading)}, 404.html's is ${JSON.stringify(want.heading.trim())}`);
   } finally { await page.waitForTimeout(300); expectNotFound = false; }
 });
-
-await browser.close();
-server?.kill();
+} finally {
+  await browser?.close().catch(() => {});
+  server?.kill();
+}
 const real = problems.filter((p) => !/favicon/.test(p));
 if (real.length) { console.log("\njourney: failed"); for (const p of real) console.log(" - " + p); process.exit(1); }
 console.log("\njourney: ok");
