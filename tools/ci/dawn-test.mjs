@@ -28,14 +28,16 @@
  * HTMLImageElement.prototype.decode() on an image of the same address. Recorded from an init script: every decode() call
  * (the image's src, absolute, and performance.now()) and when body first has class lit. Read 3 s after the light: every
  * #door .world image's address (href, else xlink:href), absolute. At least 3 exist, and each had a decode() call on the
- * same address before body.lit. The light is the 13 s backstop's (lightIt with an after() that never settles).
+ * same address before body.lit (judged by whether body had class lit at the decode() call itself), and at least one is
+ * the page's own painted glow (a blob: or data: address). The light is the 13 s backstop's (lightIt with an after() that never settles).
  *
  * Also (#32), the dawn holds each rasterised glow decoded: after start() and once data-rasterised reads "ready", every
  * #door .world image[data-raster] has its current href (absolute) as the src of at least one image in the flattened
  * dawn.held[*].held[*], and as the src of exactly one (one holding per layer). After a resize from 1280x800 to 900x600 and
  * "ready" again, the same holds for the new hrefs, and a layer whose href changed has let go of its old one (no held
  * image has the old src); a resize that changes no href fails, since it did not exercise the rule. After dawn.destroy(),
- * dawn.held is empty.
+ * dawn.held is empty. Each held image of a current layer must also be decoded: its holding's ready comes (within 5 s) and
+ * the image is complete with a naturalWidth above 0, before and after the resize.
  *
  * (sh tools/ci/journey-local.sh dawn does exactly that.) BROWSER=chromium for a second engine; HEADED=1 as the other
  * live tests: Firefox has no WebGL headless here. The whole run takes about a minute: the light cases wait out the
@@ -189,7 +191,7 @@ try {
     window.__litAt = null;
     const decode = HTMLImageElement.prototype.decode;
     HTMLImageElement.prototype.decode = function () {
-      try { window.__decodes.push({ url: new URL(this.src || this.currentSrc || "", document.baseURI).href, at: performance.now() }); } catch {}
+      try { window.__decodes.push({ url: new URL(this.src || this.currentSrc || "", document.baseURI).href, at: performance.now(), lit: !!(document.body && document.body.classList.contains("lit")) }); } catch {}
       return decode.apply(this, arguments);
     };
     const check = () => { if (window.__litAt === null && document.body && document.body.classList.contains("lit")) window.__litAt = performance.now(); };
@@ -215,23 +217,34 @@ try {
         }
         return { pictures, decodes: window.__decodes, litAt: window.__litAt };
       });
-      const early = (url) => seen.decodes.some((d) => d.url === url && seen.litAt !== null && d.at < seen.litAt);
-      const late = (url) => seen.decodes.filter((d) => d.url === url && (seen.litAt === null || d.at >= seen.litAt)).map((d) => Math.round(d.at - seen.litAt));
+      /* early: body did not yet have class lit at the call itself (litAt is stamped a task later, from the observer) */
+      const early = (url) => seen.decodes.some((d) => d.url === url && seen.litAt !== null && !d.lit && d.at < seen.litAt);
+      const late = (url) => seen.decodes.filter((d) => d.url === url && (seen.litAt === null || d.lit || d.at >= seen.litAt)).map((d) => Math.round(d.at - seen.litAt));
       const missing = [...new Set(seen.pictures)].filter((u) => !early(u))
         .map((u) => ({ url: u.replace(/^.*\/assets\//, "assets/"), decodedAfterLight: late(u) }));
-      return { r: { ...seen, missing, waited, thrown: null, errors: [] }, problems };
+      const kinds = [...new Set(seen.pictures.map((u) => u.replace(/^([a-z]+):.*$/i, "$1")))];
+      const painted = seen.pictures.filter((u) => /^(blob|data):/i.test(u));
+      return { r: { ...seen, missing, kinds, painted, waited, thrown: null, errors: [] }, problems };
     } finally { await page.close(); }
   };
 
   /* #32: the rasterised layers' hrefs against what dawn.held holds, in the page */
-  const heldLook = () => {
+  const heldLook = async () => {
     const abs = (u) => new URL(u, document.baseURI).href;
     const held = [];
     for (const h of window.dawn.held) for (const img of h.held) held.push(img.src);
+    /* each holding's ready, bounded; then every held image that is a current layer's must be decoded and loaded */
+    const bound = new Promise((ok) => setTimeout(() => ok("timeout"), 5000));
+    const readied = await Promise.all(window.dawn.held.map((h) => Promise.race([Promise.resolve(h.ready).then(() => "ok", () => "rejected"), bound])));
+    const notReady = readied.filter((x) => x !== "ok").length;
     const hrefs = [...document.querySelectorAll("#door .world image[data-raster]")]
       .map((el) => el.getAttribute("href") || el.getAttribute("xlink:href")).filter(Boolean).map(abs);
+    const undecoded = [];
+    for (const h of window.dawn.held) for (const img of h.held) {
+      if (hrefs.includes(img.src) && !(img.complete && img.naturalWidth > 0)) undecoded.push(img.src);
+    }
     return {
-      hrefs, heldCount: held.length,
+      hrefs, heldCount: held.length, notReady, undecoded,
       count: Object.fromEntries(hrefs.map((u) => [u, held.filter((s) => s === u).length])),
       heldSrcs: held,
     };
@@ -267,10 +280,11 @@ try {
       }
       const afterDestroy = await page.evaluate(() => { window.dawn.destroy(); return window.dawn.held.length; });
       const layersOk = (x) => x !== null && x.hrefs.length > 0 && x.hrefs.every((u) => x.count[u] >= 1);
+      const decodedOk = (x) => x !== null && x.notReady === 0 && x.undecoded.length === 0;
       const onceOk = (x) => x !== null && x.hrefs.length > 0 && x.hrefs.every((u) => x.count[u] === 1);
       const changed = second ? first.hrefs.filter((u) => !second.hrefs.includes(u)) : [];
       const letGo = second ? changed.every((u) => !second.heldSrcs.includes(u)) : false;
-      return { r: { first, second, afterDestroy, waited, layersOk, onceOk, changed, letGo, thrown: null, errors: [] }, problems };
+      return { r: { first, second, afterDestroy, waited, layersOk, decodedOk, onceOk, changed, letGo, thrown: null, errors: [] }, problems };
     } finally { await page.close(); }
   };
 
@@ -279,20 +293,23 @@ try {
       ["there are rasterised layers (image[data-raster]) once ready", r.first.hrefs.length > 0],
       ["every rasterised href is the src of a held image", r.layersOk(r.first)],
       ["exactly one held image per rasterised href", r.onceOk(r.first)],
+      ["each holding's ready came, and each held layer image is complete with a width", r.decodedOk(r.first)],
       ["the resize changed at least one href (it exercised the rule)", r.second !== null && r.changed.length > 0],
       ["after the resize, every new href is held", r.layersOk(r.second)],
       ["after the resize, exactly one held image per href", r.onceOk(r.second)],
+      ["after the resize, each holding's ready came and each held layer image is complete with a width", r.decodedOk(r.second)],
       ["after the resize, the old hrefs are no longer held", r.letGo],
       ["after destroy(), dawn.held is empty", r.afterDestroy === 0],
-    ], (r) => `before ${JSON.stringify(r.first.hrefs.map(short))}, held ${r.first.heldCount}; after the resize ${r.second ? `${JSON.stringify(r.second.hrefs.map(short))}, held ${r.second.heldCount}` : "never ready"}; changed ${r.changed.length ? JSON.stringify(r.changed.map(short)) : "none (the resize did not exercise the rule)"}; held after destroy() ${r.afterDestroy}`],
+    ], (r) => `before ${JSON.stringify(r.first.hrefs.map(short))}, held ${r.first.heldCount} (not ready ${r.first.notReady}, undecoded ${r.first.undecoded.length}); after the resize ${r.second ? `${JSON.stringify(r.second.hrefs.map(short))}, held ${r.second.heldCount} (not ready ${r.second.notReady}, undecoded ${r.second.undecoded.length})` : "never ready"}; changed ${r.changed.length ? JSON.stringify(r.changed.map(short)) : "none (the resize did not exercise the rule)"}; held after destroy() ${r.afterDestroy}`],
 
     ["the dawn's pictures are decoded before the light (#32)", () => decodedAhead(), (r) => [
       ["body.lit came", r.litAt !== null],
       ["at least 3 pictures are in #door .world", r.pictures.length >= 3],
+      ["one of the pictures is the page's own painted glow (a blob: or data: address)", r.painted.length > 0],
       ["every picture had a decode() call before body.lit", r.missing.length === 0],
     ], (r) => r.missing.length
-      ? `${r.pictures.length} pictures, ${r.decodes.length} decode() calls, lit at ${r.litAt === null ? "never" : Math.round(r.litAt)} ms; no decode before the light: ${r.missing.map((m) => `${m.url} (${m.decodedAfterLight.length ? `decoded at ${m.decodedAfterLight.map((t) => `+${t}`).join(", ")} ms after the light` : "never decoded"})`).join("; ")}`
-      : `${r.pictures.length} pictures, all decoded before the light (${r.decodes.length} decode() calls; lit at ${Math.round(r.litAt)} ms)`],
+      ? `${r.pictures.length} pictures (address kinds ${JSON.stringify(r.kinds)}, ${r.painted.length} painted by the page), ${r.decodes.length} decode() calls, lit at ${r.litAt === null ? "never" : Math.round(r.litAt)} ms; no decode before the light: ${r.missing.map((m) => `${m.url} (${m.decodedAfterLight.length ? `decoded at ${m.decodedAfterLight.map((t) => `+${t}`).join(", ")} ms after the light` : "never decoded"})`).join("; ")}`
+      : `${r.pictures.length} pictures (address kinds ${JSON.stringify(r.kinds)}, ${r.painted.length} painted by the page), all decoded before the light (${r.decodes.length} decode() calls; lit at ${Math.round(r.litAt)} ms)`],
 
     ["light, no destroy() (control): the backstop lights it by 15 s", () => light(null, CONTROL_WATCH), (r) => [
       ["body.lit is set by 15 s", r.lit && r.at.lit !== undefined],
