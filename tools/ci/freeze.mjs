@@ -129,8 +129,9 @@ const said = (log, re) => log.console.filter((c) => re.test(c.text));
 
 /* A scenario: a name, and a function that states what must be so with want(); a throw is a problem too. want.gpu():
    a timing that a real GPU would make faster (the 3D world, the GPU context, the browser's paint reports). The CI
-   runner has no GPU and shares its CPU, so there it is reported and never fails the job (owner, 2026-10-11); 2D
-   timings, and everything that is not a timing, are judged everywhere. Locally every check is judged */
+   runner has no GPU and shares its CPU, so there it is reported and never fails the job (owner, 2026-10-11). That
+   includes the 2D flight's: Chromium draws a 2D canvas on the GPU where there is one (owner 7b). The long tasks after
+   the light, and everything that is not a timing, are judged everywhere. Locally every check is judged */
 const GPU_TIMINGS_JUDGED = process.env.CI !== "true";
 const only = process.env.FREEZE_ONLY ? new RegExp(process.env.FREEZE_ONLY) : null;   /* FREEZE_ONLY='^12' runs one */
 const scenario = async (name, fn) => {
@@ -230,8 +231,9 @@ try {
       try { await waitBody(page, "bare", 20000); } catch { /* reported below */ }
       const s = await state(page);
       info(`seen at ${short(s.seen)}; clicked at ${Math.round(clickedAt)}; webgl2 calls ${webgl2(s).length}`);
-      want(s.seen.showwarp !== undefined, "body gets showwarp after the click");
-      want(s.seen.bare !== undefined && s.seen.bare - clickedAt < 20000, `body gets bare within 20 s of the click -- ${s.seen.bare === undefined ? "never" : Math.round(s.seen.bare - clickedAt) + " ms"}`);
+      /* (both timings: a 2D canvas is drawn on the GPU where there is one, so on CI they are reported, owner 7b) */
+      want.gpu(s.seen.showwarp !== undefined, "body gets showwarp after the click");
+      want.gpu(s.seen.bare !== undefined && s.seen.bare - clickedAt < 20000, `body gets bare within 20 s of the click -- ${s.seen.bare === undefined ? "never" : Math.round(s.seen.bare - clickedAt) + " ms"}`);
       want(s.seen.showwarp === undefined || s.seen.bare === undefined || s.seen.showwarp <= s.seen.bare, "showwarp first, then bare");
       want(webgl2(s).length === 1, `still one webgl2 context -- ${webgl2(s).length}`);
       want(log.errors.length === 0, `no console.error or page error through the flight -- ${short(log.errors)}`);
