@@ -28,7 +28,8 @@ try {
     })();
   });
 
-  for (const [name, headless] of [["chromium", true], ["firefox", false]]) {
+  /* ENGINES=chromium runs only the first: the coverage run (tools/ci/coverage-run.sh) wants Chromium's V8 only */
+  for (const [name, headless] of [["chromium", true], ["firefox", false]].filter(([n]) => !process.env.ENGINES || process.env.ENGINES.split(",").includes(n))) {
     const problems = [];
     let result = null;
     let browser = null;

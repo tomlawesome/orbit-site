@@ -1,0 +1,38 @@
+{
+  "about": "Line coverage floors (#14): the whole percent each file reached, rounded down, the lowest of three full runs. The check (tools/ci/coverage.mjs) fails if a file falls below its floor. A change that lifts a file raises its floor in the same merge request: node tools/ci/coverage.mjs --raise DIR (it only raises). A floor is never lowered to pass a change; a file that cannot sensibly be covered says why under reasons.",
+  "floors": {
+    "sw.js": 0,
+    "assets/js/data.js": 98,
+    "assets/js/home.js": 61,
+    "assets/js/install.js": 63,
+    "assets/js/journeys.js": 100,
+    "assets/js/law.js": 95,
+    "assets/js/lock.js": 100,
+    "assets/js/main.js": 84,
+    "assets/js/pads.js": 85,
+    "assets/js/planets3d.js": 29,
+    "assets/js/sky.js": 93,
+    "assets/js/tilt.js": 25,
+    "assets/js/tour.js": 15,
+    "assets/js/world.js": 100,
+    "assets/door/capability.js": 93,
+    "assets/door/chores.js": 100,
+    "assets/door/dawn.js": 88,
+    "assets/door/decode-ahead.js": 100,
+    "assets/door/door3d.js": 16,
+    "assets/door/engine.js": 82,
+    "assets/door/fitness.js": 100,
+    "assets/door/glows.js": 89,
+    "assets/door/index.js": 100,
+    "assets/door/journey.js": 100,
+    "assets/door/markup.js": 100,
+    "assets/door/settings.js": 100,
+    "assets/door/stars.js": 100,
+    "assets/door/timeline.js": 100,
+    "assets/door/upload.js": 98,
+    "assets/door/voyage.js": 94
+  },
+  "reasons": {
+    "sw.js": "No test runs it: the site registers it only on https or localhost, and the journey serves from 127.0.0.1, so it never starts. Chromium page coverage does not see a service worker either; it needs a Node test with a fake self, caches and fetch event."
+  }
+}

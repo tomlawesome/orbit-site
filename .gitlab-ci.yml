@@ -79,44 +79,20 @@ lint:
   rules:
     - *not_scheduled
     - when: on_success
+  variables:
+    # Node records which lines of the site its tests ran (tools/ci/node-tests.sh);
+    # `live:journey` adds Chromium's and checks them against the floors (#14).
+    COVERAGE_DIR: coverage
+  artifacts:
+    paths: [coverage/]
+    expire_in: 1 day
   script:
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
-    - sh tools/ci/door-timing-lookup-test.sh
-    - node tools/ci/fetch-once-test.mjs
-    - node tools/ci/dates-test.mjs
-    - node tools/ci/sanitise-html-test.mjs
-    - node tools/ci/comment-rules-test.mjs
-    - node tools/ci/home-props-test.mjs
-    - node tools/ci/goodbye-markup-test.mjs
-    - node tools/ci/descent-homes-test.mjs
-    - node tools/ci/gpu-gate-test.mjs
-    - node tools/ci/hurry-test.mjs
-    - node tools/ci/dawn-destroyed-light-test.mjs
-    - node tools/ci/retire-after-destroy-test.mjs
-    - node tools/ci/destroyed-world-test.mjs
-    - node tools/ci/released-world-test.mjs
-    - node tools/ci/rich-remount-test.mjs
-    - node tools/ci/sharp-strip-remount-test.mjs
-    - node tools/ci/fit-skip-test.mjs
-    - node tools/ci/door-context-restore-test.mjs
-    - node tools/ci/door-wordmark-test.mjs
-    - node tools/ci/door-shimmer-test.mjs
-    - node tools/ci/door-probe-chores-test.mjs
-    - node tools/ci/door-world-test.mjs
-    - node tools/ci/door-banded-upload-test.mjs
-    - node tools/ci/door-sky-test.mjs
-    - node tools/ci/door-live-teardown-test.mjs
-    - node tools/ci/local-server-test.mjs
-    - node tools/ci/site-world-test.mjs
-    - node tools/ci/site-home-date-test.mjs
-    - node tools/ci/site-lock-test.mjs
-    - node tools/ci/site-pads-test.mjs
-    - node tools/ci/site-pads-sources-test.mjs
-    - node tools/ci/docs-shape-test.mjs
-    - node tools/ci/site-data-test.mjs
+    - sh tools/ci/node-tests.sh
+    - node tools/ci/coverage-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/import-docs-test.mjs
     - node tools/ci/raw-heading-test.mjs
@@ -138,6 +114,12 @@ lint:
 # households met again on the way down (#25, #26). The freeze check runs
 # Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
 # the GPU once, refuses a software renderer, and then freezes nothing (#2).
+# The last step is the coverage ratchet (#14): the journey, the upload, pin and
+# freeze checks run again in Chromium, which records which of the site's
+# JavaScript ran, and with the lint job's Node coverage that is checked against
+# tools/ci/coverage-floors.json: a file below its floor fails the job. The
+# Chromium runs themselves are not the gate (Firefox's are): one that fails is
+# reported and its coverage still counted.
 live:journey:
   stage: live
   image:
@@ -167,6 +149,7 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
+    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh browser
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
