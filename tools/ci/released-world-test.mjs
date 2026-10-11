@@ -28,8 +28,10 @@
  *   T9 stopped in the gap  destroy once a picture has its last band in and not its mipmaps: no fault (no bind of a
  *                          released handle), nothing live, no mipmap or texParameter call afterwards on a texture the
  *                          stopped world did not make
- *   T10 the live-door flags  door3d, level 2, rich: the capability probe they start, and what follows, leave nothing
- *                          live and no fault (a rich world itself could not be reached: see the comment at T10)
+ *   T10 the live-door flags  door3d, level 2, rich: the world is built (T1's counts at least) and given back; the page's
+ *                          probe fails under this fake, so a richer world than T1's is not reached (see the comment at T10)
+ *   Every case also fails if the page swallows anything while the world is made: a warning, an error, an unhandled
+ *   rejection, or a read of a document member the fake page lacks (so a gap in this fake cannot hide).
  *
  * The fake context also answers isTexture/isProgram/... as WebGL does, and treats a bind or useProgram of a released
  * handle as a fault (in WebGL it is INVALID_OPERATION and leaves the old binding, so later writes go to another object).
@@ -143,11 +145,22 @@ if (process.argv[2] === "--child") {
     };
     return c;
   };
-  globalThis.document = {
-    hidden: false, body: { classList: { add() {}, remove() {}, contains: () => false } },
+  /* a page element as far as the door reads one: it has the window's size */
+  const stubEl = () => ({
+    style: {}, classList: { add() {}, remove() {}, contains: () => false }, dataset: {}, setAttribute() {}, getAttribute: () => null,
     addEventListener() {}, removeEventListener() {},
+    get clientWidth() { return globalThis.innerWidth; }, get clientHeight() { return globalThis.innerHeight; },
+    getBoundingClientRect() { return { left: 0, top: 0, x: 0, y: 0, width: globalThis.innerWidth, height: globalThis.innerHeight, right: globalThis.innerWidth, bottom: globalThis.innerHeight }; },
+  });
+  /* what the engine swallows must not hide a gap in this fake page: a document member the page does not have, a warning,
+     an error or an unhandled rejection while the world is made is recorded here and fails the case */
+  const swallowed = [];
+  globalThis.document = new Proxy({
+    hidden: false, baseURI: "http://localhost/", body: stubEl(), documentElement: stubEl(),
+    addEventListener() {}, removeEventListener() {},
+    querySelector: () => stubEl(), querySelectorAll: () => [],
     createElement: () => mkCanvas(), createTextNode: () => any(),
-  };
+  }, { get: (t, k) => { if (typeof k === "string" && !(k in t) && k !== "then") swallowed.push(`document.${k} is not in the fake page`); return t[k]; } });
   globalThis.window = globalThis;
   globalThis.innerWidth = 1280; globalThis.innerHeight = 800;
   globalThis.addEventListener = () => {}; globalThis.removeEventListener = () => {};
@@ -167,7 +180,9 @@ if (process.argv[2] === "--child") {
   let release; const gate = new Promise((r) => { release = r; });
   globalThis.fetch = () => gate.then(() => ({ ok: true, blob: async () => ({ size: 1 }) }));
   const said = [];
-  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); };
+  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (name !== "t8") swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link says so */
+  console.error = (...a) => { swallowed.push("console.error: " + a.join(" ").slice(0, 160)); };
+  process.on("uncaughtException", (e) => swallowed.push("uncaught: " + (e && e.message))); process.on("unhandledRejection", (e) => swallowed.push("unhandled rejection: " + (e && e.message)));
 
   const hostCanvas = () => ({ width: 300, height: 150, style: {}, parentNode: { insertBefore() {} }, getContext: () => any(), addEventListener() {}, removeEventListener() {}, setAttribute() {} });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -253,7 +268,7 @@ if (process.argv[2] === "--child") {
       }
     }
     out.live = live(); out.faults = faults.slice(0, 5); out.nfaults = faults.length; out.loseCalls = loseCalls;
-    out.others = others.map(liveOf); out.said = said.slice(0, 8); out.touches = touches; out.lateTexCalls = lateTexCalls; out.foreign = foreign.slice(0, 5); out.nforeign = foreign.length; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
+    out.swallowed = [...new Set(swallowed)].slice(0, 5); out.others = others.map(liveOf); out.said = said.slice(0, 8); out.touches = touches; out.lateTexCalls = lateTexCalls; out.foreign = foreign.slice(0, 5); out.nforeign = foreign.length; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
   } catch (e) { out.error = String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e); }
   process.stdout.write("RESULT " + JSON.stringify(out) + "\n");
   process.exit(0);
@@ -271,8 +286,8 @@ const run = (name) => {
 };
 const show = (live) => (live ? KINDS.map((k) => `${k} ${live[k]}`).join(", ") : "no counts");
 const check = (label, r, ok, want, extra = "") => {
-  const pass = !r.error && ok(r);
-  const seen = r.error ? r.error : `live ${show(r.live)}; faults ${r.nfaults}${r.faults?.length ? ` (${r.faults.join("; ")})` : ""}${r.others?.length ? `; other contexts (not judged): ${r.others.map(show).join(" | ")}` : ""}${extra}${r.threw ? `; threw ${r.threw}` : ""}`;
+  const pass = !r.error && !r.swallowed?.length && ok(r);
+  const seen = r.error ? r.error : `live ${show(r.live)}; faults ${r.nfaults}${r.faults?.length ? ` (${r.faults.join("; ")})` : ""}${r.others?.length ? `; other contexts (not judged): ${r.others.map(show).join(" | ")}` : ""}${extra}${r.threw ? `; threw ${r.threw}` : ""}${r.swallowed?.length ? `; SWALLOWED (a harness gap or a hidden fault): ${r.swallowed.join(" | ")}` : ""}`;
   console.log(`${pass ? "ok  " : "FAIL"} ${label}: want ${want}; saw ${seen}`);
   if (!pass) failed = true;
 };
@@ -337,10 +352,12 @@ for (const [label, name] of [["T7 released mid-upload: destroy at the first chor
 }
 {
   /* The aim was a rich flight world (CAPABILITIES.md: door3d, level 2, rich) with more programs and textures than T1's. Under
-     this fake the live-door probe the flags start does not give a verdict ("probe: failed"), so no rich world is built and
-     that control cannot be made; what is judged is what the flags leave on the context once the page is warm and then torn down. */
+     this fake the live-door probe those flags start still ends "probe: failed" (the console line says no more), so the page
+     falls to level 0 and builds the same world as T1; the "more than T1" control cannot be made, and is not claimed. What is
+     judged is that, with the flags set, the world is built (T1's counts, printed) and given back whole. */
   const r = run("t10");
-  check("T10 the live-door flags (door3d, level 2, rich): the probe and whatever it starts leave nothing live and no fault", r, none, "every kind 0, no fault",
+  check("T10 the live-door flags (door3d, level 2, rich): built as T1's, then given back", r,
+    (r) => none(r) && !!t1.liveBefore && KINDS.every((k) => r.liveBefore[k] >= t1.liveBefore[k]), `at quiet before destroy at least T1's counts (${show(t1.liveBefore)}), then every kind 0, no fault`,
     `; at quiet before destroy: ${show(r.liveBefore)}; the page said: ${(r.said || []).slice(0, 2).join(" / ")}`);
 }
 process.exit(failed ? 1 : 0);
