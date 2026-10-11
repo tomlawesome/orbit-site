@@ -31,7 +31,7 @@ const DEADLINE_MS = 45000;   /* per child; the child's own waits add up to well 
 if (process.argv[2] === "--child") {
   const name = process.argv[3];
   const made = [], faults = [], listeners = {};
-  let sharedCanvas = null, loseCalls = 0, lost = false;
+  let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, onBand = null;
   const boundTex = {}, boundBuf = {};
   const any = () => new Proxy(function () {}, {
     get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
@@ -59,14 +59,22 @@ if (process.argv[2] === "--child") {
     getBufferSubData(t, o, out) { const b = boundBuf[t]; if (b) b.probe = true; out[0] = 0; out[1] = 1; },
     shaderSource(s, src) { if (s && s.kind === "shader") { s.src = src; if (isProbeSrc(src)) s.probe = true; } },
     attachShader(p, s) { if (p && s?.probe) p.probe = true; },
-    bindTexture(t, h) { boundTex[t] = h; },
+    bindTexture(t, h) { if (afterDestroy) touches++; boundTex[t] = h; },
+    generateMipmap(t) { if (afterDestroy) touches++; if (boundTex[t]) boundTex[t].mip = true; },
     bindBuffer(t, h) { boundBuf[t] = h; },
-    texImage2D(...a) { const src = a.length === 6 ? a[5] : a[a.length - 1]; if (src?.probe && boundTex[a[0]]) boundTex[a[0]].probe = true; },
-    texSubImage2D(...a) { const src = a[a.length - 1]; if (src?.probe && boundTex[a[0]]) boundTex[a[0]].probe = true; },
+    texImage2D(...a) { if (afterDestroy) touches++; image(a[0], a.length === 6 ? a[5] : a[a.length - 1]); },
+    texSubImage2D(...a) { if (afterDestroy) touches++; image(a[0], a[a.length - 1], true); },
+  };
+  /* a picture's pixels reaching a texture (a band): the texture is then a picture texture, until its mipmaps are made */
+  const image = (t, src, band) => {
+    const h = boundTex[t];
+    if (!h) return;
+    if (src?.probe) { h.probe = true; return; }
+    if (src && typeof src === "object" && !ArrayBuffer.isView(src)) { h.got = true; if (band && onBand) onBand(); }
   };
   for (const kind of KINDS) {
     const K = kind[0].toUpperCase() + kind.slice(1);
-    glBase["create" + K] = () => { const h = { kind, id: made.length, released: false, probe: false, src: "" }; made.push(h); return h; };
+    glBase["create" + K] = () => { if (afterDestroy && kind === "texture") touches++; const h = { kind, id: made.length, released: false, probe: false, src: "" }; made.push(h); return h; };
     glBase["delete" + K] = (h) => {
       if (h == null) return;
       if (!h || !made.includes(h) || h.kind !== kind) faults.push(`delete${K} of a handle this context never made`);
@@ -94,7 +102,8 @@ if (process.argv[2] === "--child") {
   globalThis.addEventListener = () => {}; globalThis.removeEventListener = () => {};
   globalThis.requestAnimationFrame = (f) => setTimeout(f, 2);
   globalThis.cancelAnimationFrame = clearTimeout;
-  globalThis.requestIdleCallback = (f) => setTimeout(f, 5);
+  const idle = []; let manual = false;
+  globalThis.requestIdleCallback = (f) => { if (manual) idle.push(f); else setTimeout(f, 5); };
   globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
   globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 };
   globalThis.Path2D = class { constructor() { return any(); } };
@@ -125,7 +134,30 @@ if (process.argv[2] === "--child") {
     const finish = async (j) => { release(); door.openChores(); out.warmed = await warmed(j); await quiet(); };
     const tryDo = (what, fn) => { try { fn(); } catch (e) { out.threw = `${what}: ${e && e.message}`; } };
 
-    if (name === "t3" || name === "t3control") {
+    if (name === "t7" || name === "t7b") {
+      const j = mount();
+      j.warm({ prove: false }).catch(() => {});
+      await sleep(80);
+      const pending = () => made.filter((h) => h.kind === "texture" && !h.probe && h.got && !h.mip && !h.released).length;
+      const goDown = () => {
+        if (afterDestroy) return;
+        out.pendingAtDestroy = pending();
+        out.bandsAtDestroy = made.filter((h) => h.got).length;
+        tryDo("destroy", () => j.destroy()); afterDestroy = true;
+      };
+      if (name === "t7b") onBand = () => { onBand = null; goDown(); };
+      else manual = true;
+      release(); door.openChores();
+      /* t7 runs the idle chores one at a time and goes down at the first chore that left a picture part-way */
+      for (let i = 0, t0 = Date.now(); !afterDestroy && Date.now() - t0 < 8000; i++) {
+        if (idle.length) idle.shift()();
+        await sleep(idle.length ? 0 : 2);
+        if (name === "t7" && pending() > 0) goDown();
+      }
+      out.reached = afterDestroy && out.pendingAtDestroy > 0; out.chores = 0;
+      manual = false; while (idle.length) setTimeout(idle.shift(), 5);
+      await quiet();
+    } else if (name === "t3" || name === "t3control") {
       const j = mount();
       j.warm({ prove: false }).catch(() => {});
       await sleep(80);                        /* the world is begun; the chores are not open, the fetches are held */
@@ -156,7 +188,7 @@ if (process.argv[2] === "--child") {
       }
     }
     out.live = live(); out.faults = faults.slice(0, 5); out.nfaults = faults.length; out.loseCalls = loseCalls;
-    out.probeLeft = made.filter((h) => h.probe && !h.released).length;
+    out.touches = touches; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
   } catch (e) { out.error = String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e); }
   process.stdout.write("RESULT " + JSON.stringify(out) + "\n");
   process.exit(0);
@@ -218,5 +250,11 @@ const t1 = run("t1");
 {
   const r = run("t6");
   check("T6 a lost context: webglcontextlost, then destroy", r, (r) => r.nfaults === 0 && !r.threw, "no throw, no fault");
+}
+for (const [label, name] of [["T7 released mid-upload: destroy at the first chore that leaves a picture part-way", "t7"], ["T7b released after the first band: destroy right after the first texSubImage2D", "t7b"]]) {
+  const r = run(name);
+  const ev = (r) => (r.reached && r.touches > 0 ? "" : `did not reach mid-upload (pictures part-way at destroy ${r.pendingAtDestroy}, texture calls after destroy ${r.touches})`);
+  check(label, r, (r) => none(r) && !ev(r), "every kind 0, no fault; at destroy a picture without its mipmaps and a texture call after destroy",
+    `; part-way pictures at destroy ${r.pendingAtDestroy}, texture calls after destroy ${r.touches}${ev(r) ? "; " + ev(r) : ""}`);
 }
 process.exit(failed ? 1 : 0);
