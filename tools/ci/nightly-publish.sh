@@ -13,35 +13,84 @@
 # ORBIT_SITE_IMPORT_TOKEN, a project access token, role Maintainer (to merge
 # into main), scopes api and write_repository, a Masked + Protected CI/CD
 # variable scoped to the `docs-import` environment, which only this job joins.
-# It runs no third-party code: no npm, and node only to parse JSON. The artifact
-# from the import job came out of a job that did run such code, so it is
-# untrusted: before anything is read from it, it must be exactly the files the
-# import writes (flat, regular, unlinked, .json, parseable, under size and count
-# caps), and the rest of the checkout must be what git has. The merge request's
-# own pipeline (lint, with its no-script check, and the live journey) then
-# judges the content before it reaches main. Pushes read the token from a
-# mode-600 credential file and API calls from a header file, so it is never in a
-# URL, an argument list or the log; both files exist only for the moment they
-# are used. Every git command runs with no hooks, no fsmonitor, no global or
-# system config and no token in its environment.
+# It runs no third-party code: no npm, and node and python only for the
+# image's own JSON and zip handling. The import job ran such code, so nothing
+# from it is trusted:
+#   - this job does not take the import job's artifacts through `needs` (the
+#     runner would load any dotenv report in them as variables of this job, over
+#     this job's own YAML, and could rewrite CI_API_V4_URL or LD_PRELOAD); it
+#     fetches the archive itself, by job id, with its own job token, into a
+#     scratch directory, and opens it with python's zipfile: only the entries
+#     assets/docs/<slug>.json for each source in tools/docs-sources.json and
+#     assets/docs/index.json, regular files, under the size caps, are read, and
+#     each is written by this script, never unpacked by a tool that follows
+#     names or links;
+#   - what is written is held to the shape the import writes
+#     (tools/ci/docs-shape.mjs): the pad draws the index's colour and ids into
+#     innerHTML;
+#   - which job to fetch comes from GitLab, asked with a separate read-only
+#     token (ORBIT_SITE_READ_TOKEN, role Reporter, scope read_api, scoped to
+#     docs-import too): a job token cannot list a pipeline's jobs, and the write
+#     token is kept for what writes;
+#   - the environment is pinned (host, project, branch, no preload or
+#     interpreter overrides), and the checkout, a fresh clone (GIT_STRATEGY:
+#     clone in .gitlab-ci.yml), must be what git has.
+# The merge request's own pipeline (lint, with its no-script check, and the
+# live journey) then judges the content before it reaches main. Pushes read the
+# token from a mode-600 credential file and API calls from a header file, so it
+# is never in a URL, an argument list or the log; both files exist only for the
+# moment they are used. Every git command runs with no hooks, no fsmonitor, no
+# global or system config and no token in its environment.
 #
 #   DRY_RUN=1 sh tools/ci/nightly-publish.sh   check the artifact and report
 #
-# DRY_RUN checks the artifact in the checkout, then builds the commit in a
-# scratch copy of HEAD, so the checkout, its git objects and GitLab are
-# unchanged. It reads from the GitLab API and writes nothing.
+# DRY_RUN needs the same variables (it is meant for a job's environment). It
+# reads the artifact and the GitLab API, builds the commit in a scratch copy of
+# HEAD, and writes nothing to the checkout, its git objects or GitLab.
 set -eu
 cd "$(dirname "$0")/../.."
 
-: "${CI_API_V4_URL:?}" "${CI_PROJECT_ID:?}" "${CI_SERVER_HOST:?}" "${CI_PROJECT_PATH:?}"
-: "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
-DRY_RUN=${DRY_RUN:-}
-
+# Where this runs: nothing else is accepted, whatever the environment says.
+EXPECT_HOST=gitlab.tomlawson.io
+EXPECT_PATH=ai/orbit-site
 # What the import writes: a page per source and an index, about 330 KB in nine
 # files. Well above that, but nowhere near "a disk".
-MAX_FILES=64
+MAX_ENTRIES=64
 MAX_FILE_BYTES=2097152
 MAX_TOTAL_BYTES=8388608
+MAX_ZIP_BYTES=16777216
+
+# Variables that change what a program loads, trusts or runs are never set
+# here. (The job takes no variables from the import job; this is the second
+# lock on that door, and for LD_PRELOAD it can only be a check after the fact.)
+for name in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
+  case $name in
+    GIT_DEPTH|GIT_STRATEGY|GIT_CLONE_PATH|GIT_FETCH_EXTRA_FLAGS|GIT_CHECKOUT|GIT_CLEAN_FLAGS|GIT_SUBMODULE_*|NODE_VERSION) ;;
+    # the runner's own CA file, where it sets one, is the only trust store accepted
+    GIT_SSL_CAINFO|SSL_CERT_FILE|CURL_CA_BUNDLE)
+      val=; eval "val=\${$name}"
+      [ -n "${CI_SERVER_TLS_CA_FILE:-}" ] && [ "$val" = "$CI_SERVER_TLS_CA_FILE" ] \
+        || { echo "refusing to run: $name is set in the environment"; exit 1; } ;;
+    LD_*|DYLD_*|NODE_*|PYTHON*|GIT_*|OPENSSL_*|SSL_CERT_*|CURL_*|BASH_ENV|ENV|IFS|PERL*|RUBY*)
+      echo "refusing to run: $name is set in the environment"; exit 1 ;;
+  esac
+done
+
+: "${CI_API_V4_URL:?}" "${CI_PROJECT_ID:?}" "${CI_SERVER_HOST:?}" "${CI_PROJECT_PATH:?}" "${CI_PIPELINE_ID:?}"
+: "${CI_JOB_TOKEN:?}"
+: "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
+: "${ORBIT_SITE_READ_TOKEN:?ORBIT_SITE_READ_TOKEN is not set -- is the variable protected and scoped to the docs-import environment?}"
+DRY_RUN=${DRY_RUN:-}
+pin() { echo "refusing to run: $1"; exit 1; }
+[ "$CI_SERVER_HOST" = "$EXPECT_HOST" ] || pin "CI_SERVER_HOST is not $EXPECT_HOST"
+[ "$CI_API_V4_URL" = "https://$EXPECT_HOST/api/v4" ] || pin "CI_API_V4_URL is not https://$EXPECT_HOST/api/v4"
+[ "$CI_PROJECT_PATH" = "$EXPECT_PATH" ] || pin "CI_PROJECT_PATH is not $EXPECT_PATH"
+case $CI_PROJECT_ID in ''|*[!0-9]*) pin "CI_PROJECT_ID is not a number" ;; esac
+case $CI_PIPELINE_ID in ''|*[!0-9]*) pin "CI_PIPELINE_ID is not a number" ;; esac
+if [ -z "$DRY_RUN" ]; then
+  [ "${CI_COMMIT_BRANCH:-}" = main ] || pin "CI_COMMIT_BRANCH is not main"
+  [ "${CI_PIPELINE_SOURCE:-}" = schedule ] || pin "CI_PIPELINE_SOURCE is not schedule"
+fi
 
 umask 077
 scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT
@@ -51,14 +100,18 @@ mkdir "$scratch/home"
 # is on disk.
 hdr_on() { printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"; }
 hdr_off() { rm -f "$hdr"; }
-api() { m=$1; p=$2; shift 2; hdr_on; r=0
+# req <header name> <token> <method> <path> [curl args]: one call to this
+# project's API, the header file on disk only while it runs
+req() { hn=$1; tk=$2; m=$3; p=$4; shift 4; printf '%s: %s\n' "$hn" "$tk" > "$hdr"; r=0
   curl -q -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@" || r=$?
   hdr_off; return "$r"; }
+api() { req PRIVATE-TOKEN "$ORBIT_SITE_IMPORT_TOKEN" "$@"; }   # what writes
+apir() { req PRIVATE-TOKEN "$ORBIT_SITE_READ_TOKEN" "$@"; }    # what only reads the pipeline
 # git: the token out of its environment, no hooks, no fsmonitor, no global or
 # system config, no ssh or gpg program, no background gc, no index refresh
 # written back. Command-line -c beats the repository's own config.
 nogit() {
-  env -u ORBIT_SITE_IMPORT_TOKEN -u GIT_DIR -u GIT_WORK_TREE HOME="$scratch/home" \
+  env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN -u GIT_DIR -u GIT_WORK_TREE HOME="$scratch/home" \
     GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 \
     git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.sshCommand= \
     -c core.attributesFile=/dev/null -c core.pager=cat -c credential.helper= \
@@ -68,78 +121,127 @@ top=$PWD
 gitdir=$(nogit rev-parse --absolute-git-dir)
 cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "$@"; }
 # The API answer is parsed only after the call has returned and the header file
-# is gone, so node never runs while the token is on disk.
+# is gone, so node never runs while a token is on disk.
 apij() { js=$1; shift; ans=$(api "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
+apijr() { js=$1; shift; ans=$(apir "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
 refuse() { echo "refusing the artifact: $1"; exit 1; }
 
-# The import writes assets/docs/<slug>.json and assets/docs/index.json and
-# nothing else. Anything more is refused, before a line of it is read.
-check_artifact() {
-  export LC_ALL=C
-  d=assets/docs
-  for p in assets "$d"; do
-    { [ -d "$p" ] && [ ! -L "$p" ]; } || refuse "$p is not a plain directory"
-  done
-  # not a regular file (a symlink, a directory, a device, a pipe), more than one
-  # hard link, or a name other than lower-case letters, digits, dots and dashes
-  # ending .json: find's own name matching, so a newline in a name is no way round
-  bad=$(find "$d" -mindepth 1 \( ! -type f -o -links +1 -o \
-    ! \( -name '[a-z0-9]*' -name '*.json' ! -name '*[!a-z0-9.-]*' \) \) -print |
-    head -n 5 | tr -c '[:print:]\n' '?' | cut -c1-100)
-  if [ -n "$bad" ]; then
-    echo "refusing the artifact: only plain, single-link, lower-case .json files directly in $d are allowed; found:"
-    printf '%s\n' "$bad" | sed 's/^/   /'
-    exit 1
-  fi
-  [ -f "$d/index.json" ] || refuse "$d/index.json is missing"
-  n=$(find "$d" -mindepth 1 | wc -l)
-  [ "$n" -le "$MAX_FILES" ] || refuse "$n files, more than $MAX_FILES"
-  big=$(find "$d" -type f -size +$((MAX_FILE_BYTES / 1024))k -print | head -n 1)
-  [ -z "$big" ] || refuse "$big is larger than $MAX_FILE_BYTES bytes"
-  total=0
-  for f in "$d"/*.json; do
-    s=$(wc -c < "$f"); total=$((total + s))
-  done
-  [ "$total" -le "$MAX_TOTAL_BYTES" ] || refuse "$total bytes in all, more than $MAX_TOTAL_BYTES"
-  # each is JSON, an object: a page or the index
-  env -u ORBIT_SITE_IMPORT_TOKEN node -e '
-    const fs = require("fs");
-    for (const f of process.argv.slice(1)) {
-      let j;
-      try { j = JSON.parse(fs.readFileSync(f, "utf8")); } catch { console.log(`refusing the artifact: ${f} is not JSON`); process.exit(1); }
-      if (j === null || typeof j !== "object" || Array.isArray(j)) { console.log(`refusing the artifact: ${f} is not a JSON object`); process.exit(1); }
-    }
-  ' "$d"/*.json || exit 1
-  echo "   $n files, $total bytes: plain .json files, all parse"
-}
-
-# A clean filter or a diff driver in the checkout's own git config would run a
-# program during `git add`, and hooks and fsmonitor are the only ones the
-# command line switches off. The runner's fresh clone has none of these; if the
-# unpacking of the artifact left any, stop.
+# The checkout is a fresh clone, so its git directory holds what the runner
+# wrote and nothing else: the keys below are what GitLab Runner's clone sets
+# (git init and clone, the template config, the credential and url rewrites).
+# Anything else (a filter or diff driver, an include, a worktree config, a
+# command that git would run) stops the job, because the only switches on the
+# command line are the ones for hooks and fsmonitor. Checked in the local and
+# the worktree scope, which git reads after includes.
 check_git() {
-  if [ -s "$gitdir/info/attributes" ]; then
-    echo "refusing the artifact: the checkout's git has an info/attributes file; stopping"
+  if [ -s "$gitdir/info/attributes" ] || [ -e "$gitdir/config.worktree" ]; then
+    echo "refusing to run: the checkout's git has an info/attributes or config.worktree file"
     exit 1
   fi
-  keys=$(cgit config --local --name-only --list | grep -i -E '^(filter|diff|include|includeif)[.]|^include$' | head -n 5 || true)
+  keys=$(cgit config --list --show-scope --name-only | awk -F'\t' '$1=="local"||$1=="worktree"{print $2}' |
+    grep -v -i -E '^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|symlinks|ignorecase|precomposeunicode)|extensions\.objectformat|remote\.origin\.(url|fetch|tagopt)|branch\..+\.(remote|merge)|init\.defaultbranch|fetch\.recursesubmodules|fetch\.uriprotocols|credential\.interactive|gc\.(auto|autodetach)|transfer\.bundleuri|http\.(useragent|extraheader)|http\..+\.(proactiveauth|extraheader)|url\..+\.insteadof|credential\..+\.helper)$' |
+    head -n 5 || true)
   if [ -n "$keys" ]; then
-    echo "refusing the artifact: the checkout's git config has settings that run programs or pull in more config; stopping:"
+    echo "refusing to run: the checkout's git config has settings the runner's clone does not write; stopping:"
     printf '%s\n' "$keys" | sed 's/^/   /' | cut -c1-100
     exit 1
   fi
 }
 
-# Job 1 gave no say over anything but assets/docs: the rest of the checkout
-# must be what git has at HEAD.
+# The rest of the checkout is what git has at HEAD (a fresh clone, so it is; this
+# is the second lock on a build folder that was reused).
 check_tree() {
-  if ! cgit diff --quiet --no-ext-diff --no-textconv HEAD -- . ':(exclude)assets/docs'; then
-    echo "refusing the artifact: tracked files outside assets/docs differ from HEAD:"
-    cgit diff --name-only --no-ext-diff --no-textconv HEAD -- . ':(exclude)assets/docs' | head -n 10 | sed 's/^/   /'
+  if ! cgit diff --quiet --no-ext-diff --no-textconv HEAD -- .; then
+    echo "refusing to run: tracked files differ from HEAD:"
+    cgit diff --name-only --no-ext-diff --no-textconv HEAD -- . | head -n 10 | sed 's/^/   /'
     exit 1
   fi
+}
+
+# Which job is this pipeline's import, and is its archive the pipeline's: GitLab
+# says, to a read-only token. The project is checked first (the id came from the
+# environment), then the one successful import_docs job of this pipeline, on
+# main, at the commit this job is checked out at, with an archive.
+import_job() {
+  proj=$(apijr 'console.log(j.path_with_namespace)' GET "") || refuse "could not read the project from GitLab"
+  [ "$proj" = "$EXPECT_PATH" ] || refuse "project $CI_PROJECT_ID is $proj, not $EXPECT_PATH"
+  apijr 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "main" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
+    if (ok.length !== 1 || !Number.isInteger(ok[0].id)) { console.log("refusing the artifact: found " + ok.length + " successful import_docs jobs with an archive in this pipeline at this commit, want 1"); process.exit(1); }
+    console.log(ok[0].id)' GET "/pipelines/$CI_PIPELINE_ID/jobs?per_page=100"
+}
+
+# The archive, by job id, with this job's own token. The size is capped on the
+# way in and again after.
+download() { # download <job id> <file>
+  req JOB-TOKEN "$CI_JOB_TOKEN" GET "/jobs/$1/artifacts" --max-filesize "$MAX_ZIP_BYTES" -o "$2" || refuse "could not download the archive of job $1"
+  size=$(wc -c < "$2")
+  [ "$size" -le "$MAX_ZIP_BYTES" ] || refuse "the archive is $size bytes, more than $MAX_ZIP_BYTES"
+}
+
+# unpack <zip> <out dir> <sources file>: every entry is judged from the archive's
+# own listing before anything is written; then the files are written by this
+# program, from the bytes, to names it chose.
+unpack() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN \
+    python3 -I - "$1" "$2" "$3" "$MAX_ENTRIES" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" <<'PY'
+import json, os, stat, sys, zipfile
+
+zpath, out, srcs = sys.argv[1], sys.argv[2], sys.argv[3]
+max_entries, max_file, max_total = int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
+
+def refuse(msg):
+    print("refusing the artifact: " + msg)
+    sys.exit(1)
+
+allowed = {"assets/docs/index.json"} | {"assets/docs/%s.json" % s["slug"] for s in json.load(open(srcs))}
+try:
+    z = zipfile.ZipFile(zpath)
+    infos = z.infolist()
+except Exception:
+    refuse("not a zip archive")
+if len(infos) > max_entries:
+    refuse("%d entries, more than %d" % (len(infos), max_entries))
+files, seen, total = [], set(), 0
+for i in infos:
+    mode = (i.external_attr >> 16) & 0xFFFF
+    printable = i.filename.encode("ascii", "replace").decode()[:80]
+    if i.filename in ("assets/", "assets/docs/"):
+        if mode and not stat.S_ISDIR(mode):
+            refuse("%s is not a directory" % printable)
+        continue
+    if i.filename not in allowed:
+        refuse("%s is not a file the import writes (only assets/docs/<slug>.json and index.json)" % printable)
+    if mode and not stat.S_ISREG(mode):
+        refuse("%s is not a regular file (a link or a device)" % printable)
+    if i.filename in seen:
+        refuse("%s is in the archive twice" % printable)
+    if i.flag_bits & 0x1:
+        refuse("%s is encrypted" % printable)
+    if i.file_size > max_file:
+        refuse("%s is larger than %d bytes" % (printable, max_file))
+    seen.add(i.filename)
+    total += i.file_size
+    files.append(i)
+if total > max_total:
+    refuse("%d bytes in all, more than %d" % (total, max_total))
+if seen != allowed:
+    refuse("missing: %s" % ", ".join(sorted(allowed - seen)))
+os.makedirs(os.path.join(out, "assets", "docs"))
+try:
+    for i in files:
+        with z.open(i) as f:
+            data = f.read(max_file + 1)
+        if len(data) != i.file_size:
+            refuse("%s is not the size the archive says" % i.filename)
+        fd = os.open(os.path.join(out, i.filename), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as g:
+            g.write(data)
+except Exception:
+    refuse("the archive is damaged")
+print("   %d files, %d bytes: from the archive's listing, no other entry" % (len(files), total))
+PY
 }
 
 # Older import merge requests still open, as "iid branch" lines. Only a merge
@@ -193,24 +295,34 @@ clean_stale_branches() {
 # The whole flow is one function, called on the last line: the shell has read
 # the entire file before anything is done with the artifact.
 main() {
-  echo "== the artifact"
-  check_artifact
+  echo "== the checkout"
   check_git
   check_tree
+  headsha=$(cgit rev-parse HEAD)
+
+  echo "== the artifact"
+  jobid=$(import_job "$headsha") || { printf '%s\n' "$jobid"; exit 1; }
+  art=$scratch/art
+  download "$jobid" "$scratch/artifact.zip"
+  cgit cat-file blob HEAD:tools/docs-sources.json > "$scratch/sources.json"
+  unpack "$scratch/artifact.zip" "$art" "$scratch/sources.json" || exit 1
+  if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN \
+      node tools/ci/docs-shape.mjs "$art/assets/docs" "$scratch/sources.json"); then
+    echo "refusing the artifact: it is not the shape the import writes:"
+    printf '%s\n' "$shape"
+    exit 1
+  fi
 
   if [ -n "$DRY_RUN" ]; then
-    # the commit is built in a scratch repository whose base is HEAD, with the
-    # checked artifact copied over its pages; the checkout is only read
+    # the commit is built in a scratch repository whose base is HEAD; the
+    # checkout is only read
     mkdir "$scratch/tree"
     cgit archive HEAD | tar -x -C "$scratch/tree"
     nogit init -q --template= "$scratch/tree"
     gitdir=$(nogit -C "$scratch/tree" rev-parse --absolute-git-dir)
-    from=$top
     top=$scratch/tree
     cgit add -A
     cgit -c user.name=dry-run -c user.email=dry-run@invalid commit -q -m base
-    rm -rf "$top/assets/docs"
-    cp -R "$from/assets/docs" "$top/assets/docs"
     cd "$top"
   fi
 
@@ -219,11 +331,15 @@ main() {
 
   echo "== compare with main"
   base=$(cgit rev-parse HEAD)
-  # The index is built afresh: the base commit's tree plus the checked pages,
-  # nothing else. A path outside assets/docs in the result stops the job.
+  # The index is built afresh: the base commit's tree plus the checked pages as
+  # blobs, nothing else, and not through the work tree at all. A path outside
+  # assets/docs in the result stops the job.
   export GIT_INDEX_FILE="$scratch/index"
   cgit read-tree "$base"
-  cgit add -A assets/docs
+  for f in "$art"/assets/docs/*.json; do
+    blob=$(cgit hash-object -w --no-filters -- "$f")
+    cgit update-index --add --cacheinfo "100644,$blob,assets/docs/$(basename "$f")"
+  done
   outside=$(cgit diff --cached --name-only "$base" | grep -v -e '^assets/docs/' || true)
   if [ -n "$outside" ]; then
     echo "the artifact changed paths it may not write; stopping before anything is committed or pushed:"

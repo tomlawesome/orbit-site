@@ -112,6 +112,8 @@ lint:
     - node tools/ci/site-home-date-test.mjs
     - node tools/ci/site-lock-test.mjs
     - node tools/ci/site-pads-test.mjs
+    - node tools/ci/site-pads-sources-test.mjs
+    - node tools/ci/docs-shape-test.mjs
     - node tools/ci/site-data-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/import-docs-test.mjs
@@ -175,8 +177,9 @@ live:journey:
 #
 # ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
 # api and write_repository, Masked + Protected) the owner created, with its
-# environment scope set to `docs-import`, which only `publish_docs` joins.
-# Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
+# environment scope set to `docs-import`, which only `publish_docs` joins; so
+# is ORBIT_SITE_READ_TOKEN (role Reporter, scope read_api). Nothing here sets
+# them. The schedule runs on `main` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
   image: $NODE_IMAGE
@@ -194,17 +197,26 @@ import_docs:
 
 # `action: start` records a deployment in the protected environment, which is
 # what makes GitLab apply the environment's "who may deploy" list and its
-# scoped variables to the run (`prepare`, `verify` and `access` record none);
-# `deployment_tier: other` because nothing is deployed to a server. The artifact
-# is unpacked into the checkout before the script runs, so the first script line
-# checks the script file against the commit before it is run.
+# scoped variables to the run; `deployment_tier: other` because nothing is
+# deployed to a server. OWNER TO CONFIRM: the environment's deployer list must
+# also stop the `prepare`, `verify` and `access` actions, which record no
+# deployment; the only job that names the environment uses `start`.
+#
+# `needs` takes no artifacts (artifacts: false): the runner would load any
+# dotenv report in them as variables of this job, ahead of this file's own, and
+# code in import_docs holds a job token that can upload one. The script fetches
+# the archive itself by job id and opens it entry by entry (tools/ci/
+# nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
+# a build folder an earlier job on this runner left things in.
+# ORBIT_SITE_READ_TOKEN (role Reporter, scope read_api) is how the job asks
+# GitLab which job to fetch: a job token cannot list a pipeline's jobs.
 publish_docs:
   stage: publish
   image: $NODE_IMAGE
   interruptible: false
   needs:
     - job: import_docs
-      artifacts: true
+      artifacts: false
   environment:
     name: docs-import
     action: start
@@ -213,10 +225,8 @@ publish_docs:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
   variables:
     GIT_DEPTH: 1
+    GIT_STRATEGY: clone
   script:
-    - |
-      git -c core.fsmonitor=false diff --quiet --no-ext-diff --no-textconv "$CI_COMMIT_SHA" -- tools/ci/nightly-publish.sh \
-        || { echo "tools/ci/nightly-publish.sh differs from the commit; stopping"; exit 1; }
     - sh tools/ci/nightly-publish.sh
 
 # Renovate, weekly, on a schedule the owner created on `dev` with

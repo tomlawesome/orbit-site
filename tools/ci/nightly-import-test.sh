@@ -7,12 +7,14 @@
 # names the token. Part 1 runs it with a fake token in its environment and
 # checks that nothing reads, prints, writes or sends it.
 #
-# tools/ci/nightly-publish.sh (job `publish_docs`) takes the artifact, which
-# came out of a job that ran third-party code, and refuses it unless it is
-# exactly what the import writes; then it pushes a branch, opens a merge
-# request and sets it to merge itself, closes the older ones, and sweeps stale
-# branches. Part 2 runs it against a fake GitLab with good and hostile
-# artifacts.
+# tools/ci/nightly-publish.sh (job `publish_docs`) asks GitLab (with a read-only
+# token) which job made the artifact, downloads that archive itself with its job
+# token, opens it entry by entry, and refuses it unless it is exactly what the
+# import writes and the shape the import gives it; then it pushes a branch,
+# opens a merge request and sets it to merge itself, closes the older ones, and
+# sweeps stale branches. It also refuses to run in an environment that is not
+# the pinned one. Part 2 runs it against a fake GitLab with good and hostile
+# archives.
 #
 #   sh tools/ci/nightly-import-test.sh      run from anywhere inside the repository
 #
@@ -27,6 +29,10 @@ aux=$(mktemp -d)          # shims, state and logs; outside the scratch repo
 trap 'rm -rf "$tmp" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
+# a second, untouched copy: the publish script pins its host, and the copy under
+# test is given the test's (the pin itself is tried on the untouched one)
+mkdir "$aux/pristine"; git -C "$root" archive HEAD | tar -x -C "$aux/pristine"
+sed -i 's/^EXPECT_HOST=.*/EXPECT_HOST=gitlab.invalid/' "$tmp/tools/ci/nightly-publish.sh"
 cd "$tmp"
 git init -q
 git add -A
@@ -37,8 +43,12 @@ realnode=$(command -v node)
 basecommit=$(git rev-parse HEAD)
 appendfile=$(git ls-files assets/docs | head -n 1)
 cp .git/config "$aux/config.orig"
+cp -R assets/docs "$aux/docs-head"
+realpython=$(command -v python3)
 
 fake=not-a-real-token-test-only
+fakeread=not-a-real-read-token-test-only
+fakejob=not-a-real-job-token-test-only
 mkdir scratch-tmp
 
 failed=0
@@ -72,6 +82,51 @@ reset_tree() {
   find .git/hooks -type f ! -name '*.sample' -delete
   rm -f .git/fsm .git/info/attributes
 }
+
+# What the runner's artifact upload would hold, good and hostile. mkzip.py <out>
+# <docs dir> <scenario>: the pages of the commit, with one change (a summary) so
+# there is something new, and for a hostile scenario one thing wrong.
+cat > "$aux/mkzip.py" <<'PY'
+import json, os, sys, zipfile
+out, src, sc = sys.argv[1:4]
+files = {n: open(os.path.join(src, n), 'rb').read() for n in sorted(os.listdir(src))}
+extra = []   # (name, data, unix mode)
+def edit(name, fn):
+    j = json.loads(files[name]); fn(j); files[name] = json.dumps(j, separators=(',', ':')).encode()
+if sc != 'nothing':
+    edit('administration.json', lambda j: j['sections'][0].update(summary=j['sections'][0]['summary'] + ' (changed)'))
+REG, LNK, CHR = 0o100644, 0o120777, 0o020644
+if sc == 'symlinkfile': extra.append(('assets/docs/readme.json', b'/etc/hostname', LNK)); del files['readme.json']
+if sc == 'device': extra.append(('assets/docs/readme.json', b'', CHR)); del files['readme.json']
+if sc == 'traversal': extra.append(('assets/docs/../../tools/ci/nightly-publish.sh', b'echo pwned', REG))
+if sc == 'absolute': extra.append(('/etc/x.json', b'{}', REG))
+if sc == 'outside': extra.append(('tools/ci/serve.mjs', b'x', REG))
+if sc == 'subdir': extra.append(('assets/docs/sub/x.json', b'{}', REG))
+if sc == 'badtype': extra.append(('assets/docs/evil.html', b'<p>x</p>', REG))
+if sc == 'webp': extra.append(('assets/docs/pic.webp', b'RIFF', REG))
+if sc == 'badname': extra.append(('assets/docs/Evil.json', b'{}', REG))
+if sc == 'unknown': extra.append(('assets/docs/other.json', b'{}', REG))
+if sc == 'dup': extra.append(('assets/docs/readme.json', files['readme.json'], REG))
+if sc == 'missing': del files['security.json']
+if sc == 'toomany': extra += [('assets/docs/p%d.json' % i, b'{}', REG) for i in range(70)]
+if sc == 'toolarge': files['administration.json'] = b' ' * 3000000
+if sc == 'toomuch':
+    for n in ['administration.json', 'architecture.json', 'launcher.json', 'readme.json', 'releases.json']: files[n] = b' ' * 1900000
+if sc == 'notjson': files['readme.json'] = b'{'
+if sc == 'notobject': files['readme.json'] = b'[]'
+if sc == 'xss': edit('index.json', lambda j: j['sources'][0].update(c='#fff"><img src=x onerror=alert(1)>'))
+if sc == 'badid': edit('readme.json', lambda j: j['sections'][1].update(id='a"b'))
+if sc == 'extrakey': edit('readme.json', lambda j: j['sections'][0].update(onclick='x'))
+if sc == 'notzip':
+    open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
+def zi(name, mode):
+    z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
+with zipfile.ZipFile(out, 'w') as z:
+    for d in ('assets/', 'assets/docs/'):    # the directory entries a runner's archive carries
+        z.writestr(zi(d, 0o040755), b'')
+    for n, data in files.items(): z.writestr(zi('assets/docs/' + n, REG), data)
+    for n, data, mode in extra: z.writestr(zi(n, mode), data)
+PY
 
 # ---------------------------------------------------------------- part 1 --
 # The import job. A fake token is in its environment, as if the variable had
@@ -237,7 +292,7 @@ cat > "$pbin/curl" <<'SHIM'
 #!/bin/sh
 # A small imitation of curl against a fake GitLab. Logs method, path and data
 # arguments to $STATE/api.log; never the contents of a header file.
-method=GET; url=; fail=; failbody=; outf=; wfmt=; data=; hdr=no; tflags=; connfail=; ismerge=
+method=GET; url=; fail=; failbody=; outf=; wfmt=; data=; hdr=no; kind=none; tflags=; connfail=; ismerge=
 takes() { # takes <flag> <value>
   case $1 in
     X) method=$2 ;;
@@ -247,7 +302,9 @@ takes() { # takes <flag> <value>
     H|header) # only whether a -H @file carries the token is kept, never the token
       case $2 in
         @*) hfile=${2#@}
-            if [ -f "$hfile" ] && grep -q "^PRIVATE-TOKEN: $FAKE" "$hfile"; then hdr=yes; fi ;;
+            if [ -f "$hfile" ] && grep -q "^PRIVATE-TOKEN: $FAKE\$" "$hfile"; then hdr=yes; kind=import
+        elif [ -f "$hfile" ] && grep -q "^PRIVATE-TOKEN: $FAKE_READ\$" "$hfile"; then kind=read
+        elif [ -f "$hfile" ] && grep -q "^JOB-TOKEN: $FAKE_JOB\$" "$hfile"; then kind=job; fi ;;
       esac ;;
     m|max-time) tflags="$tflags max-time" ;;
     connect-timeout) tflags="$tflags connect-timeout" ;;
@@ -264,7 +321,7 @@ while [ $# -gt 0 ]; do
     --output) takes o "$1"; shift ;;
     --write-out) takes w "$1"; shift ;;
     --header) takes H "$1"; shift ;;
-    --data-urlencode|--data|--data-raw|--max-time|--retry|--connect-timeout|--retry-delay)
+    --data-urlencode|--data|--data-raw|--max-time|--retry|--connect-timeout|--retry-delay|--max-filesize)
       case $a in
         --data-urlencode|--data|--data-raw|--max-time|--connect-timeout) takes "${a#--}" "$1" ;;
       esac; shift ;;
@@ -307,7 +364,7 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -315,9 +372,23 @@ case "$method $route" in
     else
       code=405; body='{"message":"405 Method Not Allowed"}'
     fi ;;
+  "GET ") code=200; body='{"path_with_namespace":"ai/orbit-site"}'
+    [ "$SCENARIO" != wrongproject ] || body='{"path_with_namespace":"someone/else"}' ;;
+  "GET /pipelines/77/jobs") code=200
+    job='{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}'
+    case $SCENARIO in
+      nojob) body='[{"id":556,"name":"publish_docs","status":"running","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[]}]' ;;
+      failedjob) body='[{"id":555,"name":"import_docs","status":"failed","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      twojobs) body="[$job,$job]" ;;
+      *) body="[$job]" ;;
+    esac ;;
+  "GET /jobs/555/artifacts") code=200; body= ;;
   *) note=" UNEXPECTED" ;;
 esac
 echo "$method $route$data$note" >> "$STATE/api.log"
+echo "$method $route $kind" >> "$STATE/tok.log"
 echo "api $method $route" >> "$STATE/git.log"
 if [ -n "$ismerge" ]; then # one line per merge PUT: header ok?, timeout flags, sha sent
   query=; case $path in *\?*) query=${path#*\?} ;; esac
@@ -328,7 +399,8 @@ fi
 # write-out says 000, curl complains on stderr and exits 7.
 if [ -n "$connfail" ]; then :
 elif [ -z "$fail" ] || [ "$code" -lt 400 ] || [ -n "$failbody" ]; then
-  if [ -n "$outf" ]; then printf '%s\n' "$body" > "$outf"; else printf '%s\n' "$body"; fi
+  if [ "$route" = /jobs/555/artifacts ] && [ -n "$outf" ]; then cp "$ZIP" "$outf"
+  elif [ -n "$outf" ]; then printf '%s\n' "$body" > "$outf"; else printf '%s\n' "$body"; fi
 fi
 if [ -n "$wfmt" ]; then
   printf '%b' "$(printf '%s' "$wfmt" | sed -e "s/%{http_code}/$code/g" -e "s/%{response_code}/$code/g")"
@@ -345,10 +417,9 @@ exit 0
 SHIM
 chmod +x "$pbin"/*
 
-# prepare <scenario>: the checkout as the runner leaves it for the publish job
-# (a fresh clone with the artifact unpacked over assets/docs), good or hostile
+# prepare <scenario>: the checkout as the runner leaves it for the publish job (a
+# fresh clone), good or hostile; the archive is made apart, by mkzip.py
 prepare() {
-  case $1 in nothing) ;; *) change_docs ;; esac
   case $1 in
     hook) # what could be left in .git: none of it may run
       for h in pre-commit commit-msg post-commit post-checkout reference-transaction pre-push pre-receive; do
@@ -356,11 +427,20 @@ prepare() {
         chmod +x ".git/hooks/$h"
       done
       printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$aux" > .git/fsm
+      chmod +x .git/fsm ;;
+    fsmonitorcfg) # an fsmonitor program named in the config
+      printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$aux" > .git/fsm
       chmod +x .git/fsm
       printf '[core]\n\tfsmonitor = %s/.git/fsm\n' "$PWD" >> .git/config ;;
     cfg) # a clean filter in the checkout's own config, switched on by info/attributes
       printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" >> .git/config
       echo '* filter=x' > .git/info/attributes ;;
+    cfgonly) # the filter without the attributes file: still refused
+      printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" >> .git/config ;;
+    include) printf '[include]\n\tpath = /nonexistent\n' >> .git/config ;;
+    worktreecfg) printf '[extensions]\n\tworktreeConfig = true\n' >> .git/config ;;
+    runnerlike) # what a runner's clone writes besides git's own: all of it allowed
+      printf '[remote "origin"]\n\turl = https://gitlab-ci-token:x@gitlab.invalid/ai/orbit-site.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[init]\n\tdefaultBranch = none\n[fetch]\n\trecurseSubmodules = false\n[credential]\n\tinteractive = never\n[gc]\n\tautoDetach = false\n[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n[http]\n\tuserAgent = x\n' >> .git/config ;;
     stage) # changes staged in the checkout's own index, the files since put back: none may reach the commit
       echo evil > evil.txt
       echo "<!-- planted -->" >> index.html
@@ -368,21 +448,6 @@ prepare() {
       rm evil.txt
       "$realgit" show HEAD:index.html > index.html ;;
     tampered) echo "<!-- planted -->" >> index.html ;;
-    symlinkdir) rm -rf assets/docs; ln -s ../scratch-tmp assets/docs ;;
-    symlinkfile) ln -s /etc/hostname assets/docs/evil.json ;;
-    subdir) mkdir assets/docs/sub; echo '{}' > assets/docs/sub/x.json ;;
-    badtype) echo '<p>x</p>' > assets/docs/evil.html ;;
-    webp) printf 'RIFF' > assets/docs/pic.webp ;;
-    badname) echo '{}' > assets/docs/Evil.json ;;
-    hardlink) ln assets/docs/index.json assets/docs/extra.json ;;
-    fifo) mkfifo assets/docs/pipe.json ;;
-    toomany) i=0; while [ "$i" -lt 60 ]; do echo '{}' > "assets/docs/p$i.json"; i=$((i + 1)); done ;;
-    toolarge) head -c 3000000 /dev/zero | tr '\0' ' ' > assets/docs/big.json ;;
-    toomuch) i=1; while [ "$i" -le 5 ]; do
-        { printf '{"a":"'; head -c 1900000 /dev/zero | tr '\0' x; printf '"}'; } > "assets/docs/m$i.json"; i=$((i + 1)); done ;;
-    notjson) echo '{' > assets/docs/readme.json ;;
-    notobject) echo '[]' > assets/docs/readme.json ;;
-    noindex) rm assets/docs/index.json ;;
   esac
 }
 run_push() { # run_push <outfile> <scenario>
@@ -394,13 +459,17 @@ run_push() { # run_push <outfile> <scenario>
     "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
   : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
+  rm -f "$aux"/tok.log; : > "$aux/tok.log"
   prepare "$2"
+  "$realpython" -W ignore "$aux/mkzip.py" "$aux/artifact.zip" "$aux/docs-head" "$2"
   rc=0
-  env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
+  env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" ORBIT_SITE_READ_TOKEN="$fakeread" CI_JOB_TOKEN="$fakejob" \
+    FAKE_READ="$fakeread" FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
+    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule \
+    PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
     CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" DRY_RUN="${dry:-}" \
-    GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
     sh tools/ci/nightly-publish.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
   bare_puts=$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)
@@ -417,15 +486,45 @@ run_push() { # run_push <outfile> <scenario>
   fi
 }
 
-# Run 5: no token -> the script still refuses before it can push.
-rc=0
-env -u ORBIT_SITE_IMPORT_TOKEN PATH="$pbin:$PATH" STATE="$aux" CI_API_V4_URL=https://gitlab.invalid/api/v4 \
-  CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
-  sh tools/ci/nightly-publish.sh > "$out" 2>&1 || rc=$?
-rc5n=$rc
-rc=0; [ "$rc5n" -ne 0 ] && grep -q "ORBIT_SITE_IMPORT_TOKEN is not set" "$out" || rc=1
-check "job 2: without the token the script fails and says ORBIT_SITE_IMPORT_TOKEN is not set (exit $rc5n)" "$rc"
-[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+# Run 5: the environment is pinned and all three tokens are needed. Each refusal
+# comes before any call to GitLab. pin_run <script dir> [VAR=value ...] runs the
+# script in a clean environment, the good one plus the given changes.
+pin_run() {
+  dir=$1; shift
+  : > "$aux/api.log"; : > "$aux/tok.log"
+  rc=0
+  ( cd "$dir" && env -i PATH="$pbin:$PATH" HOME="$aux" TMPDIR="$tmp/scratch-tmp" STATE="$aux" SCENARIO=none \
+      FAKE="$fake" FAKE_READ="$fakeread" FAKE_JOB="$fakejob" \
+      ORBIT_SITE_IMPORT_TOKEN="$fake" ORBIT_SITE_READ_TOKEN="$fakeread" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
+      CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
+      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
+}
+pinned() { # pinned <label> <script dir> <text the refusal must carry> [VAR=value ...]
+  label=$1; dir=$2; want=$3; shift 3
+  pin_run "$dir" "$@"
+  rcp=$rc
+  rc=0; [ "$rcp" -ne 0 ] && grep -q -e "$want" "$out" || rc=1
+  check "job 2 refuses to run $label (exit $rcp)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+  rc=0; [ ! -s "$aux/api.log" ] && [ ! -s "$aux/tok.log" ] && ! grep -q -e "$fake" -e "$fakeread" -e "$fakejob" "$out" || rc=1
+  check "job 2: after refusing to run $label, nothing was sent to GitLab and no token was shown" "$rc"
+}
+pinned "without the import token" "$tmp" "ORBIT_SITE_IMPORT_TOKEN is not set" ORBIT_SITE_IMPORT_TOKEN=
+pinned "without the read token" "$tmp" "ORBIT_SITE_READ_TOKEN is not set" ORBIT_SITE_READ_TOKEN=
+pinned "without the job token" "$tmp" "CI_JOB_TOKEN" CI_JOB_TOKEN=
+pinned "on the real script's host (the test's is not it)" "$aux/pristine" "CI_SERVER_HOST is not gitlab.tomlawson.io"
+pinned "with another API address" "$tmp" "CI_API_V4_URL is not" CI_API_V4_URL=https://evil.invalid/api/v4
+pinned "in another project" "$tmp" "CI_PROJECT_PATH is not" CI_PROJECT_PATH=evil/x
+pinned "with a project id that is not a number" "$tmp" "CI_PROJECT_ID is not a number" "CI_PROJECT_ID=1/../2"
+pinned "off main" "$tmp" "CI_COMMIT_BRANCH is not main" CI_COMMIT_BRANCH=dev
+pinned "from a pipeline that is not a schedule" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=push
+for v in LD_LIBRARY_PATH=/nonexistent NODE_OPTIONS=--version GIT_EXEC_PATH=/x GIT_SSH_COMMAND=x PYTHONPATH=/x SSL_CERT_FILE=/x OPENSSL_CONF=/x BASH_ENV=/x; do
+  pinned "with ${v%%=*} set" "$tmp" "refusing to run: ${v%%=*} is set" "$v"
+done
+# the runner's own CA file, and its own variables, are not refused
+pin_run "$tmp" SSL_CERT_FILE=/ca.pem CI_SERVER_TLS_CA_FILE=/ca.pem NODE_VERSION=22.0.0 GIT_DEPTH=1 GIT_STRATEGY=clone
+rc=0; ! grep -q 'is set in the environment' "$out" || rc=1
+check "job 2: the runner's own CA file, NODE_VERSION, GIT_DEPTH and GIT_STRATEGY are not refused" "$rc"
 
 # Run 6: GitLab refuses every auto-merge request (405). The job must fail and
 # show why: the merge request, GitLab's status code and its message.
@@ -439,7 +538,7 @@ rc=0; grep -q 'HTTP 405' "$out" || rc=1
 check "job 2: the failure shows GitLab's HTTP status (HTTP 405)" "$rc"
 rc=0; grep -q 'Method Not Allowed' "$out" || rc=1
 check "job 2: the failure shows GitLab's error message (Method Not Allowed)" "$rc"
-rc=0; ! grep -rq "$fake" "$out" "$aux" || rc=1
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakeread" -e "$fakejob" "$out" "$aux" || rc=1
 check "job 2: the token is in neither the output nor any log" "$rc"
 rc=0; [ "$merge_puts" -gt 1 ] || rc=1
 check "job 2: it retried the auto-merge request (saw $merge_puts attempts)" "$rc"
@@ -462,8 +561,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
 rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
 check "job 2: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 6"
-rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv '^node -e$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
-check "job 2: no npm, node only for -e, and never with a token file on disk" "$rc"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "job 2: no npm, node only for -e and the shape check, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
@@ -480,6 +579,19 @@ check_merge_calls "run 7"
 rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip"); [ "$changed" = "$appendfile" ] || rc=1
 check "job 2: the commit changes only the page that changed" "$rc"
 [ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Which token went where: the pipeline is asked with the read token, the archive
+# fetched with the job token, and the import token is only for what writes (and
+# the merge-request lists around it).
+rc=0; grep -q '^GET  read$' "$aux/tok.log" && grep -q '^GET /pipelines/77/jobs read$' "$aux/tok.log" \
+  && grep -q '^GET /jobs/555/artifacts job$' "$aux/tok.log" || rc=1
+check "job 2: the project and the pipeline's jobs are asked with the read token, the archive with the job token" "$rc"
+rc=0; ! grep -q -e '^GET  import$' -e '^GET /pipelines/77/jobs import$' -e '^GET /jobs/555/artifacts import$' "$aux/tok.log" \
+  && ! grep -q ' none$' "$aux/tok.log" || rc=1
+check "job 2: the import token is not sent for the pipeline or the archive, and no call goes without a token" "$rc"
+rc=0; ! grep -E '^(POST|PUT|DELETE) ' "$aux/tok.log" | grep -qv ' import$' || rc=1
+check "job 2: every write to GitLab was made with the import token" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/tok.log"
 
 # Run 8: the first attempt gets a 405 with a body; every later attempt cannot
 # connect at all (curl: status 000, no body, exit 7). The last thing shown must
@@ -498,13 +610,13 @@ rc=0; ! grep -q 'Method Not Allowed' "$out" || rc=1
 check "job 2: a stale body from an earlier attempt is not shown (no Method Not Allowed)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
-# Run 9: hooks and an fsmonitor left in the checkout's .git: none may run, and
+# Run 9: hooks and an fsmonitor script left in the checkout's .git: none may run, and
 # no git command may have the token in its environment or lack the switches that
 # turn hooks and fsmonitor off.
 run_push "$out" hook
 rc6=$rc
 rc=0; [ "$rc6" -eq 0 ] || rc=1
-check "job 2: the job still succeeds with hooks and an fsmonitor planted (exit $rc6)" "$rc"
+check "job 2: the job still succeeds with hooks and an fsmonitor script planted (exit $rc6)" "$rc"
 rc=0; [ ! -e "$aux/hook-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
 check "job 2: no planted hook and no planted fsmonitor ran" "$rc"
 [ "$rc" -eq 0 ] || sed "s/^/     git call: /" "$aux/git.log"
@@ -529,6 +641,21 @@ rc=0; [ ! -e "$aux/filter-ran" ] || rc=1
 check "job 2: no planted clean filter ran" "$rc"
 rc=0; [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] && [ ! -s "$aux/api.log" ] && ! grep -q 'push' "$aux/shim.log" || rc=1
 check "job 2: nothing was committed, pushed or sent to GitLab" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Run 10b: other things the runner's clone does not write are refused the same way
+# before any call to GitLab; what it does write is not.
+for sc in cfgonly include worktreecfg fsmonitorcfg; do
+  run_push "$out" "$sc"
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -q "checkout's git" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+  check "job 2: a checkout git config with $sc is refused before anything is sent (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+run_push "$out" runnerlike
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" || rc=1
+check "job 2: the keys a runner's clone writes (remote, credential, url rewrite, ...) are accepted (exit $rcz)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
 # Runs 11 and 12: an older import merge request (!7) is open, and a fork's (!8,
@@ -599,7 +726,7 @@ check "job 2: a branch under an hour old, or of unknown age, is kept" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
 oldmr=; stale=
 
-# Run 15: a dry run with a changed artifact, stale branches and an older merge
+# Run 15: a dry run with a changed archive, stale branches and an older merge
 # request about. It reports, and touches nothing: the checkout is as it was
 # (tracked files, branches, git objects) and GitLab got no write.
 oldmr=1; stale=1; dry=1
@@ -610,9 +737,8 @@ rc=0; [ "$rc12" -eq 0 ] && grep -q 'DRY_RUN: would push' "$out" && grep -q 'clos
   && grep -q 'deleting docs/import-20260103-0000' "$out" || rc=1
 check "job 2: a dry run exits 0 and reports what it would push, close and delete (exit $rc12)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-# (run_push has just made the checkout's changed page; compare with the counts it then had)
-rc=0; [ "$("$realgit" status --porcelain --untracked-files=no)" = " M $appendfile" ] || rc=1
-check "job 2: a dry run left the checkout as the artifact made it (only the page changed)" "$rc"
+rc=0; [ -z "$("$realgit" status --porcelain --untracked-files=no)" ] || rc=1
+check "job 2: a dry run left the checkout as it was" "$rc"
 rc=0; [ "$("$realgit" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] \
   && [ -z "$("$realgit" diff --cached --name-only)" ] || rc=1
 check "job 2: a dry run made no branch and staged nothing" "$rc"
@@ -648,37 +774,51 @@ check "job 2: no merge request was closed and no branch deleted" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 oldmr=
 
-# Runs 18 on: hostile artifacts. Each is refused before the script talks to
-# GitLab at all (no API call, no push, no branch), and says why.
+# Runs 18 on: hostile archives, and answers from GitLab that do not add up. Each
+# is refused with a reason, before the script writes anything to GitLab, pushes
+# or makes a branch, and no token is shown.
 refused() { # refused <scenario> <what it is> <text the refusal must carry>
   run_push "$out" "$1"
   rcx=$rc
   ok=0
-  [ "$rcx" -ne 0 ] && grep -q "$3" "$out" || ok=1
+  [ "$rcx" -ne 0 ] && grep -q -e "$3" "$out" || ok=1
   check "job 2 refuses $2 (exit $rcx)" "$ok"
   [ "$ok" -eq 0 ] || sed 's/^/     /' "$out"
   ok=0
-  [ ! -s "$aux/api.log" ] && ! grep -q 'push' "$aux/shim.log" \
+  ! grep -q -e '^PUT' -e '^POST' -e '^DELETE' "$aux/api.log" && ! grep -q 'push' "$aux/shim.log" \
     && [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] || ok=1
-  check "job 2: after refusing $2, nothing was sent to GitLab, pushed or branched" "$ok"
-  ok=0; ! grep -rq "$fake" "$out" "$aux" || ok=1
-  check "job 2: after refusing $2, the token is in neither the output nor any log" "$ok"
+  check "job 2: after refusing $2, nothing was written to GitLab, pushed or branched" "$ok"
+  ok=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakeread" -e "$fakejob" "$out" "$aux" || ok=1
+  check "job 2: after refusing $2, no token is in the output or any log" "$ok"
 }
-refused symlinkdir "an assets/docs that is a symlink" "not a plain directory"
-refused symlinkfile "a symlink inside assets/docs" "only plain, single-link"
-refused subdir "a directory inside assets/docs (a path below it)" "only plain, single-link"
-refused badtype "an .html file" "only plain, single-link"
-refused webp "a .webp file" "only plain, single-link"
-refused badname "a name with capitals" "only plain, single-link"
-refused hardlink "a hard-linked file" "only plain, single-link"
-refused fifo "a named pipe" "only plain, single-link"
-refused toomany "too many files" "more than 64"
+refused symlinkfile "a symlink in the archive" "is not a regular file"
+refused device "a device node in the archive" "is not a regular file"
+refused traversal "a path that climbs out of assets/docs" "is not a file the import writes"
+refused absolute "an absolute path" "is not a file the import writes"
+refused outside "a file outside assets/docs" "is not a file the import writes"
+refused subdir "a path below assets/docs" "is not a file the import writes"
+refused badtype "an .html file" "is not a file the import writes"
+refused webp "a .webp file" "is not a file the import writes"
+refused badname "a name with capitals" "is not a file the import writes"
+refused unknown "a page for a source that is not listed" "is not a file the import writes"
+refused dup "the same name twice" "in the archive twice"
+refused missing "an archive without one of the pages" "missing:"
+refused toomany "too many entries" "more than 64"
 refused toolarge "a file over the size cap" "is larger than"
 refused toomuch "too many bytes in all" "bytes in all"
-refused notjson "a file that is not JSON" "is not JSON"
-refused notobject "JSON that is not an object" "is not a JSON object"
-refused noindex "an artifact with no index.json" "index.json is missing"
-refused tampered "a changed file outside assets/docs" "outside assets/docs differ"
+refused notzip "a file that is not a zip" "not a zip archive"
+refused notjson "a page that is not JSON" "readme.json: not JSON"
+refused notobject "a page that is not an object" "not a JSON object"
+refused xss "an index colour that is markup" "index.json sources\[0\]: c is"
+refused badid "a section id with a quote" "sections\[1\].id"
+refused extrakey "a section with an extra key" "sections\[0\] does not have exactly"
+refused tampered "a changed tracked file in the checkout" "tracked files differ from HEAD"
+refused wrongproject "an answer that names another project" "not ai/orbit-site"
+refused nojob "a pipeline with no successful import job" "successful import_docs jobs"
+refused failedjob "an import job that failed" "successful import_docs jobs"
+refused wrongsha "an import job at another commit" "successful import_docs jobs"
+refused wrongpipeline "an import job of another pipeline" "successful import_docs jobs"
+refused twojobs "two import jobs" "successful import_docs jobs"
 
 reset_tree
 rm -f "$out"

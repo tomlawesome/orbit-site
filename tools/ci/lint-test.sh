@@ -513,8 +513,10 @@ split_case "import_docs with a long-lived artifact" $ci "import_docs artifacts n
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 days\n");'
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
   y = y.replace("    name: docs-import\n", "    name: other\n");'
-split_case "publish_docs without the artifact" $ci "publish_docs needs must take import_docs" '
-  y = y.replace("      artifacts: true\n", "      artifacts: false\n");'
+split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
+  y = y.replace("      artifacts: false\n", "      artifacts: true\n");'
+split_case "publish_docs on a reused build folder" $ci "publish_docs needs GIT_STRATEGY: clone" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "");'
 split_case "publish_docs on a different schedule rule" $ci "publish_docs rules must be" '
   y = y.replace("publish_docs:", "publish_docs:").replace(/(publish_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "main"\n/, "$1\n");'
 split_case "publish_docs running npm" $ci "publish_docs runs npm" '
@@ -525,6 +527,39 @@ split_case "the import script calling the API" tools/ci/nightly-import.sh "calls
   y = y.replace("  node tools/import-docs.mjs\n", "  node tools/import-docs.mjs\n  curl -fsS https://gitlab.invalid/api\n");'
 split_case "the publish script running npm" tools/ci/nightly-publish.sh "runs npm" '
   y = y.replace("  echo \"== the artifact\"\n", "  echo \"== the artifact\"\n  npm ci --prefix tools\n");'
+
+# Cases (d1)-(d3) judge the section "the imported docs have the shape the import
+# writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
+# shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
+shape_case() {
+  F="assets/docs/$2" JS="$3" node -e '
+    const fs = require("fs"); const j = JSON.parse(fs.readFileSync(process.env.F, "utf8"));
+    new Function("j", process.env.JS)(j); fs.writeFileSync(process.env.F, JSON.stringify(j));
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -i '^==' "$out" | grep -iq 'shape the import writes' && grep -q "$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+shape_case "an index colour carrying markup" index.json 'j.sources[0].c = "#fff\"><img src=x onerror=alert(1)>";'
+shape_case "an index slug carrying a quote" index.json 'j.sources[1].slug = "a\"b";'
+shape_case "a page section id with a space" readme.json 'j.sections[0].id = "a b";'
+git rm -q assets/docs/security.json
+commit_all "a page missing"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "security.json" "$out"; then
+  echo "ok   a page missing from assets/docs fails"
+else
+  echo "FAIL a page missing from assets/docs fails (exit $rc)"
+  failed=1
+fi
+git reset -q --hard HEAD~1
 
 # Case (s): the committed tree as it is -> the section runs and passes.
 lint_to_out

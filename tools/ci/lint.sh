@@ -65,6 +65,12 @@ if [ -f assets/docs/index.json ]; then
   ' || fail=1
 fi
 
+echo "== the imported docs have the shape the import writes"
+# the pad draws the index's colour, slugs and ids into innerHTML: they must be
+# what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
+# (the publish job holds the artifact to the same check, #18)
+node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
 # run on every visitor, whatever the importer let through. This reads the html
@@ -210,7 +216,8 @@ node -e '
     const env = section(pub, "environment") || "";
     if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
     const needs = section(pub, "needs") || "";
-    if (!/- job: import_docs\n\s+artifacts: true/.test(needs)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs with its artifacts");
+    if (!/- job: import_docs\n\s+artifacts: false/.test(needs)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false); a dotenv report in them would set this job\x27s variables");
+    if (!/^    GIT_STRATEGY: clone$/m.test(section(pub, "variables") || "")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
     const script = section(pub, "script") || "";
     if (!/nightly-publish\.sh/.test(script)) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
     if (/\b(npm|npx|yarn|pnpm)\b/.test(script)) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
