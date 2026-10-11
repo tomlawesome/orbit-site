@@ -125,18 +125,20 @@ export function createInstall(pad, opts = {}) {
       shared = { world: w, canvas: own, owner: null };
     }
     world = shared.world;
+    /* a page that adopts the shared world after its context was lost takes the flat path, and does not draw to it */
+    if (world && (shared.lost || world.gl.isContextLost())) { shared.lost = true; world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     look = world.lookOf(opts.world || {});
     /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
     shared.canvas.addEventListener("webglcontextlost", (e) => {
-      e.preventDefault(); world = null; failed = true; pad.classList.add("flat");
+      e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
       if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
     });
     return world;
   }
   /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
   function adopt() {
-    if (!shared?.world) return;
+    if (!shared?.world || shared.lost) return;
     if (shared.owner && shared.owner !== api) shared.owner.stop();
     shared.owner = api;
     canvas = shared.canvas;
@@ -465,9 +467,11 @@ export function createInstall(pad, opts = {}) {
             if (ok) chore(touch, 60, TAG);
             return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
           });
-        /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map) */
+        /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is
+           flat (no world, or its context lost) keeps the false: only a map failure is worth another try */
         const attempt = this.prepared;
-        attempt.then((ok) => { if (!ok && this.prepared === attempt) this.prepared = null; }, () => { if (this.prepared === attempt) this.prepared = null; });
+        const retry = () => { if (!failed && !shared?.lost && this.prepared === attempt) this.prepared = null; };
+        attempt.then((ok) => { if (!ok) retry(); }, retry);
       }
       return this.prepared;
     },

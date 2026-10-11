@@ -95,6 +95,25 @@ for (const [label, version] of [["older version", SAMPLE_VERSION - 1], ["no vers
   check(`${label}: the visitor's item is still there`, visitorItem()?.title === VISITOR.title, `visitor item is ${JSON.stringify(visitorItem()?.title)} (want ${JSON.stringify(VISITOR.title)})`);
 }
 
+// A visitor item saved with a due date that is not a date ("NaN-NaN-NaN", left by the old five-digit-year bug) is
+// repaired on load: a valid Date in the future. A valid saved date is kept unchanged.
+const { ymd } = data;
+for (const [label, version] of [["same version", SAMPLE_VERSION], ["older version", SAMPLE_VERSION - 1]]) {
+  for (const bad of ["NaN-NaN-NaN"]) {
+    const s = saved(version);
+    Object.values(s.households).flat().find((x) => x.id === VISITOR.id).dueDate = bad;
+    load(s);
+    const d = visitorItem()?.dueDate;
+    const ok = d instanceof Date && !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
+    check(`${label}: a visitor item dated "${bad}" gets a valid future date`, ok, `dueDate is ${d instanceof Date ? (Number.isNaN(d.getTime()) ? "Invalid Date" : ymd(d)) : JSON.stringify(d)}`);
+  }
+  const s = saved(version);
+  Object.values(s.households).flat().find((x) => x.id === VISITOR.id).dueDate = "2031-05-17";
+  load(s);
+  const d = visitorItem()?.dueDate;
+  check(`${label}: control, a valid saved date is kept`, d instanceof Date && ymd(d) === "2031-05-17", `dueDate is ${d instanceof Date && !Number.isNaN(d.getTime()) ? ymd(d) : String(d)} (want 2031-05-17)`);
+}
+
 // Nothing saved: the current sample.
 load(null);
 const none = titleOf();

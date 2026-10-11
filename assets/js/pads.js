@@ -315,7 +315,11 @@ export function createDocs(pad) {
   let indexScroll = 0, tocWatch = null;
   const fetchPage = (slug) => pages.get(slug) || fetch(`${DOCS_DIR}${slug}.json`).then((r) => { if (!r.ok) throw new Error(slug); return r.json(); }).then((d) => { pages.set(slug, d); return d; });
   async function open(slug, anchor, push = true) {
-    let doc; try { doc = await fetchPage(slug); } catch { close(push); return; }
+    /* a page that arrives after the visitor has left the docs (the pad hidden, or the address no longer a docs one) is
+       dropped: it must not reopen the reader or push a history entry */
+    const here = () => !pad.hidden && location.hash.startsWith("#docs");
+    let doc; try { doc = await fetchPage(slug); } catch { if (here()) close(push); return; }
+    if (!here()) return;
     const d = DOCS.find((x) => x.slug === slug) || doc, at = DOCS.findIndex((x) => x.slug === slug);
     const prev = at > 0 ? DOCS[at - 1] : null, next = at > -1 && at < DOCS.length - 1 ? DOCS[at + 1] : null;
     reader.style.setProperty("--c", d.c);
