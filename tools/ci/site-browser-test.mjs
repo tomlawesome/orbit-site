@@ -221,26 +221,59 @@ const cameraCase = async (ctx) => {
     return;
   }
   await runCase("B4", "stopping the walk during Other households puts the camera back, with no flight running", async (want) => {
-    const sky = () => page.evaluate(() => ({ household: document.querySelector("#dial-name").textContent, flying: document.querySelector("#hero").classList.contains("flying"), name: document.querySelector("#transport .name").textContent }));
-    const own = (await sky()).household;
+    const sky = () => page.evaluate(() => {
+      const film = document.querySelector("#film");
+      const sun = document.querySelector("#dial .sun-link");
+      return {
+        household: document.querySelector("#dial-name").textContent,
+        flying: document.querySelector("#hero").classList.contains("flying"),
+        name: document.querySelector("#transport .name").textContent,
+        /* what the walk draws over the screen: its ring, and its callout's words */
+        rings: film.querySelectorAll("[class*=ring]").length,
+        words: [...film.querySelectorAll("[class*=callout]")].map((e) => e.textContent.trim()).filter(Boolean).join(" / "),
+        /* the real sun link, with whatever the walk lifted it by: its own and its parts' classes and styles */
+        sun: [sun, ...sun.querySelectorAll("*")].map((e) => `${e.getAttribute("class") || ""}|${e.getAttribute("style") || ""}`).join(";"),
+      };
+    });
+    const first = await sky();
+    const own = first.household;
     await startAt(page, "Other households");
-    /* the walk flies to another household: stop the moment it is in the air */
-    const air = await until(sky, (s) => s.flying, 40000, 40);
+    /* the walk flies to another household: stop the moment it is in the air. Control: on the way there the walk
+       does draw its ring and its callout, and lifts the sun link */
+    let ringSeen = false, wordsSeen = "", sunMoved = false;
+    const air = await until(async () => {
+      const s = await sky();
+      ringSeen ||= s.rings > 0;
+      wordsSeen ||= s.words;
+      sunMoved ||= s.sun !== first.sun;
+      return s;
+    }, (s) => s.flying, 40000, 40);
     want(air.flying, "control: the walk never started a flight to another household, so there was nothing to stop mid-flight");
+    want(ringSeen, "control: the running walk never drew a ring in #film (an element with 'ring' in its class), so a ring after the stop cannot be told");
+    want(!!wordsSeen, "control: the running walk never showed a callout's words in #film, so words after the stop cannot be told");
+    want.note(`walk running: ring ${ringSeen}, callout ${JSON.stringify(wordsSeen)}, sun link changed ${sunMoved}`);
     await stopWalk(page);
     const back = await until(sky, (s) => /sky is back/i.test(s.name), 5000, 20);
+    const shown = Date.now();
     want(/sky is back/i.test(back.name), `the transport never said "Your sky is back" after the stop (it says ${JSON.stringify(back.name)})`);
     want(!back.flying, "a flight was still running when the transport said \"Your sky is back\"");
     want(back.household === own, `the dial showed ${JSON.stringify(back.household)} when the transport said "Your sky is back", want the visitor's own household ${JSON.stringify(own)}`);
-    /* and it stays so: a flight that was left running would land on the other household a second or two later */
-    let strayed = null;
-    const t0 = Date.now();
-    while (Date.now() - t0 < 3000 && !strayed) {
+    /* and it stays so: a stopped chapter does not carry on. A flight left running would land on the other household
+       a second or two later, and the walk's ring, callout and lift would come back. Watched for 3 s, the first 1.5 s
+       after "Your sky is back" being the spec's */
+    let strayed = null, ringAgain = null, wordsAgain = null, sunAgain = null;
+    while (Date.now() - shown < 3000) {
       const s = await sky();
-      if (s.household !== own || s.flying) strayed = s;
-      await sleep(60);
+      if (!strayed && (s.household !== own || s.flying)) strayed = s;
+      if (!ringAgain && s.rings > 0) ringAgain = Date.now() - shown;
+      if (!wordsAgain && s.words) wordsAgain = { at: Date.now() - shown, words: s.words };
+      if (!sunAgain && s.sun !== first.sun) sunAgain = Date.now() - shown;
+      await sleep(40);
     }
     want(!strayed, strayed && `after the stop the camera went ${strayed.flying ? "flying" : "to " + JSON.stringify(strayed.household)} again, want the visitor's own household (${JSON.stringify(own)}) and no flight`);
+    want(ringAgain === null, `a walk ring was in #film ${ringAgain} ms after "Your sky is back", want none`);
+    want(wordsAgain === null, wordsAgain && `walk callout words ${JSON.stringify(wordsAgain.words)} were in #film ${wordsAgain.at} ms after "Your sky is back", want none`);
+    want(sunAgain === null, `the real sun link differed from before the walk (lifted or glowing) ${sunAgain} ms after "Your sky is back"`);
   });
   await page.close();
 };
