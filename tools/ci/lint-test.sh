@@ -106,6 +106,52 @@ else
 fi
 git reset -q --hard HEAD~1
 
+# Cases (b2)-(b13): what the sanitiser's own tokeniser could let through in
+# hand-edited or hole-produced output (issue #12). Each of these passed the
+# first version of the check, which looked at one tag with plain text matches;
+# the check now reads attributes as a browser does. poison_case <label> <html>
+# expects the lint to fail, naming the file and the section.
+poison_case() {
+  sid=$(poison "$2")
+  rc=0
+  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+tab=$(printf '\t'); nl=$(printf '\n'); ctl=$(printf '\001')
+poison_case "a hex-encoded letter in a javascript: scheme" '<a href="jav&#x61;script:alert(1)">x</a>'
+poison_case "a decimal-encoded letter in a javascript: scheme" '<a href="&#106;avascript:alert(1)">x</a>'
+poison_case "an encoded tab inside a scheme" '<a href="java&#9;script:alert(1)">x</a>'
+poison_case "a tab inside a scheme" "<a href=\"java${tab}script:alert(1)\">x</a>"
+poison_case "a newline inside an unquoted scheme" "<a href=java${nl}script:alert(1)>x</a>"
+poison_case "an encoded vbscript: scheme" '<a href="&#x76;bscript:x">x</a>'
+poison_case "an encoded data: scheme with an encoded colon" '<img src="&#100;ata&colon;text/html,x">'
+poison_case "a handler after a slash" '<img/onerror=alert(1) src=x>'
+poison_case "a handler straight after a closing quote" '<img src="x"onerror=alert(1)>'
+poison_case "a handler after a control character" "<img${ctl}onerror=alert(1) src=x>"
+poison_case "a handler after an attribute value holding a >" '<img alt=">" onerror=alert(1)>'
+poison_case "an upper-case unquoted handler" '<IMG SRC=x ONERROR=alert(1)>'
+
+# Case (b14): ordinary html that only looks like the above -> passes: an
+# entity in a URL, "on x=" in text and in an attribute value, data: in prose.
+sid=$(poison '<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p><img alt="a onfoo=b" src="x.png">')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   ordinary html with entities, 'on x=' text and data: prose passes"
+else
+  echo "FAIL ordinary html with entities, 'on x=' text and data: prose passes (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
 # Case (c): the committed docs as they are -> the section runs and passes.
 rc=0
 sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
@@ -320,6 +366,49 @@ else
   fi
   git reset -q --hard HEAD~1
 fi
+
+# Cases (g3)-(g6): the rules are judged as blocks, in order (GitLab takes the
+# first workflow rule that matches). Each edit leaves every line of the old
+# checks in the file, so only a block-and-order check catches it. rule_case
+# <label> <named> <js>: <js> edits the string y (the file) and must change it.
+rule_case() {
+  Y="$(cat .gitlab-ci.yml)" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    new Function("y", "return y")(y);
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml: .*$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming .gitlab-ci.yml: $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# (g3) the docs/import rule moved below the general merge-request rule
+rule_case "the docs/import rule after the general merge-request rule" "comes after the general merge-request rule" '
+  const m = y.match(/    - if: \$CI_PIPELINE_SOURCE == "merge_request_event" && \$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n/);
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(m[0], "").replace(g, g + m[0]);'
+# (g4) its override moved to another rule: every old line is still in the file
+rule_case "the docs/import rule's override moved to the general merge-request rule" "docs/import- merge-request rule does not set" '
+  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const d = "=~ /^docs\\/import-/\n";
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(d + o, d).replace(g, g + o);'
+# (g5) the docs/import rule turned off
+rule_case "the docs/import rule with when: never" "docs/import- merge-request rule does not set" '
+  y = y.replace("=~ /^docs\\/import-/\n      variables:", "=~ /^docs\\/import-/\n      when: never\n      variables:");'
+# (g6) the bot-author rule moved below the closing rule
+rule_case "the bot-author rule after the general branch rule" "bot-author rule comes after" '
+  const b = "    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const c = "    - if: $CI_COMMIT_BRANCH\n";
+  y = y.replace(b, "").replace(c, c + b);'
 
 # Case (h): the committed tree as it is -> the lint passes and has a heading
 # for the section, a "==" line naming both "import" and "dependency proxy".

@@ -67,15 +67,54 @@ fi
 
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through
+# run on every visitor, whatever the importer let through. This reads the html
+# the way a browser does, since a hand edit or a hole in the sanitiser can
+# produce what its own tokeniser would allow: attributes are found after any
+# separator (a space, a slash, a control character, a closing quote) and in
+# any case; a URL attribute has its entities decoded and its whitespace and
+# control characters removed before the scheme is looked at.
 node -e '
   const fs = require("fs");
-  const bad = [/<[a-z][^>]*\son[a-z]+\s*=/i, /<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i,
-    /(href|src)\s*=\s*["\x27]?\s*(javascript|vbscript|data):/i];
+  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i];
+  const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
+  const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
+  const decode = (v) => {
+    for (let i = 0; i < 4; i++) {
+      const w = v.replace(/&#x([0-9a-f]+);?/gi, (m, h) => cp(parseInt(h, 16)))
+        .replace(/&#(\d+);?/g, (m, d) => cp(Number(d)))
+        .replace(/&([a-z]+);/gi, (m, n) => (named[n.toLowerCase()] !== undefined ? named[n.toLowerCase()] : m));
+      if (w === v) break;
+      v = w;
+    }
+    return v;
+  };
+  const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
+  const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
+  const danger = (h) => {
+    const tagRe = /<([a-z][^\s\/>\x00-\x20]*)/gi;
+    let m;
+    while ((m = tagRe.exec(h))) {
+      let i = tagRe.lastIndex;
+      for (;;) {
+        const sep = /[\s\/\x00-\x20"\x27=]*/y; sep.lastIndex = i; sep.exec(h); i = sep.lastIndex;
+        if (i >= h.length || h[i] === ">") break;
+        const a = /([^\s\/>=\x00-\x20"\x27]+)(?:[\s\x00-\x20]*=[\s\x00-\x20]*("[^"]*"|\x27[^\x27]*\x27|[^\s>\x00-\x20]*))?/y;
+        a.lastIndex = i;
+        const r = a.exec(h);
+        if (!r) break;
+        i = a.lastIndex;
+        const name = r[1].toLowerCase(), value = (r[2] || "").replace(/^["\x27]|["\x27]$/g, "");
+        if (/^on/.test(name)) return true;
+        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/.test(scheme(value))) return true;
+      }
+      tagRe.lastIndex = i;
+    }
+    return bad.some((re) => re.test(h));
+  };
   const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
   for (const f of files) {
     for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
-      if (bad.some((re) => re.test(s.html || ""))) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
+      if (danger(s.html || "")) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
     }
   }
 ' || fail=1
@@ -100,14 +139,41 @@ echo "== docs-import merge requests pull without the dependency proxy"
 # the import's bot cannot use the group proxy: its merge requests must pull
 # from Docker Hub, and the node pin must keep the prefix that rule swaps
 wf=$(awk '/^workflow:/{w=1} /^[a-z]/&&!/^workflow:/{w=0} w' .gitlab-ci.yml)
-printf '%s\n' "$wf" | grep -q 'CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\\/import-/' \
-  && printf '%s\n' "$wf" | grep -q '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$' \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends docs/import- merge requests to Docker Hub"; fail=1; }
-# its merge request merges itself as that bot, so main's push pipeline runs
-# as the bot too: the bot's merge commit on main must pull from Docker Hub
-printf '%s\n' "$wf" | grep -q 'CI_COMMIT_AUTHOR =~ /project_\[0-9\]+_bot_/' \
-  && [ "$(printf '%s\n' "$wf" | grep -c '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$')" -eq 2 ] \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends the import bot's own pushes (its self-merge on main) to Docker Hub"; fail=1; }
+# GitLab takes the first workflow rule that matches, so each rule is judged as
+# one block (its condition, its variables, no `when: never`) and by its place:
+# the docs/import rule must come before the general merge-request rule, and
+# the bot-author rule before the closing `if: $CI_COMMIT_BRANCH` rule, or the
+# general rule matches first and the override never applies.
+WF="$wf" node -e '
+  const bad = (m) => { console.log(`   .gitlab-ci.yml: ${m}`); process.exitCode = 1; };
+  const rules = [];
+  let inRules = false;
+  for (const l of process.env.WF.split("\n")) {
+    if (/^\s*#/.test(l) || !l.trim()) continue;
+    if (/^  rules:/.test(l)) { inRules = true; continue; }
+    if (!inRules) continue;
+    if (/^    - /.test(l)) rules.push(l.trim().replace(/^- /, "") + "\n");
+    else if (rules.length) rules[rules.length - 1] += l.trim() + "\n";
+  }
+  const sets = (r) => /^variables:\n(?:.*\n)*?CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker\.io\n/m.test(r) && !/^when: never$/m.test(r);
+  const first = (r) => r.split("\n")[0];
+  const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
+  const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
+  const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
+  const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
+  if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
+  else {
+    if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
+    if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
+    else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
+  }
+  if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
+  else {
+    if (!sets(rules[bot])) bad("the bot-author rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
+    if (last < 0) bad("no closing `if: $CI_COMMIT_BRANCH` workflow rule to order the bot-author rule before");
+    else if (bot > last) bad("the bot-author rule comes after the general `if: $CI_COMMIT_BRANCH` rule, which matches first, so its Docker Hub override never applies");
+  }
+' || fail=1
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 
