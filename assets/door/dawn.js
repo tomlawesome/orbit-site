@@ -159,13 +159,14 @@ export function mountDawn(host) {
   /* the live door (door3d.js), fetched only where the host's flag asks for it: its compiles, its start, and when it
      has been measured and shown (the host's own planets start only after that, so the door's measure is its own) */
   const door3d = flag("door3d") ? import("./door3d.js") : null;
+  let liveStarted = null;
   const live = door3d ? {
     compile: () => door3d.then((m) => m.compileDoor()),
-    start: () => door3d.then((m) => m.liveDoor(world)),
+    start: () => (liveStarted = door3d.then((m) => m.liveDoor(world))),
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); held = []; rastered.clear(); };
+  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); held = []; rastered.clear(); liveStarted?.then((d) => d?.destroy?.(), () => {}); };
   return { host, world, start, light, live, destroy, get held() { return [...held, ...rastered.values()]; } };
 }
 

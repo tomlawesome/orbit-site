@@ -58,15 +58,18 @@ export function theStrip() {
    door and the flight never show two sharpnesses at once. The box is the same for every tier.
    sharpStrip(): a context that will draw it says so as it is made, then ready(take) once its small one is on the GPU
    (take(bitmap): the sharp one put on its GPU, kept beside the small one), or fail() if it never will be; the sharp one
-   is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore */
+   is put on the GPU once every context that said so has said which. Its mix(): 0 → 1 over the fade, from the chore.
+   leave(): a context that is taken down before it has settled (or after, with the sharp one still on its way) leaves the
+   queue at once, so it holds nobody up and its take is never called; the queue looks again so the others are served */
 const strip0 = () => image("dawn/lights-strip-120.webp"), FADE = 1000;
 const sharp = { wants: new Set(), busy: false };
 export function sharpStrip() {
-  const me = { settled: false, take: null, served: false, at: 0 };
-  const settle = (take) => { if (me.settled) return; me.settled = true; me.take = take; sharpen(); };
-  if (theStrip().url === strip0()) return { ready() {}, fail() {}, mix: () => 0 };
+  const me = { settled: false, take: null, served: false, left: false, at: 0 };
+  const settle = (take) => { if (me.settled || me.left) return; me.settled = true; me.take = take; sharpen(); };
+  const leave = () => { if (me.left) return; me.left = true; me.take = null; sharp.wants.delete(me); sharpen(); };
+  if (theStrip().url === strip0()) return { ready() {}, fail() {}, leave() {}, mix: () => 0 };
   sharp.wants.add(me);
-  return { ready: settle, fail: () => settle(null), mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
+  return { ready: settle, fail: () => settle(null), leave, mix: () => (me.at ? Math.min(1, (performance.now() - me.at) / FADE) : 0) };
 }
 function sharpen() {
   const all = [...sharp.wants];
@@ -78,10 +81,10 @@ function sharpen() {
   fetchOnce(strip.url)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => chore(() => {
-      for (const w of todo) { try { w.take(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
+      for (const w of todo) { try { if (!w.left) w.take(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
       /* the fade's start, the same moment for all of them */
       const at = performance.now();
-      for (const w of todo) w.at = at;
+      for (const w of todo) if (!w.left) w.at = at;
       bm.close?.();
       note(`strip: ${strip.ppd} px a degree in, fading over ${FADE / 1000} s`);
     }, 60, "rich"))
@@ -1248,7 +1251,7 @@ export function createVoyage(under) {
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
          device's own after everything (sharpStrip) */
-      if (live) stripS = sharpStrip();
+      if (live) { stripS = sharpStrip(); if (gone) stripS.leave(); }
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) stripS.ready((bm) => { if (!gone) maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
@@ -1531,6 +1534,7 @@ export function createVoyage(under) {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
     canvas.removeEventListener("webglcontextlost", onLost);
+    stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */
     richRelease();
     release();
   }

@@ -80,7 +80,8 @@ star fields and sets the glows' origin.
 - `live`: the live door (`door3d.js`), only where `flags.door3d` is set,
   else `null`: `compile()`, `start()` → the live door, `measured` (a promise:
   it has been measured and shown), `firstCompiled()`. The live door is an
-  experiment behind its flag and has no teardown yet.
+  experiment behind its flag and has little teardown yet: the dawn's `destroy()` calls
+  its own, which only takes it out of the sharp strip's queue (so it holds no other context back).
 - `destroy()`: the surface taken down (a host that remounts its door): its
   resize listeners removed, a glow build under way stopped, and a first light
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from

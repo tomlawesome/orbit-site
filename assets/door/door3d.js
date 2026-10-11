@@ -452,5 +452,7 @@ export function liveDoor(world) {
   /* the door coming back (its class or its hidden flag changing) starts the clock again */
   if (door) new MutationObserver(wake).observe(door, { attributes: true, attributeFilter: ["class", "hidden"] });
   new MutationObserver(wake).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-  return { ready, state, wake };
+  /* taken down (dawn.destroy): out of the sharp strip's queue, so it holds no other context back and is never handed the
+     strip; the rest of the live door has no teardown yet */
+  return { ready, state, wake, destroy: () => stripS.leave() };
 }
