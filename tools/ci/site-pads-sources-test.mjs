@@ -61,7 +61,7 @@ if (typeof cleanSources === "function") {
   }
 
   /* P3 */
-  for (const id of ['x"y', "a b", "x><b", "", "Top", 5]) {
+  for (const id of ['x"y', "a b", "x><b", "", "Top", 5, "über-orbit", "日本語", "section "]) {
     const r = run([source({ sections: [section(id), section("keep-me")] })]);
     const ids = r.v && r.v[0] ? r.v[0].sections.map((s) => s.id) : null;
     check(`P3 section id ${show(id)} is left out`, !r.threw && show(ids) === show(["keep-me"]), r.threw ? `threw ${r.threw}` : `got ${show(ids)} (want ["keep-me"])`);
