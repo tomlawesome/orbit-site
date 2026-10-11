@@ -229,6 +229,7 @@ uniform vec4 uCS[64]; uniform vec3 uCC[64]; uniform int uCN;`],
 const PARTS = {
   common: `out vec4 o;
 const float PI=3.14159265, TAU=6.2831853;
+float sq(float x){return x*x;}   /* (a square is x*x: pow(x,2.0) is undefined for x<0) */
 float hash13(vec3 p){p=fract(p*0.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float hash12(vec2 p){return hash13(vec3(p,7.31));}
 float vnoise(vec3 p){
@@ -349,7 +350,7 @@ vec3 sunT(float hh,float mu){
   return exp(-(BR*c.r+BMX*c.g+BO*c.b));
 }
 vec2 sph(vec3 ro,vec3 rd,float R){ float b=dot(ro,rd), c=dot(ro,ro)-R*R, d=b*b-c; if(d<0.0) return vec2(-1.0); d=sqrt(d); return vec2(-b-d,-b+d); }
-float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(1.0+g*g-2.0*g*c,1.5)); }
+float hg(float c,float g){ return (1.0-g*g)/(4.0*PI*pow(max(1.0+g*g-2.0*g*c,0.0),1.5)); }
 
 /* the maps come in tiers: the whole Earth; a box about where the door looks, finer (uNearBox: lon0, lon1, lat0, lat1);
    and, for the lights, Europe, finer (uEuroBox), then the door's own ground, finest (uStripBox). Each box's map takes over from the one beneath across a margin
@@ -465,7 +466,7 @@ vec3 airAt(vec3 x,float pr,float pm,out vec3 ext,out vec3 Ts){
   ext=BR*dr+BMX*dm+BO*dz;
   Ts=sunT(hh,ms);
   return ((BR*dr*pr+BM*dm*pm)*Ts*SUNL+BR*dr*SUNL*0.012*exp(min(ms,0.0)*38.0)
-          +vec3(0.35,1.0,0.45)*(0.7e-4*6371.0)*exp(-0.5*pow((hk-95.0)/2.2,2.0)));
+          +vec3(0.35,1.0,0.45)*(0.7e-4*6371.0)*exp(-0.5*sq((hk-95.0)/2.2)));
 }
 vec3 earth(vec2 css,out float cover){
   cover=0.0;
@@ -650,7 +651,7 @@ vec3 arrival(vec2 css){
     c+=mix(vec3(1.0,0.46,0.14),vec3(1.0,0.89,0.7),pow(mu,0.6))*I*mix(16.0,4.2,smoothstep(0.0,0.35,e))*lum;
   }
   /* the chromosphere: a thin red rim */
-  c+=vec3(1.0,0.4,0.18)*exp(-pow((r-Rd)/(Rd*0.025+0.5),2.0))*mix(3.0,1.2,smoothstep(0.0,0.4,e))*lum;
+  c+=vec3(1.0,0.4,0.18)*exp(-sq((r-Rd)/(Rd*0.025+0.5)))*mix(3.0,1.2,smoothstep(0.0,0.4,e))*lum;
   /* the corona: streamers in two scales, drifting outwards and turning slowly, white-gold to amber to a faint violet */
   float lr=log(max(r,Rd)/Rd);
   float n1=vnoise(vec3(cos(a)*5.0,sin(a)*5.0,lr*1.4-uTime*0.12)), n2=vnoise(vec3(cos(a)*17.0,sin(a)*17.0,lr*2.6-uTime*0.2+3.0));
@@ -675,7 +676,7 @@ vec3 arrival(vec2 css){
     float len=H*(0.05+0.24*e), w=0.7+al*0.003;
     vec3 L3=len*vec3(1.0,0.86,0.72);
     vec3 spike=exp(-pow(vec3(al)/L3,vec3(1.6)))*exp(-pe*pe/(w*w));
-    float band=0.7+0.3*pow(sin(al/(H*0.012)),2.0);
+    float band=0.7+0.3*sq(sin(al/(H*0.012)));
     c+=spike*band*(1.0-exp(-al/(Rd*2.0+4.0)))*2.4*lum;
   }
   /* and two faint secondary spikes, the support's, square to the rest */
@@ -686,7 +687,7 @@ vec3 arrival(vec2 css){
   c+=vec3(0.32,0.45,1.0)*exp(-abs(p.y)/(H*0.012))*exp(-abs(p.x)/(Wd*(0.08+0.3*e)))*0.22*lum;
   /* a lens halo: a faint ring, each colour at its own radius */
   float rh=H*(0.11+0.12*e);
-  c+=vec3(exp(-pow((r-rh*0.965)/(H*0.005),2.0)),exp(-pow((r-rh)/(H*0.005),2.0)),exp(-pow((r-rh*1.035)/(H*0.005),2.0)))*0.14*lum;
+  c+=vec3(exp(-sq((r-rh*0.965)/(H*0.005))),exp(-sq((r-rh)/(H*0.005))),exp(-sq((r-rh*1.035)/(H*0.005))))*0.14*lum;
   /* the sky takes the light: a wide warm scatter */
   c+=vec3(1.0,0.8,0.52)*exp(-r/(H*0.45))*0.16*lum+vec3(1.0,0.82,0.6)*exp(-max(r-Rd,0.0)/(H*0.05))*0.7*lum*smoothstep(Rd*0.9,Rd*1.1,r);
   return c;
@@ -698,7 +699,7 @@ vec2 shockBend(vec2 css,out float ring){
   ring=0.0; if(uBloom<=0.0||uBloom>=1.0) return css;
   vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx;
   float rs=uBloom*H*1.25, w=H*0.03, fade=1.0-uBloom;
-  float g=exp(-pow((r-rs)/w,2.0));
+  float g=exp(-sq((r-rs)/w));
   ring=g*fade;
   return css-(r>0.0?p/r:vec2(0.0))*g*w*0.8*fade*sign(r-rs+0.0001);
 }
@@ -765,7 +766,7 @@ const SCENE = sceneHead() + `void main(){
     /* the galaxy over the dawn's own sky, not in place of it, so the stars carry straight through; only as the flight
        comes to rest inside does that sky give way to the galaxy's own far stars, turning with the camera */
     vec4 g4=texture(uGalTex,gl_FragCoord.xy/uRes);
-    float mid=exp(-pow((css.x/(uRes.x/uPx)-0.5)/0.2,2.0));
+    float mid=exp(-sq((css.x/(uRes.x/uPx)-0.5)/0.2));
     vec3 back=c;
     if(uGalPage>0.001){
       float f=uRes.y/uPx*0.95;
@@ -783,7 +784,7 @@ const SCENE = sceneHead() + `void main(){
   float lanes=1.0-0.9*uGalPage;
   if(lanes>0.01) c=c*(1.0-dust)+streaks(css)*mix(0.45,1.0,uDens)*(1.0-dust*0.6)*lanes+neb;
   /* the doppler: cool ahead, warm at the edges, only at the fastest */
-  float dp=pow(max(sp-0.55,0.0)/0.45,2.0);
+  float dp=sq(max(sp-0.55,0.0)/0.45);
   c*=mix(vec3(1.0),mix(vec3(0.95,0.98,1.08),vec3(1.12,0.97,0.88),smoothstep(0.2,0.9,rv/dg)),dp*0.5);
   o=vec4(c,1.0);
 }`;
@@ -842,7 +843,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   /* the shock's own light: a bright edge, red outside and blue in */
   if(ring>0.001){
     vec2 p=css-uBloomPt; float r=length(p), H=uRes.y/uPx, rs=uBloom*H*1.25, w=H*0.006;
-    vec3 band=vec3(exp(-pow((r-rs-w*0.5)/w,2.0)),exp(-pow((r-rs)/w,2.0)),exp(-pow((r-rs+w*0.5)/w,2.0)));
+    vec3 band=vec3(exp(-sq((r-rs-w*0.5)/w)),exp(-sq((r-rs)/w)),exp(-sq((r-rs+w*0.5)/w)));
     S+=mix(vec3(dot(band,vec3(0.34))),band,0.35)*vec3(1.0,0.86,0.66)*0.32*(1.0-uBloom)*(1.0-uBloom);
   }
   o=vec4(S,1.0-T);
@@ -902,7 +903,7 @@ float vnoise(vec3 p){
 /* two arms, a logarithmic spiral about 18 degrees open, with a phase to shift along them */
 float arm(vec3 p,float off,float k){
   float r=length(p.xz), th=atan(p.z,p.x), ph=th-log(max(r,0.03))*3.1+off;
-  return pow(0.5+0.5*cos(2.0*ph),k);
+  return pow(max(0.5+0.5*cos(2.0*ph),0.0),k);
 }
 vec4 field(vec3 p){
   float r=length(p.xz), y=p.y;
