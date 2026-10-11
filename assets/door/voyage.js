@@ -798,8 +798,12 @@ export const doorIsLive = () => !!door;
    first, capability.js, the flight's is too: made with the rest, in place of the lean one, and this resolves at once) */
 let richMake = null, richAsk = null, richOK = false, richCompile = null;
 const richWaiting = [];
+/* (each world answers its own ask: richAskBy is the world's richMake that was handed it. An ask made before any world
+   exists waits in richWaiting and goes to the next world made. When a world stops, what is still its own is cleared:
+   its richMake, richCompile and richOK, and the ask it answered, so the next world is never handed its answer) */
+let richAskBy = null;
 export function wantRich() {
-  if (!richAsk) richAsk = new Promise((resolve) => { const go = () => resolve(richMake()); if (richMake) go(); else richWaiting.push(go); });
+  if (!richAsk) richAsk = new Promise((resolve) => { const go = () => { richAskBy = richMake; resolve(richMake()); }; if (richMake) go(); else richWaiting.push(go); });
   return richAsk;
 }
 /* where the browser compiles on the page's own thread (chores.js: COMPILES_ASIDE false), the rich program is compiled
@@ -1159,16 +1163,22 @@ export function createVoyage(under) {
       return true;
     }, tag === "compile" ? 20 : 60, tag))));
   /* rich from the first: made with the rest (made), its fields and glow with the maps (warm); lean: never made */
-  richCompile = richOnly ? () => made
+  const myCompile = richCompile = richOnly ? () => made
     : weight === "lean" ? () => Promise.resolve(false)
     : () => richProgram("compile").catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; });
-  richMake = () => richMade || (richMade = made.then((good) => {
+  const myMake = richMake = () => richMade || (richMade = made.then((good) => {
     if (!good || weight === "lean") return false;
     warm({ prove: false });
     if (richOnly) return loading.then(() => richOK);
     return richProgram("door").then((p) => p && loaded.then(() => chore(richMaps, 60, "door")));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
   richWaiting.splice(0).forEach((go) => go());
+  /* its journey taken down: what of the rich Earth's state is still this world's goes with it (see wantRich) */
+  const richRelease = () => {
+    if (richAskBy === myMake) { richAsk = null; richAskBy = null; }
+    if (richMake === myMake) { richMake = null; richOK = false; }
+    if (richCompile === myCompile) richCompile = null;
+  };
 
   const tex = (w, h, fmt, f, type, data = null) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -1521,6 +1531,7 @@ export function createVoyage(under) {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
     canvas.removeEventListener("webglcontextlost", onLost);
+    richRelease();
     release();
   }
   function release() {
