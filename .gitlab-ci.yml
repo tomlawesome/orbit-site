@@ -173,7 +173,8 @@ live:journey:
 # that job's secrets and rewrite its scripts (#18). `import_docs` has no token,
 # makes no push and no API call, and hands on assets/docs/ alone as an
 # artifact. `publish_docs` runs no third-party code, treats the artifact as
-# untrusted, checks it, and is the only job in the `docs-import` environment.
+# untrusted, checks it, and is the only job in the `docs-import` environment
+# (the lint refuses any other).
 #
 # ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
 # api and write_repository, Masked + Protected) the owner created, with its
@@ -194,12 +195,16 @@ import_docs:
       - assets/docs/
     expire_in: 1 day
 
-# `action: start` records a deployment in the protected environment, which is
-# what makes GitLab apply the environment's "who may deploy" list and its
-# scoped variables to the run; `deployment_tier: other` because nothing is
-# deployed to a server. OWNER TO CONFIRM: the environment's deployer list must
-# also stop the `prepare`, `verify` and `access` actions, which record no
-# deployment; the only job that names the environment uses `start`.
+# The guard on the token is the variable's own settings, not the environment (a
+# protected environment is a GitLab Premium feature, and this instance is CE):
+# its environment scope is `docs-import`, so only a job that names that
+# environment gets it, and its Protect flag limits it to pipelines on protected
+# branches. Joining the environment therefore means editing this file, which
+# reaches `main` by a reviewed merge, and the lint refuses any job but
+# `publish_docs` that names `docs-import`. `action` is left at its default,
+# `start`: the scope does not need it (any action matches the name), it only
+# records each run as a deployment, a record of when the token was used.
+# `deployment_tier: other` because nothing is deployed to a server.
 #
 # `needs` takes no artifacts (artifacts: false): the runner would load any
 # dotenv report in them as variables of this job, ahead of this file's own, and
@@ -218,7 +223,6 @@ publish_docs:
       artifacts: false
   environment:
     name: docs-import
-    action: start
     deployment_tier: other
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"

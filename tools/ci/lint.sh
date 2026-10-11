@@ -212,6 +212,11 @@ node -e '
     if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
     if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
   }
+  // the token is scoped to the docs-import environment: no job but publish_docs may name it
+  // (anywhere in the file, comments aside: a job, an extends template, defaults)
+  for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
+    if (m[1] !== "publish_docs" && /docs-import/.test(m[2])) bad(`.gitlab-ci.yml: ${m[1]} names the docs-import environment; only publish_docs may, since the token is scoped to it`);
+  }
   if (pub !== null) {
     const env = section(pub, "environment") || "";
     if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
