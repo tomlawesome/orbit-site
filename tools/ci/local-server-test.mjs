@@ -36,9 +36,9 @@ try {
   process.exit(1);
 }
 
-const get = (port, p) =>
+const get = (port, p, extra = {}) =>
   new Promise((resolve, reject) => {
-    const req = http.request({ host: "127.0.0.1", port, path: p, method: "GET" }, (res) => {
+    const req = http.request({ host: "127.0.0.1", port, path: p, method: "GET", ...extra }, (res) => {
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end", () => resolve({ status: res.statusCode, type: res.headers["content-type"] || "", body: Buffer.concat(chunks) }));
@@ -125,6 +125,40 @@ try {
   check("NUL is 400 or 404, never 200", r.status === 400 || r.status === 404, `status ${r.status}`);
   r = await get(port, "/");
   check("still serving after bad requests", r.status === 200 && r.body.toString() === page, `status ${r.status}`);
+
+  stage = "8 host header";
+  // DNS rebinding: only requests addressed to this server (its own port) are answered.
+  const hosts = [
+    ["evil.example", { headers: { host: "evil.example" } }],
+    [`evil.example:${port}`, { headers: { host: `evil.example:${port}` } }],
+    [`127.0.0.1:${port + 1}`, { headers: { host: `127.0.0.1:${port + 1}` } }],
+    ["127.0.0.1", { headers: { host: "127.0.0.1" } }],
+    ["localhost", { headers: { host: "localhost" } }],
+    ["(empty)", { headers: { host: "" } }],
+    ["(no Host header)", { setHost: false }],
+  ];
+  const served = (b) => b.toString("latin1").includes("<title>page</title>") || b.includes(bytes);
+  for (const [label, extra] of hosts) {
+    for (const p of ["/", "/sub/file.js"]) {
+      stage = `8 Host ${label} ${p}`;
+      try {
+        r = await get(port, p, extra);
+      } catch (e) {
+        check(`Host ${label} ${p}`, false, `request failed: ${e.message}`);
+        continue;
+      }
+      // With no Host header at all, node's own parser may answer 400 before the handler runs: still a refusal.
+      const refused = label === "(no Host header)" ? r.status === 403 || r.status === 400 : r.status === 403;
+      check(`Host ${label} ${p} is refused`, refused && !served(r.body), `status ${r.status} (want 403), ${served(r.body) ? "SERVED content" : "no content in body"}`);
+    }
+  }
+  for (const h of [`127.0.0.1:${port}`, `localhost:${port}`]) {
+    for (const p of ["/", "/sub/file.js"]) {
+      stage = `8 control Host ${h} ${p}`;
+      r = await get(port, p, { headers: { host: h } });
+      check(`Host ${h} ${p} is answered`, r.status === 200, `status ${r.status} (want 200)`);
+    }
+  }
 } catch (e) {
   check(`case "${stage}"`, false, `threw ${e && e.message ? e.message : e}`);
 } finally {
