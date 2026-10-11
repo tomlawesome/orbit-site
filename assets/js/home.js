@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -381,7 +381,7 @@ export function snooze(id) {
 }
 export function addItem(fields) {
   const h = household();
-  const id = `i-${Date.now().toString(36)}`;
+  const id = newItemId();
   const it = {
     id, status: "active", title: fields.title, section: fields.section ?? "home", kind: fields.kind ?? "service",
     recurrenceMonths: fields.recurrenceMonths ?? 12, costMinor: fields.costMinor ?? null, costIsEstimate: true,

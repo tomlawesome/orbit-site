@@ -37,6 +37,11 @@ function item(fields) {
    household changed): a returning visitor's saved sample is then replaced with this one (hydrate), keeping only the
    items they added themselves. */
 export const SAMPLE_VERSION = 1;
+/* An item the visitor adds gets a time-based id (newItemId: "i-" and the clock in base 36, 8 characters until the year
+   5188); the sample's ids are names or counts. Only an id of that shape is a visitor's own. So a sample id must never be
+   8 characters of 0-9 a-z after the "i-". */
+export const newItemId = () => `i-${Date.now().toString(36)}`;
+const isVisitorId = (id) => /^i-[0-9a-z]{8}$/.test(String(id));
 
 export const households = {
   willow: {
@@ -114,7 +119,7 @@ export function hydrate(saved) {
   const sampleIds = older ? new Set(Object.values(pristineState.households).flat().map((it) => it.id)) : null;
   for (const [id, items] of Object.entries(saved.households ?? {})) {
     if (!households[id]) continue;
-    households[id].items = (older ? [...(pristineState.households[id] ?? []), ...items.filter((it) => !sampleIds.has(it.id))] : items).map(revive);
+    households[id].items = (older ? [...(pristineState.households[id] ?? []), ...items.filter((it) => isVisitorId(it.id) && !sampleIds.has(it.id))] : items).map(revive);
   }
   if (Array.isArray(saved.review)) inbox.review = pristineReview.filter((r) => saved.review.includes(r.id));
   return true;

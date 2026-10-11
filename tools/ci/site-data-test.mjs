@@ -36,7 +36,7 @@ const check = (name, ok, detail) => {
 };
 
 const data = await import("../../assets/js/data.js");
-const { households, serialise, recall, forget, pristine, SAMPLE_VERSION } = data;
+const { households, serialise, recall, forget, pristine, SAMPLE_VERSION, newItemId } = data;
 const STATE_KEY = "orbit-site-state";
 
 const items = () => Object.values(households).flatMap((h) => h.items);
@@ -51,7 +51,10 @@ check("a fresh save records the sample version", typeof SAMPLE_VERSION === "numb
 // A saved state as a visitor would have: two sample items out of step with the current sample (one edited, one
 // missing) and one item the visitor added.
 const [editedId, missingId] = sampleIds;
-const VISITOR = { id: "i-visitor-own", title: "Visitor's own item" };
+// The visitor's id is what the create form generates (newItemId, time-based); a sample item the current sample no longer
+// has (RETIRED) carries a sample-style id, so it is dropped on an older save.
+const VISITOR = { id: typeof newItemId === "function" ? newItemId() : "i-visitor-own", title: "Visitor's own item" };
+const RETIRED = { id: "i-retired-sample", title: "A sample item since removed" };
 const saved = (version) => {
   const s = JSON.parse(JSON.stringify(serialise()));
   const [first] = Object.keys(s.households);
@@ -59,7 +62,7 @@ const saved = (version) => {
   const edited = Object.values(s.households).flat().find((x) => x.id === editedId);
   edited.title = "OLD " + sample.get(editedId);
   const template = Object.values(s.households).flat().find((x) => x.id !== editedId);
-  s.households[first].push({ ...template, ...VISITOR });
+  s.households[first].push({ ...template, ...VISITOR }, { ...template, ...RETIRED });
   if (version === undefined) delete s.sampleVersion; else s.sampleVersion = version;
   return s;
 };
@@ -70,10 +73,13 @@ const load = (state) => {
   return recall();
 };
 const visitorItem = () => items().find((i) => i.id === VISITOR.id);
+const retiredItem = () => items().find((i) => i.id === RETIRED.id);
+check("newItemId is exported and makes an 'i-' id", typeof newItemId === "function" && /^i-[0-9a-z]+$/.test(newItemId()), `newItemId() is ${typeof newItemId === "function" ? newItemId() : "missing"}`);
 
 // Control: the same version is kept exactly as saved.
 load(saved(SAMPLE_VERSION));
 check("same version: the visitor's item is kept", visitorItem()?.title === VISITOR.title, `visitor item is ${JSON.stringify(visitorItem()?.title)}`);
+check("same version: a sample-style item not in the sample is kept as saved", retiredItem()?.title === RETIRED.title, `retired item is ${JSON.stringify(retiredItem()?.title)}`);
 check("same version: the sample items are as saved", titleOf().get(editedId) === "OLD " + sample.get(editedId) && !titleOf().has(missingId),
   `${editedId} is ${JSON.stringify(titleOf().get(editedId))}, ${missingId} ${titleOf().has(missingId) ? "present" : "absent"} (want edited, absent)`);
 
@@ -84,6 +90,7 @@ for (const [label, version] of [["older version", SAMPLE_VERSION - 1], ["no vers
   check(`${label}: an edited sample item is the current sample's`, now.get(editedId) === sample.get(editedId), `${editedId} is ${JSON.stringify(now.get(editedId))} (want ${JSON.stringify(sample.get(editedId))})`);
   check(`${label}: a missing sample item is back`, now.get(missingId) === sample.get(missingId), `${missingId} is ${JSON.stringify(now.get(missingId))} (want ${JSON.stringify(sample.get(missingId))})`);
   const stray = [...now.keys()].filter((id) => !sample.has(id) && id !== VISITOR.id);
+  check(`${label}: a removed sample item (sample-style id) is dropped`, retiredItem() === undefined, `retired item is ${JSON.stringify(retiredItem()?.title)} (want gone)`);
   check(`${label}: no other items`, stray.length === 0, stray.length ? `unexpected ${stray.join(", ")}` : "only the sample and the visitor's");
   check(`${label}: the visitor's item is still there`, visitorItem()?.title === VISITOR.title, `visitor item is ${JSON.stringify(visitorItem()?.title)} (want ${JSON.stringify(VISITOR.title)})`);
 }
