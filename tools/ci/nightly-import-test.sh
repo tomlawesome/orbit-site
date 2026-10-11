@@ -76,7 +76,7 @@ out=$(mktemp)
 run_import "$out" "$fake"
 rc1=$rc
 npm_lines=$(grep '^npm ' "$log" || true)
-node_lines=$(grep '^node ' "$log" || true)
+node_lines=$(grep '^node .*import-docs' "$log" || true)
 npm_n=$(printf '%s' "$npm_lines" | grep -c '^npm ' || true)
 node_n=$(printf '%s' "$node_lines" | grep -c '^node ' || true)
 
@@ -134,7 +134,7 @@ case "$*" in
   *import-docs.mjs*)
     echo "node import-docs" >> "$STATE/shim.log"
     echo "import" >> "$STATE/git.log"
-    echo "imported $$" >> "$APPEND_FILE"
+    [ "$SCENARIO" = nothing ] || echo "imported $$" >> "$APPEND_FILE"
     case "$SCENARIO" in
       hook) # what a hostile import could leave for git to run (#18)
         for h in pre-commit commit-msg post-commit post-checkout reference-transaction pre-push pre-receive; do
@@ -451,6 +451,20 @@ check "run 9: a failed push fails the job (exit $rc9)" "$rc"
 rc=0; ! grep -q -e '^POST /merge_requests' -e 'state_event=close' -e '^DELETE' "$aux/api.log" || rc=1
 check "run 9: nothing was opened, and no older merge request or branch was touched" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+
+# Run 10: an older import merge request is open and the import finds nothing
+# new (upstream reverted): it is still closed, with its branch, and no new
+# merge request is opened.
+run_push "$out" nothing
+rc10=$rc
+rc=0; [ "$rc10" -eq 0 ] && grep -q 'nothing new' "$out" || rc=1
+check "run 10: nothing new exits 0 and says so (exit $rc10)" "$rc"
+rc=0; grep -q '^PUT /merge_requests/7|state_event=close' "$aux/api.log" \
+  && grep -q '^DELETE /repository/branches/docs%2Fimport-20260101-0000' "$aux/api.log" || rc=1
+check "run 10: with nothing new, the older import merge request and its branch are still closed" "$rc"
+rc=0; ! grep -q -e '^POST /merge_requests' -e 'import-20260102' "$aux/api.log" || rc=1
+check "run 10: no new merge request is opened, and the fork's is left alone" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 oldmr=
 
 rm -f "$out"

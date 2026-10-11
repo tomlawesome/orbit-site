@@ -4,9 +4,9 @@
 # to main: the import pushes its own branch, opens the merge request, and
 # asks GitLab to merge it when the lint and the live journey are green, so
 # every import is tested before Pages serves it. A run with nothing new
-# does nothing. Once the new merge request is open, any older import merge
-# request still open is closed and its branch deleted: the new one carries
-# everything it had.
+# opens nothing, but still closes the older ones. Once the new merge request
+# is open, any older import merge request still open is closed and its branch
+# deleted: the new one carries everything it had.
 #
 # Runs in the `import_docs` job, from a schedule on main. Needs
 # ORBIT_SITE_IMPORT_TOKEN: a project access token, role Maintainer (to
@@ -99,7 +99,14 @@ if ! gitcfg | cmp -s - "$scratch/gitcfg.before"; then
   exit 1
 fi
 cgit add assets/docs assets/img/launcher
-if cgit diff --cached --quiet; then echo "nothing new"; exit 0; fi
+if cgit diff --cached --quiet; then
+  echo "nothing new"
+  # An import merge request still open carries what upstream has since
+  # reverted, and would merge itself: close it and its branch (#21).
+  echo "== older import merge requests"
+  close_older "" "nothing new upstream" || exit 1
+  exit 0
+fi
 cgit diff --cached --no-ext-diff --no-textconv --stat | tail -1
 
 stamp=$(date -u +%Y%m%d-%H%M)
