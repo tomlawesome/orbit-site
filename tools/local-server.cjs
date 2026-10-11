@@ -1,7 +1,8 @@
 /*
  * The small server the picture tools (glows.cjs, docsky.cjs) open for their headless browser: the page they draw in at
  * `/`, and the repository's files beside it. On this machine only (127.0.0.1, never every interface), and never a file
- * outside the root, however the path is spelled (`..`, encoded or not): refused with 403 (#37).
+ * outside the root, however the path is spelled (`..`, encoded or not), and nothing to a request addressed to another
+ * host (a page elsewhere that points its own name at this machine: DNS rebinding): refused with 403 (#37).
  *
  *   const { server, url } = await localServer({ root, page, types });   // url: http://127.0.0.1:<port>/
  */
@@ -11,6 +12,8 @@ function localServer({ root, page, types = {} }) {
   const base = path.resolve(root);
   const server = http.createServer((req, res) => {
     const end = (code) => { res.writeHead(code); res.end(); };
+    const { port } = server.address();
+    if (req.headers.host !== `127.0.0.1:${port}` && req.headers.host !== `localhost:${port}`) return end(403);
     let name;
     try { name = decodeURIComponent(req.url.split("?")[0]); } catch { return end(400); }
     if (name.includes("\0")) return end(400);
