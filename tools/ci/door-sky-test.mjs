@@ -61,15 +61,17 @@ function earthElement(name, onAsked) {
 }
 function dawnHost(onAsked) {
   const pics = [earthElement("dawn-pre", onAsked), earthElement("dawn", onAsked)];
+  const classes = new Set();
   const world = new Proxy({
-    dataset: {}, style: { setProperty() {}, removeProperty() {} }, clientWidth: 1280, clientHeight: 800,
-    querySelectorAll: (sel) => (/\.earth image\[data-href\]/.test(sel) ? pics : []),
-    querySelector: () => any(),
+    dataset: {}, style: { setProperty() {}, removeProperty() {} }, clientWidth: 1280, clientHeight: 800, classes,
+    classList: { add: (...n) => n.forEach((x) => classes.add(x)), remove: (...n) => n.forEach((x) => classes.delete(x)), contains: (x) => classes.has(x), toggle: (x, f) => { (f ?? !classes.has(x)) ? classes.add(x) : classes.delete(x); return classes.has(x); } },
+    querySelectorAll: (sel) => (/\.earth image\[data-href\]/.test(sel) ? pics : /image\.pre/.test(sel) ? [pics[0]] : []),
+    querySelector: (sel) => (/image\.pre|\.pre\b/.test(sel) ? pics[0] : any()),
     getBoundingClientRect: () => ({ width: 1280, height: 800 }),
   }, { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
   const host = new Proxy({ querySelector: (sel) => (sel === ".world" ? world : any()), querySelectorAll: () => [], dataset: {}, style: { setProperty() {} } },
     { get: (t, k) => (k in t ? t[k] : k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()), set: (t, k, v) => { t[k] = v; return true; } });
-  return { host, pics };
+  return { host, pics, world };
 }
 const lastTile = (page) => {
   const sets = page.styleSets.filter((s) => s.k === "--tile");
@@ -83,6 +85,7 @@ const CASES = {
   async "dawn-late"() { return dawnCase({ failBeforeLight: false }); },
   async "sun-resize"() { return sunCase({ resize: true }); },
   async "sun-control"() { return sunCase({ resize: false }); },
+  async "sun-held"() { return sunHeldCase(); },
 };
 
 async function tileCase({ w }) {
@@ -113,34 +116,29 @@ async function tileCase({ w }) {
 
 async function dawnCase({ failBeforeLight }) {
   const page = installPage();
+  const clock = installClock();
   const asked = [];
-  const held = [];
-  /* the first picture (dawn-pre) fails once asked for; the other loads. After light() in the control case. */
-  page.imageHook = (img) => {
-    const fail = /dawn-pre/.test(String(img.src));
-    if (fail && !failBeforeLight) held.push(img); else img.fire(fail ? "error" : "load");
-  };
-  const { host, pics } = dawnHost((el) => {
-    asked.push(el.name);
-    realTimeout(() => {
-      if (el.name === "dawn-pre") { if (failBeforeLight) el.fire("error"); else held.push(el); }
-      else el.fire("load");
-    }, 0);
-  });
+  /* nothing loads by itself: the only event is the one this test dispatches on `.earth image.pre`, and the picture
+     keeps no state of its own (an SVG <image> has no `complete`); the world is not `earthy` */
+  page.imageHook = () => {};
+  const { host, pics, world } = dawnHost((el) => { asked.push(el.name); });
   const door = await import(INDEX);
   const d = door.createDoor({ typingWait: 0, flags: {} });
   const dawn = d.dawn(host);
   dawn.start();
-  await sleep(150);                                           /* the failure (if early) has arrived */
-  const t0 = Date.now();
+  await clock.advance(200);                                    /* the pictures are asked for */
+  if (failBeforeLight) { pics[0].fire("error"); await clock.advance(200); }
+  const t0 = clock.now();
   let litAt = null, openAt = null;
-  dawn.light({ firstVisit: false, aside: true, onLit: () => { litAt ??= Date.now() - t0; }, onOpen: () => { openAt ??= Date.now() - t0; }, after: () => undefined });
-  if (!failBeforeLight) { await sleep(50); for (const el of held) el.fire("error"); }
-  for (let i = 0; i < 60 && litAt === null; i++) await sleep(100);
-  await sleep(100);
+  dawn.light({ firstVisit: false, aside: true, onLit: () => { litAt ??= clock.now() - t0; }, onOpen: () => { openAt ??= clock.now() - t0; }, after: () => undefined });
+  if (!failBeforeLight) { await clock.advance(100); pics[0].fire("error"); }
+  await clock.advance(20000, () => litAt !== null);
+  await clock.advance(100);
   const loadingOn = page.bodyLog.filter((e) => e.name === "loading" && e.op === "add").length;
   const loadingOff = page.bodyLog.filter((e) => e.name === "loading" && e.op === "remove").length;
-  return { asked, litAt, openAt, loadingOn, loadingOff, stillLoading: page.bodyClasses.has("loading") };
+  const offAt = (page.bodyLog.filter((e) => e.name === "loading" && e.op === "remove").pop() || {}).at;
+  const loadingOffAfter = offAt === undefined ? null : offAt - t0;
+  return { asked, litAt, openAt, loadingOffAfter, loadingOn, loadingOff, stillLoading: page.bodyClasses.has("loading"), earthy: world.classes.has("earthy"), lit: page.bodyClasses.has("lit") };
 }
 
 async function sunCase({ resize }) {
@@ -174,6 +172,33 @@ async function sunCase({ resize }) {
   return { order, firstSize, cutAt, current, stale, urls, paints: page.paints.length, sizes: order };
 }
 
+/* a real supersede: the first size's build is held at its encode step (its bands are painted), the window changes size,
+   the newer build runs to its end, then the old one is let go */
+async function sunHeldCase() {
+  const page = installPage();
+  const clock = installClock();
+  let release; const gate = new Promise((r) => { release = r; });
+  let firstW = null, held = 0;
+  page.blobGate = (c) => { if (firstW === null) firstW = c.width; if (c.width === firstW) { held++; return gate; } };
+  const door = await import(INDEX);
+  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const dawn = d.dawn(any());
+  door.openChores();
+  dawn.start();
+  await clock.advance(10000, () => held > 0);
+  const oldPaints = page.paints.length;
+  page.resize(1000, 700);
+  await clock.advance(10000, () => page.paints.length > oldPaints && page.paints[page.paints.length - 1].w !== firstW);
+  const newerBegan = page.paints.length;
+  await clock.advance(10000);                                 /* the newer build runs to its end (the old one still held) */
+  const urlsBeforeRelease = page.blobURLs.length;
+  release();
+  await clock.advance(20000);                                 /* the old one is let go */
+  const newest = page.paints.length ? page.paints[page.paints.length - 1].w : null;
+  const urls = page.blobURLs.map((u) => ({ ...u, revoked: page.revoked.includes(u.url) }));
+  return { held, firstW, newest, oldPaintsAfterNewerBegan: page.paints.slice(newerBegan - 1).filter((p) => p.w === firstW).length, urlsBeforeRelease, urls };
+}
+
 if (process.argv[2] === "--child") await childMain(CASES);
 
 {
@@ -189,14 +214,14 @@ if (process.argv[2] === "--child") await childMain(CASES);
 }
 {
   const r = runCase(import.meta.url, "dawn-late");
-  check("control (D7): the Earth's first picture failing after light() ends the ring promptly (onLit within 3 s)",
+  check("control (D7): the Earth's first picture failing after light() ends the ring promptly (onLit within 3 s of virtual time)",
     !r.error && r.litAt !== null && r.litAt < 3000, `onLit after ${r.litAt} ms; pictures asked for ${JSON.stringify(r.asked)}${errOf(r)}`);
 }
 {
   const r = runCase(import.meta.url, "dawn-early");
   check("D7: the Earth's first picture failing before light() does not hold the ring (onLit within 3 s of light())",
     !r.error && r.litAt !== null && r.litAt < 3000, `onLit after ${r.litAt} ms (the backstop is 13000); pictures asked for ${JSON.stringify(r.asked)}; loading on ${r.loadingOn}, off ${r.loadingOff}${errOf(r)}`);
-  check("D7: ... and body.loading is taken off promptly", !r.error && (r.loadingOn === 0 || r.loadingOff >= 1) && !r.stillLoading, `loading added ${r.loadingOn}x, removed ${r.loadingOff}x, still on: ${r.stillLoading}${errOf(r)}`);
+  check("D7: ... and body.loading is taken off within 3 s of light()", !r.error && (r.loadingOn === 0 || (r.loadingOffAfter !== null && r.loadingOffAfter < 3000)), `loading added ${r.loadingOn}x, removed ${r.loadingOff}x, last removed ${r.loadingOffAfter} ms after light()${errOf(r)}`);
 }
 {
   const c = runCase(import.meta.url, "sun-control", 90000);
@@ -210,5 +235,13 @@ if (process.argv[2] === "--child") await childMain(CASES);
   check("D3: blob URLs made for sizes no longer current are revoked once the newer build ends",
     !r.error && (r.urls || []).length > 0 && old.every((u) => u.revoked), `${old.length} stale URL(s), ${old.filter((u) => !u.revoked).length} not revoked; all urls ${JSON.stringify(r.urls)}${errOf(r)}`);
   check("D3: the current size's URL is not revoked", !r.error && (r.urls || []).filter((u) => u.w === r.current).every((u) => !u.revoked), `urls ${JSON.stringify(r.urls)}${errOf(r)}`);
+}
+{
+  const r = runCase(import.meta.url, "sun-held", 90000);
+  check("D3 supersede (precondition): the first size was held at its encode step, and a newer size then painted", !r.error && r.held >= 1 && r.newest !== null && r.newest !== r.firstW, `held ${r.held}, first size ${r.firstW}, newest ${r.newest}${errOf(r)}`);
+  check("D3 supersede: the held, superseded build paints no more once the newer one has begun", !r.error && r.oldPaintsAfterNewerBegan === 0, `${r.oldPaintsAfterNewerBegan} paint call(s) at the old size after the newer began (want 0)${errOf(r)}`);
+  const stale = (r.urls || []).filter((u) => u.w === r.firstW);
+  check("D3 supersede: a URL the superseded build makes is revoked (no URL left for a size no longer current)", !r.error && stale.every((u) => u.revoked), `${stale.length} URL(s) for the old size, ${stale.filter((u) => !u.revoked).length} not revoked; urls ${JSON.stringify(r.urls)}${errOf(r)}`);
+  check("D3 supersede: the newer size's URL is not revoked", !r.error && (r.urls || []).filter((u) => u.w === r.newest).length >= 1 && (r.urls || []).filter((u) => u.w === r.newest).every((u) => !u.revoked), `urls ${JSON.stringify(r.urls)}${errOf(r)}`);
 }
 finish();

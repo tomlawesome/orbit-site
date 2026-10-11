@@ -75,8 +75,8 @@ export function installPage(opts = {}) {
       addEventListener(type, fn) { if (c === sharedCanvas) (page.canvasListeners[type] ||= []).push(fn); },
       removeEventListener(type, fn) { if (c === sharedCanvas && page.canvasListeners[type]) page.canvasListeners[type] = page.canvasListeners[type].filter((f) => f !== fn); },
       getContext(kind) { if (kind === "webgl2") { sharedCanvas ||= c; page.contexts++; return page.gl; } return page.ctx2d(c); },
-      toBlob(cb) { Promise.resolve().then(() => cb(page.blobOf(c))); },
-      convertToBlob: async () => page.blobOf(c),
+      toBlob(cb) { Promise.resolve(page.blobGate(c)).then(() => cb(page.blobOf(c))); },
+      convertToBlob: async () => { await page.blobGate(c); return page.blobOf(c); },
     };
     return c;
   };
@@ -85,6 +85,7 @@ export function installPage(opts = {}) {
     get: (t, k) => (k === "canvas" ? c : k in t ? t[k] : typeof k === "symbol" ? undefined : (...a) => { page.paints.push({ op: String(k), w: c.width, h: c.height }); return any(); }),
     set: (t, k, v) => { t[k] = v; return true; },
   });
+  page.blobGate = () => undefined;          /* tests hold a picture's encode step by returning a promise */
   page.blobOf = (c) => ({ size: 1, w: c.width, h: c.height, type: "image/png" });
 
   page.imageHook = (img) => { img.fire("load"); };     /* tests replace: what a picture does when its src is set */
@@ -156,7 +157,7 @@ export function installPage(opts = {}) {
   globalThis.OffscreenCanvas = class {
     constructor(w, h) { this.width = w; this.height = h; }
     getContext() { return page.ctx2d(this); }
-    convertToBlob() { return Promise.resolve(page.blobOf(this)); }
+    convertToBlob() { return Promise.resolve(page.blobGate(this)).then(() => page.blobOf(this)); }
     transferToImageBitmap() { return { width: this.width, height: this.height, close() {} }; }
   };
   /* a bitmap: the crop probe's (and what is cut from it) is marked, so the probe is left out of the counts */
