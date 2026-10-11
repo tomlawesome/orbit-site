@@ -1253,6 +1253,12 @@ export function createVoyage(under) {
       if (maps[key]) { giveBack("Texture", maps[key]); delete maps[key]; delete dims[key]; }
       if (!gone) failed.add(key);
     });
+  let unhide = null;
+  const whenVisible = () => (!document.hidden ? undefined : new Promise((resolve) => {
+    const on = () => { if (document.hidden) return; unhide(); resolve(); };
+    unhide = () => { document.removeEventListener("visibilitychange", on); unhide = null; };
+    document.addEventListener("visibilitychange", on);
+  }));
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
      back, so a machine that cannot draw it is not stalled by the asking. The test frames, the fitness test and the
@@ -1290,6 +1296,9 @@ export function createVoyage(under) {
     if (!prove) return loading;
     if (!warming) {
       warming = loading
+        /* a hidden tab draws nothing and times nothing: its frames are throttled or paused, so a speed test there would
+           call a fit world too slow and retire it for the visit. Wait for the tab to be shown (stop() drops the wait) */
+        .then(whenVisible)
         /* each way the flight draws, drawn once into a corner of a few pixels, so the GPU has everything made for it
            (drivers finish their shaders on the first draw) before a flight, at no cost to see */
         .then(() => chore(() => touch(ST()), 60, "flight"))
@@ -1558,6 +1567,7 @@ export function createVoyage(under) {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
     canvas.removeEventListener("webglcontextlost", onLost);
+    unhide?.();   /* (a warm-up waiting for the tab to be shown waits no more, and draws nothing) */
     stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */
     richRelease();
     release();
