@@ -30,6 +30,13 @@
  * #door .world image's address (href, else xlink:href), absolute. At least 3 exist, and each had a decode() call on the
  * same address before body.lit. The light is the 13 s backstop's (lightIt with an after() that never settles).
  *
+ * Also (#32), the dawn holds each rasterised glow decoded: after start() and once data-rasterised reads "ready", every
+ * #door .world image[data-raster] has its current href (absolute) as the src of at least one image in the flattened
+ * dawn.held[*].held[*], and as the src of exactly one (one holding per layer). After a resize from 1280x800 to 900x600 and
+ * "ready" again, the same holds for the new hrefs, and a layer whose href changed has let go of its old one (no held
+ * image has the old src); a resize that changes no href fails, since it did not exercise the rule. After dawn.destroy(),
+ * dawn.held is empty.
+ *
  * (sh tools/ci/journey-local.sh dawn does exactly that.) BROWSER=chromium for a second engine; HEADED=1 as the other
  * live tests: Firefox has no WebGL headless here. The whole run takes about a minute: the light cases wait out the
  * backstop in real time.
@@ -216,7 +223,69 @@ try {
     } finally { await page.close(); }
   };
 
+  /* #32: the rasterised layers' hrefs against what dawn.held holds, in the page */
+  const heldLook = () => {
+    const abs = (u) => new URL(u, document.baseURI).href;
+    const held = [];
+    for (const h of window.dawn.held) for (const img of h.held) held.push(img.src);
+    const hrefs = [...document.querySelectorAll("#door .world image[data-raster]")]
+      .map((el) => el.getAttribute("href") || el.getAttribute("xlink:href")).filter(Boolean).map(abs);
+    return {
+      hrefs, heldCount: held.length,
+      count: Object.fromEntries(hrefs.map((u) => [u, held.filter((s) => s === u).length])),
+      heldSrcs: held,
+    };
+  };
+  const short = (u) => (u.length > 48 ? `${u.slice(0, 48)}...` : u);
+  const heldRasterised = async () => {
+    const { page, problems } = await open();
+    try {
+      await page.evaluate(() => {
+        window.__rs = [];
+        new MutationObserver(() => window.__rs.push(window.dawn.world.dataset.rasterised ?? null))
+          .observe(window.dawn.world, { attributes: true, attributeFilter: ["data-rasterised"] });
+        window.dawn.start();
+      });
+      let waited = null;
+      const ready = (since) => page.waitForFunction(
+        (n) => window.__rs.slice(n).includes("ready") || (n === 0 && window.dawn.world.dataset.rasterised === "ready"),
+        since, { timeout: READY_WITHIN, polling: 50 });
+      try { await ready(0); } catch { waited = `data-rasterised never read "ready" within ${READY_WITHIN} ms of the start`; }
+      /* a moment more, so a late rebuild would show */
+      await new Promise((ok) => setTimeout(ok, 300));
+      const first = await page.evaluate(heldLook);
+      let second = null;
+      if (!waited) {
+        const since = await page.evaluate(() => window.__rs.length);
+        await page.setViewportSize({ width: 900, height: 600 });
+        try {
+          await page.waitForFunction((n) => window.__rs.slice(n).includes("pending"), since, { timeout: 10000, polling: 50 });
+        } catch { /* the rebuild may be over before we looked: the check below decides */ }
+        try { await ready(since); } catch { waited = `data-rasterised never read "ready" within ${READY_WITHIN} ms of the resize`; }
+        await new Promise((ok) => setTimeout(ok, 300));
+        second = await page.evaluate(heldLook);
+      }
+      const afterDestroy = await page.evaluate(() => { window.dawn.destroy(); return window.dawn.held.length; });
+      const layersOk = (x) => x !== null && x.hrefs.length > 0 && x.hrefs.every((u) => x.count[u] >= 1);
+      const onceOk = (x) => x !== null && x.hrefs.length > 0 && x.hrefs.every((u) => x.count[u] === 1);
+      const changed = second ? first.hrefs.filter((u) => !second.hrefs.includes(u)) : [];
+      const letGo = second ? changed.every((u) => !second.heldSrcs.includes(u)) : false;
+      return { r: { first, second, afterDestroy, waited, layersOk, onceOk, changed, letGo, thrown: null, errors: [] }, problems };
+    } finally { await page.close(); }
+  };
+
   const scenarios = [
+    ["the dawn holds each rasterised glow decoded, one per layer (#32)", () => heldRasterised(), (r) => [
+      ["there are rasterised layers (image[data-raster]) once ready", r.first.hrefs.length > 0],
+      ["every rasterised href is the src of a held image", r.layersOk(r.first)],
+      ["exactly one held image per rasterised href", r.onceOk(r.first)],
+      ["the resize changed at least one href (it exercised the rule)", r.second !== null && r.changed.length > 0],
+      ["after the resize, every new href is held", r.layersOk(r.second)],
+      ["after the resize, exactly one held image per href", r.onceOk(r.second)],
+      ["after the resize, the old hrefs are no longer held", r.letGo],
+      ["after destroy(), dawn.held is empty", r.afterDestroy === 0],
+    ], (r) => `before ${JSON.stringify(r.first.hrefs.map(short))}, held ${r.first.heldCount}; after the resize ${r.second ? `${JSON.stringify(r.second.hrefs.map(short))}, held ${r.second.heldCount}` : "never ready"}; changed ${r.changed.length ? JSON.stringify(r.changed.map(short)) : "none (the resize did not exercise the rule)"}; held after destroy() ${r.afterDestroy}`],
+
     ["the dawn's pictures are decoded before the light (#32)", () => decodedAhead(), (r) => [
       ["body.lit came", r.litAt !== null],
       ["at least 3 pictures are in #door .world", r.pictures.length >= 3],
