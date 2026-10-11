@@ -466,8 +466,9 @@ const retryCase = async () => {
         await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
         const first = await until(() => page.evaluate(() => document.querySelector("#installpad").classList.contains("formed")), (v) => v, 20000, 100);
         want(first, "control: the first dive (the map failed) never added 'formed' to #installpad within 20 s");
-        /* 'flat' lands a moment after 'formed': the page forms on the false bake, the poster is kept as the bake answers */
-        const painted = await until(classes, (c) => c.flat, 5000, 100);
+        /* 'flat' lands after 'formed': the page forms on the false bake, the poster is kept as the bake answers, and
+           that bake waits for the door's opening to finish (about 20 s when the dive starts early) */
+        const painted = await until(classes, (c) => c.flat, 45000, 100);
         want(painted.flat && !painted.lit, `control: after the failed first dive #installpad should be flat and not lit, but flat is ${painted.flat} and lit is ${painted.lit}`);
         await page.locator("#installpad .back.dawn").click();
         await page.locator("#door").waitFor({ state: "visible", timeout: 60000 });
