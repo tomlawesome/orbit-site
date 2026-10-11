@@ -147,6 +147,15 @@ case "$*" in
         done
         printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$STATE" > .git/fsm
         chmod +x .git/fsm ;;
+      stage) # files staged in the checkout's own index: none may reach the commit (H1)
+        echo evil > evil.txt
+        echo "<!-- planted -->" >> index.html
+        "$REAL_GIT" add evil.txt index.html ;;
+      head) # HEAD moved by the import
+        "$REAL_GIT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m moved ;;
+      symlink) # the docs folder swapped for a symlink
+        rm -rf assets/docs
+        ln -s ../scratch-tmp assets/docs ;;
       cfg) # a planted fsmonitor and a clean filter, in the checkout's own config
         printf '[core]\n\tfsmonitor = %s/.git/fsm\n[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$PWD" "$STATE" >> .git/config
         printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$STATE" > .git/fsm
@@ -179,7 +188,9 @@ exec "$REAL_GIT" "$@"
 SHIM
 cat > "$pbin/sleep" <<'SHIM'
 #!/bin/sh
-echo "sleep $*" >> "$STATE/shim.log"
+# whether the header file (named hdr, under TMPDIR) is on disk during the wait
+if find "$TMPDIR" -name hdr 2>/dev/null | grep -q .; then h=present; else h=absent; fi
+echo "sleep $* hdr=$h" >> "$STATE/shim.log"
 exit 0
 SHIM
 cat > "$pbin/curl" <<'SHIM'
@@ -244,15 +255,19 @@ case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
     if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi ;;
   "GET /repository/branches") code=200; body='[]'
-    if [ -n "$STALE" ]; then body='[{"name":"docs/import-20260101-0000"},{"name":"docs/import-20260102-0000"},{"name":"docs/import-20260103-0000"},{"name":"docs/importer"},{"name":"main"}]'; fi ;;
+    if [ -n "$STALE" ]; then
+      now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+      body='[{"name":"docs/import-20260101-0000","commit":{"committed_date":"2026-01-01T00:00:00.000Z"}},{"name":"docs/import-20260102-0000","commit":{"committed_date":"2026-01-02T00:00:00.000Z"}},{"name":"docs/import-20260103-0000","commit":{"committed_date":"2026-01-03T00:00:00.000Z"}},{"name":"docs/import-20260104-0000","commit":{"committed_date":"'$now'"}},{"name":"docs/import-20260105-0000"},{"name":"docs/importer","commit":{"committed_date":"2026-01-01T00:00:00.000Z"}},{"name":"main"}]'
+    fi ;;
   "DELETE /repository/branches/docs%2Fimport-20260103-0000"|"DELETE /repository/branches/docs%2Fimport-20260102-0000") code=204; body= ;;
   "PUT /merge_requests/7") code=200; body='{"iid":7,"state":"closed"}' ;;
   "DELETE /repository/branches/docs%2Fimport-20260101-0000") code=204; body= ;;
-  "POST /merge_requests") code=201; body='{"iid":42}' ;;
+  "POST /merge_requests") code=201; body='{"iid":42}'
+    if [ "$SCENARIO" = noiid ]; then body='{"message":"created, but no iid"}'; fi ;;
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -291,11 +306,15 @@ SHIM
 chmod +x "$pbin"/*
 
 appendfile=$(git ls-files assets/docs | head -n 1)
+basecommit=$(git rev-parse HEAD)
 cp .git/config "$aux/config.orig"
 run_push() { # run_push <outfile> <scenario: refused | second | conn>
   outfile=$1
   # a clean scratch repository and state for every run
+  [ ! -L assets/docs ] || rm -f assets/docs
   "$realgit" checkout -q -f "$base"
+  "$realgit" reset -q --hard "$basecommit"
+  rm -f evil.txt
   "$realgit" clean -qfd -e bin -e scratch-tmp
   for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/docs/import-*'); do
     "$realgit" branch -q -D "$b"
@@ -362,6 +381,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
   rc=0; [ "$merge_calls" -gt 0 ] && [ "$no_timeouts" -eq 0 ] && [ "$no_maxtime" -eq 0 ] || rc=1
   check "$1: every auto-merge request passed --connect-timeout and --max-time" "$rc"
 }
+rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
+check "run 3: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 3"
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
@@ -494,6 +515,8 @@ check "run 11: they are deleted at the start, before the import" "$rc"
 rc=0; [ "$(grep -c '^DELETE /repository/branches/docs%2Fimport-20260101' "$aux/api.log")" -eq 1 ] \
   && ! grep -q -e 'branches/main' -e 'branches/docs%2Fimporter' "$aux/api.log" || rc=1
 check "run 11: the branch of an open merge request is kept until that merge request is closed, and others are not touched" "$rc"
+rc=0; ! grep -q -e 'import-20260104' -e 'import-20260105' "$aux/api.log" && grep -q 'keeping docs/import-20260104-0000' "$out" || rc=1
+check "run 11: a branch under an hour old, or of unknown age, is kept" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
 oldmr=; stale=
 
@@ -520,6 +543,51 @@ check "run 12: the import did run (in the copy)" "$rc"
 rc=0; ! grep -q -e '^PUT' -e '^POST' -e '^DELETE' "$aux/api.log" && ! grep -q 'https://' "$aux/shim.log" || rc=1
 check "run 12: GitLab got no write and nothing was pushed" "$rc"
 oldmr=; stale=; dry=
+
+# Runs 13 to 16 (review findings). Run 13: the import stages an unrelated file
+# and a change to a page in the checkout's index; the commit holds neither.
+run_push "$out" stage
+rc13=$rc
+changed=$("$realgit" diff --name-only "$basecommit" "$tip")
+rc=0; [ "$rc13" -eq 0 ] || rc=1
+check "run 13: the job succeeds when the import staged other files (exit $rc13)" "$rc"
+rc=0; [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -v -e '^assets/docs/' -e '^assets/img/launcher/')" ] || rc=1
+check "run 13: the commit changes only assets/docs and the launcher pictures" "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$changed" | sed 's/^/     changed: /'
+rc=0; ! "$realgit" cat-file -e "$tip:evil.txt" 2>/dev/null || rc=1
+check "run 13: a file the import staged is not in the commit" "$rc"
+check_merge_calls "run 13"
+rm -f evil.txt
+
+# Run 14: the import moves HEAD -> refused before anything is committed or pushed.
+run_push "$out" head
+rc14=$rc
+rc=0; [ "$rc14" -ne 0 ] && grep -q 'moved HEAD or a ref' "$out" || rc=1
+check "run 14: an import that moves HEAD stops the job and says so (exit $rc14)" "$rc"
+rc=0; [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] && ! grep -q 'https://' "$aux/shim.log" \
+  && ! grep -q -e '^POST' -e '^PUT' -e '^DELETE' "$aux/api.log" || rc=1
+check "run 14: nothing was committed, pushed or sent to GitLab" "$rc"
+
+# Run 15: the docs folder replaced by a symlink -> a path outside the allowed ones.
+run_push "$out" symlink
+rc15=$rc
+rc=0; [ "$rc15" -ne 0 ] && grep -q 'may not write' "$out" && grep -q 'assets/docs' "$out" || rc=1
+check "run 15: a changed path outside the allowed ones stops the job and names it (exit $rc15)" "$rc"
+rc=0; [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] && ! grep -q 'https://' "$aux/shim.log" || rc=1
+check "run 15: nothing was committed or pushed" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Run 16: GitLab answers the merge request POST 2xx with no iid, an older merge
+# request is open -> the job stops before it closes anything.
+oldmr=1
+run_push "$out" noiid
+rc16=$rc
+rc=0; [ "$rc16" -ne 0 ] && grep -q 'no numeric iid' "$out" || rc=1
+check "run 16: an answer without an iid stops the job (exit $rc16)" "$rc"
+rc=0; ! grep -q -e 'state_event=close' -e '^DELETE' "$aux/api.log" || rc=1
+check "run 16: no merge request was closed and no branch deleted" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+oldmr=
 "$realgit" checkout -q -f "$base"; rm -rf tools/node_modules
 
 rm -f "$out"

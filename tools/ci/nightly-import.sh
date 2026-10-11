@@ -104,115 +104,155 @@ close_older() {
 
 # A run that failed after pushing leaves a docs/import-* branch with no merge
 # request. Delete those at the start of the next run (#12). A branch is kept
-# if any open merge request of this project has it as its source. If there are
-# 100 open merge requests, not all are seen, so nothing is deleted.
+# if any open merge request of this project has it as its source, or if its
+# head commit is under an hour old (a run that is still between its push and
+# its merge request, L2), or its age is not known. If there are 100 open merge
+# requests, not all are seen, so nothing is deleted.
 delete_branch() { api DELETE "/repository/branches/$(printf '%s' "$1" | sed 's|/|%2F|g')" >/dev/null; }
 clean_stale_branches() {
   open=$(apij 'console.log(j.length); for (const m of j) if (m.source_project_id === m.target_project_id) console.log(m.source_branch)' \
     GET "/merge_requests?state=opened&per_page=100") || return 1
   [ "$(printf '%s\n' "$open" | head -n 1)" -lt 100 ] || { echo "   (100 open merge requests: too many to tell which branches are unused; none deleted)"; return 0; }
-  found=$(apij 'for (const b of j) if (/^docs\/import-[0-9-]+$/.test(b.name)) console.log(b.name)' \
+  found=$(apij 'for (const b of j) if (/^docs\/import-[0-9-]+$/.test(b.name)) { const t = Date.parse(b.commit && b.commit.committed_date); console.log(b.name, t < Date.now() - 3600e3 ? "old" : "young") }' \
     GET "/repository/branches?search=%5Edocs%2Fimport-&per_page=100") || return 1
-  printf '%s\n' "$found" | while read -r b; do
+  printf '%s\n' "$found" | while read -r b age; do
     [ -n "$b" ] || continue
-    printf '%s\n' "$open" | grep -qx -e "$b" && continue
+    if printf '%s\n' "$open" | grep -qx -e "$b"; then continue; fi
+    if [ "$age" != old ]; then echo "   keeping $b: under an hour old, or its age is unknown"; continue; fi
     echo "   deleting $b: no open merge request has it"
     [ -z "$DRY_RUN" ] || continue
     delete_branch "$b" || echo "   (could not delete $b)"
   done
 }
-echo "== import branches left by an earlier run"
-clean_stale_branches || echo "   (could not check; the next run will)"
+# The whole flow is one function, called on the last line: the shell has read
+# the entire file before the import runs, so the import cannot change what the
+# rest of this script does by rewriting it.
+main() {
+  echo "== import branches left by an earlier run"
+  clean_stale_branches || echo "   (could not check; the next run will)"
 
-echo "== import"
-gitcfg > "$scratch/gitcfg.before"
-# Exact versions from the lockfile, hashes checked, no install scripts, and
-# the token withheld from the install and the import: a bad release of a
-# package, or of one it pulls in, runs here before anything is pushed.
-[ -d tools/node_modules/marked ] || env -u ORBIT_SITE_IMPORT_TOKEN \
-  npm ci --prefix tools --ignore-scripts --no-audit --no-fund >/dev/null
-env -u ORBIT_SITE_IMPORT_TOKEN node tools/import-docs.mjs
-rm -rf tools/node_modules
-if ! gitcfg | cmp -s - "$scratch/gitcfg.before"; then
-  echo "the import changed the git configuration of the checkout; stopping before anything is committed or pushed:"
-  gitcfg | diff "$scratch/gitcfg.before" - | sed 's/^/   /' | cut -c1-200 || true
-  exit 1
-fi
-cgit add assets/docs assets/img/launcher
-if cgit diff --cached --quiet; then
-  echo "nothing new"
-  # An import merge request still open carries what upstream has since
-  # reverted, and would merge itself: close it and its branch (#21).
+  echo "== import"
+  gitcfg > "$scratch/gitcfg.before"
+  # What the import must not move: HEAD, the branch it is on and every ref. The
+  # commit below is built on this base, from a fresh index, so whatever the
+  # import staged in the checkout's own index is never in it (H1).
+  gitstate() {
+    cgit symbolic-ref -q HEAD || echo detached
+    cgit rev-parse HEAD
+    cgit for-each-ref --format='%(refname) %(objectname)'
+  }
+  base=$(cgit rev-parse HEAD)
+  gitstate > "$scratch/gitstate.before"
+  # Exact versions from the lockfile, hashes checked, no install scripts, and
+  # the token withheld from the install and the import: a bad release of a
+  # package, or of one it pulls in, runs here before anything is pushed.
+  [ -d tools/node_modules/marked ] || env -u ORBIT_SITE_IMPORT_TOKEN \
+    npm ci --prefix tools --ignore-scripts --no-audit --no-fund >/dev/null
+  env -u ORBIT_SITE_IMPORT_TOKEN node tools/import-docs.mjs
+  rm -rf tools/node_modules
+  if ! gitcfg | cmp -s - "$scratch/gitcfg.before"; then
+    echo "the import changed the git configuration of the checkout; stopping before anything is committed or pushed:"
+    gitcfg | diff "$scratch/gitcfg.before" - | sed 's/^/   /' | cut -c1-200 || true
+    exit 1
+  fi
+  if ! gitstate | cmp -s - "$scratch/gitstate.before"; then
+    echo "the import moved HEAD or a ref of the checkout; stopping before anything is committed or pushed"
+    exit 1
+  fi
+  # The index is built afresh: the base commit's tree plus the paths the import
+  # writes, nothing else. A path outside them in the result stops the job.
+  export GIT_INDEX_FILE="$scratch/index"
+  cgit read-tree "$base"
+  cgit add assets/docs assets/img/launcher
+  outside=$(cgit diff --cached --name-only "$base" | grep -v -e '^assets/docs/' -e '^assets/img/launcher/' || true)
+  if [ -n "$outside" ]; then
+    echo "the import changed paths it may not write; stopping before anything is committed or pushed:"
+    printf '%s\n' "$outside" | head -n 10 | sed 's/^/   /'
+    exit 1
+  fi
+  if cgit diff --cached --quiet "$base"; then
+    echo "nothing new"
+    # An import merge request still open carries what upstream has since
+    # reverted, and would merge itself: close it and its branch (#21).
+    echo "== older import merge requests"
+    close_older "" "nothing new upstream" || exit 1
+    exit 0
+  fi
+  cgit diff --cached --no-ext-diff --no-textconv --stat "$base" | tail -1
+
+  stamp=$(date -u +%Y%m%d-%H%M)
+  branch="docs/import-$stamp"
+
+  if [ -n "$DRY_RUN" ]; then
+    echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
+    close_older "" "$branch" || true
+    exit 0
+  fi
+
+  echo "== push $branch"
+  tree=$(cgit write-tree)
+  unset GIT_INDEX_FILE
+  commit=$(cgit -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
+    commit-tree -p "$base" -m "Docs: imported from the repositories" "$tree")
+  cgit update-ref "refs/heads/$branch" "$commit"
+  # Pushed from a fresh repository, not the runner's checkout: the runner's own
+  # git setup there sends the job token, which may read this project and never
+  # write it, and GitLab refused the push with a 403 before the token below was
+  # ever asked for (#9; orbit #1081 found and fixed the same in its repin).
+  # The fresh repository has no config of its own, and no global or system
+  # config or HOME reaches it, so the only credential is the mode-600 store
+  # file. The commit goes into it by a push from the checkout (receive-pack runs
+  # in the repository this job made); the checkout is shallow, so the scratch
+  # repository accepts a shallow update.
+  nogit init -q --template= "$scratch/repo"
+  nogit -C "$scratch/repo" config receive.shallowUpdate true
+  cgit push -q "$scratch/repo" "$commit:refs/heads/$branch"
+  # the credential file exists only for this push: git's environment has no
+  # token, so this file is the one way the token reaches git at all
+  printf 'https://oauth2:%s@%s\n' "$ORBIT_SITE_IMPORT_TOKEN" "$CI_SERVER_HOST" > "$cred"
+  nogit -C "$scratch/repo" -c "credential.helper=store --file=$cred" \
+    push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "refs/heads/$branch:refs/heads/$branch"
+  rm -f "$cred"
+
+  echo "== merge request"
+  iid=$(apij 'console.log(j.iid)' POST "/merge_requests" \
+    --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
+    --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
+    --data-urlencode "remove_source_branch=true" \
+    --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass.")
+  case $iid in ''|*[!0-9]*)
+    echo "GitLab's answer to the merge request had no numeric iid ('$iid'); stopping before closing anything"
+    exit 1 ;;
+  esac
+  echo "   !$iid"
+
+  # Only now, with the new merge request open, are the older ones closed: a push
+  # or an open that failed leaves them standing. A failure here does not stop the
+  # new one from being set to merge.
   echo "== older import merge requests"
-  close_older "" "nothing new upstream" || exit 1
-  exit 0
-fi
-cgit diff --cached --no-ext-diff --no-textconv --stat | tail -1
+  close_older "$iid" "!$iid" || echo "   (the older ones stay open; the next run closes them)"
 
-stamp=$(date -u +%Y%m%d-%H%M)
-branch="docs/import-$stamp"
-
-if [ -n "$DRY_RUN" ]; then
-  echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
-  close_older "" "$branch" || true
-  exit 0
-fi
-
-echo "== push $branch"
-cgit checkout -q -b "$branch"
-cgit -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
-  commit -q -m "Docs: imported from the repositories"
-# Pushed from a fresh repository, not the runner's checkout: the runner's own
-# git setup there sends the job token, which may read this project and never
-# write it, and GitLab refused the push with a 403 before the token below was
-# ever asked for (#9; orbit #1081 found and fixed the same in its repin).
-# The fresh repository has no config of its own, and no global or system
-# config or HOME reaches it, so the only credential is the mode-600 store
-# file. The commit goes into it by a push from the checkout (receive-pack runs
-# in the repository this job made); the checkout is shallow, so the scratch
-# repository accepts a shallow update.
-nogit init -q --template= "$scratch/repo"
-nogit -C "$scratch/repo" config receive.shallowUpdate true
-cgit push -q "$scratch/repo" "HEAD:refs/heads/$branch"
-# the credential file exists only for this push: git's environment has no
-# token, so this file is the one way the token reaches git at all
-printf 'https://oauth2:%s@%s\n' "$ORBIT_SITE_IMPORT_TOKEN" "$CI_SERVER_HOST" > "$cred"
-nogit -C "$scratch/repo" -c "credential.helper=store --file=$cred" \
-  push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "refs/heads/$branch:refs/heads/$branch"
-rm -f "$cred"
-
-echo "== merge request"
-iid=$(apij 'console.log(j.iid)' POST "/merge_requests" \
-  --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
-  --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
-  --data-urlencode "remove_source_branch=true" \
-  --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass.")
-echo "   !$iid"
-
-# Only now, with the new merge request open, are the older ones closed: a push
-# or an open that failed leaves them standing. A failure here does not stop the
-# new one from being set to merge.
-echo "== older import merge requests"
-close_older "$iid" "!$iid" || echo "   (the older ones stay open; the next run closes them)"
-
-# Auto-merge can only be set once the merge request's pipeline exists. GitLab
-# also needs the commit to merge (sha), so it merges exactly what was pushed
-# and tested, never anything newer (#15). Each answer is kept, so a refusal
-# says why: its status and body, never the request, so the token stays out
-# of the log.
-sha=$(cgit rev-parse HEAD)
-resp="$scratch/merge-answer"
-tries=30
-hdr_on
-for i in $(seq 1 "$tries"); do
-  rm -f "$resp" "$resp.err"
-  code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$resp" -w '%{http_code}' \
-    -X PUT -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$iid/merge" \
-    --data-urlencode "auto_merge=true" --data-urlencode "sha=$sha" 2>"$resp.err") || code=000
-  case $code in 2??) echo "   set to merge when the pipeline passes"; exit 0 ;; esac
-  [ "$i" -eq "$tries" ] || sleep 10
-done
-hdr_off
-echo "could not set !$iid to merge itself; it is open for a maintainer"
-echo "   GitLab's last answer: HTTP $code $(cat "$resp" "$resp.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300)"
-exit 1
+  # Auto-merge can only be set once the merge request's pipeline exists. GitLab
+  # also needs the commit to merge (sha), so it merges exactly what was pushed
+  # and tested, never anything newer (#15). Each answer is kept, so a refusal
+  # says why: its status and body, never the request, so the token stays out
+  # of the log.
+  sha=$commit
+  resp="$scratch/merge-answer"
+  tries=30
+  # The header file is on disk only while one try runs (M3), never across the waits.
+  for i in $(seq 1 "$tries"); do
+    rm -f "$resp" "$resp.err"
+    hdr_on
+    code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$resp" -w '%{http_code}' \
+      -X PUT -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$iid/merge" \
+      --data-urlencode "auto_merge=true" --data-urlencode "sha=$sha" 2>"$resp.err") || code=000
+    hdr_off
+    case $code in 2??) echo "   set to merge when the pipeline passes"; exit 0 ;; esac
+    [ "$i" -eq "$tries" ] || sleep 10
+  done
+  echo "could not set !$iid to merge itself; it is open for a maintainer"
+  echo "   GitLab's last answer: HTTP $code $(cat "$resp" "$resp.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300)"
+  exit 1
+}
+main "$@"
