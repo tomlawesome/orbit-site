@@ -61,7 +61,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   /* the first light: a bead of the sun along the limb, shimmering as the air over it moves */
   float s=uCirc.z/3000.0;
   vec2 p=css-uSunPt;
-  float along=exp(-pow(p.x/(150.0*s),2.0)), across=exp(-pow((p.y+1.5*s)/(2.2*s+0.7),2.0));
+  float along=exp(-sq(p.x/(150.0*s))), across=exp(-sq((p.y+1.5*s)/(2.2*s+0.7)));
   float sh=0.75+0.5*vnoise(vec3(p.x/(9.0*s),uTime*0.3,1.3))*vnoise(vec3(p.x/(23.0*s)+4.0,uTime*0.13,7.1));
   e+=vec3(1.0,0.66,0.4)*along*across*sh*uFirst*0.7;
   /* the picture's own film (dawn.py: tonemap, --expo 0.35), faded in over the band's top as the picture is */
