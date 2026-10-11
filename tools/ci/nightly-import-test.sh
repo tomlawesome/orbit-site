@@ -167,7 +167,9 @@ case "$1" in
   *) case " $* " in *" push "*) ;; *) exec "$REAL_GIT" "$@" ;; esac ;;
 esac
 case "$*" in
-  *https://*) echo "git $*" | sed "s/$FAKE/<token>/g" >> "$STATE/shim.log"; exit 0 ;;
+  *https://*) echo "git $*" | sed "s/$FAKE/<token>/g" >> "$STATE/shim.log"
+    [ "$SCENARIO" != pushfail ] || { echo "remote: HTTP 403" >&2; exit 1; }
+    exit 0 ;;
 esac
 exec "$REAL_GIT" "$@"
 SHIM
@@ -235,12 +237,15 @@ path=${url#"$CI_API_V4_URL/projects/$CI_PROJECT_ID"}
 route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
-  "GET /merge_requests") code=200; body='[]' ;;
+  "GET /merge_requests") code=200; body='[]'
+    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi ;;
+  "PUT /merge_requests/7") code=200; body='{"iid":7,"state":"closed"}' ;;
+  "DELETE /repository/branches/docs%2Fimport-20260101-0000") code=204; body= ;;
   "POST /merge_requests") code=201; body='{"iid":42}' ;;
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -298,7 +303,7 @@ run_push() { # run_push <outfile> <scenario: refused | second | conn>
   env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
-    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" \
     GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
     sh tools/ci/nightly-import.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
@@ -416,6 +421,37 @@ check "run 7: nothing was committed or pushed" "$rc"
 rc=0; ! grep -q 'PRIVATE-TOKEN' "$out" && ! grep -rq "$fake" "$out" "$aux" || rc=1
 check "run 7: the token is in neither the output nor any log" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Runs 8 and 9: an older import merge request (!7) is open, and a fork's (!8,
+# another source project) that must never be touched. Run 8: the new merge
+# request is opened first, and only then is !7 closed and its branch deleted.
+# Run 9: the push fails, so there is no new merge request, and !7 stays open.
+oldmr=1
+run_push "$out" second
+rc8=$rc
+n_post=$(grep -n '^POST /merge_requests' "$aux/api.log" | head -n 1 | cut -d: -f1)
+n_close=$(grep -n '^PUT /merge_requests/7|state_event=close' "$aux/api.log" | head -n 1 | cut -d: -f1)
+n_del=$(grep -n '^DELETE /repository/branches/docs%2Fimport-20260101-0000' "$aux/api.log" | head -n 1 | cut -d: -f1)
+rc=0; [ "$rc8" -eq 0 ] || rc=1
+check "run 8: with an older import merge request open, the job exits 0 (exit $rc8)" "$rc"
+rc=0; [ -n "$n_post" ] && [ -n "$n_close" ] && [ "$n_post" -lt "$n_close" ] || rc=1
+check "run 8: the new merge request is opened before the older one is closed" "$rc"
+rc=0; [ -n "$n_close" ] && [ -n "$n_del" ] && [ "$n_close" -lt "$n_del" ] || rc=1
+check "run 8: the older merge request's branch is deleted after it is closed" "$rc"
+rc=0; ! grep -q -e '/merge_requests/8' -e 'import-20260102' "$aux/api.log" || rc=1
+check "run 8: a fork's import merge request is left alone" "$rc"
+rc=0; ! grep -q -e 'PUT /merge_requests/42|state_event' "$aux/api.log" || rc=1
+check "run 8: the new merge request is not closed" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+
+run_push "$out" pushfail
+rc9=$rc
+rc=0; [ "$rc9" -ne 0 ] || rc=1
+check "run 9: a failed push fails the job (exit $rc9)" "$rc"
+rc=0; ! grep -q -e '^POST /merge_requests' -e 'state_event=close' -e '^DELETE' "$aux/api.log" || rc=1
+check "run 9: nothing was opened, and no older merge request or branch was touched" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+oldmr=
 
 rm -f "$out"
 exit "$failed"

@@ -4,8 +4,9 @@
 # to main: the import pushes its own branch, opens the merge request, and
 # asks GitLab to merge it when the lint and the live journey are green, so
 # every import is tested before Pages serves it. A run with nothing new
-# does nothing. An older import merge request still open is closed first;
-# the new one carries everything it had.
+# does nothing. Once the new merge request is open, any older import merge
+# request still open is closed and its branch deleted: the new one carries
+# everything it had.
 #
 # Runs in the `import_docs` job, from a schedule on main. Needs
 # ORBIT_SITE_IMPORT_TOKEN: a project access token, role Maintainer (to
@@ -57,6 +58,32 @@ cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "
 gitcfg() { cgit config --list --show-origin; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
+# Older import merge requests still open, as "iid branch" lines. Only a merge
+# request whose source and target are both this project and whose branch is
+# named like an import's is ever matched, so a fork's is never touched (#12).
+older_mrs() {
+  api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
+    | json 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)'
+}
+# Close every older import merge request but !$1 and delete its branch (closing
+# leaves the branch behind, #12); $2 says what replaces them. Under DRY_RUN
+# it only reports. Fails only if the list cannot be fetched.
+close_older() {
+  keep=$1; by=$2
+  list=$(older_mrs) || { echo "   (could not list the older import merge requests)"; return 1; }
+  printf '%s\n' "$list" | while read -r oiid ref; do
+    [ -n "$oiid" ] || continue
+    [ "$oiid" != "$keep" ] || continue
+    echo "   closing !$oiid and its branch $ref (superseded by $by)"
+    [ -z "$DRY_RUN" ] || continue
+    if api PUT "/merge_requests/$oiid" --data-urlencode "state_event=close" >/dev/null; then
+      api DELETE "/repository/branches/$(printf '%s' "$ref" | sed 's|/|%2F|g')" >/dev/null || echo "   (could not delete $ref)"
+    else
+      echo "   (could not close !$oiid)"
+    fi
+  done
+}
+
 echo "== import"
 gitcfg > "$scratch/gitcfg.before"
 # Exact versions from the lockfile, hashes checked, no install scripts, and
@@ -78,21 +105,11 @@ cgit diff --cached --no-ext-diff --no-textconv --stat | tail -1
 stamp=$(date -u +%Y%m%d-%H%M)
 branch="docs/import-$stamp"
 
-echo "== older import merge requests"
-old=$(api GET "/merge_requests?state=opened&target_branch=main&per_page=100" \
-  | json 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)')
-# Closing leaves the branch behind, so it goes too (#12): the name is checked
-# above, and a fork's merge request is never matched, so only an import's
-# own branch in this project is ever deleted.
-printf '%s\n' "$old" | while read -r iid ref; do
-  [ -n "$iid" ] || continue
-  echo "   closing !$iid and its branch $ref (superseded by $branch)"
-  [ -n "$DRY_RUN" ] && continue
-  api PUT "/merge_requests/$iid" --data-urlencode "state_event=close" >/dev/null
-  api DELETE "/repository/branches/$(printf '%s' "$ref" | sed 's|/|%2F|g')" >/dev/null || echo "   (could not delete $ref)"
-done
-
-if [ -n "$DRY_RUN" ]; then echo "DRY_RUN: would push $branch and open a merge request into main"; cgit reset -q; exit 0; fi
+if [ -n "$DRY_RUN" ]; then
+  echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
+  close_older "" "$branch" || true
+  cgit reset -q; exit 0
+fi
 
 echo "== push $branch"
 cgit checkout -q -b "$branch"
@@ -125,6 +142,12 @@ iid=$(api POST "/merge_requests" \
   --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh). It merges itself once the lint and the live journey pass." \
   | json 'console.log(j.iid)')
 echo "   !$iid"
+
+# Only now, with the new merge request open, are the older ones closed: a push
+# or an open that failed leaves them standing. A failure here does not stop the
+# new one from being set to merge.
+echo "== older import merge requests"
+close_older "$iid" "!$iid" || echo "   (the older ones stay open; the next run closes them)"
 
 # Auto-merge can only be set once the merge request's pipeline exists. GitLab
 # also needs the commit to merge (sha), so it merges exactly what was pushed
