@@ -43,7 +43,15 @@ export async function run(host) {
   const worst = (g) => (g.length ? round(Math.max(...g)) : "-");
   /* the worker */
   const w = new Worker(new URL("./worker.js", import.meta.url));
-  const ask = (msg) => new Promise((resolve) => { const id = Math.random(); const on = (e) => { if (e.data.id === id) { w.removeEventListener("message", on); resolve(e.data); } }; w.addEventListener("message", on); w.postMessage({ id, ...msg }); });
+  /* an answer, or a rejection when the worker errors (a script that will not load, a throw) or says nothing in ms */
+  const ask = (msg, ms = 60000) => new Promise((resolve, reject) => {
+    const id = Math.random();
+    const done = () => { clearTimeout(timer); w.removeEventListener("message", onMsg); w.removeEventListener("error", onErr); };
+    const onMsg = (e) => { if (e.data.id === id) { done(); resolve(e.data); } };
+    const onErr = (e) => { done(); reject(new Error(`the worker failed: ${e.message || "its script did not load"}`)); };
+    const timer = setTimeout(() => { done(); reject(new Error(`no answer from the worker in ${ms} ms`)); }, ms);
+    w.addEventListener("message", onMsg); w.addEventListener("error", onErr); w.postMessage({ id, ...msg });
+  });
   try {
     const hello = await ask({});
     if (hello.error) { out.push(line("worker WebGL2", hello.error)); throw new Error("stop"); }

@@ -1,6 +1,7 @@
 /* how fast the GPU draws here: the probe at 512x512 (ms per million pixels), then the door's real lean and rich Earth
    shaders at this screen's own band size, with maps of noise so every path runs (the slab needs clouds to march) */
 import { context, release, program, target, noiseTexture, timeDraws, PROBE, PROBE_ROLLED, line, round } from "./common.js";
+import { BUDGET } from "../assets/door/capability.js";
 import { sceneHead, PASS_SWITCH, doorCamera, sunTexture, cloudField, cityGlow, EURO, NEAR } from "../assets/door/voyage.js";
 export const name = "draw";
 /* (the rich one draws its own fields and glow first: PASS_SWITCH) */
@@ -41,7 +42,7 @@ export async function run() {
     bind(0, B, u.uLights); bind(1, A, u.uDay); bind(2, A, u.uClouds); bind(3, B, u.uEuro); bind(4, B, u.uLightsN); bind(5, A, u.uCloudsN); bind(6, A, u.uDayN);
     bind(7, sunT, u.uSunT); bind(8, B, u.uLightsS); bind(12, B, u.uLightsS2); bind(9, fieldG || blank, u.uCloudF); bind(10, fieldN || blank, u.uCloudFN); bind(11, glow || blank, u.uGlow);
   };
-  for (const [label, slab, budget] of [["door lean (real, this band)", false, 16], ["door rich (real, this band)", true, 40]]) {
+  for (const [label, slab, budget] of [["door lean (real, this band)", false, 16], ["door rich (real, this band)", true, BUDGET]]) {
     try {
       if (slab && !rich) throw richErr;
       const pr = slab ? rich : program(gl, sceneHead({ slab, door: true }) + DOOR_MAIN), tg = target(gl, cw, ch);
