@@ -365,6 +365,9 @@ export function createFlight(canvas, options = {}) {
      flight under way draws with, chosen as a flight begins (prime), so a world that is too slow, or lost, or not yet
      proved is never drawn, and the flight draws on this canvas as it always could */
   let world3d = null;
+  /* a world that can no longer be drawn (its shaders would not link, its context lost or let go) is stopped as it is
+     dropped, so what it made is given back (voyage.js: stop) and nothing more of it is put on the context */
+  const letGo = () => { world3d.stop(); world3d = null; };
   /* destroyed (journey.js: destroy): no world is made after it, and the one made is stopped */
   let destroyed = false;
   /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
@@ -1188,9 +1191,6 @@ export function createFlight(canvas, options = {}) {
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
            voyage.js) */
-        /* a world that can no longer be drawn (its shaders would not link, its context lost or let go) is stopped as it
-           is dropped, so what it made is given back (voyage.js: stop) and nothing more of it is put on the context */
-        const letGo = () => { world3d.stop(); world3d = null; };
         const first = DOOR3D() && !options.plain ? probe().catch(() => null) : Promise.resolve();
         const made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
