@@ -147,4 +147,21 @@ eq("S7 '#' points at the page", linkR("#"), "#docs/readme");
   eq("S9 a link out keeps its anchor as written", to("OTHER.md#Über"), "https://github.com/tomlawesome/orbit/blob/main/OTHER.md#Über");
 }
 
+// S10: a percent-encoded fragment (as editors write non-ASCII anchors) is decoded
+// before folding, so it lands on the same id as the raw form.
+eq("S10a '#caf%C3%A9' points at cafe, like '#café'", linkR("#caf%C3%A9"), "#docs/readme/cafe");
+eq("S10b '#%C3%9Cber-orbit' points at uber-orbit", linkR("#%C3%9Cber-orbit"), "#docs/readme/uber-orbit");
+{
+  const map = new Map([[`${src.repo}:docs/x.md`, { repo: src.repo, path: "docs/x.md", slug: "x" }]]);
+  const to = (h) => { try { return resolveLink(h, srcR, map, false); } catch (e) { return `threw: ${e.message}`; } };
+  eq("S10c 'docs/x.md#%C3%9Cber' points at uber in the other source", to("docs/x.md#%C3%9Cber"), "#docs/x/uber");
+  eq("S10e a link out keeps its percent-encoded anchor as written", to("OTHER.md#caf%C3%A9"), "https://github.com/tomlawesome/orbit/blob/main/OTHER.md#caf%C3%A9");
+}
+for (const bad of ["#100%-sure", "#%E0%A4%A"]) {
+  const got = linkR(bad);
+  check(`S10d ${JSON.stringify(bad)} does not throw and gives a clean fragment`,
+    typeof got === "string" && /^#docs\/readme(\/[a-z0-9-]+)?$/.test(got),
+    `gave ${JSON.stringify(got)} (want #docs/readme, optionally /<a-z0-9- only>)`);
+}
+
 process.exit(failed ? 1 : 0);
