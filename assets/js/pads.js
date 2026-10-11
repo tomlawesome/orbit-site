@@ -548,10 +548,12 @@ export function createInfo(pad, world = null) {
 /* a line is held for as long as it takes to read: a floor, and time per word */
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
+/* the one phone width (px), the same as the CSS breakpoint (max-width: 599.98px) and the door's */
+const PHONE = 600;
 export function wirePlanets(door, onGo) {
   /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge;
      in the rich look, with no leader to carry it, it sits just past the world's own glow */
-  const rich = document.documentElement.classList.contains("rich"), past = rich ? (innerWidth < 560 ? 12 : 15) : innerWidth < 560 ? 15 : 21;
+  const rich = document.documentElement.classList.contains("rich"), past = rich ? (innerWidth < PHONE ? 12 : 15) : innerWidth < PHONE ? 15 : 21;
   const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), body: p.querySelector(".body"), tag: p.querySelector(".tag"), rb: +p.dataset.r / 200, r: (+p.dataset.r + past) / 200 }));
   const gold = door.querySelector(".trdot"), goldBody = gold?.querySelector("i");
   const GOLD_AT = Math.atan2(63, 36.5), GOLD_R = Math.hypot(63, 36.5) / 200;   /* where the gold world sits on its turning frame */
