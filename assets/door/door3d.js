@@ -110,7 +110,8 @@ const finish = (gl, p) => {
 };
 const compiled = (gl, par, p) => new Promise((resolve) => {
   if (!par) { resolve(); return; }
-  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
+  /* (a lost context never reports complete: stop waiting; finish() then finds no link status and throws, as for a failed compile) */
+  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) || gl.isContextLost() ? resolve() : setTimeout(poll, 40));
   poll();
 });
 /* a weight made, once: its program asked for, waited for (in the background where the browser can), and finished.
