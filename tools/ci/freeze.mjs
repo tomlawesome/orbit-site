@@ -92,7 +92,8 @@ const RECORD = () => {
       for (const e of list.getEntries()) {
         rec.frames.push({ start: Math.round(e.startTime), dur: Math.round(e.duration), block: Math.round(e.blockingDuration || 0),
           render: Math.round(e.renderStart ? e.startTime + e.duration - e.renderStart : 0),
-          scripts: (e.scripts || []).filter((x) => x.duration >= 20).map((x) => `${x.invoker || x.invokerType} ${String(x.sourceURL || "").replace(/^.*\/assets\//, "")}:${x.sourceFunctionName || ""} ${Math.round(x.duration)}ms`) });
+          layout: Math.round(e.styleAndLayoutStart ? e.startTime + e.duration - e.styleAndLayoutStart : 0),
+          scripts: (e.scripts || []).filter((x) => x.duration >= (e.blockingDuration ? 0 : 5)).map((x) => `${x.invoker || x.invokerType} ${String(x.sourceURL || "").replace(/^.*\/assets\//, "")}:${x.sourceFunctionName || ""} ${Math.round(x.duration)}ms`) });
       }
     }).observe({ type: "long-animation-frame", buffered: true });
   } catch { rec.frames = null; }
@@ -179,10 +180,12 @@ try {
   {
     const { ctx, page, log } = await open();
     await scenario("1-3 software GL: one gated context, no long tasks after the light, the refusal said once and nothing else touches WebGL", async (want, info) => {
+      if (process.env.FREEZE_TRACE) await browser.startTracing(page, { path: process.env.FREEZE_TRACE, categories: ["toplevel", "blink", "cc", "gpu", "v8", "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "loading"] });
       await page.goto(at(), { waitUntil: "load" });
       await waitBody(page, "lit", 90000);
       /* 10 s after the light */
       await page.waitForTimeout(10500);
+      if (process.env.FREEZE_TRACE) await browser.stopTracing();
       const s = await state(page);
       const gl2 = webgl2(s);
       info(`webgl2 getContext calls: ${short(gl2)}; seen at ${short(s.seen)}`);
@@ -207,6 +210,8 @@ try {
       /* before the light: logged, not asserted. Issue #2 asks for no long task once the door is lit; the start-up
          painting's own stalls before it are not the GPU's and are tracked in their own issue ("The door's start-up
          painting stalls the page before it is lit", owner decision 10a), which wants this baseline. */
+      /* (what held each long task after the light: the frames it fell in, #32) */
+      for (const t of after) info(`the ${Math.round(t.dur)} ms task at ${Math.round(t.start - lit)} ms after the light fell in: ${JSON.stringify((s.frames || []).filter((f) => f.start <= t.start + t.dur && f.start + f.dur >= t.start))}`);
       info(`BASELINE long tasks before the light (not asserted): ${before.length}, ${short(before.map((t) => Math.round(t.dur)))} ms`);
       /* (logged, not asserted) when the browser reported its paints, and what the long frames ran */
       info(`paints reported (at 10 s): ${short(s.paints)}`);
