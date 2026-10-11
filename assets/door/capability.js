@@ -85,7 +85,7 @@ async function measure(gl) {
     /* in the background, twice, the second taken (a fresh context's first compile is 3-5x the rest on Safari); on the
        page's own thread once (each is a stall) */
     let pr = await compile();
-    if (background) { gl.deleteProgram(pr.p); pr = await compile(); }
+    if (background) pr = await compile();   /* (the first given back with the rest, below: once) */
     /* drawn four times into 512x512, each waited for (a pixel read back); the mean of the last three */
     const A = keep("Texture", noise(gl, 256, 128, 3)), B = keep("Texture", noise(gl, 256, 128, 7));
     const t = keep("Texture", gl.createTexture()); gl.bindTexture(gl.TEXTURE_2D, t);

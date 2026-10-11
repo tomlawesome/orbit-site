@@ -23,7 +23,8 @@
  *   → assets/door/img/dawn/glow-*.webp, assets/door/img/dusk/glow-*.webp   (lossless)
  */
 const { chromium } = require("playwright");
-const http = require("http"), fs = require("fs"), path = require("path");
+const fs = require("fs"), path = require("path");
+const { localServer } = require("./local-server.cjs");
 const root = path.resolve(__dirname, "..");
 const sharp = require(path.join(__dirname, "node_modules", "sharp"));
 const types = { ".html": "text/html", ".js": "text/javascript" };
@@ -131,16 +132,13 @@ window.render = async (set, name) => {
 window.names = () => ({ dawn: Object.keys(DAWN), dusk: Object.keys(DUSK) });
 window.ready = true;
 </script>`;
-const srv = http.createServer((req, res) => {
-  if (req.url === "/") { res.writeHead(200, { "content-type": "text/html" }); res.end(page); return; }
-  const p = path.join(root, decodeURIComponent(req.url.split("?")[0]));
-  fs.readFile(p, (e, d) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { "content-type": types[path.extname(p)] || "application/octet-stream" }); res.end(d); });
-}).listen(0, async () => {
+/* (served on this machine only, nothing outside the repository: local-server.cjs, #37) */
+localServer({ root, page, types }).then(async ({ server: srv, url: home }) => {
   const b = await chromium.launch();
   try {
     const pg = await b.newPage();
     pg.on("pageerror", (e) => { console.error("page error:", e.message); process.exitCode = 1; });
-    await pg.goto(`http://localhost:${srv.address().port}/`);
+    await pg.goto(home);
     await pg.waitForFunction(() => window.ready);
     const names = await pg.evaluate(() => window.names());
     let total = 0;

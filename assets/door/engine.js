@@ -365,6 +365,9 @@ export function createFlight(canvas, options = {}) {
      flight under way draws with, chosen as a flight begins (prime), so a world that is too slow, or lost, or not yet
      proved is never drawn, and the flight draws on this canvas as it always could */
   let world3d = null;
+  /* a world that can no longer be drawn (its shaders would not link, its context lost or let go) is stopped as it is
+     dropped, so what it made is given back (voyage.js: stop) and nothing more of it is put on the context */
+  const letGo = () => { world3d.stop(); world3d = null; };
   /* destroyed (journey.js: destroy): no world is made after it, and the one made is stopped */
   let destroyed = false;
   /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
@@ -1193,11 +1196,11 @@ export function createFlight(canvas, options = {}) {
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
         compiled = made.then(() => world3d?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(world3d?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
+        warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
       }
       if (!prove) return warmed;
       if (!proved) {
-        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; });
+        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); });
       }
       return proved;
     },
