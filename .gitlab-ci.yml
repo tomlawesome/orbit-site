@@ -86,6 +86,18 @@ lint:
     - node tools/ci/fetch-once-test.mjs
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs
+    - node tools/ci/home-props-test.mjs
+    - node tools/ci/goodbye-markup-test.mjs
+    - node tools/ci/descent-homes-test.mjs
+    - node tools/ci/gpu-gate-test.mjs
+    - node tools/ci/hurry-test.mjs
+    - node tools/ci/dawn-destroyed-light-test.mjs
+    - node tools/ci/retire-after-destroy-test.mjs
+    - node tools/ci/destroyed-world-test.mjs
+    - node tools/ci/released-world-test.mjs
+    - node tools/ci/local-server-test.mjs
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/ci/glow-banding-test.mjs
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in Firefox: the door, each
@@ -96,7 +108,13 @@ lint:
 # no WebGL and never draws a world, so Firefox-only GPU bugs passed (#4,
 # #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
 # band-upload test then compares banded and whole uploads byte for byte in
-# Chromium and Firefox.
+# Chromium and Firefox, and the pin test checks a journey pinned at a moment
+# (`at`) starts there (#23); the dawn test checks that destroy() cancels a
+# first light (#27) and that the Earth's pictures are in before the door reads
+# drawn (#28); the asdawn test checks the goodbye wearing the sign-in's face and
+# households met again on the way down (#25, #26). The freeze check runs
+# Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
+# the GPU once, refuses a software renderer, and then freezes nothing (#2).
 live:journey:
   stage: live
   image:
@@ -115,6 +133,10 @@ live:journey:
     - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is

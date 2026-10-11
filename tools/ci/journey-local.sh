@@ -3,22 +3,22 @@
 # Firefox headed under Xvfb with software GL, the only way it gets WebGL here
 # (headless it has none and never draws a world).
 #
-#   sh tools/ci/journey-local.sh [journey|upload]   # no argument: both
+#   sh tools/ci/journey-local.sh [journey|upload|pin|dawn|asdawn|freeze]   # no argument: all six
 #
 # Playwright comes from $PLAYWRIGHT_ROOT, or else the newest copy in Orbit's
 # pnpm store ($ORBIT_DIR, default: the orbit checkout beside this one).
-# BROWSER=chromium for a second engine.
+# BROWSER=chromium for a second engine (`freeze` is Chromium whatever it says).
 set -eu
 
 usage() {
-  echo "usage: sh tools/ci/journey-local.sh [journey|upload]" >&2
+  echo "usage: sh tools/ci/journey-local.sh [journey|upload|pin|dawn|asdawn|freeze]" >&2
   exit 64
 }
 
 [ "$#" -le 1 ] || usage
 case "${1-all}" in
-  all) runs="journey upload" ;;
-  journey|upload) runs=$1 ;;
+  all) runs="journey upload pin dawn asdawn freeze" ;;
+  journey|upload|pin|dawn|asdawn|freeze) runs=$1 ;;
   *) usage ;;
 esac
 
@@ -50,5 +50,9 @@ for run in $runs; do
   case $run in
     journey) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs ;;
     upload) xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs ;;
+    pin) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs ;;
+    dawn) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs ;;
+    asdawn) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs ;;
+    freeze) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs ;;
   esac
 done

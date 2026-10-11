@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../assets/door/door.css" />
+  <!-- the two custom properties the door's stylesheet asks of a host (its header); no site.css, no other rule -->
+  <style>:root{--display:sans-serif;--mono:monospace}body{margin:0;background:#03050b}</style>
+</head>
+<body class="at-door">
+  <!-- Driven by tools/ci/asdawn-test.mjs (#25, #26): a page built through assets/door/index.js alone, as a host builds
+       it. Query: asdawn=1 gives the dusk duskMarkup({ asDawn: true }) (else plain duskMarkup()); dawn=0 leaves the
+       dawn's markup out (so a request for the Earth's pictures can only be the dusk's); rich=0 starts without
+       html.rich. The dusk is unhidden. window.beat(classes) sets which of showdusk / farewell the body has (the
+       journey's beats, set by hand). window.remountDusk() and window.pendingAtOnce() are for the dusk's
+       remount and its data-rasterised (#25, #28). window.descendHomes(n, at) runs journey.descend with n homes (none given when n
+       is null) pinned at `at`, and answers with the hooks fired and the body classes. -->
+  <div id="stage"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div id="launchname" aria-hidden="true"></div>
+  <script type="module">
+    import { createDoor, dawnMarkup, duskMarkup, UP } from "../assets/door/index.js";
+
+    const q = new URLSearchParams(location.search);
+    const asDawn = q.get("asdawn") === "1";
+    const image = (path) => `../assets/door/img/${path}`;
+    const door = createDoor({ image, flags: {} });
+    if (q.get("rich") !== "0") document.documentElement.classList.add("rich");
+    const gate = (id, words) => `<button class="gate" id="${id}" type="button">${words}</button>`;
+    document.getElementById("stage").innerHTML =
+      (q.get("dawn") === "0" ? "" : dawnMarkup({ image, gate: gate("gate", "Get into Orbit") })) +
+      duskMarkup({ image, gate: gate("gate-back", "Sign back in"), ...(asDawn ? { asDawn: true } : {}) });
+    const glyph = () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 10 10");
+      svg.setAttribute("width", "10");
+      svg.setAttribute("height", "10");
+      return svg;
+    };
+    if (q.get("dawn") !== "0") door.dawn(document.querySelector("#door"));
+    const dusk = door.dusk(document.querySelector("#dusk"));
+    document.querySelector("#dusk").hidden = false;
+    window.dusk = dusk;
+    /* the dusk, as a host that remounts it does: destroy() the mounted one, mount a new one on the same markup, and
+       start() it. window.dusk is the new one. */
+    window.remountDusk = () => {
+      window.dusk.destroy();
+      window.dusk = door.dusk(document.querySelector("#dusk"));
+      window.dusk.start();
+    };
+    /* what the dusk's world reads in data-rasterised the moment start() returns (null: nothing) */
+    window.pendingAtOnce = () => {
+      window.dusk.start();
+      return window.dusk.world.dataset.rasterised ?? null;
+    };
+
+    window.beat = (...names) => {
+      for (const c of ["showdusk", "farewell"]) document.body.classList.toggle(c, names.includes(c));
+    };
+
+    let journey = null;
+    window.descendHomes = async (n, at, onto = "dusk", withFrom = true) => {
+      journey ??= door.journey({
+        canvas: document.getElementById("warp"), name: document.getElementById("launchname"),
+        dawnGlyph: glyph, duskGlyph: glyph,
+        on: { dusk() { document.querySelector("#dusk").hidden = false; }, farewell() {} },
+      });
+      document.querySelector("#dusk").hidden = false;
+      const hooks = {};
+      const homes = n === null ? undefined : Array.from({ length: n }, (_, i) => ({ name: `Home ${i}`, bodies: [[i, -i, "#8791b3", 3]] }));
+      const on = {};
+      for (const name of ["released", "surface", "farewell"]) on[name] = () => { hooks[name] = true; };
+      let error = null;
+      try { journey.descend({ ...(homes ? { homes } : {}), at, title: "Test", subtitle: "asdawn", onto, ...(withFrom ? { from: UP } : {}), on }); } catch (e) { error = String(e && e.message || e); }
+      await new Promise((ok) => setTimeout(ok, 1500));
+      const now = ["showdusk", "farewell"].filter((c) => document.body.classList.contains(c));
+      journey.reset();
+      return { hooks, now, error };
+    };
+    window.asdawnReady = true;
+  </script>
+</body>
+</html>

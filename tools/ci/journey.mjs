@@ -226,7 +226,7 @@ const landings = async (prefix) => {
       } catch { throw new Error("the docs index failed once and the docs never loaded on the second visit within 30s"); }
     });
   });
-  /* The world itself: its own context without reducedMotion (which shows
+  /* The world itself, forced onto the software GPU (?gpu=force): its own context without reducedMotion (which shows
      stills instead of the world). Where WebGL2 is missing this is skipped,
      unless WEBGL=required, when it is a problem. */
   await step("the install world draws", async () => {
@@ -249,7 +249,10 @@ const landings = async (prefix) => {
         console.log("     (no WebGL2 here: the world is not drawn)");
         return;
       }
-      await wpage.goto(SITE + prefix + "#install", { waitUntil: "load" });
+      /* ?gpu=force (ADR-0002, behaviour 13): the door's GPU gate refuses this software renderer, as it must, so a
+         world is only drawn here when the debug flag takes the context anyway; every other step runs with the
+         GPU refused */
+      await wpage.goto(SITE + (prefix ? prefix + "&gpu=force" : "?gpu=force") + "#install", { waitUntil: "load" });
       let timer;
       const timedOut = new Promise((_, no) => { timer = setTimeout(() => no(new Error("the install world never logged 'install: ready' within 90s")), 90000); });
       try { await Promise.race([readyP, timedOut]); } finally { clearTimeout(timer); }

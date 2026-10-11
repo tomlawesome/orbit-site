@@ -3,7 +3,7 @@
  * sideways flights to the landings, the install's quiet climb, the demo's climb past the other households, and the
  * flight into the docs' galaxy carrying the chart.
  */
-import { UP, PROPS_UP, UPDUR } from "../door/index.js";
+import { UP, PROPS_UP, UPDUR, homeProps } from "../door/index.js";
 
 /* The sideways flights: the climb's own speed, atmosphere and traffic, with
    the vanishing point moved to one edge and every bearing turned with it. */
@@ -19,8 +19,7 @@ export const UP_RING = { ...UP, props: [], ending: "ring", tint: "#a78bfa" };
    the sample, each with its items as bodies where its dial has them — and
    the flight lands on your own. `homes` is [{ name, bodies:[[x,y,colour,r]] }] */
 export function demoFlight(homes) {
-  const BEAR = [44, 136, 74, 106, 58, 122], ZED = [0.5, 0.42, 0.62, 0.46, 0.56, 0.4];
-  const props = homes.map((h, i) => ({ kind: "home", name: h.name, bodies: h.bodies, t0: 760 + i * 380, dur: 2000 + (i % 3) * 350, ang: BEAR[i % BEAR.length], z: ZED[i % ZED.length], spin: 0 }));
+  const props = homeProps(homes);
   return { ...UP, props };
 }
 /* the flight to the docs, carrying the chart: out of the dawn into the galaxy, from outside it down into an arm, to
