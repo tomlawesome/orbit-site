@@ -127,13 +127,18 @@ const clickGate = (page) => page.evaluate(() => { const t = performance.now(); d
 const webgl2 = (s) => s.gl.filter((c) => c.type === "webgl2");
 const said = (log, re) => log.console.filter((c) => re.test(c.text));
 
-/* A scenario: a name, and a function that states what must be so with want(); a throw is a problem too. */
+/* A scenario: a name, and a function that states what must be so with want(); a throw is a problem too. want.gpu():
+   a timing that a real GPU would make faster (the 3D world, the GPU context, the browser's paint reports). The CI
+   runner has no GPU and shares its CPU, so there it is reported and never fails the job (owner, 2026-10-11); 2D
+   timings, and everything that is not a timing, are judged everywhere. Locally every check is judged */
+const GPU_TIMINGS_JUDGED = process.env.CI !== "true";
 const only = process.env.FREEZE_ONLY ? new RegExp(process.env.FREEZE_ONLY) : null;   /* FREEZE_ONLY='^12' runs one */
 const scenario = async (name, fn) => {
   if (only && !only.test(name)) return;
   const problems = [];
   const info = [];
   const want = (ok, what) => { if (!ok) problems.push(`want: ${what}`); };
+  want.gpu = (ok, what) => { if (!ok) (GPU_TIMINGS_JUDGED ? problems : info).push(`${GPU_TIMINGS_JUDGED ? "" : "not judged on CI (a 3D timing; the runner has no GPU): "}want: ${what}`); };
   try { await fn(want, (line) => info.push(line)); } catch (e) { problems.push(`${String(e.message).split("\n")[0]}`); }
   console.log(`${problems.length ? "FAIL" : "ok  "} ${name}`);
   for (const line of info) console.log(`       ${line}`);
@@ -187,7 +192,7 @@ try {
       if (c) {
         want(c.attrs?.failIfMajorPerformanceCaveat === true, `that call has failIfMajorPerformanceCaveat: true -- its attributes are ${short(c.attrs)}`);
         want(c.doorShown && !c.lit, `it comes after #door.shown and before body.lit -- door shown ${c.doorShown}, lit ${c.lit}`);
-        want(c.paint !== null && c.paint < c.at, `it comes after the first paint (the door's stills are on screen) -- first-paint at ${c.paint === null ? "none yet" : Math.round(c.paint)} ms, getContext at ${Math.round(c.at)} ms`);
+        want.gpu(c.paint !== null && c.paint < c.at, `it comes after the first paint (the door's stills are on screen) -- first-paint at ${c.paint === null ? "none yet" : Math.round(c.paint)} ms, getContext at ${Math.round(c.at)} ms`);
       }
       want(s.gl.length === gl2.length, `no other kind of WebGL context (webgl, experimental-webgl) -- ${short(s.gl.filter((g) => g.type !== "webgl2"))}`);
 
@@ -253,7 +258,7 @@ try {
       catch {
         how = "after the click";
         try { await gateOpen(page, 60000); await clickGate(page); await warpgl(60000); }
-        catch { want(false, "#warpgl exists, at leisure or once the gate is clicked, within 60 s of each"); how = "never"; }
+        catch { want.gpu(false, "#warpgl exists, at leisure or once the gate is clicked, within 60 s of each"); how = "never"; }
       }
       info(`#warpgl: ${how}`);
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
@@ -266,7 +271,7 @@ try {
       await page.goto(at(["gpu=force"], "#install"), { waitUntil: "load" });
       const t0 = Date.now();
       while (!said(log, /install: ready/).length && Date.now() - t0 < 120000) await page.waitForTimeout(250);
-      want(said(log, /install: ready/).length >= 1, "the install world logs 'install: ready' within 120 s");
+      want.gpu(said(log, /install: ready/).length >= 1, "the install world logs 'install: ready' within 120 s");
       info(`console: ${short(log.console.filter((c) => /orbit|install/.test(c.text)).map((c) => c.text).slice(0, 8))}`);
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
     });
@@ -399,7 +404,7 @@ try {
         await page.waitForTimeout(250);
       }
       info(`first readPixels ${proved === null ? "never" : proved + " ms after body.lit"}; no gate click made`);
-      want(proved !== null, "the leisure warm-up makes the timed frames (readPixels) within 90 s of body.lit, with no flight asked for");
+      want.gpu(proved !== null, "the leisure warm-up makes the timed frames (readPixels) within 90 s of body.lit, with no flight asked for");
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
     });
     await ctx.close();
@@ -440,7 +445,8 @@ try {
       info(`result ${short(r)}`);
       want(!r.error, `the descent runs -- ${r.error}`);
       want(r.hooks?.farewell !== undefined, "the descent reaches its farewell");
-      want(r.showwarpAt !== undefined && r.showwarpAt <= 2500, `body gets showwarp within 2500 ms of the call (normally about 720) -- ${r.showwarpAt === undefined ? "never" : r.showwarpAt + " ms"}`);
+      /* (with a fit world the descent draws it: a 3D timing; painted, a 2D one) */
+      (verdict === "fit" ? want.gpu : want)(r.showwarpAt !== undefined && r.showwarpAt <= 2500, `body gets showwarp within 2500 ms of the call (normally about 720) -- ${r.showwarpAt === undefined ? "never" : r.showwarpAt + " ms"}`);
       want(r.pixels === 0, `no new timed frames during the descent (readPixels) -- ${r.pixels}`);
       if (verdict === "fit") want(r.draws >= 20, `the world is drawn (at least 20 draw calls) -- ${r.draws}`);
       else want(r.draws <= 2, `the descent is painted (at most 2 draw calls) -- ${r.draws}`);
