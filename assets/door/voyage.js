@@ -1049,17 +1049,27 @@ export function createVoyage(under) {
      fitness test's, said when the test has ended and the world was still there to be judged) */
   let offSaid = false, madeOk = false;
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  canvas.addEventListener("webglcontextlost", () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); });
+  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); };
+  canvas.addEventListener("webglcontextlost", onLost);
+  /* what it put on the page's one context, given back when its journey is taken down (stop: release); given: those
+     already given back, so nothing is deleted twice (a late arrival, or a program that is two of P's) */
+  const shaders = new Set(), programs = new Set(), given = new WeakSet();
+  const giveBack = (kind, h) => {
+    if (!h || given.has(h)) return;
+    given.add(h);
+    try { gl[`delete${kind}`](h); } catch { /* a lost context: nothing to give back */ }
+  };
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile): asked for here,
      and only looked at once they are done (made, below), so making them never holds the page up */
   const par = gl.getExtension("KHR_parallel_shader_compile");
-  const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const shader = (type, src) => { const s = gl.createShader(type); shaders.add(s); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   /* (when the compiles began: how long they took, to the last link status read, is said once they are done) */
   const t0 = performance.now();
   const vs = shader(gl.VERTEX_SHADER, VERT);
   const program = (fsrc, vsh = vs, label = "flight") => {
     const p = gl.createProgram(), fs = shader(gl.FRAGMENT_SHADER, fsrc);
+    programs.add(p);
     gl.attachShader(p, vsh); gl.attachShader(p, fs); gl.linkProgram(p); linked(label);
     return { p, fs, vsh, u: {} };
   };
@@ -1122,12 +1132,14 @@ export function createVoyage(under) {
      come (loaded); drawn only when all are done (richOK) */
   let richMade = null, richProg = null, allIn = false;
   const fieldsOf = () => {
+    if (gone) return;
     for (const key of ["clouds", "cloudsN"]) {
       if (!P.overRich || !maps[key] || !mipped.has(key) || fields[key]) continue;
       try { fields[key] = cloudField(gl, P.overRich, maps[key], ...dims[key], key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
     }
   };
   const richMaps = () => {
+    if (gone) return false;
     fieldsOf();
     if (P.overRich && allIn && !glowT && maps.lights) glowT = cityGlow(gl, P.overRich, maps.lights, ...dims.lights, maps.lightsN, blank);
     return (richOK = !!(P.overRich && glowT));
@@ -1135,10 +1147,13 @@ export function createVoyage(under) {
   /* its program alone, where it is made apart (the door's weight "both"; tag: the chores', "door" when asked for by
      wantRich, "compile" by compileRich), made once; the fields of the maps already there made with it */
   const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => {
+    if (gone) return null;
     const r0 = performance.now(), pr = program(OVER_RICH);
     return compiled([pr]).then(() => ({ pr, r0 }));
   }, tag === "compile" ? 20 : 60, tag)
-    .then(({ pr, r0 }) => chore(() => {
+    .then((r) => r && chore(() => {
+      const { pr, r0 } = r;
+      if (gone) return false;   /* (its program given back with the rest: release) */
       finish(pr); P.overRich = pr; fieldsOf();
       note(`flight: rich Earth compiled in ${Math.round(performance.now() - r0)} ms${counted("flight")}`);
       return true;
@@ -1199,8 +1214,9 @@ export function createVoyage(under) {
       const wh = [bm.width, bm.height];
       return uploadBanded(gl, bm, { tag: "flight", name: key, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
-    .then(() => {
-      if (gone) return;
+    .then((t) => {
+      /* (a picture still on its way when its journey was taken down gives back its own texture when it lands) */
+      if (gone) { giveBack("Texture", t); return; }
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich Earth is already there (else with the rich Earth: richProgram) */
       if (key === "clouds" || key === "cloudsN") fieldsOf();
@@ -1219,7 +1235,7 @@ export function createVoyage(under) {
          device's own after everything (sharpStrip) */
       if (live) stripS = sharpStrip();
       const loadStrip = () => load("lightsS").then(() => {
-        if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
+        if (maps.lightsS) stripS.ready((bm) => { if (!gone) maps.lightsS2 = upload("lightsS", bm); }); else stripS.fail();
       });
       loaded = Promise.all([...["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
         .then(() => { allIn = true; });
@@ -1326,7 +1342,7 @@ export function createVoyage(under) {
   /* gq: the galaxy's own drawing size, as a part of the frame's (measured in calibrate, so it costs about 5 ms) */
   let W = 1, H = 1, part = 0.75, hdr = null, chain = [], frames = [], CW = 0, CH = 0, lastDraw = 0, galT = null, gq = 0.45;
   /* the galaxy's stars, put on the GPU once (warm) */
-  let starVao = null, starN = 0;
+  let starVao = null, starN = 0, starBufs = [];
   function makeStars() {
     if (starVao) return;
     const { P: pos, C: col } = galaxyStars(48000);
@@ -1335,7 +1351,7 @@ export function createVoyage(under) {
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
     const b2 = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b2); gl.bufferData(gl.ARRAY_BUFFER, col, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null); starN = pos.length / 4;
+    gl.bindVertexArray(null); starN = pos.length / 4; starBufs = [b1, b2];
   }
   /* the streaks' travel, per depth: log radius, integrated from the flight's own speed */
   const off = [0, 0.3, 0.7, 0.15];
@@ -1492,7 +1508,28 @@ export function createVoyage(under) {
       gl.uniform1f(u.uTime, (s.t / 1000) % 1000); gl.uniform1f(u.uExpo, 0.35); });
   }
   function clear() { if (!ok) return; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clearColor(0.012, 0.012, 0.014, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
-  /* its journey taken down: what is still queued finds it dead and does nothing (nor does a link still to come) */
-  function stop() { gone = true; dead = true; ok = false; ready = false; }
+  /* its journey taken down: what is still queued finds it dead and does nothing (nor does a link still to come), and
+     what it made on the page's one context is given back, so a journey mounted after it (and the one after that)
+     still has room; what was still on its way gives back its own when it lands. The canvas, the probe (upload.js)
+     and the context itself are the page's, and stay */
+  function stop() {
+    if (gone) return;
+    gone = true; dead = true; ok = false; ready = false;
+    canvas.removeEventListener("webglcontextlost", onLost);
+    release();
+  }
+  function release() {
+    if (gl.isContextLost()) return;
+    for (const c of [hdr, ...chain, galT]) if (c) { giveBack("Texture", c.t); giveBack("Framebuffer", c.f); }
+    hdr = null; chain = []; galT = null;
+    giveBack("VertexArray", starVao); for (const b of starBufs) giveBack("Buffer", b);
+    starVao = null; starBufs = [];
+    giveBack("VertexArray", vao);
+    for (const p of programs) giveBack("Program", p);
+    for (const x of shaders) giveBack("Shader", x);
+    for (const t of [...Object.values(maps), ...Object.values(fields), glowT, blank, sunTex]) giveBack("Texture", t);
+    for (const o of [maps, fields]) for (const k of Object.keys(o)) delete o[k];
+    glowT = null; sunTex = null;
+  }
   return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
 }

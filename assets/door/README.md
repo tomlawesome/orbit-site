@@ -144,7 +144,9 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   dropped, its resize listener removed, every pending `later` dropped, and
   its flight's world stopped: a warm-up still under way draws and judges
   nothing more, and never gives up the page's one WebGL context, so a journey
-  mounted after it still has its world. A single-page host calls it when
+  mounted after it still has its world; and what its world put on the GPU
+  is released, so a host that remounts its door does not fill the context
+  visit by visit. A single-page host calls it when
   the component unmounts; a page that keeps one journey never needs it.
 
 `at` (both): pin the journey at a moment, in milliseconds into the journey
