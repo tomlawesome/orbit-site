@@ -13,6 +13,7 @@ stages:
   - lint
   - live
   - maintenance
+  - publish
 
 default:
   tags: [light]
@@ -26,9 +27,9 @@ workflow:
     - if: $CI_COMMIT_TAG
       when: never
     # A scheduled pipeline is the docs-import lane or the Renovate lane.
-    # `import_docs` and `renovate` are the only jobs that opt in, so a
-    # schedule without its variable would make a pipeline with no jobs;
-    # refusing it here says why.
+    # `import_docs`, `publish_docs` and `renovate` are the only jobs that opt
+    # in, so a schedule without its variable would make a pipeline with no
+    # jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
@@ -164,8 +165,17 @@ live:journey:
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
 #
-# Needs ORBIT_SITE_IMPORT_TOKEN, a project access token (role Maintainer,
-# scopes api and write_repository, Masked + Protected) the owner created.
+#
+# Two jobs, because the import runs other people's code (the npm packages
+# marked and sharp) and the publish holds a secret, and code in a job can read
+# that job's secrets and rewrite its scripts (#18). `import_docs` has no token,
+# makes no push and no API call, and hands on assets/docs/ alone as an
+# artifact. `publish_docs` runs no third-party code, treats the artifact as
+# untrusted, checks it, and is the only job in the `docs-import` environment.
+#
+# ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
+# api and write_repository, Masked + Protected) the owner created, with its
+# environment scope set to `docs-import`, which only `publish_docs` joins.
 # Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
@@ -177,6 +187,37 @@ import_docs:
     GIT_DEPTH: 1
   script:
     - sh tools/ci/nightly-import.sh
+  artifacts:
+    paths:
+      - assets/docs/
+    expire_in: 1 day
+
+# `action: start` records a deployment in the protected environment, which is
+# what makes GitLab apply the environment's "who may deploy" list and its
+# scoped variables to the run (`prepare`, `verify` and `access` record none);
+# `deployment_tier: other` because nothing is deployed to a server. The artifact
+# is unpacked into the checkout before the script runs, so the first script line
+# checks the script file against the commit before it is run.
+publish_docs:
+  stage: publish
+  image: $NODE_IMAGE
+  interruptible: false
+  needs:
+    - job: import_docs
+      artifacts: true
+  environment:
+    name: docs-import
+    action: start
+    deployment_tier: other
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
+  variables:
+    GIT_DEPTH: 1
+  script:
+    - |
+      git -c core.fsmonitor=false diff --quiet --no-ext-diff --no-textconv "$CI_COMMIT_SHA" -- tools/ci/nightly-publish.sh \
+        || { echo "tools/ci/nightly-publish.sh differs from the commit; stopping"; exit 1; }
+    - sh tools/ci/nightly-publish.sh
 
 # Renovate, weekly, on a schedule the owner created on `dev` with
 # RENOVATE=true and RENOVATE_TOKEN Masked + Protected. renovate.json has

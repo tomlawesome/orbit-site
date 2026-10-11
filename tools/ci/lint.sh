@@ -177,6 +177,59 @@ WF="$wf" node -e '
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 
+echo "== the docs import is split: import_docs holds no token, publish_docs is in the docs-import environment"
+# The import runs other people's code (npm packages) and so must hold nothing
+# worth stealing; the publish holds the token, runs no third-party code, and is
+# the only job in the docs-import environment, where the token is scoped (#18).
+# Both run from the schedule on main alone, never on a merge request pipeline.
+node -e '
+  const fs = require("fs");
+  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+  const yml = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n") + "\n";
+  const job = (n) => { const m = yml.match(new RegExp(`^${n}:\\n((?:[ \\t].*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
+  // the lines under a key of the job (two-space indent), up to the next such key
+  const section = (b, k) => { const m = b.match(new RegExp(`^  ${k}:[^\\n]*\\n((?:   .*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
+  const RULE = `if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
+  const imp = job("import_docs"), pub = job("publish_docs");
+  if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
+  if (pub === null) bad(".gitlab-ci.yml: there is no publish_docs job");
+  for (const [name, b] of [["import_docs", imp], ["publish_docs", pub]]) {
+    if (b === null) continue;
+    const rules = (section(b, "rules") || "").split("\n").filter((l) => l.trim()).map((l) => l.trim().replace(/^- /, ""));
+    if (rules.length !== 1 || rules[0] !== RULE) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on main (${RULE}), found: ${rules.join(" | ") || "none"}`);
+  }
+  if (imp !== null) {
+    if (/^  environment:/m.test(imp)) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
+    if (/ORBIT_SITE_IMPORT_TOKEN/.test(imp)) bad(".gitlab-ci.yml: import_docs names ORBIT_SITE_IMPORT_TOKEN");
+    if (!/nightly-import\.sh/.test(section(imp, "script") || "")) bad(".gitlab-ci.yml: import_docs does not run tools/ci/nightly-import.sh");
+    const paths = ((section(imp, "artifacts") || "").match(/^    paths:\n((?:      - .*\n)*)/m) || [, ""])[1].split("\n").filter((l) => l.trim()).map((l) => l.replace(/^\s*- /, "").trim());
+    if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
+    if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
+  }
+  if (pub !== null) {
+    const env = section(pub, "environment") || "";
+    if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
+    const needs = section(pub, "needs") || "";
+    if (!/- job: import_docs\n\s+artifacts: true/.test(needs)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs with its artifacts");
+    const script = section(pub, "script") || "";
+    if (!/nightly-publish\.sh/.test(script)) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
+    if (/\b(npm|npx|yarn|pnpm)\b/.test(script)) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
+  }
+  const imps = fs.existsSync("tools/ci/nightly-import.sh") ? fs.readFileSync("tools/ci/nightly-import.sh", "utf8") : null;
+  const pubs = fs.existsSync("tools/ci/nightly-publish.sh") ? fs.readFileSync("tools/ci/nightly-publish.sh", "utf8") : null;
+  if (imps === null) bad("tools/ci/nightly-import.sh: is missing");
+  else {
+    const code = imps.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    if (/ORBIT_SITE_IMPORT_TOKEN|PRIVATE-TOKEN/.test(imps)) bad("tools/ci/nightly-import.sh: names the token; it runs other people\x27s code and must not");
+    if (/\bcurl\b|\bgit\b[^\n]*\bpush\b/.test(code)) bad("tools/ci/nightly-import.sh: calls curl or git push; the import makes no API call and no push");
+  }
+  if (pubs === null) bad("tools/ci/nightly-publish.sh: is missing");
+  else {
+    const code = pubs.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    if (/\b(npm|npx|yarn|pnpm)\b/.test(code)) bad("tools/ci/nightly-publish.sh: runs npm or another package manager; it holds the token and runs no third-party code");
+  }
+' || fail=1
+
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)

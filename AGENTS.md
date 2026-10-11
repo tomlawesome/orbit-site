@@ -15,6 +15,6 @@ The Orbit family is one project: act across Orbit, its base image, the launcher 
 - Check a change with `sh tools/ci/lint.sh` and `sh tools/ci/lint-test.sh`; serve it with `node tools/ci/serve.mjs`.
 - The journey (`tools/ci/journey.mjs`) is the gate's live check and is never optional. Run the gate's live check locally with `sh tools/ci/journey-local.sh`.
 - WebGL needs headed Firefox under Xvfb with software GL; headless draws no world. `journey-local.sh` does this.
-- The import needs the Maintainer token `ORBIT_SITE_IMPORT_TOKEN`; the runner cannot reach GitLab over SSH, so no deploy key.
+- The import is two jobs (#18): `import_docs` runs npm and the import with no token and hands on `assets/docs/` as an artifact; `publish_docs` checks that untrusted artifact and pushes the branch and merge request. The Maintainer token `ORBIT_SITE_IMPORT_TOKEN` is scoped to the `docs-import` environment and only `publish_docs` uses it; never give it to another job or name it in `tools/ci/nightly-import.sh` (the lint refuses both). The runner cannot reach GitLab over SSH, so no deploy key.
 - Approved third-party content and its credits are listed in `README.md`; `marked` and `sharp` versions are pinned only in `tools/package.json`.
 - `package.json` only in `tools/`; never commit `node_modules`. The lint refuses both at the top level only.
