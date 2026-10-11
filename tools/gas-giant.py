@@ -262,5 +262,5 @@ if args.preview:
     big.save(args.preview)
 if args.out:
     big.save(args.out, "WEBP", quality=88, method=6)
-    big.resize((2048, 1024), Image.LANCZOS).save(args.out2k or args.out.replace(".webp", "-2k.webp"), "WEBP", quality=88, method=6)
+    (big if args.base else img).resize((2048, 1024), Image.LANCZOS).save(args.out2k or args.out.replace(".webp", "-2k.webp"), "WEBP", quality=88, method=6)
 print("done", round(time.time() - t0), "s")

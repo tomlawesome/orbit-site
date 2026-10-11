@@ -13,7 +13,7 @@ export async function run() {
   const out = [];
   const { gl } = context();
   if (!gl) return [line("webgl2", "none")];
-  out.push(line("compiles in background", gl.getExtension("KHR_parallel_shader_compile") ? "yes (each time below runs to the end of the wait for LINK_STATUS: how long the compile took, not how long the page stood still)" : "no (each time below, which ends when LINK_STATUS is known, is a stall of the page)"));
+  out.push(line("compiles in background", gl.getExtension("KHR_parallel_shader_compile") ? "yes (but each time below reads LINK_STATUS at once, which waits for the compile on the page's own thread: a stall of the page, ended when LINK_STATUS is known)" : "no (each time below, which ends when LINK_STATUS is known, is a stall of the page)"));
   const each = [
     ["trivial (the fixed cost of a program)", TRIVIAL],
     ["trivial again", TRIVIAL],
