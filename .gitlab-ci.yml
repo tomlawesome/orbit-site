@@ -177,9 +177,8 @@ live:journey:
 #
 # ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
 # api and write_repository, Masked + Protected) the owner created, with its
-# environment scope set to `docs-import`, which only `publish_docs` joins; so
-# is ORBIT_SITE_READ_TOKEN (role Reporter, scope read_api). Nothing here sets
-# them. The schedule runs on `main` with IMPORT_DOCS=true.
+# environment scope set to `docs-import`, which only `publish_docs` joins.
+# Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
   image: $NODE_IMAGE
@@ -208,8 +207,8 @@ import_docs:
 # the archive itself by job id and opens it entry by entry (tools/ci/
 # nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
 # a build folder an earlier job on this runner left things in.
-# ORBIT_SITE_READ_TOKEN (role Reporter, scope read_api) is how the job asks
-# GitLab which job to fetch: a job token cannot list a pipeline's jobs.
+# The job asks GitLab which job to fetch with the import token (a job token
+# cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:
   stage: publish
   image: $NODE_IMAGE

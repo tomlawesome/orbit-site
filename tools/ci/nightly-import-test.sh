@@ -7,7 +7,7 @@
 # names the token. Part 1 runs it with a fake token in its environment and
 # checks that nothing reads, prints, writes or sends it.
 #
-# tools/ci/nightly-publish.sh (job `publish_docs`) asks GitLab (with a read-only
+# tools/ci/nightly-publish.sh (job `publish_docs`) asks GitLab (with the import
 # token) which job made the artifact, downloads that archive itself with its job
 # token, opens it entry by entry, and refuses it unless it is exactly what the
 # import writes and the shape the import gives it; then it pushes a branch,
@@ -47,7 +47,6 @@ cp -R assets/docs "$aux/docs-head"
 realpython=$(command -v python3)
 
 fake=not-a-real-token-test-only
-fakeread=not-a-real-read-token-test-only
 fakejob=not-a-real-job-token-test-only
 mkdir scratch-tmp
 
@@ -303,7 +302,6 @@ takes() { # takes <flag> <value>
       case $2 in
         @*) hfile=${2#@}
             if [ -f "$hfile" ] && grep -q "^PRIVATE-TOKEN: $FAKE\$" "$hfile"; then hdr=yes; kind=import
-        elif [ -f "$hfile" ] && grep -q "^PRIVATE-TOKEN: $FAKE_READ\$" "$hfile"; then kind=read
         elif [ -f "$hfile" ] && grep -q "^JOB-TOKEN: $FAKE_JOB\$" "$hfile"; then kind=job; fi ;;
       esac ;;
     m|max-time) tflags="$tflags max-time" ;;
@@ -463,8 +461,8 @@ run_push() { # run_push <outfile> <scenario>
   prepare "$2"
   "$realpython" -W ignore "$aux/mkzip.py" "$aux/artifact.zip" "$aux/docs-head" "$2"
   rc=0
-  env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" ORBIT_SITE_READ_TOKEN="$fakeread" CI_JOB_TOKEN="$fakejob" \
-    FAKE_READ="$fakeread" FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
+  env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
+    FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
     CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
@@ -494,8 +492,8 @@ pin_run() {
   : > "$aux/api.log"; : > "$aux/tok.log"
   rc=0
   ( cd "$dir" && env -i PATH="$pbin:$PATH" HOME="$aux" TMPDIR="$tmp/scratch-tmp" STATE="$aux" SCENARIO=none \
-      FAKE="$fake" FAKE_READ="$fakeread" FAKE_JOB="$fakejob" \
-      ORBIT_SITE_IMPORT_TOKEN="$fake" ORBIT_SITE_READ_TOKEN="$fakeread" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
+      FAKE="$fake" FAKE_JOB="$fakejob" \
+      ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
       CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
 }
@@ -506,11 +504,10 @@ pinned() { # pinned <label> <script dir> <text the refusal must carry> [VAR=valu
   rc=0; [ "$rcp" -ne 0 ] && grep -q -e "$want" "$out" || rc=1
   check "job 2 refuses to run $label (exit $rcp)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-  rc=0; [ ! -s "$aux/api.log" ] && [ ! -s "$aux/tok.log" ] && ! grep -q -e "$fake" -e "$fakeread" -e "$fakejob" "$out" || rc=1
+  rc=0; [ ! -s "$aux/api.log" ] && [ ! -s "$aux/tok.log" ] && ! grep -q -e "$fake" -e "$fakejob" "$out" || rc=1
   check "job 2: after refusing to run $label, nothing was sent to GitLab and no token was shown" "$rc"
 }
 pinned "without the import token" "$tmp" "ORBIT_SITE_IMPORT_TOKEN is not set" ORBIT_SITE_IMPORT_TOKEN=
-pinned "without the read token" "$tmp" "ORBIT_SITE_READ_TOKEN is not set" ORBIT_SITE_READ_TOKEN=
 pinned "without the job token" "$tmp" "CI_JOB_TOKEN" CI_JOB_TOKEN=
 pinned "on the real script's host (the test's is not it)" "$aux/pristine" "CI_SERVER_HOST is not gitlab.tomlawson.io"
 pinned "with another API address" "$tmp" "CI_API_V4_URL is not" CI_API_V4_URL=https://evil.invalid/api/v4
@@ -538,7 +535,7 @@ rc=0; grep -q 'HTTP 405' "$out" || rc=1
 check "job 2: the failure shows GitLab's HTTP status (HTTP 405)" "$rc"
 rc=0; grep -q 'Method Not Allowed' "$out" || rc=1
 check "job 2: the failure shows GitLab's error message (Method Not Allowed)" "$rc"
-rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakeread" -e "$fakejob" "$out" "$aux" || rc=1
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
 check "job 2: the token is in neither the output nor any log" "$rc"
 rc=0; [ "$merge_puts" -gt 1 ] || rc=1
 check "job 2: it retried the auto-merge request (saw $merge_puts attempts)" "$rc"
@@ -580,15 +577,14 @@ rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip"); [ "$changed" 
 check "job 2: the commit changes only the page that changed" "$rc"
 [ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
 
-# Which token went where: the pipeline is asked with the read token, the archive
-# fetched with the job token, and the import token is only for what writes (and
-# the merge-request lists around it).
-rc=0; grep -q '^GET  read$' "$aux/tok.log" && grep -q '^GET /pipelines/77/jobs read$' "$aux/tok.log" \
+# Which token went where: the project and the pipeline's jobs are asked with the
+# import token (a job token cannot list jobs), the archive is fetched with the
+# job token, and no call goes without a token.
+rc=0; grep -q '^GET  import$' "$aux/tok.log" && grep -q '^GET /pipelines/77/jobs import$' "$aux/tok.log" \
   && grep -q '^GET /jobs/555/artifacts job$' "$aux/tok.log" || rc=1
-check "job 2: the project and the pipeline's jobs are asked with the read token, the archive with the job token" "$rc"
-rc=0; ! grep -q -e '^GET  import$' -e '^GET /pipelines/77/jobs import$' -e '^GET /jobs/555/artifacts import$' "$aux/tok.log" \
-  && ! grep -q ' none$' "$aux/tok.log" || rc=1
-check "job 2: the import token is not sent for the pipeline or the archive, and no call goes without a token" "$rc"
+check "job 2: the project and the pipeline's jobs are asked with the import token, the archive with the job token" "$rc"
+rc=0; ! grep -q ' none$' "$aux/tok.log" && ! grep -q '^GET /jobs/555/artifacts import$' "$aux/tok.log" || rc=1
+check "job 2: the archive is not fetched with the import token, and no call goes without a token" "$rc"
 rc=0; ! grep -E '^(POST|PUT|DELETE) ' "$aux/tok.log" | grep -qv ' import$' || rc=1
 check "job 2: every write to GitLab was made with the import token" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/tok.log"
@@ -788,7 +784,7 @@ refused() { # refused <scenario> <what it is> <text the refusal must carry>
   ! grep -q -e '^PUT' -e '^POST' -e '^DELETE' "$aux/api.log" && ! grep -q 'push' "$aux/shim.log" \
     && [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] || ok=1
   check "job 2: after refusing $2, nothing was written to GitLab, pushed or branched" "$ok"
-  ok=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakeread" -e "$fakejob" "$out" "$aux" || ok=1
+  ok=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || ok=1
   check "job 2: after refusing $2, no token is in the output or any log" "$ok"
 }
 refused symlinkfile "a symlink in the archive" "is not a regular file"

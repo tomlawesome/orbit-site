@@ -28,10 +28,9 @@
 #   - what is written is held to the shape the import writes
 #     (tools/ci/docs-shape.mjs): the pad draws the index's colour and ids into
 #     innerHTML;
-#   - which job to fetch comes from GitLab, asked with a separate read-only
-#     token (ORBIT_SITE_READ_TOKEN, role Reporter, scope read_api, scoped to
-#     docs-import too): a job token cannot list a pipeline's jobs, and the write
-#     token is kept for what writes;
+#   - which job to fetch comes from GitLab, asked with the import token (a job
+#     token cannot list a pipeline's jobs; the archive itself is downloaded with
+#     the job token);
 #   - the environment is pinned (host, project, branch, no preload or
 #     interpreter overrides), and the checkout, a fresh clone (GIT_STRATEGY:
 #     clone in .gitlab-ci.yml), must be what git has.
@@ -79,7 +78,6 @@ done
 : "${CI_API_V4_URL:?}" "${CI_PROJECT_ID:?}" "${CI_SERVER_HOST:?}" "${CI_PROJECT_PATH:?}" "${CI_PIPELINE_ID:?}"
 : "${CI_JOB_TOKEN:?}"
 : "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
-: "${ORBIT_SITE_READ_TOKEN:?ORBIT_SITE_READ_TOKEN is not set -- is the variable protected and scoped to the docs-import environment?}"
 DRY_RUN=${DRY_RUN:-}
 pin() { echo "refusing to run: $1"; exit 1; }
 [ "$CI_SERVER_HOST" = "$EXPECT_HOST" ] || pin "CI_SERVER_HOST is not $EXPECT_HOST"
@@ -105,13 +103,12 @@ hdr_off() { rm -f "$hdr"; }
 req() { hn=$1; tk=$2; m=$3; p=$4; shift 4; printf '%s: %s\n' "$hn" "$tk" > "$hdr"; r=0
   curl -q -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@" || r=$?
   hdr_off; return "$r"; }
-api() { req PRIVATE-TOKEN "$ORBIT_SITE_IMPORT_TOKEN" "$@"; }   # what writes
-apir() { req PRIVATE-TOKEN "$ORBIT_SITE_READ_TOKEN" "$@"; }    # what only reads the pipeline
+api() { req PRIVATE-TOKEN "$ORBIT_SITE_IMPORT_TOKEN" "$@"; }
 # git: the token out of its environment, no hooks, no fsmonitor, no global or
 # system config, no ssh or gpg program, no background gc, no index refresh
 # written back. Command-line -c beats the repository's own config.
 nogit() {
-  env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN -u GIT_DIR -u GIT_WORK_TREE HOME="$scratch/home" \
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN -u GIT_DIR -u GIT_WORK_TREE HOME="$scratch/home" \
     GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 \
     git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.sshCommand= \
     -c core.attributesFile=/dev/null -c core.pager=cat -c credential.helper= \
@@ -123,7 +120,6 @@ cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "
 # The API answer is parsed only after the call has returned and the header file
 # is gone, so node never runs while a token is on disk.
 apij() { js=$1; shift; ans=$(api "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
-apijr() { js=$1; shift; ans=$(apir "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
 refuse() { echo "refusing the artifact: $1"; exit 1; }
@@ -161,13 +157,13 @@ check_tree() {
 }
 
 # Which job is this pipeline's import, and is its archive the pipeline's: GitLab
-# says, to a read-only token. The project is checked first (the id came from the
+# says, to the import token. The project is checked first (the id came from the
 # environment), then the one successful import_docs job of this pipeline, on
 # main, at the commit this job is checked out at, with an archive.
 import_job() {
-  proj=$(apijr 'console.log(j.path_with_namespace)' GET "") || refuse "could not read the project from GitLab"
+  proj=$(apij 'console.log(j.path_with_namespace)' GET "") || refuse "could not read the project from GitLab"
   [ "$proj" = "$EXPECT_PATH" ] || refuse "project $CI_PROJECT_ID is $proj, not $EXPECT_PATH"
-  apijr 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "main" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
+  apij 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "main" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
     if (ok.length !== 1 || !Number.isInteger(ok[0].id)) { console.log("refusing the artifact: found " + ok.length + " successful import_docs jobs with an archive in this pipeline at this commit, want 1"); process.exit(1); }
     console.log(ok[0].id)' GET "/pipelines/$CI_PIPELINE_ID/jobs?per_page=100"
 }
@@ -184,7 +180,7 @@ download() { # download <job id> <file>
 # own listing before anything is written; then the files are written by this
 # program, from the bytes, to names it chose.
 unpack() {
-  env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN \
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
     python3 -I - "$1" "$2" "$3" "$MAX_ENTRIES" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" <<'PY'
 import json, os, stat, sys, zipfile
 
@@ -306,7 +302,7 @@ main() {
   download "$jobid" "$scratch/artifact.zip"
   cgit cat-file blob HEAD:tools/docs-sources.json > "$scratch/sources.json"
   unpack "$scratch/artifact.zip" "$art" "$scratch/sources.json" || exit 1
-  if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u ORBIT_SITE_READ_TOKEN -u CI_JOB_TOKEN \
+  if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
       node tools/ci/docs-shape.mjs "$art/assets/docs" "$scratch/sources.json"); then
     echo "refusing the artifact: it is not the shape the import writes:"
     printf '%s\n' "$shape"
