@@ -1203,6 +1203,9 @@ export function createVoyage(under) {
   /* landing: the pictures still on their way to the GPU (a band, or their mipmaps, still to come), which give back their
      own texture when they land (load) rather than have it taken from under them (release) */
   const landing = new Set();
+  /* the maps that failed to load or to upload, retried once by the next warm (retried) */
+  const failed = new Set();
+  let retried = false;
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
@@ -1244,9 +1247,11 @@ export function createVoyage(under) {
       if (key === "clouds" || key === "cloudsN") fieldsOf();
     }).catch(() => {
       /* drawn without it. Whatever it had put on the GPU is let go (upload.js deletes the texture of an upload that
-         failed, so the map is forgotten here, and given back if the world has stopped) */
+         failed, so the map is forgotten here, and given back if the world has stopped), and the key is remembered for
+         the one retry (warm) */
       landing.delete(key);
       if (maps[key]) { giveBack("Texture", maps[key]); delete maps[key]; delete dims[key]; }
+      if (!gone) failed.add(key);
     });
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
      programs, puts the maps on the GPU (and the galaxy's stars) and stops there: no frame is drawn and no pixel read
@@ -1257,6 +1262,16 @@ export function createVoyage(under) {
   const ST = () => ({ t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
     progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 });
   function warm({ prove = true } = {}) {
+    /* a map that failed (a dropped download; fetchOnce forgets a failed fetch) is asked for once more, by the next warm
+       once the first round is in; whatever then lands is used from the next frame, and the cities' glow made if it was
+       waiting for it */
+    if (loading && allIn && !retried && !gone && [...failed].some((k) => k !== "lightsS")) {
+      retried = true;
+      const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
+      const retry = loaded.then(() => Promise.all(again.map(load)));
+      loaded = retry;
+      loading = loading.then(() => retry).then(() => P.overRich && !glowT && chore(richMaps, 60, "flight")).then(() => {});
+    }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
          device's own after everything (sharpStrip) */
