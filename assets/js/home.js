@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -381,7 +381,7 @@ export function snooze(id) {
 }
 export function addItem(fields) {
   const h = household();
-  const id = `i-${Date.now().toString(36)}`;
+  const id = newItemId();
   const it = {
     id, status: "active", title: fields.title, section: fields.section ?? "home", kind: fields.kind ?? "service",
     recurrenceMonths: fields.recurrenceMonths ?? 12, costMinor: fields.costMinor ?? null, costIsEstimate: true,
@@ -489,6 +489,12 @@ function wireExplore() {
 }
 
 /* ── the create form ──────────────────────────────────────────────────── */
+/* the date the form gives an item: the typed one, or 30 days past `now` when none is typed or it is not a date (a year of
+   more than four digits, typed past the input's max, reads as no date rather than an invalid one) */
+export function createDate(value, now) {
+  const typed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
+  return typed && !Number.isNaN(typed.getTime()) ? typed : law.addDays(now, 30);
+}
 function wireCreate() {
   const form = $("#createform");
   const types = $$("#types button");
@@ -500,8 +506,7 @@ function wireCreate() {
     e.preventDefault();
     const title = $("#f-name").value.trim();
     if (!title) { $("#f-name").focus(); return; }
-    const dateText = due.value;
-    const dueDate = dateText ? new Date(`${dateText}T00:00:00`) : law.addDays(today, 30);
+    const dueDate = createDate(due.value, today);
     const cost = parseFloat($("#f-cost").value);
     const it = addItem({ title, kind, section: $("#f-section").value, recurrenceMonths: Number($("#f-recur").value), costMinor: Number.isFinite(cost) ? Math.round(cost * 100) : null, dueDate });
     form.reset(); kind = "service"; types.forEach((o) => o.setAttribute("aria-pressed", String(o.dataset.type === "service")));

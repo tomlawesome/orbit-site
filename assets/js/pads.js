@@ -109,16 +109,33 @@ const trim = (q, p, a = GAP, b = GAP) => { const dx = p[0] - q[0], dy = p[1] - q
 const hrefOf = (slug, id) => (id === "top" ? `#docs/${slug}` : `#docs/${slug}/${id}`);
 const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
 
+const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+/* the text as HTML with each match of the query's words wrapped in <mark>: found in the raw text, every piece escaped,
+   so an entity in a title ("R&D") is never cut open or shown twice-escaped */
+export function highlight(text, query) {
+  const words = (query || "").split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!words.length) return esc(text);
+  return text.split(new RegExp(`(${words.join("|")})`, "gi")).map((piece, i) => (i % 2 ? `<mark>${esc(piece)}</mark>` : esc(piece))).join("");
+}
+/* a script loaded at most once while it works: the promise is shared while pending and after success, and forgotten on
+   failure (a blocked or failed load), so the next get() tries again */
+export function createScriptLoader(load) {
+  let promise = null;
+  return { get() { return promise || (promise = load().catch((e) => { promise = null; throw e; })); } };
+}
+/* the path after "#docs/" in a hash, decoded; the raw string where it is not valid percent-encoding; null for a hash
+   that is not the docs' */
+export function docsPath(hash) {
+  const m = /^#docs(?:\/(.*))?$/.exec(hash || "");
+  if (!m) return null;
+  const raw = m[1] || "";
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
 export function createDocs(pad) {
   const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), chart = $(".skymap .chart", pad), stamp = $(".stamp", pad);
   const index = $(".index", pad), reader = $(".reader", pad), scroll = $(".scroll", pad);
   const norm = (x) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const mark = (text, q) => {
-    if (!q) return esc(text);
-    const words = q.split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    return esc(text).replace(new RegExp(`(${words.join("|")})`, "gi"), "<mark>$1</mark>");
-  };
   const matches = (e, words) => { const hay = norm(`${e.t} ${e.s} ${e.k}`); return words.every((w) => hay.includes(w)); };
   const score = (e, words) => { const t = norm(e.t), s = norm(e.s); return words.reduce((n, w) => n + (t.includes(w) ? 4 : s.includes(w) ? 2 : 1), 0); };
   /* what the import wrote: the sources, and every section as an entry */
@@ -232,7 +249,7 @@ export function createDocs(pad) {
 
   /* ── the list ── */
   const entry = (e, q, i) => `<a class="entry${recent.includes(e.href) ? " read" : ""}" href="${e.href}" style="--i:${i};--c:${GROUPS[e.g]?.c ?? "#8791b3"}" data-href="${e.href}">
-      <i class="star"></i><b>${mark(e.t, q)}</b><small>${mark(e.s, q)}</small><span class="where">${esc(e.g)}</span></a>`;
+      <i class="star"></i><b>${highlight(e.t, q)}</b><small>${highlight(e.s, q)}</small><span class="where">${esc(e.g)}</span></a>`;
   function render() {
     if (!DOCS.length) return;
     const raw = input.value.trim(), q = norm(raw), words = q.split(/\s+/).filter(Boolean);
@@ -366,8 +383,14 @@ export function createDocs(pad) {
     }, { root: scroll, rootMargin: "-80px 0px -60% 0px", threshold: 0 });
     reader.querySelectorAll(".sec").forEach((s) => tocWatch.observe(s));
   }
+  /* a failed or blocked load is not remembered: the next diagram tries again (createScriptLoader) */
+  const mermaid = createScriptLoader(() => new Promise((resolve, reject) => {
+    const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
+  }).then(() => {
+    const dark = document.documentElement.dataset.theme !== "day";
+    window.mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables: { darkMode: dark, background: "transparent", primaryColor: dark ? "#131c3a" : "#eef2fb", primaryTextColor: dark ? "#e9edf8" : "#0b1020", primaryBorderColor: dark ? "#3a4a7a" : "#9aa8c8", lineColor: dark ? "#8791b3" : "#5a6684", fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" } });
+  }));
   /* diagrams in the source: drawn by mermaid, fetched only when a page has one */
-  let mermaid = null;
   function drawDiagrams() {
     const figs = [...reader.querySelectorAll("figure[data-mermaid]")]; if (!figs.length) return;
     const draw = async () => {
@@ -379,21 +402,13 @@ export function createDocs(pad) {
       }
     };
     if (window.mermaid) { draw(); return; }
-    if (!mermaid) {
-      mermaid = new Promise((resolve, reject) => {
-        const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
-      }).then(() => {
-        const dark = document.documentElement.dataset.theme !== "day";
-        window.mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables: { darkMode: dark, background: "transparent", primaryColor: dark ? "#131c3a" : "#eef2fb", primaryTextColor: dark ? "#e9edf8" : "#0b1020", primaryBorderColor: dark ? "#3a4a7a" : "#9aa8c8", lineColor: dark ? "#8791b3" : "#5a6684", fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" } });
-      });
-    }
-    mermaid.then(draw).catch(() => figs.forEach((f) => { const src = f.querySelector("pre")?.textContent || ""; f.innerHTML = `<pre class="code" data-lang="mermaid"><code>${esc(src)}</code></pre>`; }));
+    mermaid.get().then(draw).catch(() => figs.forEach((f) => { const src = f.querySelector("pre")?.textContent || ""; f.innerHTML = `<pre class="code" data-lang="mermaid"><code>${esc(src)}</code></pre>`; }));
   }
   /* any #docs link, wherever it is written on this landing, is read here */
   function go(hash, push = true) {
     const m = /^#docs(?:\/([^/#]+))?(?:\/([^#]+))?$/.exec(hash || "");
     if (!m) return false;
-    if (m[1]) load().then(() => open(m[1], m[2] ? decodeURIComponent(m[2]) : null, push)); else close(push);
+    if (m[1]) load().then(() => open(m[1], m[2] ? docsPath(`#docs/${m[2]}`) : null, push)); else close(push);
     return true;
   }
   reader.addEventListener("click", (e) => {
@@ -533,10 +548,12 @@ export function createInfo(pad, world = null) {
 /* a line is held for as long as it takes to read: a floor, and time per word */
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
+/* the one phone width (px), the same as the CSS breakpoint (max-width: 599.98px) and the door's */
+const PHONE = 600;
 export function wirePlanets(door, onGo) {
   /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge;
      in the rich look, with no leader to carry it, it sits just past the world's own glow */
-  const rich = document.documentElement.classList.contains("rich"), past = rich ? (innerWidth < 560 ? 12 : 15) : innerWidth < 560 ? 15 : 21;
+  const rich = document.documentElement.classList.contains("rich"), past = rich ? (innerWidth < PHONE ? 12 : 15) : innerWidth < PHONE ? 15 : 21;
   const planets = [...door.querySelectorAll(".planet")].map((p) => ({ p, spin: p.querySelector(".spin"), body: p.querySelector(".body"), tag: p.querySelector(".tag"), rb: +p.dataset.r / 200, r: (+p.dataset.r + past) / 200 }));
   const gold = door.querySelector(".trdot"), goldBody = gold?.querySelector("i");
   const GOLD_AT = Math.atan2(63, 36.5), GOLD_R = Math.hypot(63, 36.5) / 200;   /* where the gold world sits on its turning frame */
