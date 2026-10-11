@@ -1,6 +1,6 @@
 /*
- * Live test for six small site behaviours that only a real browser can show (#12), written from the specification
- * alone (B1 to B6) and judged through what a visitor or a console can see: the page's markup, its classes, its text,
+ * Live test for seven small site behaviours that only a real browser can show (#12), written from the specification
+ * alone (B1 to B7) and judged through what a visitor or a console can see: the page's markup, its classes, its text,
  * its console, its history, and what the browser reports about its own work.
  *
  *   B1  a burst of 20 window resizes within 200 ms on the home view draws the galaxy once, after the burst.
@@ -19,11 +19,15 @@
  *       Control: the walk did change them first.
  *   B6  while the walk is paused the veil's mask (#veilmask) is not rebuilt every frame: at most a few changes in
  *       one second. Control: the veil is showing, so the mask is in use.
+ *   B7  the install page's second dive, after a first one that was painted flat because the planet's map failed
+ *       to load, forms (#installpad.formed) and is lit and no longer flat, once the map loads. Controls: the world
+ *       was prepared and the map failure was logged; the first dive was painted flat and formed; the retry fetched
+ *       the map and it did not fail again.
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
  *
- * Firefox must be headed here for a WebGL2 world (B2 only; the rest do not need one). BROWSER=chromium for another
+ * Firefox must be headed here for a WebGL2 world (B2 and B7 only; the rest do not need one). BROWSER=chromium for another
  * engine. A case that cannot be judged says so and fails, rather than passing for nothing.
  */
 import { spawn } from "node:child_process";
@@ -425,6 +429,71 @@ const lostContextCase = async () => {
   } finally { await wctx.close(); }
 };
 
+/* ── B7: the install page's second dive, after a first one that was painted flat because the map failed ──────── */
+/* The information page is built by the same factory, with the same `forming` rules and the same lines: it is not
+   driven separately. */
+const retryCase = async () => {
+  const rctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
+  try {
+    await runCase("B7", "the install page's second dive, after a first one painted flat because the map failed, lands and is lit", async (want) => {
+      const page = await open(rctx);
+      try {
+        if (!(await page.evaluate(() => !!document.createElement("canvas").getContext("webgl2")))) {
+          if (process.env.WEBGL === "required" || process.env.HEADED === "1") throw new Error(`no WebGL2 in ${BROWSER}: the install world is never drawn, so its map cannot fail and then load`);
+          console.log("       B7: (no WebGL2 here: skipped)");
+          return;
+        }
+        /* the planet's map is the one file that fails (world.js picks planet-2k.webp or planet.webp; the rings and
+           the moon are not touched), and then, once `failing` is switched off, loads */
+        let failing = true, hits = 0;
+        await page.route("**/assets/img/install/planet*.webp", (route) => {
+          hits++;
+          return failing ? route.fulfill({ status: 503 }) : route.continue();
+        });
+        await page.goto(`${SITE}?preview&gpu=force`, { waitUntil: "load" });
+        const seen = (re) => page.log.some((m) => re.test(m.text));
+        const planet = page.locator("#door .planet[data-section=install]");
+        const classes = () => page.evaluate(() => { const c = document.querySelector("#installpad").classList; return { flat: c.contains("flat"), lit: c.contains("lit"), formed: c.contains("formed") }; });
+        /* control 1: the world is prepared (its way opens on a false bake too) and the failure took */
+        await until(async () => seen(/install: ready/), (v) => v, 90000, 250);
+        want(seen(/install: ready/), "control: the install world never logged 'install: ready' within 90 s");
+        await page.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
+        want(seen(/orbit: no map/), "control: 'orbit: no map' was not logged, so the planet's map did not fail");
+        want(hits >= 1, `control: the planet's map was never requested (${hits} requests)`);
+        await sleep(1000);
+        /* control 2: the first dive is painted over its poster, as it should be */
+        await planet.evaluate((el) => el.click());
+        await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
+        const first = await until(() => page.evaluate(() => document.querySelector("#installpad").classList.contains("formed")), (v) => v, 20000, 100);
+        want(first, "control: the first dive (the map failed) never added 'formed' to #installpad within 20 s");
+        /* 'flat' lands a moment after 'formed': the page forms on the false bake, the poster is kept as the bake answers */
+        const painted = await until(classes, (c) => c.flat, 5000, 100);
+        want(painted.flat && !painted.lit, `control: after the failed first dive #installpad should be flat and not lit, but flat is ${painted.flat} and lit is ${painted.lit}`);
+        await page.locator("#installpad .back.dawn").click();
+        await page.locator("#door").waitFor({ state: "visible", timeout: 60000 });
+        await page.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
+        await sleep(500);
+        /* the retry: the line is good now, and the visitor presses Install again */
+        failing = false;
+        const hitsBefore = hits, logBefore = page.log.length;
+        await planet.evaluate((el) => el.click());
+        await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
+        /* M1a: the page forms (the 6 s wait and about 5 s of shot, with margin; the 15 s let-go never adds 'formed') */
+        const formed = await until(() => page.evaluate(() => document.querySelector("#installpad").classList.contains("formed")), (v) => v, 30000, 100);
+        const after = await classes();
+        want(formed, `the second dive never added 'formed' to #installpad within 30 s (flat ${after.flat}, lit ${after.lit}): the words, back and home stay hidden over a pad nothing draws`);
+        /* M1b: the world is lit and the poster is not kept over it */
+        const end = await classes();
+        want(end.lit && !end.flat, `after the second dive #installpad should be lit and not flat, but lit is ${end.lit} and flat is ${end.flat}`);
+        /* control 3: the retry fetched the map, and it did not fail again */
+        want(hits > hitsBefore, `control: the retry did not request the planet's map again (${hits} requests, ${hitsBefore} before)`);
+        want(!page.log.slice(logBefore).some((m) => /orbit: no map/.test(m.text)), "control: 'orbit: no map' was logged again after the line was good");
+        want(!page.errors.length, `page error: ${page.errors[0]}`);
+      } finally { await page.close(); }
+    });
+  } finally { await rctx.close(); }
+};
+
 try {
   await new Promise((ok, no) => {
     const t0 = Date.now();
@@ -438,7 +507,7 @@ try {
   /* B2 and B3 use pages of their own and are started once B1 has had the machine to itself; the walk's cases wait
      in real time for the walk, so the others fit into the waiting */
   const others = [];
-  const background = () => { others.push(docsCase(), lostContextCase()); };
+  const background = () => { others.push(docsCase(), lostContextCase().then(retryCase)); };
   await homeCases(ctx, background);
   await cameraCase(ctx);
   await Promise.all(others);
