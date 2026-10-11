@@ -199,7 +199,8 @@ export function duskMarkup({ image: resolve = (p) => p, gate = "", foot = "", fa
           `<circle${asDawn ? ' class="crisp"' : ""} cx="800" cy="3920" r="3000" fill="none" stroke="url(#d-rim)" stroke-width="1.8" stroke-opacity=".6"/>`,
         ],
         "</svg>",
-        layer("shimmerlayer", '<circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/>'),
+        /* (the goodbye dressed as the dawn has no shimmer: owner, 2026-10-11, #41) */
+        ...(asDawn ? [] : [layer("shimmerlayer", '<circle class="shimmer" pathLength="100" cx="800" cy="3920" r="3000" fill="none" stroke="#ffb37a" stroke-width="3" stroke-linecap="round"/>')]),
       ],
       "</div>",
       '<div class="loginchrome">',

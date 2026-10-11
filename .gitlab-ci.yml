@@ -95,6 +95,8 @@ lint:
     - node tools/ci/retire-after-destroy-test.mjs
     - node tools/ci/destroyed-world-test.mjs
     - node tools/ci/released-world-test.mjs
+    - node tools/ci/door-wordmark-test.mjs
+    - node tools/ci/door-shimmer-test.mjs
     - node tools/ci/local-server-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/glow-banding-test.mjs

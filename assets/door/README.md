@@ -193,7 +193,7 @@ in them). `indent` is whitespace.
 and leaves it off, and without it the markup is byte for byte unchanged): the
 dawn's glyph (the lit ring and discs, their gradients' ids prefixed `d-`) with
 the gold planet on its trail, shown after the farewell beat; the dawn's Earth
-photo under the ember rim; the farewell hung under the way back in (inside the
+photo under the ember rim, and no `.shimmer` ring (left out on purpose, #41); the farewell hung under the way back in (inside the
 ring on a phone), as the last child of `.gate-wrap`, not beside the lockup. All
 of it hangs off `#dusk.asdawn` in `door.css`, so a dusk without the option
 matches none of it. Needs `img/dawn/planet-gold.webp`, `dawn-pre.webp` and
