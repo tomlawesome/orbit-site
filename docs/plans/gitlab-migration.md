@@ -30,6 +30,7 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 - 2026-10-09: !4 (nightly import MR, licence fixes, closes #1) merged; !5 promoted `dev` to `main` and the mirror carried it to GitHub in seconds. Owner accepted the licence (decision (c), 16).
 - 2026-10-09: !1 (CI, scaffolding) and !3 (GitHub main's last import, back-merged) merged into `dev`. GitHub's `import-docs.yml` disabled by the owner. Owner settings done: default branch `dev`, `dev` and `main` protected, pipelines must succeed, merge commits, 60-minute timeout, push mirror added (first push refused by GitHub: deploy key to check).
 - 2026-10-09, decision 13a: the runner cannot reach GitLab over SSH and the owner will not open it, so the import cannot push with a deploy key (9a). It opens a merge request into `main` that merges itself when the gate passes, with a Maintainer project access token, `ORBIT_SITE_IMPORT_TOKEN`.
+- 2026-10-11, #18: the import is split in two jobs. `import_docs` runs npm and the import with no token and hands on `assets/docs/` as an artifact; `publish_docs` (environment `docs-import`, where the token is scoped) checks the artifact and pushes the merge request. Standard privilege separation: the untrusted build holds no secret, the publish runs no third-party code.
 - 2026-10-08: imported by the owner as `ai/orbit-site` (project id 57). Every branch at the same commit as GitHub, issues #1 and #2, all 10 labels. Nothing else writes GitHub's `main` (the session that pushed to it is archived).
 
 ## Plan

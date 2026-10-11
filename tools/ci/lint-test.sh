@@ -13,7 +13,10 @@
 # assets/door/ that imports from outside the folder, reads location.search or
 # uses import.meta.url fails and is named, as is a site module that imports a
 # file of the folder other than its index.js, a url() in door.css that reaches
-# outside the folder, and an index.html whose door differs from markup.js.
+# outside the folder, and an index.html whose door differs from markup.js; and
+# section "the docs import is split" (issue #18): import_docs holding the token
+# or an environment, publish_docs losing its environment, taking npm, or its
+# artifact, or either job running anywhere but the schedule on main.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -473,6 +476,105 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
+# Cases (s1)-(s11) judge the section "the docs import is split" (issue #18):
+# import_docs runs other people's code and holds no token; publish_docs holds it
+# in the docs-import environment, runs no npm, and takes the artifact. Both run
+# from the schedule on main alone. split_case <label> <file> <named> <js>: <js>
+# edits the string y (the file's text) and must change it; the lint must fail
+# naming <file> with <named>.
+split_case() {
+  F="$2" Y="$(cat "$2")" JS="$4" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$2: .*$3" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $2: $3)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+ci=.gitlab-ci.yml
+split_case "import_docs joining an environment" $ci "import_docs has an environment" '
+  y = y.replace("import_docs:\n  stage: maintenance\n", "import_docs:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
+split_case "import_docs naming the token" $ci "import_docs names ORBIT_SITE_IMPORT_TOKEN" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-import.sh\n", "  script:\n    - echo $ORBIT_SITE_IMPORT_TOKEN | wc -c\n    - sh tools/ci/nightly-import.sh\n");'
+split_case "import_docs running on merge requests" $ci "import_docs rules must be" '
+  y = y.replace("import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n", "import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
+split_case "import_docs handing on more than the docs" $ci "import_docs artifacts must be assets/docs/ alone" '
+  y = y.replace("      - assets/docs/\n", "      - assets/docs/\n      - tools/\n");'
+split_case "import_docs with a long-lived artifact" $ci "import_docs artifacts need a short expire_in" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 days\n");'
+split_case "another job joining the docs-import environment" $ci "renovate names the docs-import environment" '
+  y = y.replace("renovate:\n  stage: maintenance\n", "renovate:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
+split_case "a hidden template naming the docs-import environment" $ci "names the docs-import environment" '
+  y = y + "\n.template:\n  environment:\n    name: docs-import\n";'
+split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
+  y = y.replace("    name: docs-import\n", "    name: other\n");'
+split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
+  y = y.replace("      artifacts: false\n", "      artifacts: true\n");'
+split_case "publish_docs on a reused build folder" $ci "publish_docs needs GIT_STRATEGY: clone" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "");'
+split_case "publish_docs on a different schedule rule" $ci "publish_docs rules must be" '
+  y = y.replace("publish_docs:", "publish_docs:").replace(/(publish_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "main"\n/, "$1\n");'
+split_case "publish_docs running npm" $ci "publish_docs runs npm" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - npm ci --prefix tools\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
+  y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
+split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '
+  y = y.replace("  node tools/import-docs.mjs\n", "  node tools/import-docs.mjs\n  curl -fsS https://gitlab.invalid/api\n");'
+split_case "the publish script running npm" tools/ci/nightly-publish.sh "runs npm" '
+  y = y.replace("  echo \"== the artifact\"\n", "  echo \"== the artifact\"\n  npm ci --prefix tools\n");'
+
+# Cases (d1)-(d3) judge the section "the imported docs have the shape the import
+# writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
+# shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
+shape_case() {
+  F="assets/docs/$2" JS="$3" node -e '
+    const fs = require("fs"); const j = JSON.parse(fs.readFileSync(process.env.F, "utf8"));
+    new Function("j", process.env.JS)(j); fs.writeFileSync(process.env.F, JSON.stringify(j));
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -i '^==' "$out" | grep -iq 'shape the import writes' && grep -q "$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+shape_case "an index colour carrying markup" index.json 'j.sources[0].c = "#fff\"><img src=x onerror=alert(1)>";'
+shape_case "an index slug carrying a quote" index.json 'j.sources[1].slug = "a\"b";'
+shape_case "a page section id with a space" readme.json 'j.sections[0].id = "a b";'
+git rm -q assets/docs/security.json
+commit_all "a page missing"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "security.json" "$out"; then
+  echo "ok   a page missing from assets/docs fails"
+else
+  echo "FAIL a page missing from assets/docs fails (exit $rc)"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (s): the committed tree as it is -> the section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'docs import is split'; then
+  echo "ok   the committed pipeline passes the split-import section"
+else
+  echo "FAIL the committed pipeline passes the split-import section (exit $rc, want 0 with a == heading naming the split import)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+
 rm -f "$out"
 
 exit "$failed"

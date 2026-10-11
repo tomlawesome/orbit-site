@@ -13,6 +13,7 @@ stages:
   - lint
   - live
   - maintenance
+  - publish
 
 default:
   tags: [light]
@@ -26,9 +27,9 @@ workflow:
     - if: $CI_COMMIT_TAG
       when: never
     # A scheduled pipeline is the docs-import lane or the Renovate lane.
-    # `import_docs` and `renovate` are the only jobs that opt in, so a
-    # schedule without its variable would make a pipeline with no jobs;
-    # refusing it here says why.
+    # `import_docs`, `publish_docs` and `renovate` are the only jobs that opt
+    # in, so a schedule without its variable would make a pipeline with no
+    # jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
@@ -111,6 +112,8 @@ lint:
     - node tools/ci/site-home-date-test.mjs
     - node tools/ci/site-lock-test.mjs
     - node tools/ci/site-pads-test.mjs
+    - node tools/ci/site-pads-sources-test.mjs
+    - node tools/ci/docs-shape-test.mjs
     - node tools/ci/site-data-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/import-docs-test.mjs
@@ -164,8 +167,18 @@ live:journey:
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
 #
-# Needs ORBIT_SITE_IMPORT_TOKEN, a project access token (role Maintainer,
-# scopes api and write_repository, Masked + Protected) the owner created.
+#
+# Two jobs, because the import runs other people's code (the npm packages
+# marked and sharp) and the publish holds a secret, and code in a job can read
+# that job's secrets and rewrite its scripts (#18). `import_docs` has no token,
+# makes no push and no API call, and hands on assets/docs/ alone as an
+# artifact. `publish_docs` runs no third-party code, treats the artifact as
+# untrusted, checks it, and is the only job in the `docs-import` environment
+# (the lint refuses any other).
+#
+# ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
+# api and write_repository, Masked + Protected) the owner created, with its
+# environment scope set to `docs-import`, which only `publish_docs` joins.
 # Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
@@ -177,6 +190,47 @@ import_docs:
     GIT_DEPTH: 1
   script:
     - sh tools/ci/nightly-import.sh
+  artifacts:
+    paths:
+      - assets/docs/
+    expire_in: 1 day
+
+# The guard on the token is the variable's own settings, not the environment (a
+# protected environment is a GitLab Premium feature, and this instance is CE):
+# its environment scope is `docs-import`, so only a job that names that
+# environment gets it, and its Protect flag limits it to pipelines on protected
+# branches. Joining the environment therefore means editing this file, which
+# reaches `main` by a reviewed merge, and the lint refuses any job but
+# `publish_docs` that names `docs-import`. `action` is left at its default,
+# `start`: the scope does not need it (any action matches the name), it only
+# records each run as a deployment, a record of when the token was used.
+# `deployment_tier: other` because nothing is deployed to a server.
+#
+# `needs` takes no artifacts (artifacts: false): the runner would load any
+# dotenv report in them as variables of this job, ahead of this file's own, and
+# code in import_docs holds a job token that can upload one. The script fetches
+# the archive itself by job id and opens it entry by entry (tools/ci/
+# nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
+# a build folder an earlier job on this runner left things in.
+# The job asks GitLab which job to fetch with the import token (a job token
+# cannot list a pipeline's jobs) and downloads the archive with its job token.
+publish_docs:
+  stage: publish
+  image: $NODE_IMAGE
+  interruptible: false
+  needs:
+    - job: import_docs
+      artifacts: false
+  environment:
+    name: docs-import
+    deployment_tier: other
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
+  variables:
+    GIT_DEPTH: 1
+    GIT_STRATEGY: clone
+  script:
+    - sh tools/ci/nightly-publish.sh
 
 # Renovate, weekly, on a schedule the owner created on `dev` with
 # RENOVATE=true and RENOVATE_TOKEN Masked + Protected. renovate.json has

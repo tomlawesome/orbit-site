@@ -132,6 +132,30 @@ export function docsPath(hash) {
   try { return decodeURIComponent(raw); } catch { return raw; }
 }
 
+/* what the pad draws from index.json. The index is what the nightly import wrote, and its colour, slugs and ids go into
+   innerHTML (style="--c:…", href="#docs/…"), so they are checked here and not trusted: a colour is "#" and six hex
+   digits or the pad's grey; a source or section whose slug or id is not lower-case letters, digits and dashes is left
+   out; names and titles are strings. The import's own lint and the publish check the same shape (tools/ci/docs-shape.mjs) */
+const GREY = "#8791b3", SAFE_ID = /^[a-z0-9-]+$/, SAFE_COLOUR = /^#[0-9a-fA-F]{6}$/;
+export function cleanSources(sources) {
+  if (!Array.isArray(sources)) return [];
+  const str = (v) => (typeof v === "string" ? v : "");
+  const safe = (v) => typeof v === "string" && SAFE_ID.test(v);
+  return sources.filter((d) => d && typeof d === "object" && safe(d.slug)).map((d) => ({
+    ...d,
+    name: str(d.name),
+    title: str(d.title),
+    c: typeof d.c === "string" && SAFE_COLOUR.test(d.c) ? d.c : GREY,
+    sections: (Array.isArray(d.sections) ? d.sections : []).filter((s) => s && typeof s === "object" && safe(s.id)).map((s) => ({
+      ...s,
+      title: str(s.title),
+      summary: str(s.summary),
+      text: str(s.text),
+      subs: (Array.isArray(s.subs) ? s.subs : []).filter((x) => x && typeof x === "object").map((x) => ({ ...x, title: str(x.title) })),
+    })),
+  }));
+}
+
 export function createDocs(pad) {
   const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), chart = $(".skymap .chart", pad), stamp = $(".stamp", pad);
   const index = $(".index", pad), reader = $(".reader", pad), scroll = $(".scroll", pad);
@@ -152,7 +176,7 @@ export function createDocs(pad) {
     if (loading) return loading;
     /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
     loading = fetch(DOCS_DIR + "index.json").then((r) => { if (!r.ok) throw new Error(`index.json: ${r.status}`); return r.json(); }).then((data) => chore(() => {
-      DOCS = data.sources; generated = data.generated; GROUPS = {}; ENTRIES = [];
+      DOCS = cleanSources(data && data.sources); generated = typeof (data && data.generated) === "string" ? data.generated : ""; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
         GROUPS[d.name] = { c: d.c, slug: d.slug };
         for (const s of d.sections) ENTRIES.push({ g: d.name, slug: d.slug, id: s.id, t: s.title, s: s.summary, k: `${s.text} ${s.subs.map((x) => x.title).join(" ")}`, href: hrefOf(d.slug, s.id), key: KEYS.includes(hrefOf(d.slug, s.id)) });

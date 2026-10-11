@@ -12,6 +12,7 @@
  */
 import { marked } from "marked";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
@@ -21,16 +22,7 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs"
 
 /* the sources: a slug for the route, the constellation's name and colour,
    where the file lives, and for the README, where the page should begin */
-export const SOURCES = [
-  { slug: "readme",         name: "README",         c: "#d8b45a", repo: "tomlawesome/orbit",          path: "README.md",                       from: "Quick start", title: "Orbit", skip: ["A quick visual tour"] },
-  { slug: "sign-in",        name: "Sign-in",        c: "#8fb8ff", repo: "tomlawesome/orbit",          path: "docs/authentication.md" },
-  { slug: "security",       name: "Security",       c: "#f87171", repo: "tomlawesome/orbit",          path: "SECURITY.md" },
-  { slug: "releases",       name: "Releases",       c: "#a78bfa", repo: "tomlawesome/orbit",          path: "docs/releasing.md" },
-  { slug: "launcher",       name: "The launcher",   c: "#4ade80", repo: "tomlawesome/orbit-launcher", path: "README.md", title: "The launcher" },
-  { slug: "administration", name: "Administration", c: "#f0b429", repo: "tomlawesome/orbit",          path: "docs/administrator-operations.md" },
-  { slug: "architecture",   name: "Architecture",   c: "#6ee7d8", repo: "tomlawesome/orbit",          path: "docs/architecture.md" },
-  { slug: "supply-chain",   name: "Supply chain",   c: "#f59e8b", repo: "tomlawesome/orbit",          path: "docs/supply-chain.md" },
-];
+export const SOURCES = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "docs-sources.json"), "utf8"));
 
 const localRoot = (() => { const i = process.argv.indexOf("--from"); return i > -1 ? process.argv[i + 1] : null; })();
 
