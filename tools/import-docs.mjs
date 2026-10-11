@@ -12,9 +12,10 @@
  */
 import { marked } from "marked";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, dirname, posix } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe } from "./import-docs-lib.mjs";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
 
@@ -54,25 +55,7 @@ function slugger() {
   };
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const plain = (tokens) => (tokens || []).map((t) => t.type === "text" || t.type === "codespan" ? (t.tokens ? plain(t.tokens) : t.text) : t.type === "code" ? t.text : plain(t.tokens || t.items || t.rows?.flat() || [])).join(" ").replace(/\s+/g, " ").trim();
 const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-
-/* a link inside a source: to a heading of its own, to another imported
-   source, or out to the repository; an image stays on GitHub's raw host */
-function resolveLink(href, src, bySourcePath, isImage) {
-  // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
-  if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
-  if (/^(https?:|mailto:|data:)/i.test(href)) return href;
-  if (href.startsWith("#")) return `#docs/${src.slug}/${href.slice(1)}`;
-  const [file, anchor] = href.split("#");
-  const base = posix.dirname(src.path);
-  const target = posix.normalize(posix.join(base, file)).replace(/^\.\//, "");
-  const hit = bySourcePath.get(`${src.repo}:${target}`);
-  if (hit && !isImage) return `#docs/${hit.slug}${anchor ? `/${anchor}` : ""}`;
-  return isImage
-    ? `https://raw.githubusercontent.com/${src.repo}/main/${target}`
-    : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
-}
 
 function render(md, src, bySourcePath) {
   const id = slugger();
@@ -112,9 +95,14 @@ function render(md, src, bySourcePath) {
       return `<blockquote>${this.parser.parse(tokens)}</blockquote>\n`;
     },
     html({ text }) {
-      const out = sanitiseHtml(text, { link: (h) => resolveLink(h, src, bySourcePath, false), image: (h) => resolveLink(h, src, bySourcePath, true) });
-      // a dropped block is content the page no longer shows: say so in the import's log
-      if (!out && text.trim()) console.warn(`import-docs: ${src.repo}/${src.path}: raw html dropped: ${text.trim().slice(0, 80)}`);
+      const out = sanitiseHtml(text, {
+        link: (h) => resolveLink(h, src, bySourcePath, false),
+        image: (h) => resolveLink(h, src, bySourcePath, true),
+        warn: (m) => console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: ${m}`),
+      });
+      // text the page no longer shows is told in the import's log
+      const lost = droppedBlockWarning(src, text, out);
+      if (lost) console.warn(lost);
       return out;
     },
   };
