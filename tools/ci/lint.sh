@@ -67,15 +67,54 @@ fi
 
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through
+# run on every visitor, whatever the importer let through. This reads the html
+# the way a browser does, since a hand edit or a hole in the sanitiser can
+# produce what its own tokeniser would allow: attributes are found after any
+# separator (a space, a slash, a control character, a closing quote) and in
+# any case; a URL attribute has its entities decoded and its whitespace and
+# control characters removed before the scheme is looked at.
 node -e '
   const fs = require("fs");
-  const bad = [/<[a-z][^>]*\son[a-z]+\s*=/i, /<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i,
-    /(href|src)\s*=\s*["\x27]?\s*(javascript|vbscript|data):/i];
+  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i];
+  const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
+  const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
+  const decode = (v) => {
+    for (let i = 0; i < 4; i++) {
+      const w = v.replace(/&#x([0-9a-f]+);?/gi, (m, h) => cp(parseInt(h, 16)))
+        .replace(/&#(\d+);?/g, (m, d) => cp(Number(d)))
+        .replace(/&([a-z]+);/gi, (m, n) => (named[n.toLowerCase()] !== undefined ? named[n.toLowerCase()] : m));
+      if (w === v) break;
+      v = w;
+    }
+    return v;
+  };
+  const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
+  const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
+  const danger = (h) => {
+    const tagRe = /<([a-z][^\s\/>\x00-\x20]*)/gi;
+    let m;
+    while ((m = tagRe.exec(h))) {
+      let i = tagRe.lastIndex;
+      for (;;) {
+        const sep = /[\s\/\x00-\x20"\x27=]*/y; sep.lastIndex = i; sep.exec(h); i = sep.lastIndex;
+        if (i >= h.length || h[i] === ">") break;
+        const a = /([^\s\/>=\x00-\x20"\x27]+)(?:[\s\x00-\x20]*=[\s\x00-\x20]*("[^"]*"|\x27[^\x27]*\x27|[^\s>\x00-\x20]*))?/y;
+        a.lastIndex = i;
+        const r = a.exec(h);
+        if (!r) break;
+        i = a.lastIndex;
+        const name = r[1].toLowerCase(), value = (r[2] || "").replace(/^["\x27]|["\x27]$/g, "");
+        if (/^on/.test(name)) return true;
+        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/.test(scheme(value))) return true;
+      }
+      tagRe.lastIndex = i;
+    }
+    return bad.some((re) => re.test(h));
+  };
   const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
   for (const f of files) {
     for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
-      if (bad.some((re) => re.test(s.html || ""))) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
+      if (danger(s.html || "")) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
     }
   }
 ' || fail=1

@@ -106,6 +106,52 @@ else
 fi
 git reset -q --hard HEAD~1
 
+# Cases (b2)-(b13): what the sanitiser's own tokeniser could let through in
+# hand-edited or hole-produced output (issue #12). Each of these passed the
+# first version of the check, which looked at one tag with plain text matches;
+# the check now reads attributes as a browser does. poison_case <label> <html>
+# expects the lint to fail, naming the file and the section.
+poison_case() {
+  sid=$(poison "$2")
+  rc=0
+  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+tab=$(printf '\t'); nl=$(printf '\n'); ctl=$(printf '\001')
+poison_case "a hex-encoded letter in a javascript: scheme" '<a href="jav&#x61;script:alert(1)">x</a>'
+poison_case "a decimal-encoded letter in a javascript: scheme" '<a href="&#106;avascript:alert(1)">x</a>'
+poison_case "an encoded tab inside a scheme" '<a href="java&#9;script:alert(1)">x</a>'
+poison_case "a tab inside a scheme" "<a href=\"java${tab}script:alert(1)\">x</a>"
+poison_case "a newline inside an unquoted scheme" "<a href=java${nl}script:alert(1)>x</a>"
+poison_case "an encoded vbscript: scheme" '<a href="&#x76;bscript:x">x</a>'
+poison_case "an encoded data: scheme with an encoded colon" '<img src="&#100;ata&colon;text/html,x">'
+poison_case "a handler after a slash" '<img/onerror=alert(1) src=x>'
+poison_case "a handler straight after a closing quote" '<img src="x"onerror=alert(1)>'
+poison_case "a handler after a control character" "<img${ctl}onerror=alert(1) src=x>"
+poison_case "a handler after an attribute value holding a >" '<img alt=">" onerror=alert(1)>'
+poison_case "an upper-case unquoted handler" '<IMG SRC=x ONERROR=alert(1)>'
+
+# Case (b14): ordinary html that only looks like the above -> passes: an
+# entity in a URL, "on x=" in text and in an attribute value, data: in prose.
+sid=$(poison '<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p><img alt="a onfoo=b" src="x.png">')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   ordinary html with entities, 'on x=' text and data: prose passes"
+else
+  echo "FAIL ordinary html with entities, 'on x=' text and data: prose passes (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
 # Case (c): the committed docs as they are -> the section runs and passes.
 rc=0
 sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
