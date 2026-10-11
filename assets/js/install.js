@@ -125,18 +125,20 @@ export function createInstall(pad, opts = {}) {
       shared = { world: w, canvas: own, owner: null };
     }
     world = shared.world;
+    /* a page that adopts the shared world after its context was lost takes the flat path, and does not draw to it */
+    if (world && (shared.lost || world.gl.isContextLost())) { shared.lost = true; world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     look = world.lookOf(opts.world || {});
     /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
     shared.canvas.addEventListener("webglcontextlost", (e) => {
-      e.preventDefault(); world = null; failed = true; pad.classList.add("flat");
+      e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
       if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
     });
     return world;
   }
   /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
   function adopt() {
-    if (!shared?.world) return;
+    if (!shared?.world || shared.lost) return;
     if (shared.owner && shared.owner !== api) shared.owner.stop();
     shared.owner = api;
     canvas = shared.canvas;
