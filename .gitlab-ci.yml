@@ -139,6 +139,7 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
