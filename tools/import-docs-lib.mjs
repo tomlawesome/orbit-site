@@ -48,6 +48,10 @@ export function slugger() {
   };
 }
 
+/* an editor may write a fragment percent-encoded ("#caf%C3%A9"): decoded, it
+   folds to the same id as the heading; a broken escape is folded as written */
+const unescapeFragment = (f) => { try { return decodeURIComponent(f); } catch { return f; } };
+
 /* a link inside a source: to a heading of its own, to another imported
    source, or out to the repository; an image stays on GitHub's raw host.
    A data: address is not passed on: it is read as the path it looks like,
@@ -57,12 +61,12 @@ export function resolveLink(href, src, bySourcePath, isImage) {
   if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
   if (/^(https?:|mailto:)/i.test(href)) return href;
   // a fragment that folds to nothing points at the page itself
-  if (href.startsWith("#")) { const a = slugOf(href.slice(1)); return `#docs/${src.slug}${a ? `/${a}` : ""}`; }
+  if (href.startsWith("#")) { const a = slugOf(unescapeFragment(href.slice(1))); return `#docs/${src.slug}${a ? `/${a}` : ""}`; }
   const [file, anchor] = href.split("#");
   const base = posix.dirname(src.path);
   const target = posix.normalize(posix.join(base, file)).replace(/^\.\//, "");
   const hit = bySourcePath.get(`${src.repo}:${target}`);
-  if (hit && !isImage) { const a = slugOf(anchor ?? ""); return `#docs/${hit.slug}${a ? `/${a}` : ""}`; }
+  if (hit && !isImage) { const a = slugOf(unescapeFragment(anchor ?? "")); return `#docs/${hit.slug}${a ? `/${a}` : ""}`; }
   return isImage
     ? `https://raw.githubusercontent.com/${src.repo}/main/${target}`
     : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
