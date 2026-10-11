@@ -4,6 +4,13 @@ The door's dawn: the night side of the Earth from low orbit, the sun coming
 up over the limb — rendered once, here, into a picture the door lays over
 its sky, so the landing page draws it without a GPU.
 
+The camera's one home is the door's own code: the constants above doorCamera()
+in assets/door/voyage.js (ALT, LAT, LON, HEAD, SUN_UNDER). The defaults below are
+those values, with --scale 2 (3200×720 for the door's 1600×1000 frame, rows 640 to
+1000), which is how assets/door/img/dawn/dawn.webp is sized; change them there first
+and here to match, never the other way. (Not recorded anywhere: --ss, and the sun that
+made dawn-pre.webp, the picture before the light.)
+
 The camera is set so the Earth's horizon falls exactly on the door's limb:
 the circle of radius 3000 about (800, 3920) in the 1600×1000 frame every
 door layer shares (and the flight's canvas, engine.js). The frame's plane
@@ -27,9 +34,11 @@ Imagery (NASA Earth Observatory; credit NASA):
   https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud.E.2001210.21600x21600.png (or cloud_combined_2048.jpg)
   https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x21600x21600.C1.jpg
 
-  python3 tools/dawn.py --lights L.jpg --clouds C.png --land G.jpg --out assets/door/img/dawn/dawn.webp
+  python3 tools/dawn.py --lights L.jpg --clouds C.png --land G.jpg --out assets/door/img/dawn/dawn.webp [--view]
+
+--view also writes <out>_view.png, the picture over black, for a look.
 """
-import argparse, json, math, time
+import argparse, math, time
 import numpy as np
 from PIL import Image
 from scipy.ndimage import map_coordinates, gaussian_filter
@@ -42,13 +51,13 @@ ap.add_argument("--clouds", default=None)
 ap.add_argument("--clouds-box", default="-180,180,-90,90")
 ap.add_argument("--land", default=None)
 ap.add_argument("--land-box", default="-180,180,-90,90")
-ap.add_argument("--lat", type=float, default=32.0)
-ap.add_argument("--lon", type=float, default=10.0)
-ap.add_argument("--heading", type=float, default=90.0, help="degrees from north the camera faces")
-ap.add_argument("--alt", type=float, default=420.0, help="km")
-ap.add_argument("--sun", type=float, default=0.25, help="the sun's centre, degrees under the horizon point it rises at (negative: above)")
+ap.add_argument("--lat", type=float, default=46.0, help="the camera, over the Atlantic: see the docstring for where these live")
+ap.add_argument("--lon", type=float, default=-27.0)
+ap.add_argument("--heading", type=float, default=72.0, help="degrees from north the camera faces")
+ap.add_argument("--alt", type=float, default=800.0, help="km")
+ap.add_argument("--sun", type=float, default=0.15, help="the sun's centre, degrees under the horizon point it rises at (negative: above)")
 ap.add_argument("--sunx", type=float, default=800.0, help="where along the frame the sun rises (frame units)")
-ap.add_argument("--scale", type=float, default=1.0, help="pixels per frame unit")
+ap.add_argument("--scale", type=float, default=2.0, help="pixels per frame unit")
 ap.add_argument("--y0", type=float, default=640.0, help="the top of what is drawn, frame units")
 ap.add_argument("--x0", type=float, default=0.0)
 ap.add_argument("--x1", type=float, default=1600.0)
@@ -59,6 +68,7 @@ ap.add_argument("--moon", type=float, default=1.0, help="how much moonlight show
 ap.add_argument("--airglow", type=float, default=1.0)
 ap.add_argument("--out", default="dawn.png")
 ap.add_argument("--hdr", default=None, help="also save the linear radiance (.npy)")
+ap.add_argument("--view", action="store_true", help="also write <out>_view.png, the picture over black")
 args = ap.parse_args()
 
 RE, TOP = 6371.0, 110.0
@@ -163,8 +173,8 @@ S = sd * math.cos(a) + np.cross(ax, sd) * math.sin(a) + ax * np.dot(ax, sd) * (1
 S = S / np.linalg.norm(S)
 
 def sphere(o, d, R):
-    b = np.einsum("...k,...k", o, d) if o.ndim > 1 else d @ o
-    c = o @ o - R * R if o.ndim == 1 else np.einsum("...k,...k", o, o) - R * R
+    b = d @ o                                  # o is the camera, one point; d the rays
+    c = o @ o - R * R
     disc = b * b - c
     s = np.sqrt(np.maximum(disc, 0))
     return -b - s, -b + s, disc > 0
@@ -222,8 +232,8 @@ def render(X, Y):
             esun = np.degrees(np.arcsin(np.clip(up @ S, -1, 1)))
             Ts = lut(h, esun)
             sig = ext(dr, dm, do)
-            cd = cloud_density(lat, lon, h) if CLOUDS is not None else 0
-            sig_t = sig + (cd[:, None] if CLOUDS is not None else 0)
+            cd = cloud_density(lat, lon, h)
+            sig_t = sig + cd[:, None]
             # light scattered toward the camera here: the air's, and the clouds'
             ins = (dr[:, None] * BR * pr[:, None] + (dm * BM * pm)[:, None]) * Ts * SUN
             # the air's own light from the rest of the lit sky: a little of it, blue, where the sun is not far under
@@ -299,9 +309,9 @@ def main():
     col = np.clip(col, 0, 1)
     rgba = np.concatenate([col ** (1 / 2.2), alpha[..., None]], -1)
     Image.fromarray((rgba * 255 + 0.5).astype(np.uint8), "RGBA").save(args.out)
-    # and a look at it over black, for review
-    prev = np.clip(c, 0, 1) ** (1 / 2.2)
-    Image.fromarray((prev * 255 + 0.5).astype(np.uint8), "RGB").save(args.out.rsplit(".", 1)[0] + "_view.png")
+    if args.view:   # a look at it over black, for review
+        prev = np.clip(c, 0, 1) ** (1 / 2.2)
+        Image.fromarray((prev * 255 + 0.5).astype(np.uint8), "RGB").save(args.out.rsplit(".", 1)[0] + "_view.png")
     print("wrote", args.out)
 
 main()
