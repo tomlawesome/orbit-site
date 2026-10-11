@@ -133,7 +133,22 @@ cat > "$pbin/node" <<'SHIM'
 case "$*" in
   *import-docs.mjs*)
     echo "node import-docs" >> "$STATE/shim.log"
+    echo "import" >> "$STATE/git.log"
     echo "imported $$" >> "$APPEND_FILE"
+    case "$SCENARIO" in
+      hook) # what a hostile import could leave for git to run (#18)
+        for h in pre-commit commit-msg post-commit post-checkout reference-transaction pre-push pre-receive; do
+          printf '#!/bin/sh\necho "$0" >> "%s/hook-ran"\n' "$STATE" > ".git/hooks/$h"
+          chmod +x ".git/hooks/$h"
+        done
+        printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$STATE" > .git/fsm
+        chmod +x .git/fsm ;;
+      cfg) # a planted fsmonitor and a clean filter, in the checkout's own config
+        printf '[core]\n\tfsmonitor = %s/.git/fsm\n[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$PWD" "$STATE" >> .git/config
+        printf '#!/bin/sh\necho ran >> "%s/fsmonitor-ran"\n' "$STATE" > .git/fsm
+        chmod +x .git/fsm
+        echo '* filter=x' > .git/info/attributes ;;
+    esac
     exit 0 ;;
 esac
 exec "$REAL_NODE" "$@"
@@ -141,6 +156,12 @@ SHIM
 cat > "$pbin/git" <<'SHIM'
 #!/bin/sh
 # Real git, except a push to an https URL: that is GitLab, and is only logged.
+# Every call is logged with whether the token was in its environment and whether
+# hooks and fsmonitor were switched off on its command line (never the token).
+h=n; case " $* " in *" core.hooksPath=/dev/null "*) h=y ;; esac
+f=n; case " $* " in *" core.fsmonitor=false "*) f=y ;; esac
+t=UNSET; [ -z "${ORBIT_SITE_IMPORT_TOKEN+x}" ] || t=SET
+echo "git $t hooks=$h fsm=$f $*" >> "$STATE/git.log"
 case "$1" in
   push) ;;
   *) case " $* " in *" push "*) ;; *) exec "$REAL_GIT" "$@" ;; esac ;;
@@ -200,7 +221,7 @@ while [ $# -gt 0 ]; do
         c=${rest%"${rest#?}"}; rest=${rest#?}
         case $c in
           f) fail=1 ;;
-          s|S|L|k|v|i|g) ;;
+          s|S|L|k|v|i|g|q) ;;
           X|H|o|w|d|m)
             if [ -n "$rest" ]; then val=$rest; rest=; else val=$1; shift; fi
             takes "$c" "$val" ;;
@@ -219,7 +240,7 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if [ "$SCENARIO" = second ] && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -257,6 +278,7 @@ SHIM
 chmod +x "$pbin"/*
 
 appendfile=$(git ls-files assets/docs | head -n 1)
+cp .git/config "$aux/config.orig"
 run_push() { # run_push <outfile> <scenario: refused | second | conn>
   outfile=$1
   # a clean scratch repository and state for every run
@@ -266,8 +288,12 @@ run_push() { # run_push <outfile> <scenario: refused | second | conn>
     "$realgit" branch -q -D "$b"
   done
   rm -rf scratch-tmp; mkdir scratch-tmp
-  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/merge.log
-  : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"
+  cp "$aux/config.orig" .git/config
+  find .git/hooks -type f ! -name '*.sample' -delete
+  rm -f .git/fsm .git/info/attributes
+  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/merge.log "$aux"/git.log \
+    "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
+  : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
   rc=0
   env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
@@ -352,6 +378,43 @@ rc=0; grep -q 'HTTP 000' "$out" || rc=1
 check "the failure shows the last attempt's status (HTTP 000)" "$rc"
 rc=0; ! grep -q 'Method Not Allowed' "$out" || rc=1
 check "a stale body from an earlier attempt is not shown (no Method Not Allowed)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Runs 6 and 7: a hostile import (#18). Run 6 leaves hooks and an fsmonitor
+# script in the checkout; none may run, and no git command after the import may
+# have the token in its environment or lack the switches that turn hooks and
+# fsmonitor off. Run 7 edits the checkout's own git config: the script must stop
+# before it adds, commits or pushes anything, with no planted program run.
+run_push "$out" hook
+rc6=$rc
+rc=0; [ "$rc6" -eq 0 ] || rc=1
+check "run 6: the job still succeeds with hostile files planted (exit $rc6)" "$rc"
+rc=0; [ ! -e "$aux/hook-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+check "run 6: no planted hook and no planted fsmonitor ran" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     ran: /' "$aux/hook-ran" "$aux/fsmonitor-ran" 2>/dev/null || true
+[ "$rc" -eq 0 ] || sed "s/^/     git call: /" "$aux/git.log"
+after=$(sed -n '/^import$/,$p' "$aux/git.log" | grep -c '^git ' || true)
+bad_env=$(sed -n '/^import$/,$p' "$aux/git.log" | grep '^git ' | grep -vc '^git UNSET ' || true)
+bad_off=$(sed -n '/^import$/,$p' "$aux/git.log" | grep '^git ' | grep -vc ' hooks=y fsm=y ' || true)
+rc=0; [ "$after" -ge 6 ] || rc=1
+check "run 6: git ran after the import (saw $after calls)" "$rc"
+rc=0; [ "$bad_env" -eq 0 ] || rc=1
+check "run 6: no git command after the import had the token in its environment ($bad_env did)" "$rc"
+rc=0; [ "$bad_off" -eq 0 ] || rc=1
+check "run 6: every git command after the import ran with hooks and fsmonitor off ($bad_off did not)" "$rc"
+rc=0; grep -q 'git .*push.*https://gitlab.invalid/ai/orbit-site.git' "$aux/shim.log" || rc=1
+check "run 6: the push to GitLab still happened" "$rc"
+
+run_push "$out" cfg
+rc7=$rc
+rc=0; [ "$rc7" -ne 0 ] && grep -q 'changed the git configuration' "$out" || rc=1
+check "run 7: a changed .git/config stops the job and says so (exit $rc7)" "$rc"
+rc=0; [ ! -e "$aux/fsmonitor-ran" ] && [ ! -e "$aux/filter-ran" ] || rc=1
+check "run 7: no planted fsmonitor or clean filter ran" "$rc"
+rc=0; [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] && ! grep -q 'push' "$aux/shim.log" || rc=1
+check "run 7: nothing was committed or pushed" "$rc"
+rc=0; ! grep -q 'PRIVATE-TOKEN' "$out" && ! grep -rq "$fake" "$out" "$aux" || rc=1
+check "run 7: the token is in neither the output nor any log" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
 rm -f "$out"

@@ -12,7 +12,12 @@
 # merge into main), scopes api and write_repository, held as a Masked +
 # Protected CI/CD variable. Pushes read it from a mode-600 credential file
 # and API calls from a header file, so it is never in a URL, an argument
-# list or the log. The npm install and the import run with it withheld.
+# list or the log. The npm install and the import run with it withheld, and
+# so does every git command: the import could plant a hook, an fsmonitor or a
+# filter in the checkout (#18), so git runs with no hooks, no fsmonitor, no
+# global or system config and no token in its environment, after a check that
+# the config the checkout's git reads is what it was before the import. The
+# header and credential files exist only for the moment they are used.
 #
 #   DRY_RUN=1 sh tools/ci/nightly-import.sh   import and report, write nothing
 set -eu
@@ -23,11 +28,37 @@ cd "$(dirname "$0")/../.."
 DRY_RUN=${DRY_RUN:-}
 
 umask 077
-hdr=$(mktemp); cred=$(mktemp); scratch=$(mktemp -d); trap 'rm -rf "$hdr" "$cred" "$scratch"' EXIT
-api() { m=$1; p=$2; shift 2; curl -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@"; }
+scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT
+hdr=$scratch/hdr; cred=$scratch/cred   # written only while in use, never during the import
+mkdir "$scratch/home"
+# curl -q: no ~/.curlrc, which the import could have written and which curl
+# would read while the header file is on disk.
+hdr_on() { printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"; }
+hdr_off() { rm -f "$hdr"; }
+api() { m=$1; p=$2; shift 2; hdr_on; r=0
+  curl -q -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@" || r=$?
+  hdr_off; return "$r"; }
+# git for everything after the import: the token out of its environment, no
+# hooks, no fsmonitor, no global or system config (the import runs as this
+# user and could write ~/.gitconfig), no ssh or gpg program, no background gc.
+# Command-line -c beats the repository's own config.
+nogit() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u GIT_DIR -u GIT_WORK_TREE HOME="$scratch/home" \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
+    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.sshCommand= \
+    -c core.attributesFile=/dev/null -c core.pager=cat -c credential.helper= \
+    -c commit.gpgSign=false -c gc.auto=0 -c maintenance.auto=false "$@"
+}
+top=$PWD
+gitdir=$(nogit rev-parse --absolute-git-dir)
+cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "$@"; }
+# every value git would read for the checkout, with the file each came from
+# (includes followed): the same before and after the import, or it tampered
+gitcfg() { cgit config --list --show-origin; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
 
 echo "== import"
+gitcfg > "$scratch/gitcfg.before"
 # Exact versions from the lockfile, hashes checked, no install scripts, and
 # the token withheld from the install and the import: a bad release of a
 # package, or of one it pulls in, runs here before anything is pushed.
@@ -35,10 +66,14 @@ echo "== import"
   npm ci --prefix tools --ignore-scripts --no-audit --no-fund >/dev/null
 env -u ORBIT_SITE_IMPORT_TOKEN node tools/import-docs.mjs
 rm -rf tools/node_modules
-printf 'PRIVATE-TOKEN: %s\n' "$ORBIT_SITE_IMPORT_TOKEN" > "$hdr"
-git add assets/docs assets/img/launcher
-if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
-git diff --cached --stat | tail -1
+if ! gitcfg | cmp -s - "$scratch/gitcfg.before"; then
+  echo "the import changed the git configuration of the checkout; stopping before anything is committed or pushed:"
+  gitcfg | diff "$scratch/gitcfg.before" - | sed 's/^/   /' | cut -c1-200 || true
+  exit 1
+fi
+cgit add assets/docs assets/img/launcher
+if cgit diff --cached --quiet; then echo "nothing new"; exit 0; fi
+cgit diff --cached --no-ext-diff --no-textconv --stat | tail -1
 
 stamp=$(date -u +%Y%m%d-%H%M)
 branch="docs/import-$stamp"
@@ -57,11 +92,11 @@ printf '%s\n' "$old" | while read -r iid ref; do
   api DELETE "/repository/branches/$(printf '%s' "$ref" | sed 's|/|%2F|g')" >/dev/null || echo "   (could not delete $ref)"
 done
 
-if [ -n "$DRY_RUN" ]; then echo "DRY_RUN: would push $branch and open a merge request into main"; git reset -q; exit 0; fi
+if [ -n "$DRY_RUN" ]; then echo "DRY_RUN: would push $branch and open a merge request into main"; cgit reset -q; exit 0; fi
 
 echo "== push $branch"
-git checkout -q -b "$branch"
-git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
+cgit checkout -q -b "$branch"
+cgit -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
   commit -q -m "Docs: imported from the repositories"
 # Pushed from a fresh repository, not the runner's checkout: the runner's own
 # git setup there sends the job token, which may read this project and never
@@ -72,14 +107,15 @@ git -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
 # file. The commit goes into it by a push from the checkout (receive-pack runs
 # in the repository this job made); the checkout is shallow, so the scratch
 # repository accepts a shallow update.
+nogit init -q --template= "$scratch/repo"
+nogit -C "$scratch/repo" config receive.shallowUpdate true
+cgit push -q "$scratch/repo" "HEAD:refs/heads/$branch"
+# the credential file exists only for this push: git's environment has no
+# token, so this file is the one way the token reaches git at all
 printf 'https://oauth2:%s@%s\n' "$ORBIT_SITE_IMPORT_TOKEN" "$CI_SERVER_HOST" > "$cred"
-git init -q "$scratch/repo"
-git -C "$scratch/repo" config receive.shallowUpdate true
-git push -q "$scratch/repo" "HEAD:refs/heads/$branch"
-mkdir "$scratch/home"
-GIT_TERMINAL_PROMPT=0 HOME="$scratch/home" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
-  git -C "$scratch/repo" -c credential.helper= -c "credential.helper=store --file=$cred" \
+nogit -C "$scratch/repo" -c "credential.helper=store --file=$cred" \
   push -q "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "refs/heads/$branch:refs/heads/$branch"
+rm -f "$cred"
 
 echo "== merge request"
 iid=$(api POST "/merge_requests" \
@@ -95,17 +131,19 @@ echo "   !$iid"
 # and tested, never anything newer (#15). Each answer is kept, so a refusal
 # says why: its status and body, never the request, so the token stays out
 # of the log.
-sha=$(git rev-parse HEAD)
+sha=$(cgit rev-parse HEAD)
 resp="$scratch/merge-answer"
 tries=30
+hdr_on
 for i in $(seq 1 "$tries"); do
   rm -f "$resp" "$resp.err"
-  code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$resp" -w '%{http_code}' \
+  code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$resp" -w '%{http_code}' \
     -X PUT -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$iid/merge" \
     --data-urlencode "auto_merge=true" --data-urlencode "sha=$sha" 2>"$resp.err") || code=000
   case $code in 2??) echo "   set to merge when the pipeline passes"; exit 0 ;; esac
   [ "$i" -eq "$tries" ] || sleep 10
 done
+hdr_off
 echo "could not set !$iid to merge itself; it is open for a maintainer"
 echo "   GitLab's last answer: HTTP $code $(cat "$resp" "$resp.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300)"
 exit 1
