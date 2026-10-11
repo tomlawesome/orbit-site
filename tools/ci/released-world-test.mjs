@@ -9,7 +9,9 @@
  * No dependencies and no browser. The page's state lives for the life of the page, so each case runs in a fresh Node
  * process (this file again, as `--child <case>`) against a stub page whose fake WebGL2 context hands out a fresh handle
  * for every create* call, records it, and marks it released on delete*. A delete* of a handle already released, or one
- * the context never made, is a fault (delete*(null) is ignored, as WebGL does). "Live" is made and not released. The
+ * the context never made, is a fault (delete*(null) is ignored, as WebGL does). "Live" is made and not released. Each
+ * canvas that asks for webgl2 gets its own fake context; the page's shared one (the gate's, the first made, which the probe
+ * and the flight's world use) is judged, the others (the live door's own, made once a page) are printed, not judged. The
  * crop probe's own objects (upload.js: shader source with texelFetch(t, ivec2(0, 0), 0), the program built from it, the
  * texture it uploads its probe image to, the buffer it reads back) are left out of the counts. The journey is reached
  * through assets/door/index.js alone, as a host does.
@@ -44,13 +46,16 @@ if (process.argv[2] === "--child") {
   const made = [], faults = [], listeners = {};
   let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, lateTexCalls = 0, onBand = null;
   const foreign = [], noLink = name === "t8", TEX2D = 0x0de1;
-  const boundTex = {}, boundBuf = {};
+  const others = [];   /* the handles of every context after the gate's (the first made); the gate's are in `made` */
   const any = () => new Proxy(function () {}, {
     get: (t, k) => (k === Symbol.toPrimitive ? () => 0 : k === "then" ? undefined : any()),
     set: () => true,
     apply: () => any(),
   });
   const isProbeSrc = (s) => /texelFetch\(t, ivec2\(0, 0\), 0\)|precision mediump float; out vec4 o;/.test(String(s));
+  /* one fake context per canvas that asks for webgl2: its own handles and bindings; the fault list is shared */
+  const makeGl = (made) => {
+  const boundTex = {}, boundBuf = {};
   const glBase = {
     RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01, LINK_STATUS: 0x8b82, COMPILE_STATUS: 0x8b81,
     TEXTURE_2D: TEX2D, TEXTURE_3D: 0x806f, TEXTURE_2D_ARRAY: 0x8c1a, TEXTURE_CUBE_MAP: 0x8513,
@@ -120,13 +125,21 @@ if (process.argv[2] === "--child") {
       else { h.released = true; for (const m of [boundTex, boundBuf]) for (const k in m) if (m[k] === h) m[k] = null; }
     };
   }
-  const gl = new Proxy(glBase, { get: (t, k) => (k in t ? t[k] : typeof k === "string" && /^[A-Z0-9_]+$/.test(k) ? 1 : () => any()) });
+  return new Proxy(glBase, { get: (t, k) => (k in t ? t[k] : typeof k === "string" && /^[A-Z0-9_]+$/.test(k) ? 1 : () => any()) });
+  };
+  let gateGl = null;
   const mkCanvas = () => {
     const c = {
       width: 300, height: 150, style: {}, id: "", setAttribute() {}, remove() {},
       addEventListener(type, fn) { if (c === sharedCanvas) (listeners[type] ||= []).push(fn); },
       removeEventListener(type, fn) { if (c === sharedCanvas && listeners[type]) listeners[type] = listeners[type].filter((f) => f !== fn); },
-      getContext(kind) { if (kind === "webgl2") { sharedCanvas ||= c; return gl; } return any(); },
+      getContext(kind) {
+        if (kind !== "webgl2") return any();
+        sharedCanvas ||= c;
+        if (c === sharedCanvas) return (gateGl ||= makeGl(made));
+        if (!c.ctx) { const arr = []; others.push(arr); c.ctx = makeGl(arr); }
+        return c.ctx;
+      },
     };
     return c;
   };
@@ -160,6 +173,7 @@ if (process.argv[2] === "--child") {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /* a program built from the probe's shader is the probe's; its other objects are found by binding (above) */
   const counted = (from = 0) => made.slice(from).filter((h) => !h.probe);
+  const liveOf = (arr) => Object.fromEntries(KINDS.map((k) => [k, arr.filter((h) => !h.probe && h.kind === k && !h.released).length]));
   const live = (from = 0) => Object.fromEntries(KINDS.map((k) => [k, counted(from).filter((h) => h.kind === k && !h.released).length]));
   const out = { error: null, loseCalls: 0 };
   try {
@@ -206,7 +220,7 @@ if (process.argv[2] === "--child") {
       out.liveQuiet = live();
       tryDo("destroy", () => j.destroy());
       await quiet();
-      out.isContextLost = gl.isContextLost();
+      out.isContextLost = lost;
     } else if (name === "t3" || name === "t3control") {
       const j = mount();
       j.warm({ prove: false }).catch(() => {});
@@ -219,7 +233,7 @@ if (process.argv[2] === "--child") {
       await finish(j);
       if (name === "t1" || name === "t10") out.liveBefore = live();
       if (name === "t10") { tryDo("destroy", () => j.destroy()); await sleep(50); }
-      if (name === "t2" || name === "t4") { tryDo("destroy", () => j.destroy()); await sleep(50); out.isContextLost = gl.isContextLost(); }
+      if (name === "t2" || name === "t4") { tryDo("destroy", () => j.destroy()); await sleep(50); out.isContextLost = lost; }
       if (name === "t5") { tryDo("first destroy", () => j.destroy()); tryDo("second destroy", () => j.destroy()); await sleep(50); }
       if (name === "t6") {
         for (const fn of [...(listeners.webglcontextlost || [])]) fn({ type: "webglcontextlost", preventDefault() {} });
@@ -239,7 +253,7 @@ if (process.argv[2] === "--child") {
       }
     }
     out.live = live(); out.faults = faults.slice(0, 5); out.nfaults = faults.length; out.loseCalls = loseCalls;
-    out.said = said.slice(0, 8); out.touches = touches; out.lateTexCalls = lateTexCalls; out.foreign = foreign.slice(0, 5); out.nforeign = foreign.length; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
+    out.others = others.map(liveOf); out.said = said.slice(0, 8); out.touches = touches; out.lateTexCalls = lateTexCalls; out.foreign = foreign.slice(0, 5); out.nforeign = foreign.length; out.probeLeft = made.filter((h) => h.probe && !h.released).length;
   } catch (e) { out.error = String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e); }
   process.stdout.write("RESULT " + JSON.stringify(out) + "\n");
   process.exit(0);
@@ -258,7 +272,7 @@ const run = (name) => {
 const show = (live) => (live ? KINDS.map((k) => `${k} ${live[k]}`).join(", ") : "no counts");
 const check = (label, r, ok, want, extra = "") => {
   const pass = !r.error && ok(r);
-  const seen = r.error ? r.error : `live ${show(r.live)}; faults ${r.nfaults}${r.faults?.length ? ` (${r.faults.join("; ")})` : ""}${extra}${r.threw ? `; threw ${r.threw}` : ""}`;
+  const seen = r.error ? r.error : `live ${show(r.live)}; faults ${r.nfaults}${r.faults?.length ? ` (${r.faults.join("; ")})` : ""}${r.others?.length ? `; other contexts (not judged): ${r.others.map(show).join(" | ")}` : ""}${extra}${r.threw ? `; threw ${r.threw}` : ""}`;
   console.log(`${pass ? "ok  " : "FAIL"} ${label}: want ${want}; saw ${seen}`);
   if (!pass) failed = true;
 };
