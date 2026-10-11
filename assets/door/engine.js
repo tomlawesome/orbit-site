@@ -1188,16 +1188,19 @@ export function createFlight(canvas, options = {}) {
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
            voyage.js) */
+        /* a world that can no longer be drawn (its shaders would not link, its context lost or let go) is stopped as it
+           is dropped, so what it made is given back (voyage.js: stop) and nothing more of it is put on the context */
+        const letGo = () => { world3d.stop(); world3d = null; };
         const first = DOOR3D() && !options.plain ? probe().catch(() => null) : Promise.resolve();
         const made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
         compiled = made.then(() => world3d?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(world3d?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
+        warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
       }
       if (!prove) return warmed;
       if (!proved) {
-        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) world3d = null; });
+        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); });
       }
       return proved;
     },

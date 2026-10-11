@@ -1183,6 +1183,9 @@ export function createVoyage(under) {
   /* the maps: asked for a little after the page is up, each used as soon as it has come; mipped: those whose mipmaps
      are made too (a field is made from a map only then) */
   const maps = {}, dims = {}, fields = {}, mipped = new Set();
+  /* landing: the pictures still on their way to the GPU (a band, or their mipmaps, still to come), which give back their
+     own texture when they land (load) rather than have it taken from under them (release) */
+  const landing = new Set();
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
@@ -1212,9 +1215,11 @@ export function createVoyage(under) {
     .then((bm) => {
       if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       const wh = [bm.width, bm.height];
+      landing.add(key);
       return uploadBanded(gl, bm, { tag: "flight", name: key, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
     .then((t) => {
+      landing.delete(key);
       /* (a picture still on its way when its journey was taken down gives back its own texture when it lands) */
       if (gone) { giveBack("Texture", t); return; }
       mipped.add(key);
@@ -1527,7 +1532,8 @@ export function createVoyage(under) {
     giveBack("VertexArray", vao);
     for (const p of programs) giveBack("Program", p);
     for (const x of shaders) giveBack("Shader", x);
-    for (const t of [...Object.values(maps), ...Object.values(fields), glowT, blank, sunTex]) giveBack("Texture", t);
+    const landed = Object.entries(maps).filter(([k]) => !landing.has(k)).map(([, t]) => t);
+    for (const t of [...landed, ...Object.values(fields), glowT, blank, sunTex]) giveBack("Texture", t);
     for (const o of [maps, fields]) for (const k of Object.keys(o)) delete o[k];
     glowT = null; sunTex = null;
   }
