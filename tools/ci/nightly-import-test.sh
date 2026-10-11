@@ -40,7 +40,7 @@ SHIM
 cat > bin/node <<'SHIM'
 #!/bin/sh
 echo "node ${ORBIT_SITE_IMPORT_TOKEN+SET}${ORBIT_SITE_IMPORT_TOKEN-UNSET} $*" >> "$LOG"
-grep -rl not-a-real-token-test-only "$TMPDIR" >> "$HITS" 2>/dev/null || true
+grep -rl --exclude=nightly-import-test.sh not-a-real-token-test-only "$TMPDIR" >> "$HITS" 2>/dev/null || true
 exit 0
 SHIM
 # The two listings the script makes read-only answer with an empty list; any
@@ -304,6 +304,7 @@ run_push() { # run_push <outfile> <scenario: refused | second | conn>
   cp "$aux/config.orig" .git/config
   find .git/hooks -type f ! -name '*.sample' -delete
   rm -f .git/fsm .git/info/attributes
+  if [ -n "${dry:-}" ]; then mkdir -p tools/node_modules/marked; echo keep > tools/node_modules/marked/keep; fi
   rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/merge.log "$aux"/git.log \
     "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
@@ -311,7 +312,7 @@ run_push() { # run_push <outfile> <scenario: refused | second | conn>
   env ORBIT_SITE_IMPORT_TOKEN="$fake" PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" APPEND_FILE="$appendfile" LOG="$log" HITS="$hits" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
-    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" DRY_RUN="${dry:-}" \
     GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
     sh tools/ci/nightly-import.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
@@ -495,6 +496,31 @@ rc=0; [ "$(grep -c '^DELETE /repository/branches/docs%2Fimport-20260101' "$aux/a
 check "run 11: the branch of an open merge request is kept until that merge request is closed, and others are not touched" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
 oldmr=; stale=
+
+# Run 12: a dry run with the import changing a tracked page, stale branches and
+# an older merge request about. It reports, and touches nothing: the checkout is
+# as it was (tracked files, node_modules, branches) and GitLab got no write.
+oldmr=1; stale=1; dry=1
+run_push "$out" second
+rc12=$rc
+rc=0; [ "$rc12" -eq 0 ] && grep -q 'DRY_RUN: would push' "$out" && grep -q 'closing !7' "$out" \
+  && grep -q 'deleting docs/import-20260103-0000' "$out" || rc=1
+check "run 12: a dry run exits 0 and reports what it would push, close and delete (exit $rc12)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -q '^imported' "$appendfile" && rc=1
+[ -z "$("$realgit" status --porcelain --untracked-files=no)" ] || rc=1
+check "run 12: no tracked file of the checkout was changed" "$rc"
+rc=0; [ -f tools/node_modules/marked/keep ] || rc=1
+check "run 12: the checkout's node_modules is still there" "$rc"
+rc=0; [ "$("$realgit" rev-parse --abbrev-ref HEAD)" = "$base" ] && [ -z "$("$realgit" for-each-ref 'refs/heads/docs/import-*')" ] \
+  && [ -z "$("$realgit" diff --cached --name-only)" ] || rc=1
+check "run 12: no branch was made and nothing was staged" "$rc"
+rc=0; grep -q '^node import-docs' "$aux/shim.log" || rc=1
+check "run 12: the import did run (in the copy)" "$rc"
+rc=0; ! grep -q -e '^PUT' -e '^POST' -e '^DELETE' "$aux/api.log" && ! grep -q 'https://' "$aux/shim.log" || rc=1
+check "run 12: GitLab got no write and nothing was pushed" "$rc"
+oldmr=; stale=; dry=
+"$realgit" checkout -q -f "$base"; rm -rf tools/node_modules
 
 rm -f "$out"
 exit "$failed"

@@ -21,6 +21,11 @@
 # header and credential files exist only for the moment they are used.
 #
 #   DRY_RUN=1 sh tools/ci/nightly-import.sh   import and report, write nothing
+#
+# DRY_RUN touches nothing in the checkout: it runs the install and the import
+# in a scratch copy of HEAD (so it fetches and installs again even if the
+# checkout has node_modules) and deletes the copy on exit. It reads from the
+# network and the GitLab API, and changes nothing there either.
 set -eu
 cd "$(dirname "$0")/../.."
 
@@ -53,6 +58,16 @@ nogit() {
 top=$PWD
 gitdir=$(nogit rev-parse --absolute-git-dir)
 cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "$@"; }
+if [ -n "$DRY_RUN" ]; then
+  mkdir "$scratch/tree"
+  cgit archive HEAD | tar -x -C "$scratch/tree"
+  cd "$scratch/tree"
+  top=$PWD
+  nogit init -q --template=
+  gitdir=$(nogit rev-parse --absolute-git-dir)
+  cgit add -A
+  cgit -c user.name=dry-run -c user.email=dry-run@invalid commit -q -m base
+fi
 # every value git would read for the checkout, with the file each came from
 # (includes followed): the same before and after the import, or it tampered
 gitcfg() { cgit config --list --show-origin; }
@@ -140,7 +155,7 @@ branch="docs/import-$stamp"
 if [ -n "$DRY_RUN" ]; then
   echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
   close_older "" "$branch" || true
-  cgit reset -q; exit 0
+  exit 0
 fi
 
 echo "== push $branch"
