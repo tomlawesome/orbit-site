@@ -347,8 +347,9 @@ export function createInstall(pad, opts = {}) {
   function frame(now) {
     if (!running) return;
     if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, last ? now - last : 0); if (now - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
-    /* a world that could not be made or loaded draws nothing: no loop for it */
-    if (failed || pad.classList.contains("flat")) { running = false; return; }
+    /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
+       tried again on the next start (prepare), so its flat is not final and does not stop the loop */
+    if (failed) { running = false; return; }
     raf = requestAnimationFrame(frame);
     const dt = last ? Math.min(100, now - last) : 16; last = now;
     let handing = false;
@@ -482,7 +483,8 @@ export function createInstall(pad, opts = {}) {
       running = true; last = 0;
       const t0 = performance.now(); size(); sized = performance.now() - t0;
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
-      if (w) w.bake().then((ok) => pad.classList.add(ok ? "lit" : "flat"));
+      /* flat follows each bake, set or cleared, since a failed map is tried again; a lost context keeps it */
+      if (w) w.bake().then((ok) => { if (ok) pad.classList.add("lit"); pad.classList.toggle("flat", !ok || failed); });
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     /* the shot in from the door's planet: resolves when the camera has all but settled */
