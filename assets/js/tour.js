@@ -22,16 +22,17 @@ const CANCEL = Symbol("cancel");
 function makeClock() {
   let playing = true, run = 0, stopped = false;
   const waiters = new Set();
-  const wait = (ms) => new Promise((resolve, reject) => {
+  /* once stopped, nothing arms again: a chapter that carries on after the stop (a flight ended under it) ends at its next wait */
+  const wait = (ms) => (stopped ? Promise.reject(CANCEL) : new Promise((resolve, reject) => {
     const token = run;
     const w = { remaining: ms, started: 0, timer: null, resolve, reject, token };
     const arm = () => { w.started = performance.now(); w.timer = setTimeout(() => { waiters.delete(w); resolve(); }, w.remaining); };
     waiters.add(w);
     if (playing) arm();
     w.arm = arm;
-  });
+  }));
   return {
-    w: (ms) => (reduced ? Promise.resolve() : wait(ms)),
+    w: (ms) => (stopped ? Promise.reject(CANCEL) : reduced ? Promise.resolve() : wait(ms)),
     hold: (ms) => wait(reduced ? Math.min(ms, 1200) : ms),
     wait,
     playing: () => playing,
@@ -44,6 +45,7 @@ function makeClock() {
     },
     cancel() { run++; for (const w of waiters) { clearTimeout(w.timer); w.reject(CANCEL); } waiters.clear(); },
     async tween(ms, fn) {
+      if (stopped) throw CANCEL;
       if (reduced) { fn(1); return; }
       const start = performance.now(); let elapsed = 0, last = start;
       while (elapsed < ms) {
