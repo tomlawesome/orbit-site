@@ -31,7 +31,14 @@ export function measureTile(host) {
   set();
   let t; const onResize = () => { clearTimeout(t); t = setTimeout(set, 100); };
   addEventListener("resize", onResize);
-  return () => { clearTimeout(t); removeEventListener("resize", onResize); };
+  /* a host that was 0 px wide when measured (hidden, or not yet laid out) is measured again when it first gets a size,
+     which no window resize says; once it has one, it is left to the window's resizes as before */
+  let seen = null;
+  if (typeof ResizeObserver === "function" && !host.clientWidth) {
+    seen = new ResizeObserver(() => { if (!host.clientWidth) return; set(); seen.disconnect(); seen = null; });
+    seen.observe(host);
+  }
+  return () => { clearTimeout(t); removeEventListener("resize", onResize); seen?.disconnect(); seen = null; };
 }
 
 /* The dawn's and the dusk's tiled fields, drawn off ONE stream in the sheet's own order. */
