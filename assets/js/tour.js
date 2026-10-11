@@ -63,12 +63,18 @@ function makeClock() {
 const veilEl = () => $("#veil");
 let holes = [];
 let veilRaf = 0;
+/* the mask is rebuilt only when what it draws changes (a hole's box, size or shape), not on every frame of the loop */
+let veilKey = null;
 function drawVeil() {
   const svg = veilEl().querySelector("svg");
   const mask = svg.querySelector("mask");
+  const boxes = holes.map((h) => h.el.getBoundingClientRect());
+  const key = holes.map((h, i) => `${h.round ? "o" : "r"}|${h.pad}|${h.radius}|${boxes[i].left},${boxes[i].top},${boxes[i].width},${boxes[i].height}`).join(";");
+  if (key === veilKey) return;
+  veilKey = key;
   Array.from(mask.children).slice(1).forEach((c) => c.remove());
-  for (const h of holes) {
-    const box = h.el.getBoundingClientRect();
+  for (const [i, h] of holes.entries()) {
+    const box = boxes[i];
     const NS = "http://www.w3.org/2000/svg";
     if (h.round) {
       const c = document.createElementNS(NS, "circle");
