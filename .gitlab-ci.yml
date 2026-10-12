@@ -64,11 +64,11 @@ workflow:
 variables:
   # Docker Hub through the group dependency proxy, pinned by digest;
   # Renovate bumps them (renovate.json, the regex manager).
-  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:22-bookworm@sha256:87a4f951f28b85d189df365d24c479d3bdb70be77c1ff5c9029db2ef67e251ac
+  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:22-bookworm@sha256:c4d5523090a817b7aa86d2111241fdd4f66d1e27782b44160e6aa63b357ecb2d
   # Microsoft's own registry, not proxied. Its tag names the playwright
   # version the `live` job installs; the two must agree.
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
-  PLAYWRIGHT_VERSION: "1.63.0"
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+  PLAYWRIGHT_VERSION: "1.64.0"
 
 # ---------------------------------------------------------------- lint --
 # Every module parses, every file the pages name exists, the docs index
@@ -238,7 +238,7 @@ publish_docs:
 renovate:
   stage: maintenance
   image:
-    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.83.2@sha256:c1cb952b2e14a112d0d0c61987a10f60a2626fe9b9c1504436be46a17bd123bc
+    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
     pull_policy: if-not-present
   timeout: 1h
   interruptible: false
