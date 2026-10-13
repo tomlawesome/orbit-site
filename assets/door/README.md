@@ -34,8 +34,8 @@ const door = createDoor({
 });
 // createDoor may run on a server too (it touches no document). Call it again freely: each setting given replaces
 // the earlier value (one left out, or undefined, keeps it) and the keyboard is watched once. Each dawn(), dusk()
-// and journey() adds its own resize listeners; its destroy() removes them (not the live door's, which the
-// door3d debug flag starts and nothing stops).
+// and journey() adds its own resize listeners; its destroy() removes them (the dawn's also takes down the live
+// door, which the door3d debug flag starts; see below).
 const dawn = door.dawn(document.querySelector("#door"));
 const dusk = door.dusk(document.querySelector("#dusk"));
 const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, farewell } });
@@ -51,7 +51,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
 
-### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, world, host }`
+### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, held, world, host }`
 
 `host` is the `#door` element rendered from `dawnMarkup`. Mounting draws the
 star fields and sets the glows' origin.
@@ -88,6 +88,10 @@ star fields and sets the glows' origin.
   same way, and it stays down until a remount. Its textures stay on the
   context; a remount makes its own. `dawn.live.start()` on a destroyed dawn
   returns `null`.
+- `held`: the pictures decoded ahead of the light (`decode-ahead.js`), a list of `{ ready, held }` as
+  `decodeAhead` returns them: the glows' and the Earth's, plus one for each glow the dawn draws itself (with its
+  `url`; a resize replaces the old size's). `[]` before `start()`, and again after `destroy()`, which lets
+  them go; until then they are kept so the browser does not throw the decoded copies away.
 - `destroy()`: the surface taken down (a host that remounts its door): its
   resize listeners removed, a glow build under way stopped, and a first light
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from
