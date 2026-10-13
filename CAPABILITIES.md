@@ -52,7 +52,9 @@ the probe is skipped altogether (the console says `stored` instead of `fresh`). 
 "rich" at 24 ms or less, "both" (lean first, rich tried by the ladder) at 40 or less, "lean" above; no probe, "both".
 `level()` turns it into the level (the ladder, below), once a page view, and the console says which and why on every
 page: `level 0: still (compiles stall the page; probe 197 ms)`, `level 2: live rich (predicted 12 ms of 40, background
-compiles)`. `liveDoor()` is the one test every module asks: `?door3d`, and level 1 or 2.
+compiles)`. (*Superseded 2026-10: the first example is out of date; a page-thread compiler now gets `level 1: live lean
+(compiles stall the page; probe 197 ms: lean, after the ways in)`.*) `liveDoor()` is the one test every module asks:
+`?door3d`, and level 1 or 2.
 
 ## The ladder
 
@@ -67,8 +69,11 @@ compiles)`. `liveDoor()` is the one test every module asks: `?door3d`, and level
 what is called "classic" above is now called "lean". See PERFORMANCE.md, "The live door late, where compiles stall the
 page".*
 
-`?level=0`, `?level=1` or `?level=2` in the address overrides the rule (the console then says `level 2: live rich
-(?level=2)`); at level 2 `&rich` and `&lean` still force the weight, at level 1 the weight is lean whatever they say.
+`?level=0`, `?level=1` or `?level=2` in the address replaces the rule's choice of level (the console then says `level 2:
+live rich (?level=2)`), but only under `?door3d` and once the GPU is accepted and the probe has worked: without those
+there is no probe, the level is 0 and `?level=` changes nothing. It never grants the GPU. It beats reduced motion,
+save-data, a lean frame predicted over 16 ms and page-thread compiles. At level 2 `&rich` and `&lean` still force
+the weight, at level 1 the weight is lean whatever they say.
 While the live door is tried it is drawn only with `?door3d`: without it every level ships the still door, and the
 level line is all that changes.
 

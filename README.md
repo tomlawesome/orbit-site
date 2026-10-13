@@ -83,9 +83,9 @@ Words used in the table:
 | `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`npm ci --prefix tools --ignore-scripts && node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`; the sources it reads are listed in `tools/docs-sources.json`) |
 | `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import (an import job, then a publish job) and the weekly Renovate run |
 | `tools/door-markup.mjs` | Writes the door's markup into `index.html` from `assets/door/markup.js` (`node tools/door-markup.mjs`; `--check` is what the lint runs) |
-| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), `nightly-import.sh`, which runs the docs import every night with no token and hands the pages on as an artifact, and `nightly-publish.sh`, which fetches that artifact itself, checks every entry and the docs' shape (`docs-shape.mjs`, against `tools/docs-sources.json`) and, when anything changed, opens a merge request into `main` that merges itself once the checks pass (two jobs so the code the import runs never sits beside the token) |
+| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), the tests the `lint` job runs (about forty, in Node with a stand-in page and no browser: a few for the checks and the import, most for how the door and the site behave), the tests the `live:journey` job runs in a real Firefox (`journey.mjs` and the `upload`, `pin`, `dawn`, `asdawn`, `phone-door`, `door-lows` and `site-browser` tests, among others), `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), `nightly-import.sh`, which runs the docs import every night with no token and hands the pages on as an artifact, and `nightly-publish.sh`, which fetches that artifact itself, checks every entry and the docs' shape (`docs-shape.mjs`, against `tools/docs-sources.json`) and, when anything changed, opens a merge request into `main` that merges itself once the checks pass (two jobs so the code the import runs never sits beside the token) |
 | `.github/workflows/codeql.yml` | CodeQL scans the JavaScript on the GitHub mirror |
-| `renovate.json` | What Renovate watches for newer versions of the pipeline's images and the import tool's packages |
+| `renovate.json` | What Renovate watches for newer versions of the pipeline's images, the import tool's packages, the GitHub Actions (CodeQL) and the pinned Mermaid (a custom pattern on `assets/js/pads.js`) |
 | `CONTRIBUTING.md`, `SECURITY.md` | How changes are made; how to report a security problem |
 | `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
 | `.nojekyll` | Pages serves the files as they are |
@@ -117,7 +117,9 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 
 ## Publishing
 
-A change reaches the site through a `dev` to `main` merge request on GitLab.
+A change reaches the site through a merge request on GitLab: `dev` to `main`
+for the work, and for the nightly docs import a merge request straight into `main`
+(`tools/ci/nightly-publish.sh`), which merges itself once the checks pass.
 When it merges, GitLab pushes `main` to the GitHub mirror, and that push is
 the release. Nobody pushes `main` by hand.
 

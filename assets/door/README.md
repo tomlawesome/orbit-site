@@ -180,6 +180,8 @@ The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
 `showwarp`, `launching`, `bare`, `instrument`, `withdrawing`, `dispersing`,
 `showdusk`, `farewell`, `holding`. The host's surfaces style themselves on
 them.
+`dawn()` and `dusk()` also set `loading` and `lit` (first light, below), and the
+host sets `ready-flight` (below).
 
 ### Markup (`markup.js`)
 
@@ -218,6 +220,25 @@ host (`--star-far`, `--star-near`, `--display`, `--mono`, `html.rich`) and
 the keyframes it defines that a host may use (`driftf`, `driftn`,
 `spinback`). Every `url()` in it stays inside the folder.
 
+The host's own body class: `ready-flight`. The gate is hidden until
+`body.lit.ready-flight` (`door.css`), so the host adds `ready-flight` to the
+body once the flight is ready to begin (the site: `openNow` in
+`assets/js/main.js`). Without it the gate never shows.
+
+### What the folder touches in the host page
+
+- `#door`: `capability.js` and `door3d.js` look it up (`#door .world`), so the
+  dawn's host must have that id.
+- Body classes it sets: `loading` and `lit` (first light, `dawn.js`); the
+  journey's `arming`, `showdawn`, `showwarp`, `launching`, `bare`, `instrument`,
+  `withdrawing`, `dispersing`, `showdusk`, `farewell` and `holding`
+  (`journey.js`).
+- Body classes it reads: `launching`, `departing` and `showwarp` (`door3d.js`
+  watches the body's class to stand down while a flight leaves; `departing` is
+  the host's), and `ready-flight` (`door.css`).
+- `window.__chores`: set only under the `door3d` flag, by `createDoor`, to a
+  function returning the chore queue as it is now (for the live door's tests).
+
 ### The GPU gate (`fitness.js`, ADR-0002)
 
 `gpu()` → `{ canvas, gl, parallel, renderer } | null`: whether the page may use the GPU at all, decided
@@ -243,8 +264,10 @@ verdict: `flight world: on (frame N ms)`, or `off: frame N ms`. No verdict is st
 ### Also exported from `index.js`
 
 For a host's own worlds and skies, so their work takes its turn with the
-door's: the chores (`chore`, `fetchOnce`, `openChores`, `hurryChores`,
-`note`, `quiet`, `compilesAside`, …), `uploadBanded`, the GPU gate (`gpu`,
+door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
+`noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
+`hurryChores`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
+a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
@@ -255,7 +278,10 @@ depending only on its place in the list (the site's `demoFlight` uses it).
 `descentProfile({ onto, from, homes })` is the profile `descend` flies (pure,
 for tests: `DOWN` itself, `DOWN_DAWN` itself, or the climb `from` run
 backwards, with the `homes` on the end); `DOWN`, `DOWN_DAWN`, `DOWNDUR` and
-`mirrored(props)` come with it.
+`mirrored(props)` come with it. `mountDawn` and `mountDusk` are the very
+functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
+(`dawn.js`); `createJourney` is likewise `door.journey`. They read the settings
+`createDoor` has given, so call `createDoor` first.
 
 ## Files
 
