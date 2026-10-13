@@ -244,6 +244,9 @@ const labelsCase = async (doorName, query, width) => {
     await page.goto(`${SITE}${query}`, { waitUntil: "load" });
     await page.locator("#door").waitFor({ state: "visible", timeout: 60000 });
     await page.locator("#door .planet[data-section=info] .tag").waitFor({ state: "attached", timeout: 60000 });
+    /* sampled once the labels' font is in and two frames have been drawn (owner, 2026-10-13, answer 3a): a read in
+       the instant the font arrives, before the door re-places the wider label, saw a state never painted */
+    await page.evaluate(() => document.fonts.ready.then(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)))));
     await sleep(1500);
     /* real time */
     const t0 = Date.now();
