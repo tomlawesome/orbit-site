@@ -762,8 +762,16 @@ export function wirePlanets(door, onGo) {
     if (goldLight && ride) goldLight.currentTime = (ride.currentTime || 0) - (ride.effect.getTiming().delay || 0);
   }
   let built = false, stale = false, placing = false;
-  /* a resize while the door is away is caught up with when it comes back */
-  addEventListener("resize", () => { if (rich && built) { if (door.hidden) stale = true; else build3d(); } });
+  /* a resize while the door is away is caught up with when it comes back; so is a name changing width, as when its
+     own font arrives and widens it past the room left for it at the screen's edge (#50). The names are watched
+     for that, rather than the font: the watcher is told after layout and before the paint, so no frame shows a
+     name off the edge */
+  const relayout = () => { if (built) { if (door.hidden) stale = true; else build3d(); } };
+  addEventListener("resize", relayout);
+  if (typeof ResizeObserver === "function") {
+    const names = new ResizeObserver(() => { if (planets.some(({ tag }, i) => tag.offsetWidth !== widths[i])) relayout(); });
+    planets.forEach(({ tag }) => names.observe(tag));
+  }
   /* the door's own loop runs only while the door is there: started when it is shown, ended when it is hidden */
   const wake = () => { if (!placing && !door.hidden) { placing = true; requestAnimationFrame(place); } };
   new MutationObserver(() => {
