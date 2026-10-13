@@ -187,11 +187,13 @@ WF="$wf" node -e '
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 
-echo "== the docs import is split: import_docs holds no token, publish_docs is in the docs-import environment"
+echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
 # worth stealing; the publish holds the token, runs no third-party code, and is
 # the only job in the docs-import environment, where the token is scoped (#18).
 # Both run from the schedule on main alone, never on a merge request pipeline.
+# The Renovate tokens are scoped the same way to the renovate environment,
+# which only the renovate job joins, since every other job runs npm packages.
 node -e '
   const fs = require("fs");
   const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
@@ -216,11 +218,16 @@ node -e '
     if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
     if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
   }
-  // the token is scoped to the docs-import environment: no job but publish_docs may name it
+  // each environment holds tokens scoped to it: no job but its own may name it
   // (anywhere in the file, comments aside: a job, an extends template, defaults)
+  const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
   for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
-    if (m[1] !== "publish_docs" && /docs-import/.test(m[2])) bad(`.gitlab-ci.yml: ${m[1]} names the docs-import environment; only publish_docs may, since the token is scoped to it`);
+    for (const [e, j] of Object.entries(envs)) {
+      if (m[1] !== j && m[2].includes(e)) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
+    }
   }
+  const ren = job("renovate");
+  if (ren !== null && !/^    name: renovate$/m.test(section(ren, "environment") || "")) bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
   if (pub !== null) {
     const env = section(pub, "environment") || "";
     if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
