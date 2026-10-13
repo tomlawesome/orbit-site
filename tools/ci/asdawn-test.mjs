@@ -92,6 +92,9 @@ const MEASURE = () => {
        never lights the dawn, so its transform is set aside while it is measured (the row, not the entrance) */
     dawnSvg: box(dawn && dawn.querySelector(".glyph svg")), dawnRing: box(ringOf(dawn)), dawnGate: settled(dawn && dawn.querySelector(".gate")),
     duskSvg: box(dusk.querySelector(".glyph svg")), duskRing: box(ring), duskGate: box(dusk.querySelector(".gate")),
+    /* the ring's own width, its stroke left out: an element's box counts an SVG stroke in Firefox and not in Chromium
+       (#44), so the circle's geometry is scaled to the page instead */
+    duskRingGeomW: (() => { const svg = ring?.ownerSVGElement, vb = svg?.viewBox.baseVal; return ring && vb?.width ? ring.getBBox().width * (svg.getBoundingClientRect().width / vb.width) : null; })(),
     wrap: box(dusk.querySelector(".gate-wrap")), fw: box(fw), said: box(dusk.querySelector(".farewell .said")), sub: box(dusk.querySelector(".farewell .sub")), subLine: parseFloat(cs(dusk.querySelector(".farewell .sub"))?.lineHeight),
     name: box(name),
     nameVisibility: cs(name) && cs(name).visibility, nameColor: cs(name) && cs(name).color,
@@ -195,7 +198,7 @@ function phoneAsDawn(s, m) {
 function phoneControl(s, m) {
   s.want("(control) the glyph is as wide as today's", near(m.duskSvg?.w, PHONE_TODAY.glyph, 0.6), `glyph ${f(m.duskSvg?.w)} wide (today ${PHONE_TODAY.glyph})`);
   s.want("(control) .name is visible", m.nameVisibility === "visible", `visibility ${m.nameVisibility}`);
-  s.want("(control) the ring is where it is today", near(m.duskRing?.cx, PHONE_TODAY.ringCx, 1) && near(m.duskRing?.cy, PHONE_TODAY.ringCy, 1) && near(m.duskRing?.w, PHONE_TODAY.ringW, 1), `ring centre (${f(m.duskRing?.cx)}, ${f(m.duskRing?.cy)}), ${f(m.duskRing?.w)} across (today (${PHONE_TODAY.ringCx}, ${PHONE_TODAY.ringCy}), ${PHONE_TODAY.ringW})`);
+  s.want("(control) the ring is where it is today", near(m.duskRing?.cx, PHONE_TODAY.ringCx, 1) && near(m.duskRing?.cy, PHONE_TODAY.ringCy, 1) && near(m.duskRingGeomW, PHONE_TODAY.ringW, 1), `ring centre (${f(m.duskRing?.cx)}, ${f(m.duskRing?.cy)}), ${f(m.duskRingGeomW)} across, stroke aside (today (${PHONE_TODAY.ringCx}, ${PHONE_TODAY.ringCy}), ${PHONE_TODAY.ringW})`);
   s.want("(control) the farewell's bottom is where it is today", near(m.fw?.b, PHONE_TODAY.fwBottom, 1), `bottom ${f(m.fw?.b)} (today ${PHONE_TODAY.fwBottom})`);
 }
 
@@ -226,7 +229,7 @@ function layoutSigns(s, m, phone, tag) {
     s.want(`${tag}the goodbye's gate is where the dawn's is, within 1px`, near(m.duskGate?.t, m.dawnGate?.t, 1), `dusk gate top ${f(m.duskGate?.t)}, dawn ${f(m.dawnGate?.t)}`);
   }
 }
-const PHONE_TODAY = { glyph: 327.6, ringCx: 195, ringCy: 422, ringW: 239.17, fwBottom: 662 };
+const PHONE_TODAY = { glyph: 327.6, ringCx: 195, ringCy: 422, ringW: 235.87, fwBottom: 662 };
 
 try {
   await new Promise((ok, no) => {

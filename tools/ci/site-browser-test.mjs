@@ -23,6 +23,11 @@
  *       to load, forms (#installpad.formed) and is lit and no longer flat, once the map loads. Controls: the world
  *       was prepared and the map failure was logged; the first dive was painted flat and formed; the retry fetched
  *       the map and it did not fail again.
+ *   B8  the docs pad tells a network failure from a drawing fault: an index that fails to fetch shows "The docs have not
+ *       been imported"; an index that fetches but whose drawing throws (the test makes the chart's and list's markup
+ *       throw when it is put in the pad) does not show that, and the fault is logged with console.error, carrying the
+ *       thrown error. Controls: the failed fetch does show it; the same page undisturbed draws the docs; the
+ *       disturbance did fire on the fault visit.
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
@@ -342,6 +347,65 @@ const docsCase = async () => {
   } finally { await dctx.close(); }
 };
 
+/* ── B8: the docs pad, a failed fetch against a fault in drawing ───────────────────────────────────────────── */
+const FAULT = "audit4 drawing fault";
+/* makes any chart star or list entry put into the docs pad throw FAULT: through innerHTML, insertAdjacentHTML or a
+   node with the class; counts the throws in window.__faults */
+const drawingFault = () => {
+  window.__faults = 0;
+  const inPad = (el) => !!(el && el.closest && el.closest("#docspad"));
+  const markup = /class\s*=\s*["']?[^"'>]*\b(star|entry)\b/;
+  const fire = () => { window.__faults++; throw new Error("audit4 drawing fault"); };
+  const inner = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+  Object.defineProperty(Element.prototype, "innerHTML", { ...inner, set(v) { if (inPad(this) && markup.test(String(v))) fire(); return inner.set.call(this, v); } });
+  const adj = Element.prototype.insertAdjacentHTML;
+  Element.prototype.insertAdjacentHTML = function (where, v) { if (inPad(this) && markup.test(String(v))) fire(); return adj.call(this, where, v); };
+  for (const name of ["appendChild", "insertBefore"]) {
+    const orig = Node.prototype[name];
+    Node.prototype[name] = function (node, ...rest) { if (inPad(this) && node && node.classList && (node.classList.contains("star") || node.classList.contains("entry"))) fire(); return orig.call(this, node, ...rest); };
+  }
+  for (const name of ["append", "prepend", "replaceChildren"]) {
+    const orig = Element.prototype[name];
+    Element.prototype[name] = function (...nodes) { if (inPad(this) && nodes.some((n) => n && n.classList && (n.classList.contains("star") || n.classList.contains("entry")))) fire(); return orig.apply(this, nodes); };
+  }
+};
+const docsFaultCase = async () => {
+  const fctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+  try {
+    const visit = async ({ abort = false, fault = false }) => {
+      const page = await open(fctx);
+      if (fault) await page.addInitScript(drawingFault);
+      if (abort) await page.route("**/assets/docs/index.json", (route) => route.abort());
+      await page.goto(`${SITE}?preview#docs`, { waitUntil: "load" });
+      await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
+      /* settled: the docs drawn, or the pad says it has none, or the disturbance fired and its outcome had time to land */
+      await page.waitForFunction(() => {
+        const pad = document.querySelector("#docspad");
+        return pad.querySelector(".entry, .chart .star") || /have not been imported/.test(pad.innerText) || window.__faults > 0;
+      }, null, { timeout: 30000 });
+      await sleep(2000);
+      const seen = await page.evaluate(() => {
+        const pad = document.querySelector("#docspad");
+        return { notImported: /have not been imported/.test(pad.innerText), drawn: !!pad.querySelector(".entry, .chart .star"), faults: window.__faults || 0 };
+      });
+      const logged = page.log.filter((m) => m.type === "error" && m.text.includes(FAULT)).length;
+      const errors = page.errors.slice();
+      await page.close();
+      return { ...seen, logged, errors };
+    };
+    await runCase("B8", "the docs pad tells a failed fetch from a fault in drawing", async (want) => {
+      const failed = await visit({ abort: true });
+      want(failed.notImported && !failed.drawn, `control: a failed index fetch did not show "The docs have not been imported" (shown: ${failed.notImported}, drawn: ${failed.drawn})`);
+      const healthy = await visit({});
+      want(healthy.drawn && !healthy.notImported, `control: the undisturbed docs did not draw (drawn: ${healthy.drawn}, "not imported" shown: ${healthy.notImported})`);
+      const fault = await visit({ fault: true });
+      want(fault.faults > 0, "control: the disturbance never fired, so no drawing fault was made and the case cannot be judged");
+      want(!fault.notImported, 'a drawing fault showed "The docs have not been imported", as if the fetch had failed');
+      want(fault.logged > 0, `the drawing fault was not logged with console.error carrying the thrown error ("${FAULT}")${fault.errors.length ? `; page errors: ${fault.errors[0]}` : ""}`);
+    });
+  } finally { await fctx.close(); }
+};
+
 /* ── B2: the install page after the shared WebGL world's context was lost ──────────────────────────────────── */
 const lostContextCase = async () => {
   const wctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
@@ -508,7 +572,7 @@ try {
   /* B2 and B3 use pages of their own and are started once B1 has had the machine to itself; the walk's cases wait
      in real time for the walk, so the others fit into the waiting */
   const others = [];
-  const background = () => { others.push(docsCase(), lostContextCase().then(retryCase)); };
+  const background = () => { others.push(docsCase(), docsFaultCase(), lostContextCase().then(retryCase)); };
   await homeCases(ctx, background);
   await cameraCase(ctx);
   await Promise.all(others);

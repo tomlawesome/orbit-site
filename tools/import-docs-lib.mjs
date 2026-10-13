@@ -81,7 +81,9 @@ const entities = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);
 
 /* the text a reader would see in some html: comments and tags removed, entities
    read, spaces folded. One pass; a "<" that does not open a tag, or whose tag
-   or comment never closes, is text, as the sanitiser writes it out. */
+   never closes, is text, as the sanitiser writes it out. A comment ends as a
+   browser ends it, at "-->" or "--!>" ("<!-->" and "<!--->" at once), and one
+   never closed hides the rest (#52: read as text, it gave a false "lost text"). */
 export function visibleText(html) {
   let out = "", i = 0;
   const noClose = {}; /* a character with none after the place it was last looked for */
@@ -91,8 +93,10 @@ export function visibleText(html) {
     out += html.slice(i, lt);
     let end = -1;
     if (html.startsWith("<!--", lt)) {
-      end = noClose["-->"] <= lt ? -1 : html.indexOf("-->", lt + 4);
-      if (end < 0) noClose["-->"] = lt; else end += 3;
+      const c = /--!?>/g; c.lastIndex = lt + 2;
+      const m = c.exec(html);
+      if (!m) break;
+      end = m.index + m[0].length;
     } else if (/^<\/?[a-z]/i.test(html.slice(lt, lt + 3))) {
       let p = lt + 2;
       for (;;) {

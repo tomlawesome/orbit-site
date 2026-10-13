@@ -87,7 +87,7 @@ Words used in the table:
 | `.github/workflows/codeql.yml` | CodeQL scans the JavaScript on the GitHub mirror |
 | `renovate.json` | What Renovate watches for newer versions of the pipeline's images and the import tool's packages |
 | `CONTRIBUTING.md`, `SECURITY.md` | How changes are made; how to report a security problem |
-| `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs and launcher screenshots (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
+| `LICENSE` | The licence, with the parts that carry their own terms: the NASA imagery (public domain), the imported docs (AGPL-3.0), and the shared door under `assets/door/`, which is AGPL-3.0 as well as the site's own |
 | `.nojekyll` | Pages serves the files as they are |
 | `PERFORMANCE.md` | Where a first visit's time goes, what has been measured and tried, and the paths left to explore |
 | `CAPABILITIES.md` | The capability ladder: what a browser can tell us, the live door's probe, the levels (still, live lean, live rich) and the proof each needs, where the machines measured so far land, and how to test on more |

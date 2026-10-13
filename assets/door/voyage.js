@@ -1177,6 +1177,9 @@ export function createVoyage(under) {
     return richProgram("door").then((p) => p && loaded.then(() => chore(richMaps, 60, "door")));
   }).catch((e) => { console.warn("orbit: the flight's rich Earth could not be made", e); return false; }));
   richWaiting.splice(0).forEach((go) => go());
+  /* a world made while the door is (still) rich (a journey mounted after one that stopped: its ask went with it) is
+     asked as the first was */
+  if (door?.rich) wantRich();
   /* its journey taken down: what of the rich Earth's state is still this world's goes with it (see wantRich) */
   const richRelease = () => {
     if (richAskBy === myMake) { richAsk = null; richAskBy = null; }

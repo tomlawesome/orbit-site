@@ -51,6 +51,12 @@ if (typeof cleanSources === "function") {
   one("P1 a number becomes the grey", { c: 123456 }, "#8791b3");
   one("P1 a missing colour becomes the grey", { c: undefined }, "#8791b3");
 
+  /* P1, the one colour rule (audit 4): the docs shape check (tools/ci/docs-shape.mjs) accepts exactly these as well */
+  one("P1 #a1b2c3 is kept", { c: "#a1b2c3" }, "#a1b2c3");
+  one("P1 #A1B2C3 is kept", { c: "#A1B2C3" }, "#A1B2C3");
+  one("P1 mixed case #a1B2c3 is kept", { c: "#a1B2c3" }, "#a1B2c3");
+  for (const c of ["#abc", "#abcdeg", "abcdef", "#abcdef0", ""]) one(`P1 ${show(c)} becomes the grey`, { c }, "#8791b3");
+
   /* P2 */
   for (const slug of ['a"b', "a b", "../x", "A", "a/b", "", "a<b>", 7]) {
     const r = run([source({ slug }), source({ slug: "ok" })]);
