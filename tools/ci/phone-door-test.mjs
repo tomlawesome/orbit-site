@@ -11,10 +11,14 @@
  *       what iOS shows), and the heading has tabindex="-1".
  *   P2  any other programmatic focus target (an element with tabindex="-1" focused by script after a key press)
  *       shows no outline either. Control: it matches :focus-visible.
- *   P3  the paired control: on each landing, Tab on from the heading through up to 12 stops; the links and buttons
- *       reached show a visible outline, at least one of them (the fix must not remove every focus ring; the
- *       information landing's cards draw their focus without an outline today and are only noted). Controls: Tab
- *       did reach a link or button, and each matches :focus-visible.
+ *   P3  the paired control: on each landing, Tab on from the heading through up to 12 stops; every link or button
+ *       reached shows a visible focus indicator (the fix must not remove the focus look). An indicator is an
+ *       outline, or a computed border colour or box-shadow that differs from the same element unfocused (the
+ *       information cards keep their own look, a gold border and glow, by the owner's decision in #54). Focused
+ *       state is read 400 ms after the Tab and unfocused state 400 ms after blurring, so transitions have settled.
+ *       Controls: Tab did reach a link or button, each matches :focus-visible, and a plain link injected with
+ *       `outline:none` and nothing else, focused after a key press, is judged to have no indicator (so the judge
+ *       can say no).
  *   P4  at 360, 390 and 430 wide (844 high, a touch phone), on the 3D door (?preview&door3d) and on the default
  *       door (?preview), every visible planet label (`#door .planet .tag`) lies wholly inside the viewport (left
  *       >= 0, right <= innerWidth, top >= 0, bottom <= innerHeight). Sampled two ways: in real time every 250 ms
@@ -78,6 +82,17 @@ const outlineOf = (sel) => (page) => page.evaluate((s) => {
   return { found: !!el, focusVisible: el.matches(":focus-visible"), style: cs.outlineStyle, width: cs.outlineWidth, colour: cs.outlineColor };
 }, sel);
 const drawsOutline = (o) => o.style !== "none" && parseFloat(o.width) > 0;
+/* a link or button shows focus if it draws an outline, or its border colour or box-shadow differs from unfocused */
+const indicator = (focused, unfocused) => drawsOutline(focused) || focused.border !== unfocused.border || focused.shadow !== unfocused.shadow;
+/* runs in the page: the look of the element marked data-pd-tab="<n>" */
+const snapshot = (n) => {
+  const el = document.querySelector(`[data-pd-tab="${n}"]`);
+  const cs = getComputedStyle(el);
+  return {
+    focusVisible: el.matches(":focus-visible"), style: cs.outlineStyle, width: cs.outlineWidth, colour: cs.outlineColor,
+    border: [cs.borderTopColor, cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor].join(" "), shadow: cs.boxShadow,
+  };
+};
 const describe = (o) => `${o.width} ${o.style} ${o.colour}`;
 
 /* ── P1, P3: each landing, reached by the keyboard ─────────────────────────────────────────────────────── */
@@ -125,29 +140,51 @@ const landingCase = async ([letter, label, pad, section = label]) => {
     want(!drawsOutline(o), `${h1} is focused and matches :focus-visible (${o.focusVisible}) and draws an outline of ${describe(o)}, want none`);
   });
 
-  await runCase(`P3${letter}`, `on the ${label} landing the links and buttons reached by Tab show an outline`, async (want) => {
+  await runCase(`P3${letter}`, `on the ${label} landing every link and button reached by Tab shows a focus indicator`, async (want) => {
     const h1 = await reach();
-    /* Tab on from the heading; every link or button reached is read. Cards that draw their focus some other way
-       than an outline are noted, not failed; but at least one link or button must show a real outline. */
+    /* the focused element, marked (data-pd-tab) so that it can be read again unfocused */
     const reachedControls = [];
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press("Tab");
-      await sleep(150);
-      const seen = await page.evaluate((padSel) => {
+      const seen = await page.evaluate(({ padSel, n }) => {
         const el = document.activeElement;
-        const cs = getComputedStyle(el);
-        return {
-          tag: el.tagName, inPad: !!el.closest(padSel), text: (el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 30),
-          focusVisible: el.matches(":focus-visible"), style: cs.outlineStyle, width: cs.outlineWidth, colour: cs.outlineColor,
-        };
-      }, pad);
-      if (/^(A|BUTTON)$/.test(seen.tag)) reachedControls.push(seen);
+        if (!/^(A|BUTTON)$/.test(el.tagName)) return { tag: el.tagName };
+        if (el.hasAttribute("data-pd-tab")) return { tag: el.tagName, again: true };
+        el.setAttribute("data-pd-tab", String(n));
+        return { tag: el.tagName, n, text: (el.getAttribute("aria-label") || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 30) };
+      }, { padSel: pad, n: i });
+      if (seen.again) break; /* Tab has come round */
+      if (seen.n === undefined) continue;
+      await sleep(400); /* the focused look settles */
+      reachedControls.push({ ...seen, focused: await page.evaluate(snapshot, seen.n) });
     }
+    /* the same elements unfocused, settled */
+    await page.evaluate(() => document.activeElement?.blur());
+    await sleep(400);
+    for (const c of reachedControls) c.unfocused = await page.evaluate(snapshot, c.n);
     want(reachedControls.length > 0, `control: 12 Tabs on from ${h1} reached no link or button`);
-    want(reachedControls.every((c) => c.focusVisible), `control: a link or button reached by Tab does not match :focus-visible`);
-    const outlined = reachedControls.filter(drawsOutline);
-    want.note(`${reachedControls.length} links and buttons reached, ${outlined.length} with an outline; without: ${JSON.stringify(reachedControls.filter((c) => !drawsOutline(c)).map((c) => c.text))}`);
-    want(outlined.length > 0, `none of the ${reachedControls.length} links and buttons reached by Tab shows a focus outline, want a visible one`);
+    want(reachedControls.every((c) => c.focused.focusVisible), `control: a link or button reached by Tab does not match :focus-visible`);
+    const lacking = reachedControls.filter((c) => !indicator(c.focused, c.unfocused));
+    const byBorderOrShadow = reachedControls.filter((c) => !drawsOutline(c.focused) && indicator(c.focused, c.unfocused)).map((c) => c.text);
+    want.note(`${reachedControls.length} links and buttons reached; no outline but a border or shadow change: ${JSON.stringify(byBorderOrShadow)}`);
+    want(lacking.length === 0, `${lacking.length} of ${reachedControls.length} links and buttons reached by Tab show no focus indicator (no outline, and the same border colour and box-shadow as unfocused): ${JSON.stringify(lacking.map((c) => c.text))}`);
+
+    /* control: a plain link with its outline removed and nothing else must be judged to have no indicator */
+    await page.keyboard.press("Tab");
+    await page.evaluate(() => {
+      const a = document.createElement("a");
+      a.id = "pd-plain"; a.href = "#pd-plain"; a.textContent = "plain"; a.setAttribute("data-pd-tab", "plain");
+      a.style.cssText = "position:fixed;left:10px;top:10px;z-index:99999;outline:none";
+      document.body.appendChild(a);
+      a.focus();
+    });
+    await sleep(400);
+    const plainOn = await page.evaluate(snapshot, "plain");
+    await page.evaluate(() => document.activeElement?.blur());
+    await sleep(400);
+    const plainOff = await page.evaluate(snapshot, "plain");
+    want(plainOn.focusVisible, "control: the injected plain link does not match :focus-visible when focused, so it cannot show the judge saying no");
+    want(!indicator(plainOn, plainOff), "control: the judge finds a focus indicator on a plain link whose outline was removed and nothing else changed, so it cannot say no");
   });
 
   await ctx.close();
