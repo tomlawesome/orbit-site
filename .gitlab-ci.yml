@@ -159,6 +159,7 @@ live:journey:
     - node tools/ci/dropped-warning-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/door-lows-test.mjs
     - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-planet-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/flight-context-loss-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
