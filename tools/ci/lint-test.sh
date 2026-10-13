@@ -584,18 +584,16 @@ split_case "a hidden template naming the renovate environment" $ci "renovate" '
   y = y + "\n.t:\n  environment:\n    name: renovate\n";'
 split_case "a template joining renovate by the short form" $ci "names the renovate environment" '
   y = y + "\n.t:\n  environment: renovate\n";'
-# A job that only mentions renovate.json in its script joins no environment -> passes.
-printf '\n.note:\n  script:\n    - test -f renovate.json\n' >> $ci
-commit_all "a job that mentions renovate.json in a script"
-lint_to_out
-if [ "$rc" -eq 0 ] && ! grep -q "names the renovate environment" "$out"; then
-  echo "ok   a job that only mentions renovate.json in a script passes"
-else
-  echo "FAIL a job that only mentions renovate.json in a script passes (exit $rc, want 0 and no \"names the renovate environment\")"
-  sed 's/^/     /' "$out"
-  failed=1
-fi
-git reset -q --hard HEAD~1
+# The forms a line reader misses and a word test does not (fix review round 2).
+# Each must be refused however the environment key is written.
+split_case "a template joining renovate with a trailing comment" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate # tokens\n";'
+split_case "a template joining renovate in flow style" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: {name: renovate}\n";'
+split_case "publish_docs joining renovate by a second environment key" $ci "publish_docs names the renovate environment" '
+  y = y.replace("    name: docs-import\n", "    name: docs-import\n  environment: renovate\n");'
+split_case "a four-space-indented template joining renovate" $ci "names the renovate environment" '
+  y = y + "\n.t:\n    environment:\n        name: renovate\n";'
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
   y = y.replace("    name: docs-import\n", "    name: other\n");'
 split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
