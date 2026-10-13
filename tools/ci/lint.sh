@@ -73,14 +73,15 @@ node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
 
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through. This reads the html
-# the way a browser does, since a hand edit or a hole in the sanitiser can
-# produce what its own tokeniser would allow: attributes are found after any
-# separator (a space, a slash, a control character, a closing quote) and in
-# any case; a URL attribute has its entities decoded and its whitespace and
-# control characters removed before the scheme is looked at. A construct that
-# would put a browser into a comment or a raw-text element is refused outright,
-# since the import never writes one and the check cannot follow it.
+# run on every visitor, whatever the importer let through. A stored section
+# may hold only tags written the one way a browser and this check read alike:
+# an ascii name, html whitespace, name="value" with no quote or angle bracket
+# inside, and no attributes on an end tag. Anything else is refused outright:
+# the import never writes it, and the browser's tokeniser has states this check
+# does not follow. A URL attribute has its entities decoded and its whitespace
+# and control characters removed before the scheme is looked at. A construct
+# that would put a browser into a comment or a raw-text element is refused
+# outright, since the import never writes one and the check cannot follow it.
 node -e '
   const fs = require("fs");
   const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template|textarea|title|xmp|noembed|noframes|noscript|plaintext)\b/i];
@@ -99,25 +100,18 @@ node -e '
   const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
   const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
   const danger = (h) => {
-    // a comment, doctype, <? or a </ that is no end tag: the browser leaves plain text there and this tokeniser does not
-    if (/<[!?]|<\/(?![a-z])/i.test(h)) return true;
-    const tagRe = /<([a-z][^\s\/>\x00-\x20]*)/gi;
-    let m;
-    while ((m = tagRe.exec(h))) {
-      let i = tagRe.lastIndex;
-      for (;;) {
-        const sep = /[\s\/\x00-\x20"\x27=]*/y; sep.lastIndex = i; sep.exec(h); i = sep.lastIndex;
-        if (i >= h.length || h[i] === ">") break;
-        const a = /([^\s\/>=\x00-\x20"\x27]+)(?:[\s\x00-\x20]*=[\s\x00-\x20]*("[^"]*"|\x27[^\x27]*\x27|[^\s>\x00-\x20]*))?/y;
-        a.lastIndex = i;
-        const r = a.exec(h);
-        if (!r) break;
-        i = a.lastIndex;
-        const name = r[1].toLowerCase(), value = (r[2] || "").replace(/^["\x27]|["\x27]$/g, "");
+    // every < must open a start or end tag of the one shape the import writes, else refuse:
+    // WS is html whitespace only, a value is double-quoted with no quote or angle bracket inside
+    const tag = /<(?:\/[a-zA-Z][a-zA-Z0-9]*[\t\n\f\r ]*|[a-zA-Z][a-zA-Z0-9]*((?:[\t\n\f\r ]+[a-zA-Z][a-zA-Z0-9:-]*(?:="[^"<>]*")?)*)[\t\n\f\r ]*\/?)>/y;
+    for (let i = h.indexOf("<"); i !== -1; i = h.indexOf("<", tag.lastIndex)) {
+      tag.lastIndex = i;
+      const m = tag.exec(h);
+      if (!m) return true;
+      for (const a of (m[1] || "").matchAll(/[\t\n\f\r ]+([a-zA-Z][a-zA-Z0-9:-]*)(?:="([^"<>]*)")?/g)) {
+        const name = a[1].toLowerCase(), value = a[2] || "";
         if (/^on/.test(name)) return true;
-        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/.test(scheme(value))) return true;
+        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/i.test(scheme(value))) return true;
       }
-      tagRe.lastIndex = i;
     }
     return bad.some((re) => re.test(h));
   };
