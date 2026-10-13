@@ -12,6 +12,8 @@ import { createJourney } from "./journey.js";
 export { settings };
 /* the background work (chores.js): a host's own worlds queue their GPU work here too, so it takes its turn with the door's */
 export { chore, fetchOnce, linked, counted, note, noteChores, quiet, openChores, openCompiles, openSoft, softRan, hurryChores, programs, compilesAside, holdReveal } from "./chores.js";
+/* and the one limit on a wait for a background compile, for a host's own shaders */
+export { compiledWithin, COMPILE_WAIT } from "./chores.js";
 export { uploadBanded } from "./upload.js";
 /* what this machine can carry (capability.js), and the level the door ships at */
 export { probe, level, liveDoor, lateDoor } from "./capability.js";

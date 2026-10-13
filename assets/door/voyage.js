@@ -19,7 +19,7 @@
  * NASA Earth Observatory. Reduced to small maps for here (img/flight in this folder).
  */
 
-import { chore, fetchOnce, note, linked, counted, compilesAside } from "./chores.js";
+import { chore, fetchOnce, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
@@ -1094,23 +1094,21 @@ export function createVoyage(under) {
   const live = liveDoor();
   const weight = live ? theDoorWeight() : null, richOnly = weight === "rich";
   const P = { scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null };
-  const compiled = (list) => new Promise((resolve) => {
-    if (!par) { resolve(); return; }
-    const poll = () => (dead || list.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR)) ? resolve() : setTimeout(poll, 40));
-    poll();
-  });
+  /* true once they are done; false once the world is dead, or past COMPILE_WAIT (chores.js): then it goes without them */
+  const compiled = (list) => compiledWithin(gl, par, list.map((pr) => pr.p), 40, () => dead);
   const core = Object.values(P).filter(Boolean);
-  const made = compiled(core).then(() => {
+  const made = compiled(core).then((done) => {
     if (dead) return false;
+    if (!done) { dead = true; canvas.remove(); sayOff("its shaders did not compile in time"); return false; }
     try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
     if (ok && richOnly) P.overRich = P.over;
     if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
   });
   /* the docs' galaxy and its stars are wanted by the docs' flight alone, so the flight is not kept waiting for them:
-     where the browser compiles in the background they are a chore of their own ("galaxy", ranked after the live door
-     and the measures: chores.js), so they are compiled once the door is live, not beside the rest during the reveal
-     (the docs' journey still hurries them: "docs"); where it compiles on the page's own thread (Firefox:
+     where the browser compiles in the background they are a chore of their own ("galaxy", ranked after the journeys
+     and before the live door and the measures: chores.js), so they are compiled once the queue opens, not beside the
+     rest during the reveal (the docs' journey still hurries them: "docs"); where it compiles on the page's own thread (Firefox:
      compilesAside false) they are a "compile" chore, queued now, behind the flight's, so they too are done under the
      first light's ring (main.js waits for them: engine.js, compiled) */
   let galOK = false, galMade = null;
@@ -1119,8 +1117,10 @@ export function createVoyage(under) {
     if (!galMade) {
       const g0 = performance.now();
       const G = { gal: program(GAL, vs, "galaxy"), stars: program(STARF, shader(gl.VERTEX_SHADER, STARV), "galaxy") };
-      galMade = compiled(Object.values(G)).then(() => {
+      galMade = compiled(Object.values(G)).then((done) => {
         if (dead) return;   /* (the world was let go while it compiled: nothing to link on) */
+        /* (not in time: the docs' flight goes without its galaxy, galOK false, and the docs open as they can) */
+        if (!done) { console.warn("orbit: the docs' galaxy did not compile in time"); return; }
         try {
           Object.values(G).forEach(finish); Object.assign(P, G); galOK = true;
           note(`docs galaxy: shaders compiled in ${Math.round(performance.now() - g0)} ms${counted("galaxy")}`);
@@ -1157,7 +1157,7 @@ export function createVoyage(under) {
   const richProgram = (tag) => richProg || (richProg = made.then((good) => good && chore(() => {
     if (gone) return null;
     const r0 = performance.now(), pr = program(OVER_RICH);
-    return compiled([pr]).then(() => ({ pr, r0 }));
+    return compiled([pr]).then((done) => done && { pr, r0 });
   }, tag === "compile" ? 20 : 60, tag)
     .then((r) => r && chore(() => {
       const { pr, r0 } = r;
