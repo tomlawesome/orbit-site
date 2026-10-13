@@ -78,10 +78,12 @@ echo "== the imported docs carry no script"
 # produce what its own tokeniser would allow: attributes are found after any
 # separator (a space, a slash, a control character, a closing quote) and in
 # any case; a URL attribute has its entities decoded and its whitespace and
-# control characters removed before the scheme is looked at.
+# control characters removed before the scheme is looked at. A construct that
+# would put a browser into a comment or a raw-text element is refused outright,
+# since the import never writes one and the check cannot follow it.
 node -e '
   const fs = require("fs");
-  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i];
+  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template|textarea|title|xmp|noembed|noframes|noscript|plaintext)\b/i];
   const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
   const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
   const decode = (v) => {
@@ -97,6 +99,8 @@ node -e '
   const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
   const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
   const danger = (h) => {
+    // a comment, doctype, <? or a </ that is no end tag: the browser leaves plain text there and this tokeniser does not
+    if (/<[!?]|<\/(?![a-z])/i.test(h)) return true;
     const tagRe = /<([a-z][^\s\/>\x00-\x20]*)/gi;
     let m;
     while ((m = tagRe.exec(h))) {
