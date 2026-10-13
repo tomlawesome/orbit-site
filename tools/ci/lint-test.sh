@@ -20,7 +20,10 @@
 # sw.js must be orbit-media- plus the first 12 hex characters of a SHA-256 over the
 # tracked picture files outside assets/docs/ (a change to a picture without a new
 # name fails and names sw.js and the expected name; a change only under
-# assets/docs/ does not).
+# assets/docs/ does not). And section "the pages carry a Content-Security-Policy" (audit #12): a page without the meta,
+# with it after a script, link or style, with an inline script and no matching hash, a stale hash, 'unsafe-inline' or
+# 'unsafe-eval' in script-src, no object-src 'none' or base-uri 'self', or an inline event handler fails and names the
+# page (cases c0-c8).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -769,6 +772,119 @@ printf 'changed' >> "$dpic"
 commit_all "change a picture under assets/img/docs"
 expect_media_fail "a changed picture under assets/img/docs/"
 git reset -q --hard HEAD~1
+
+# Cases (c0)-(c8) judge the section for the pages' Content-Security-Policy (audit #12). GitHub Pages cannot send
+# headers, so index.html, 404.html and install.html each carry the policy in a <meta http-equiv="Content-Security-Policy">.
+# The pages in the scratch tree are rewritten here, by a small node program, to the policy the owner decided on, so
+# these cases do not depend on the real pages carrying it yet (c8 alone judges the real ones). The program puts the
+# meta straight after <meta charset> (a meta policy covers only what follows it), hashes every inline script of the
+# page into script-src, and, for a fault, applies one change to one page (FAULT_PAGE) given by environment variables.
+cspjs=$(mktemp)
+cat > "$cspjs" <<'CSPJS_EOF'
+const fs = require("fs");
+const crypto = require("crypto");
+const E = process.env;
+const strip = (h) => h.replace(/[ \t]*<meta\s+http-equiv=["']Content-Security-Policy["'][^>]*>[ \t]*\n?/gi, "");
+const inline = (h) => [...h.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter((m) => !/\bsrc\s*=/i.test(m[1])).map((m) => m[2]);
+const hash = (t) => "'sha256-" + crypto.createHash("sha256").update(t, "utf8").digest("base64") + "'";
+for (const page of ["index.html", "404.html", "install.html"]) {
+  const bad = E.FAULT_PAGE === page;
+  let h = strip(fs.readFileSync(page, "utf8"));
+  const hs = inline(h).map(hash);
+  if (bad && E.NOHASH) hs.shift();
+  if (bad && E.STALE) hs.push("'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='");
+  const src = ["'self'", ...hs, "https://cdn.jsdelivr.net"];
+  if (bad && E.UNSAFE) src.splice(1, 0, `'${E.UNSAFE}'`);
+  const parts = [
+    "default-src 'self'", "script-src " + src.join(" "),
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:", "connect-src 'self'", "worker-src 'self'",
+    ...(bad && E.NOOBJECT ? [] : ["object-src 'none'"]), ...(bad && E.NOBASE ? [] : ["base-uri 'self'"]), "form-action 'self'",
+  ];
+  const meta = `  <meta http-equiv="Content-Security-Policy" content="${parts.join("; ")}" />\n`;
+  if (bad && E.DROP_LINK) h = h.replace(/[ \t]*<link rel="stylesheet"[^>]*>\n/, "");
+  if (bad && E.EDIT_SCRIPT) h = h.replace("catch(e){}", "catch(e){/* edited */}");
+  if (bad && E.HANDLER) h = h.replace(/<a href=/, '<a onclick="void 0" href=');
+  const at = bad ? E.META_AT || "start" : "start";
+  if (bad && E.DROP) { fs.writeFileSync(page, h); continue; }
+  if (at === "before-viewport") h = h.replace(/([ \t]*<meta name="viewport")/, meta + "$1");
+  else if (at === "head-end") h = h.replace(/([ \t]*<\/head>)/, meta + "$1");
+  else h = h.replace(/(<meta charset="utf-8" \/>\n)/, "$1" + meta);
+  if (!h.includes("Content-Security-Policy")) throw new Error(page + ": no place to put the policy");
+  fs.writeFileSync(page, h);
+}
+CSPJS_EOF
+# csp_set <env assignments...>: rewrite the three pages, then commit
+csp_set() {
+  env "$@" node "$cspjs"
+  commit_all "pages with a policy"
+}
+# csp_fail <label> <page> <env assignments...>: one fault on one page -> lint exits 1 and names the page
+csp_fail() {
+  label=$1; page=$2; shift 2
+  csp_set FAULT_PAGE="$page" "$@"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$page" "$out"; then
+    echo "ok   $label fails"
+  else
+    echo "FAIL $label fails (exit $rc, want 1 naming $page)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+
+# Case (c8): the real committed pages as they are -> the policy section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep '^==' "$out" | grep -iEq 'content.security|csp|policy'; then
+  echo "ok   the committed pages carry a policy the lint accepts"
+else
+  echo "FAIL the committed pages carry a policy the lint accepts (exit $rc, want 0 with a == heading naming the content security policy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+
+# Case (c0): control, the pages set up correctly -> lint passes, with the policy section's heading in the output.
+csp_set NOTHING=1
+lint_to_out
+if [ "$rc" -eq 0 ] && grep '^==' "$out" | grep -iEq 'content.security|csp|policy'; then
+  echo "ok   correctly set-up pages pass the policy section"
+else
+  echo "FAIL correctly set-up pages pass the policy section (exit $rc, want 0 with a == heading naming the content security policy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (c1): a page with no policy meta.
+csp_fail "index.html with no policy meta" index.html DROP=1
+csp_fail "404.html with no policy meta" 404.html DROP=1
+csp_fail "install.html with no policy meta" install.html DROP=1
+
+# Case (c2): the meta after something that loads (a script, a link, a style), so it covers only part of the head.
+csp_fail "index.html with the meta after an inline script" index.html META_AT=before-viewport
+csp_fail "install.html with the meta after a link" install.html META_AT=head-end
+csp_fail "404.html with the meta after a style" 404.html META_AT=head-end DROP_LINK=1
+
+# Case (c3): an inline script with no matching hash (left out; or edited after it was hashed).
+csp_fail "an inline script with no hash in script-src" index.html NOHASH=1
+csp_fail "an inline script edited after it was hashed" index.html EDIT_SCRIPT=1
+
+# Case (c4): a hash that matches no inline script on the page.
+csp_fail "a stale hash in script-src" index.html STALE=1
+
+# Case (c5): script-src allowing 'unsafe-inline' or 'unsafe-eval'.
+csp_fail "script-src with 'unsafe-inline'" index.html UNSAFE=unsafe-inline
+csp_fail "script-src with 'unsafe-eval'" index.html UNSAFE=unsafe-eval
+
+# Case (c6): object-src 'none' or base-uri 'self' missing.
+csp_fail "a policy with no object-src 'none'" 404.html NOOBJECT=1
+csp_fail "a policy with no base-uri 'self'" install.html NOBASE=1
+
+# Case (c7): an inline event handler attribute.
+csp_fail "an inline event handler attribute" install.html HANDLER=1
+
+rm -f "$cspjs"
 
 rm -f "$out"
 
