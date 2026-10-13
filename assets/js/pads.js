@@ -134,8 +134,9 @@ export function docsPath(hash) {
 
 /* what the pad draws from index.json. The index is what the nightly import wrote, and its colour, slugs and ids go into
    innerHTML (style="--c:…", href="#docs/…"), so they are checked here and not trusted: a colour is "#" and six hex
-   digits or the pad's grey; a source or section whose slug or id is not lower-case letters, digits and dashes is left
-   out; names and titles are strings. The import's own lint and the publish check the same shape (tools/ci/docs-shape.mjs) */
+   digits or the pad's grey; a source or section whose slug or id is not lower-case letters, digits and dashes, or a
+   source left with no section, is left out; names and titles are strings. The import's own lint and the publish check
+   the same shape (tools/ci/docs-shape.mjs) */
 const GREY = "#8791b3", SAFE_ID = /^[a-z0-9-]+$/, SAFE_COLOUR = /^#[0-9a-fA-F]{6}$/;
 export function cleanSources(sources) {
   if (!Array.isArray(sources)) return [];
@@ -153,7 +154,10 @@ export function cleanSources(sources) {
       text: str(s.text),
       subs: (Array.isArray(s.subs) ? s.subs : []).filter((x) => x && typeof x === "object").map((x) => ({ ...x, title: str(x.title) })),
     })),
-  }));
+  }))
+    /* no section left, nothing to chart: the chart names each figure under its lowest star, so it never gets one with
+       none */
+    .filter((d) => d.sections.length);
 }
 
 export function createDocs(pad) {

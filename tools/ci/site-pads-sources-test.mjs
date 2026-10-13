@@ -12,6 +12,7 @@
  *   P5  everything else of a valid source is returned as it was: slug, name, title, repo, path, and each section's id,
  *       title, summary, text, html and subs.
  *   P6  the input is not changed, and an input that is not an array gives [].
+ *   P7  a source left with no sections (none given, not a list, or every one left out) is left out too.
  *
  *   node tools/ci/site-pads-sources-test.mjs
  *
@@ -61,10 +62,24 @@ if (typeof cleanSources === "function") {
   }
 
   /* P3 */
-  for (const id of ['x"y', "a b", "x><b", "", "Top", 5]) {
+  for (const id of ['x"y', "a b", "x><b", "", "Top", 5, "über-orbit", "日本語", "section "]) {
     const r = run([source({ sections: [section(id), section("keep-me")] })]);
     const ids = r.v && r.v[0] ? r.v[0].sections.map((s) => s.id) : null;
     check(`P3 section id ${show(id)} is left out`, !r.threw && show(ids) === show(["keep-me"]), r.threw ? `threw ${r.threw}` : `got ${show(ids)} (want ["keep-me"])`);
+  }
+
+  /* P7: a source that has no section to draw goes too; the chart takes its first point from the first section */
+  {
+    const slugsOf = (name, list, want) => {
+      const r = run(list);
+      const got = r.v ? r.v.map((s) => s.slug) : null;
+      check(name, !r.threw && show(got) === show(want), r.threw ? `threw ${r.threw}` : `got ${show(got)} (want ${show(want)})`);
+    };
+    slugsOf("P7a a source with no sections is left out", [source({ sections: [] }), source({ slug: "ok" })], ["ok"]);
+    slugsOf("P7b a source whose every section is left out goes too", [source({ sections: [section('x"y'), section("")] }), source({ slug: "ok" })], ["ok"]);
+    const r = run([source({ sections: [section("only")] })]);
+    check("P7c a source with one section is kept with it", !r.threw && r.v.length === 1 && r.v[0].sections.length === 1, r.threw ? `threw ${r.threw}` : `got ${show(r.v && r.v.map((s) => s.sections.length))} (want [1])`);
+    slugsOf("P7d a source whose sections are not a list is left out", [source({ sections: "nope" }), source({ slug: "ok" })], ["ok"]);
   }
 
   /* P4 */

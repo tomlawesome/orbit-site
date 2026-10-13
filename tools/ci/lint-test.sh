@@ -128,6 +128,7 @@ poison_case() {
   git reset -q --hard HEAD~1
 }
 tab=$(printf '\t'); nl=$(printf '\n'); ctl=$(printf '\001')
+nbsp=$(printf '\302\240'); vt=$(printf '\013'); bom=$(printf '\357\273\277')
 poison_case "a hex-encoded letter in a javascript: scheme" '<a href="jav&#x61;script:alert(1)">x</a>'
 poison_case "a decimal-encoded letter in a javascript: scheme" '<a href="&#106;avascript:alert(1)">x</a>'
 poison_case "an encoded tab inside a scheme" '<a href="java&#9;script:alert(1)">x</a>'
@@ -150,6 +151,64 @@ if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
   echo "ok   ordinary html with entities, 'on x=' text and data: prose passes"
 else
   echo "FAIL ordinary html with entities, 'on x=' text and data: prose passes (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Cases (b15)-(b19): html the import never writes, which a browser reads
+# differently from the check's tokeniser (an HTML comment, a doctype, a <?
+# construct, a </ not followed by a letter, and the elements textarea, title,
+# xmp, noembed, noframes, noscript and plaintext, whose content is raw text).
+# The import writes such text escaped (&lt;!--), so a stored section holding
+# any of them is refused outright. The attacker's quote opens inside one
+# construct and closes inside another, so a handler hides in an attribute value.
+poison_case "(b15) an html comment hiding a quote" '<!-- <a x=" --><img src=x onerror=alert(1)><!-- "> -->'
+poison_case "(b16) a textarea holding a closing tag in an attribute" '<textarea><a title="</textarea><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b17) a <? construct hiding a quote" '<? <a x=" ><img src=x onerror=alert(1)><a x=" >'
+poison_case "(b18) an upper-case noscript holding a closing tag in an attribute" '<NOSCRIPT><a title="</noscript><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b19) a </ not followed by a letter" '</ x="><img src=x onerror=alert(1)><a x="'
+
+# Cases (b21)-(b29): the lint reads the html by the strict grammar the import
+# writes, not by a browser's lenient one. The attacker hides a quote with a
+# character a browser treats as space or name (a no-break space, a vertical tab,
+# a byte-order mark) or with a construct the import never writes (an end tag
+# with attributes, a < in text or in a value, an upper-case javascript: scheme).
+# The import escapes every < as &lt;, so each of these is refused outright.
+poison_case "(b21) a no-break space after = before a quote" "<a b=${nbsp}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b22) a vertical tab after = before a quote" "<a b=${vt}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b23) a byte-order mark after = before a quote" "<a b=${bom}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b24) a no-break space inside a tag name" "<a${nbsp}b=\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b25) a no-break space ending an unquoted value" "<a b=x${nbsp}c=\"><img src=x onerror=alert(1)><a c=\"\">x</a>"
+poison_case "(b26) an end tag carrying a quoted attribute" '</a b="><a c="><img src=x onerror=alert(1)><a d="">x</a>'
+poison_case "(b27) an upper-case javascript: scheme" '<a href="JAVASCRIPT:alert(1)">x</a>'
+poison_case "(b28) a < inside a quoted value" '<a title="<b>">x</a>'
+poison_case "(b29) a bare < in text" '<p>a < b</p>'
+
+# Case (b20): what the import writes when a document mentions these words
+# (escaped, in a code block; a diagram; a note) -> passes.
+sid=$(poison '<pre class="code" data-lang="html"><code>&lt;!-- a --&gt; &lt;textarea&gt; &lt;?x&gt;</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram, drawing…</figcaption></figure><aside class="alert note"><b>note</b><p>titled</p></aside>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   escaped comment, textarea and <? text in code, a diagram and a note pass"
+else
+  echo "FAIL escaped comment, textarea and <? text in code, a diagram and a note pass (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (b30): the forms the import does write -> passes: a non-ASCII id and
+# label, an apostrophe and entities in a value, an empty value, a bare
+# attribute, and a > in text.
+sid=$(poison '<h2 id="café"><a class="anchor" href="#docs/x/café" aria-label="Link to this heading">#</a>Café &gt; a > b</h2><p>it'"'"'s <a href="https://e.com/a?b=1&amp;c='"'"'d'"'"'" target="_blank" rel="noopener">x</a></p><td class=""></td><figure data-mermaid><pre hidden>graph TD</pre></figure><br>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   the forms the import writes (non-ASCII, entities, empty and bare attributes) pass"
+else
+  echo "FAIL the forms the import writes (non-ASCII, entities, empty and bare attributes) pass (exit $rc, section $sid)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -515,6 +574,26 @@ split_case "another job joining the docs-import environment" $ci "renovate names
   y = y.replace("renovate:\n  stage: maintenance\n", "renovate:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
 split_case "a hidden template naming the docs-import environment" $ci "names the docs-import environment" '
   y = y + "\n.template:\n  environment:\n    name: docs-import\n";'
+# Cases (s12)-(s14): the renovate job joins the environment renovate (the
+# schedule's token scope), and no other job or template may name it.
+split_case "renovate without its environment" $ci "renovate.*environment" '
+  y = y.replace(/(\nrenovate:\n(?:[ \t][^\n]*\n|\n(?=[ \t]))*?)  environment:\n(?:    [^\n]*\n)+/, "$1");'
+split_case "another job joining the renovate environment" $ci "lint.*renovate" '
+  y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  environment:\n    name: renovate\n");'
+split_case "a hidden template naming the renovate environment" $ci "renovate" '
+  y = y + "\n.t:\n  environment:\n    name: renovate\n";'
+split_case "a template joining renovate by the short form" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate\n";'
+# The forms a line reader misses and a word test does not (fix review round 2).
+# Each must be refused however the environment key is written.
+split_case "a template joining renovate with a trailing comment" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate # tokens\n";'
+split_case "a template joining renovate in flow style" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: {name: renovate}\n";'
+split_case "publish_docs joining renovate by a second environment key" $ci "publish_docs names the renovate environment" '
+  y = y.replace("    name: docs-import\n", "    name: docs-import\n  environment: renovate\n");'
+split_case "a four-space-indented template joining renovate" $ci "names the renovate environment" '
+  y = y + "\n.t:\n    environment:\n        name: renovate\n";'
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
   y = y.replace("    name: docs-import\n", "    name: other\n");'
 split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
