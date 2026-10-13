@@ -53,8 +53,12 @@
   <link rel="modulepreload" href="assets/door/markup.js" />
   <link rel="modulepreload" href="assets/js/install.js" />
   <link rel="modulepreload" href="assets/js/world.js" />
+  <link rel="modulepreload" href="assets/js/tilt.js" />
+  <link rel="modulepreload" href="assets/js/lock.js" />
+  <link rel="modulepreload" href="assets/door/fitness.js" />
 </head>
 <body class="at-door">
+  <noscript><p class="corner">Orbit's site needs JavaScript to draw its sky. The install steps are on GitHub: <a href="https://github.com/tomlawesome/orbit">github.com/tomlawesome/orbit</a></p></noscript>
   <div class="sky" id="sky" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
 
@@ -174,7 +178,7 @@
         <div class="cfields">
           <div class="cfield wide"><label for="f-name">name</label><input id="f-name" name="name" placeholder="Boiler service" required /></div>
           <div class="cfield"><label for="f-section">section</label><select id="f-section" name="section"><option value="home">Home</option><option value="vehicles">Vehicles</option><option value="devices">Devices</option><option value="services">Services</option></select></div>
-          <div class="cfield"><label for="f-date">due</label><input id="f-date" name="date" type="date" /></div>
+          <div class="cfield"><label for="f-date">due</label><input id="f-date" name="date" type="date" max="9999-12-31" /></div>
           <div class="cfield"><label for="f-cost">cost, about</label><input id="f-cost" name="cost" inputmode="decimal" placeholder="£" /></div>
           <div class="cfield"><label for="f-recur">comes round</label><select id="f-recur" name="recur"><option value="12">every year</option><option value="6">every 6 months</option><option value="24">every 2 years</option><option value="0">one-off</option></select></div>
         </div>

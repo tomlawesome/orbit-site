@@ -2,7 +2,7 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId, createDate } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 
@@ -17,8 +17,16 @@ export function onChange(fn) { listeners.add(fn); }
 let muted = false;
 export function mute(on) { muted = on; }
 function changed() { if (!muted) persist(); for (const fn of listeners) fn(); }
-export function snapshot() { return serialise(); }
-export function restoreState(snap) { hydrate(snap); closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist(); }
+/* what a visit has: its items, the household the camera is on and the create form (the walk puts them back when it stops) */
+export function snapshot() { return { ...serialise(), camera: state.camera, form: createForm?.read() }; }
+export function restoreState(snap) {
+  cancelFlight();
+  hydrate(snap);
+  if (snap.camera && households[snap.camera] && snap.camera !== state.camera) { state.camera = snap.camera; setCamera(snap.camera); $("#back").textContent = snap.camera === "willow" ? "— the dawn" : "— your sky"; }
+  else if (snap.camera) setCamera(snap.camera);
+  if (snap.form) createForm?.write(snap.form);
+  closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist();
+}
 /* the walk plays on the sample as shipped, whatever a visit has changed since */
 export function restorePristine() { pristine(); closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); }
 export function resetSite() { forget(); location.hash = ""; location.reload(); }
@@ -190,6 +198,18 @@ export function setCamera(id) {
 /* The camera flight (v18, one motion): the old chart leaves with the camera,
    the destination rides home to the exact centre, and the new chart grows out
    of the shared centre. */
+let flight = null;
+/* ends a flight in the air without landing it: its timers are cleared, the flying look is taken off, the camera is
+   left where it was (the caller puts it where it wants), and the flight's done is called so what awaits it carries on */
+export function cancelFlight() {
+  if (!flight) return;
+  const { timers, done } = flight; flight = null;
+  timers.forEach(clearTimeout);
+  const hero = $("#hero"); hero.classList.remove("flying", "arriving");
+  document.querySelectorAll(".minisys.target").forEach((m) => m.classList.remove("target"));
+  state.flying = false;
+  if (done) done();
+}
 export function flyTo(id, done) {
   if (state.flying || id === state.camera) return;
   const hero = $("#hero");
@@ -202,6 +222,7 @@ export function flyTo(id, done) {
   target?.classList.add("target");
   hero.classList.add("flying");
   setCamera(id);
+  const timers = []; flight = { timers, done };
   const land = () => {
     state.camera = id;
     renderDial(); renderManifest(); renderGalaxy();
@@ -210,9 +231,9 @@ export function flyTo(id, done) {
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
     /* the corner says where it goes: from your own sky, down to the dawn; from another's, back to yours */
     $("#back").textContent = id === "willow" ? "— the dawn" : "— your sky";
-    setTimeout(() => { hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); }, reduced ? 50 : 900);
+    timers.push(setTimeout(() => { flight = null; hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); }, reduced ? 50 : 900));
   };
-  setTimeout(land, reduced ? 50 : 1250);
+  timers.push(setTimeout(land, reduced ? 50 : 1250));
 }
 
 /* ── the manifest: the corridor ───────────────────────────────────────── */
@@ -381,7 +402,7 @@ export function snooze(id) {
 }
 export function addItem(fields) {
   const h = household();
-  const id = `i-${Date.now().toString(36)}`;
+  const id = newItemId();
   const it = {
     id, status: "active", title: fields.title, section: fields.section ?? "home", kind: fields.kind ?? "service",
     recurrenceMonths: fields.recurrenceMonths ?? 12, costMinor: fields.costMinor ?? null, costIsEstimate: true,
@@ -489,10 +510,22 @@ function wireExplore() {
 }
 
 /* ── the create form ──────────────────────────────────────────────────── */
+/* the date the form gives an item (data.js: the typed one, or 30 days ahead when it is not a date) */
+export { createDate };
+/* the real create form, as the walk must leave it: read before the walk, written back when it stops (wireCreate sets it,
+   since the chosen type lives in its closure) */
+let createForm = null;
 function wireCreate() {
   const form = $("#createform");
   const types = $$("#types button");
   let kind = "service";
+  createForm = {
+    read: () => ({ fields: [...form.elements].filter((e) => e.id).map((e) => [e.id, e.value]), kind }),
+    write: (s) => {
+      for (const [id, v] of s.fields) { const e = form.elements[id] || document.getElementById(id); if (e) e.value = v; }
+      kind = s.kind; types.forEach((o) => o.setAttribute("aria-pressed", String(o.dataset.type === kind)));
+    },
+  };
   types.forEach((b) => b.addEventListener("click", () => { kind = b.dataset.type; types.forEach((o) => o.setAttribute("aria-pressed", String(o === b))); }));
   const due = $("#f-date");
   due.min = ymd(today);
@@ -500,8 +533,7 @@ function wireCreate() {
     e.preventDefault();
     const title = $("#f-name").value.trim();
     if (!title) { $("#f-name").focus(); return; }
-    const dateText = due.value;
-    const dueDate = dateText ? new Date(`${dateText}T00:00:00`) : law.addDays(today, 30);
+    const dueDate = createDate(due.value, today);
     const cost = parseFloat($("#f-cost").value);
     const it = addItem({ title, kind, section: $("#f-section").value, recurrenceMonths: Number($("#f-recur").value), costMinor: Number.isFinite(cost) ? Math.round(cost * 100) : null, dueDate });
     form.reset(); kind = "service"; types.forEach((o) => o.setAttribute("aria-pressed", String(o.dataset.type === "service")));
@@ -527,7 +559,8 @@ export function mountHome(skyCams) {
   $$(".drawer .close").forEach((c) => c.addEventListener("click", () => openDrawer(c.closest(".drawer").id, false)));
   $$("[data-open-drawer]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); $("#account").classList.remove("open"); openDrawer(b.dataset.openDrawer, true); }));
   $("#dial .sun-link").addEventListener("click", (e) => { e.preventDefault(); $("#today").scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" }); });
-  addEventListener("resize", () => { if (!state.flying) renderGalaxy(); });
+  /* a burst of resizes draws the galaxy once, after the burst (as the docs chart does) */
+  let galaxyTimer; addEventListener("resize", () => { clearTimeout(galaxyTimer); galaxyTimer = setTimeout(() => { if (!state.flying) renderGalaxy(); }, 150); });
   /* from another household, back to yours; from yours, back to the dawn (main.js says how) */
   $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });

@@ -65,17 +65,60 @@ if [ -f assets/docs/index.json ]; then
   ' || fail=1
 fi
 
+echo "== the imported docs have the shape the import writes"
+# the pad draws the index's colour, slugs and ids into innerHTML: they must be
+# what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
+# (the publish job holds the artifact to the same check, #18)
+node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through
+# run on every visitor, whatever the importer let through. A stored section
+# may hold only tags written the one way a browser and this check read alike:
+# an ascii name, html whitespace, name="value" with no quote or angle bracket
+# inside, and no attributes on an end tag. Anything else is refused outright:
+# the import never writes it, and the browser's tokeniser has states this check
+# does not follow. A URL attribute has its entities decoded and its whitespace
+# and control characters removed before the scheme is looked at. A construct
+# that would put a browser into a comment or a raw-text element is refused
+# outright, since the import never writes one and the check cannot follow it.
 node -e '
   const fs = require("fs");
-  const bad = [/<[a-z][^>]*\son[a-z]+\s*=/i, /<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i,
-    /(href|src)\s*=\s*["\x27]?\s*(javascript|vbscript|data):/i];
+  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template|textarea|title|xmp|noembed|noframes|noscript|plaintext)\b/i];
+  const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
+  const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
+  const decode = (v) => {
+    for (let i = 0; i < 4; i++) {
+      const w = v.replace(/&#x([0-9a-f]+);?/gi, (m, h) => cp(parseInt(h, 16)))
+        .replace(/&#(\d+);?/g, (m, d) => cp(Number(d)))
+        .replace(/&([a-z]+);/gi, (m, n) => (named[n.toLowerCase()] !== undefined ? named[n.toLowerCase()] : m));
+      if (w === v) break;
+      v = w;
+    }
+    return v;
+  };
+  const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
+  const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
+  const danger = (h) => {
+    // every < must open a start or end tag of the one shape the import writes, else refuse:
+    // WS is html whitespace only, a value is double-quoted with no quote or angle bracket inside
+    const tag = /<(?:\/[a-zA-Z][a-zA-Z0-9]*[\t\n\f\r ]*|[a-zA-Z][a-zA-Z0-9]*((?:[\t\n\f\r ]+[a-zA-Z][a-zA-Z0-9:-]*(?:="[^"<>]*")?)*)[\t\n\f\r ]*\/?)>/y;
+    for (let i = h.indexOf("<"); i !== -1; i = h.indexOf("<", tag.lastIndex)) {
+      tag.lastIndex = i;
+      const m = tag.exec(h);
+      if (!m) return true;
+      for (const a of (m[1] || "").matchAll(/[\t\n\f\r ]+([a-zA-Z][a-zA-Z0-9:-]*)(?:="([^"<>]*)")?/g)) {
+        const name = a[1].toLowerCase(), value = a[2] || "";
+        if (/^on/.test(name)) return true;
+        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/i.test(scheme(value))) return true;
+      }
+    }
+    return bad.some((re) => re.test(h));
+  };
   const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
   for (const f of files) {
     for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
-      if (bad.some((re) => re.test(s.html || ""))) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
+      if (danger(s.html || "")) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
     }
   }
 ' || fail=1
@@ -100,16 +143,109 @@ echo "== docs-import merge requests pull without the dependency proxy"
 # the import's bot cannot use the group proxy: its merge requests must pull
 # from Docker Hub, and the node pin must keep the prefix that rule swaps
 wf=$(awk '/^workflow:/{w=1} /^[a-z]/&&!/^workflow:/{w=0} w' .gitlab-ci.yml)
-printf '%s\n' "$wf" | grep -q 'CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\\/import-/' \
-  && printf '%s\n' "$wf" | grep -q '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$' \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends docs/import- merge requests to Docker Hub"; fail=1; }
-# its merge request merges itself as that bot, so main's push pipeline runs
-# as the bot too: the bot's merge commit on main must pull from Docker Hub
-printf '%s\n' "$wf" | grep -q 'CI_COMMIT_AUTHOR =~ /project_\[0-9\]+_bot_/' \
-  && [ "$(printf '%s\n' "$wf" | grep -c '^ *CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io$')" -eq 2 ] \
-  || { echo "   .gitlab-ci.yml: no workflow rule sends the import bot's own pushes (its self-merge on main) to Docker Hub"; fail=1; }
+# GitLab takes the first workflow rule that matches, so each rule is judged as
+# one block (its condition, its variables, no `when: never`) and by its place:
+# the docs/import rule must come before the general merge-request rule, and
+# the bot-author rule before the closing `if: $CI_COMMIT_BRANCH` rule, or the
+# general rule matches first and the override never applies.
+WF="$wf" node -e '
+  const bad = (m) => { console.log(`   .gitlab-ci.yml: ${m}`); process.exitCode = 1; };
+  const rules = [];
+  let inRules = false;
+  for (const l of process.env.WF.split("\n")) {
+    if (/^\s*#/.test(l) || !l.trim()) continue;
+    if (/^  rules:/.test(l)) { inRules = true; continue; }
+    if (!inRules) continue;
+    if (/^    - /.test(l)) rules.push(l.trim().replace(/^- /, "") + "\n");
+    else if (rules.length) rules[rules.length - 1] += l.trim() + "\n";
+  }
+  const sets = (r) => /^variables:\n(?:.*\n)*?CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker\.io\n/m.test(r) && !/^when: never$/m.test(r);
+  const first = (r) => r.split("\n")[0];
+  const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
+  const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
+  const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
+  const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
+  if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
+  else {
+    if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
+    if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
+    else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
+  }
+  if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
+  else {
+    if (!sets(rules[bot])) bad("the bot-author rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
+    if (last < 0) bad("no closing `if: $CI_COMMIT_BRANCH` workflow rule to order the bot-author rule before");
+    else if (bot > last) bad("the bot-author rule comes after the general `if: $CI_COMMIT_BRANCH` rule, which matches first, so its Docker Hub override never applies");
+  }
+' || fail=1
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
+
+echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
+# The import runs other people's code (npm packages) and so must hold nothing
+# worth stealing; the publish holds the token, runs no third-party code, and is
+# the only job in the docs-import environment, where the token is scoped (#18).
+# Both run from the schedule on main alone, never on a merge request pipeline.
+# The Renovate tokens are scoped the same way to the renovate environment,
+# which only the renovate job joins, since every other job runs npm packages.
+node -e '
+  const fs = require("fs");
+  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+  const yml = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n") + "\n";
+  const job = (n) => { const m = yml.match(new RegExp(`^${n}:\\n((?:[ \\t].*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
+  // the lines under a key of the job (two-space indent), up to the next such key
+  const section = (b, k) => { const m = b.match(new RegExp(`^  ${k}:[^\\n]*\\n((?:   .*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
+  const RULE = `if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
+  const imp = job("import_docs"), pub = job("publish_docs");
+  if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
+  if (pub === null) bad(".gitlab-ci.yml: there is no publish_docs job");
+  for (const [name, b] of [["import_docs", imp], ["publish_docs", pub]]) {
+    if (b === null) continue;
+    const rules = (section(b, "rules") || "").split("\n").filter((l) => l.trim()).map((l) => l.trim().replace(/^- /, ""));
+    if (rules.length !== 1 || rules[0] !== RULE) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on main (${RULE}), found: ${rules.join(" | ") || "none"}`);
+  }
+  if (imp !== null) {
+    if (/^  environment:/m.test(imp)) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
+    if (/ORBIT_SITE_IMPORT_TOKEN/.test(imp)) bad(".gitlab-ci.yml: import_docs names ORBIT_SITE_IMPORT_TOKEN");
+    if (!/nightly-import\.sh/.test(section(imp, "script") || "")) bad(".gitlab-ci.yml: import_docs does not run tools/ci/nightly-import.sh");
+    const paths = ((section(imp, "artifacts") || "").match(/^    paths:\n((?:      - .*\n)*)/m) || [, ""])[1].split("\n").filter((l) => l.trim()).map((l) => l.replace(/^\s*- /, "").trim());
+    if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
+    if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
+  }
+  // each environment holds tokens scoped to it: no job but its own may name it
+  // (anywhere in the file, comments aside: a job, an extends template, defaults)
+  const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
+  for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
+    for (const [e, j] of Object.entries(envs)) {
+      if (m[1] !== j && m[2].includes(e)) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
+    }
+  }
+  const ren = job("renovate");
+  if (ren !== null && !/^    name: renovate$/m.test(section(ren, "environment") || "")) bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
+  if (pub !== null) {
+    const env = section(pub, "environment") || "";
+    if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
+    const needs = section(pub, "needs") || "";
+    if (!/- job: import_docs\n\s+artifacts: false/.test(needs)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false); a dotenv report in them would set this job\x27s variables");
+    if (!/^    GIT_STRATEGY: clone$/m.test(section(pub, "variables") || "")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
+    const script = section(pub, "script") || "";
+    if (!/nightly-publish\.sh/.test(script)) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
+    if (/\b(npm|npx|yarn|pnpm)\b/.test(script)) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
+  }
+  const imps = fs.existsSync("tools/ci/nightly-import.sh") ? fs.readFileSync("tools/ci/nightly-import.sh", "utf8") : null;
+  const pubs = fs.existsSync("tools/ci/nightly-publish.sh") ? fs.readFileSync("tools/ci/nightly-publish.sh", "utf8") : null;
+  if (imps === null) bad("tools/ci/nightly-import.sh: is missing");
+  else {
+    const code = imps.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    if (/ORBIT_SITE_IMPORT_TOKEN|PRIVATE-TOKEN/.test(imps)) bad("tools/ci/nightly-import.sh: names the token; it runs other people\x27s code and must not");
+    if (/\bcurl\b|\bgit\b[^\n]*\bpush\b/.test(code)) bad("tools/ci/nightly-import.sh: calls curl or git push; the import makes no API call and no push");
+  }
+  if (pubs === null) bad("tools/ci/nightly-publish.sh: is missing");
+  else {
+    const code = pubs.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    if (/\b(npm|npx|yarn|pnpm)\b/.test(code)) bad("tools/ci/nightly-publish.sh: runs npm or another package manager; it holds the token and runs no third-party code");
+  }
+' || fail=1
 
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or

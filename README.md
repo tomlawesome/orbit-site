@@ -79,12 +79,11 @@ Words used in the table:
 | `assets/door/img/flight/*.webp` | Its Earth: NASA's Black Marble city lights (global, and Europe sharper, where the door looks), the Blue Marble's land and clouds, reduced from the same sources as `tools/dawn.py` |
 | `assets/door/img/dawn/*-near.webp` | The live door's Earth, near: the patch it looks at (lon -25 to 45, lat 28 to 66) cut from NASA's full-resolution maps — the Blue Marble's clouds at 48 px a degree, the Black Marble's lights (2016, 3 km) and the Blue Marble's land at their own 37.5 and 15 — so the clouds and cities stay as sharp as the picture's; the flight's global maps stay for the rest of the globe; `lights-strip-{240,180,120}.webp` are the 500 m lights over the door's own ground (lon 0 to 20, lat 40 to 56) at three sharpnesses, of which the device's band width picks one |
 | `tools/doorcrop.py` | Cuts them (`python3 tools/doorcrop.py`; `pip install pillow`): each cloud hemisphere is a 211 MB PNG, so they can be given one at a time, the strips kept with `--strips`. Its docstring has the sources, the box and the command |
-| `assets/img/launcher/` | The launcher's own screens, sized for the web; the importer refreshes them from the launcher's repository |
 | `assets/docs/` | The docs, imported: one JSON page per source and an index of every section, written by `tools/import-docs.mjs` |
-| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`npm ci --prefix tools --ignore-scripts && node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`) |
-| `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import and the weekly Renovate run |
+| `tools/import-docs.mjs` | Fetches the markdown from the Orbit repositories and sets it as the site's pages (`npm ci --prefix tools --ignore-scripts && node tools/import-docs.mjs`, or `--from ../orbit` for a local checkout; needs `marked`; the sources it reads are listed in `tools/docs-sources.json`) |
+| `.gitlab-ci.yml` | The pipeline on GitLab: the lint, the live journey in Firefox, the nightly docs import (an import job, then a publish job) and the weekly Renovate run |
 | `tools/door-markup.mjs` | Writes the door's markup into `index.html` from `assets/door/markup.js` (`node tools/door-markup.mjs`; `--check` is what the lint runs) |
-| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), and `nightly-import.sh`, which runs the docs import every night and, when anything changed, opens a merge request into `main` that merges itself once the checks pass |
+| `tools/ci/` | What the pipeline runs: `lint.sh`, `serve.mjs` (the site as Pages serves it), `journey.mjs` (the live journey), `upload-test.mjs`, the small tests of the checks themselves, `door-timing.mjs` (by hand: how long the door takes in a real browser, before and after a change), `nightly-import.sh`, which runs the docs import every night with no token and hands the pages on as an artifact, and `nightly-publish.sh`, which fetches that artifact itself, checks every entry and the docs' shape (`docs-shape.mjs`, against `tools/docs-sources.json`) and, when anything changed, opens a merge request into `main` that merges itself once the checks pass (two jobs so the code the import runs never sits beside the token) |
 | `.github/workflows/codeql.yml` | CodeQL scans the JavaScript on the GitHub mirror |
 | `renovate.json` | What Renovate watches for newer versions of the pipeline's images and the import tool's packages |
 | `CONTRIBUTING.md`, `SECURITY.md` | How changes are made; how to report a security problem |
@@ -111,7 +110,7 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 
 - NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
   credited in the layout table above and in `LICENSE`.
-- `marked` (MIT), `sharp` (Apache-2.0; the import tool only) and `playwright`
+- `marked` (MIT), `sharp` (Apache-2.0; the glow tool and its test only) and `playwright`
   (Apache-2.0; CI only). None ships to a visitor. `marked` and `sharp` are pinned in
   `tools/package.json` and nowhere else; `playwright` by `PLAYWRIGHT_VERSION`
   and `PLAYWRIGHT_IMAGE` in `.gitlab-ci.yml`.

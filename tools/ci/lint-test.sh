@@ -13,7 +13,10 @@
 # assets/door/ that imports from outside the folder, reads location.search or
 # uses import.meta.url fails and is named, as is a site module that imports a
 # file of the folder other than its index.js, a url() in door.css that reaches
-# outside the folder, and an index.html whose door differs from markup.js.
+# outside the folder, and an index.html whose door differs from markup.js; and
+# section "the docs import is split" (issue #18): import_docs holding the token
+# or an environment, publish_docs losing its environment, taking npm, or its
+# artifact, or either job running anywhere but the schedule on main.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -101,6 +104,111 @@ if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid"
   echo "ok   a script element in an imported section fails"
 else
   echo "FAIL a script element in an imported section fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Cases (b2)-(b13): what the sanitiser's own tokeniser could let through in
+# hand-edited or hole-produced output (issue #12). Each of these passed the
+# first version of the check, which looked at one tag with plain text matches;
+# the check now reads attributes as a browser does. poison_case <label> <html>
+# expects the lint to fail, naming the file and the section.
+poison_case() {
+  sid=$(poison "$2")
+  rc=0
+  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+tab=$(printf '\t'); nl=$(printf '\n'); ctl=$(printf '\001')
+nbsp=$(printf '\302\240'); vt=$(printf '\013'); bom=$(printf '\357\273\277')
+poison_case "a hex-encoded letter in a javascript: scheme" '<a href="jav&#x61;script:alert(1)">x</a>'
+poison_case "a decimal-encoded letter in a javascript: scheme" '<a href="&#106;avascript:alert(1)">x</a>'
+poison_case "an encoded tab inside a scheme" '<a href="java&#9;script:alert(1)">x</a>'
+poison_case "a tab inside a scheme" "<a href=\"java${tab}script:alert(1)\">x</a>"
+poison_case "a newline inside an unquoted scheme" "<a href=java${nl}script:alert(1)>x</a>"
+poison_case "an encoded vbscript: scheme" '<a href="&#x76;bscript:x">x</a>'
+poison_case "an encoded data: scheme with an encoded colon" '<img src="&#100;ata&colon;text/html,x">'
+poison_case "a handler after a slash" '<img/onerror=alert(1) src=x>'
+poison_case "a handler straight after a closing quote" '<img src="x"onerror=alert(1)>'
+poison_case "a handler after a control character" "<img${ctl}onerror=alert(1) src=x>"
+poison_case "a handler after an attribute value holding a >" '<img alt=">" onerror=alert(1)>'
+poison_case "an upper-case unquoted handler" '<IMG SRC=x ONERROR=alert(1)>'
+
+# Case (b14): ordinary html that only looks like the above -> passes: an
+# entity in a URL, "on x=" in text and in an attribute value, data: in prose.
+sid=$(poison '<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p><img alt="a onfoo=b" src="x.png">')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   ordinary html with entities, 'on x=' text and data: prose passes"
+else
+  echo "FAIL ordinary html with entities, 'on x=' text and data: prose passes (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Cases (b15)-(b19): html the import never writes, which a browser reads
+# differently from the check's tokeniser (an HTML comment, a doctype, a <?
+# construct, a </ not followed by a letter, and the elements textarea, title,
+# xmp, noembed, noframes, noscript and plaintext, whose content is raw text).
+# The import writes such text escaped (&lt;!--), so a stored section holding
+# any of them is refused outright. The attacker's quote opens inside one
+# construct and closes inside another, so a handler hides in an attribute value.
+poison_case "(b15) an html comment hiding a quote" '<!-- <a x=" --><img src=x onerror=alert(1)><!-- "> -->'
+poison_case "(b16) a textarea holding a closing tag in an attribute" '<textarea><a title="</textarea><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b17) a <? construct hiding a quote" '<? <a x=" ><img src=x onerror=alert(1)><a x=" >'
+poison_case "(b18) an upper-case noscript holding a closing tag in an attribute" '<NOSCRIPT><a title="</noscript><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b19) a </ not followed by a letter" '</ x="><img src=x onerror=alert(1)><a x="'
+
+# Cases (b21)-(b29): the lint reads the html by the strict grammar the import
+# writes, not by a browser's lenient one. The attacker hides a quote with a
+# character a browser treats as space or name (a no-break space, a vertical tab,
+# a byte-order mark) or with a construct the import never writes (an end tag
+# with attributes, a < in text or in a value, an upper-case javascript: scheme).
+# The import escapes every < as &lt;, so each of these is refused outright.
+poison_case "(b21) a no-break space after = before a quote" "<a b=${nbsp}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b22) a vertical tab after = before a quote" "<a b=${vt}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b23) a byte-order mark after = before a quote" "<a b=${bom}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b24) a no-break space inside a tag name" "<a${nbsp}b=\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b25) a no-break space ending an unquoted value" "<a b=x${nbsp}c=\"><img src=x onerror=alert(1)><a c=\"\">x</a>"
+poison_case "(b26) an end tag carrying a quoted attribute" '</a b="><a c="><img src=x onerror=alert(1)><a d="">x</a>'
+poison_case "(b27) an upper-case javascript: scheme" '<a href="JAVASCRIPT:alert(1)">x</a>'
+poison_case "(b28) a < inside a quoted value" '<a title="<b>">x</a>'
+poison_case "(b29) a bare < in text" '<p>a < b</p>'
+
+# Case (b20): what the import writes when a document mentions these words
+# (escaped, in a code block; a diagram; a note) -> passes.
+sid=$(poison '<pre class="code" data-lang="html"><code>&lt;!-- a --&gt; &lt;textarea&gt; &lt;?x&gt;</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram, drawing…</figcaption></figure><aside class="alert note"><b>note</b><p>titled</p></aside>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   escaped comment, textarea and <? text in code, a diagram and a note pass"
+else
+  echo "FAIL escaped comment, textarea and <? text in code, a diagram and a note pass (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (b30): the forms the import does write -> passes: a non-ASCII id and
+# label, an apostrophe and entities in a value, an empty value, a bare
+# attribute, and a > in text.
+sid=$(poison '<h2 id="café"><a class="anchor" href="#docs/x/café" aria-label="Link to this heading">#</a>Café &gt; a > b</h2><p>it'"'"'s <a href="https://e.com/a?b=1&amp;c='"'"'d'"'"'" target="_blank" rel="noopener">x</a></p><td class=""></td><figure data-mermaid><pre hidden>graph TD</pre></figure><br>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   the forms the import writes (non-ASCII, entities, empty and bare attributes) pass"
+else
+  echo "FAIL the forms the import writes (non-ASCII, entities, empty and bare attributes) pass (exit $rc, section $sid)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -321,6 +429,49 @@ else
   git reset -q --hard HEAD~1
 fi
 
+# Cases (g3)-(g6): the rules are judged as blocks, in order (GitLab takes the
+# first workflow rule that matches). Each edit leaves every line of the old
+# checks in the file, so only a block-and-order check catches it. rule_case
+# <label> <named> <js>: <js> edits the string y (the file) and must change it.
+rule_case() {
+  Y="$(cat .gitlab-ci.yml)" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    new Function("y", "return y")(y);
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml: .*$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming .gitlab-ci.yml: $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# (g3) the docs/import rule moved below the general merge-request rule
+rule_case "the docs/import rule after the general merge-request rule" "comes after the general merge-request rule" '
+  const m = y.match(/    - if: \$CI_PIPELINE_SOURCE == "merge_request_event" && \$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n/);
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(m[0], "").replace(g, g + m[0]);'
+# (g4) its override moved to another rule: every old line is still in the file
+rule_case "the docs/import rule's override moved to the general merge-request rule" "docs/import- merge-request rule does not set" '
+  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const d = "=~ /^docs\\/import-/\n";
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(d + o, d).replace(g, g + o);'
+# (g5) the docs/import rule turned off
+rule_case "the docs/import rule with when: never" "docs/import- merge-request rule does not set" '
+  y = y.replace("=~ /^docs\\/import-/\n      variables:", "=~ /^docs\\/import-/\n      when: never\n      variables:");'
+# (g6) the bot-author rule moved below the closing rule
+rule_case "the bot-author rule after the general branch rule" "bot-author rule comes after" '
+  const b = "    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const c = "    - if: $CI_COMMIT_BRANCH\n";
+  y = y.replace(b, "").replace(c, c + b);'
+
 # Case (h): the committed tree as it is -> the lint passes and has a heading
 # for the section, a "==" line naming both "import" and "dependency proxy".
 lint_to_out
@@ -384,6 +535,125 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
+# Cases (s1)-(s11) judge the section "the docs import is split" (issue #18):
+# import_docs runs other people's code and holds no token; publish_docs holds it
+# in the docs-import environment, runs no npm, and takes the artifact. Both run
+# from the schedule on main alone. split_case <label> <file> <named> <js>: <js>
+# edits the string y (the file's text) and must change it; the lint must fail
+# naming <file> with <named>.
+split_case() {
+  F="$2" Y="$(cat "$2")" JS="$4" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$2: .*$3" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $2: $3)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+ci=.gitlab-ci.yml
+split_case "import_docs joining an environment" $ci "import_docs has an environment" '
+  y = y.replace("import_docs:\n  stage: maintenance\n", "import_docs:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
+split_case "import_docs naming the token" $ci "import_docs names ORBIT_SITE_IMPORT_TOKEN" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-import.sh\n", "  script:\n    - echo $ORBIT_SITE_IMPORT_TOKEN | wc -c\n    - sh tools/ci/nightly-import.sh\n");'
+split_case "import_docs running on merge requests" $ci "import_docs rules must be" '
+  y = y.replace("import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n", "import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
+split_case "import_docs handing on more than the docs" $ci "import_docs artifacts must be assets/docs/ alone" '
+  y = y.replace("      - assets/docs/\n", "      - assets/docs/\n      - tools/\n");'
+split_case "import_docs with a long-lived artifact" $ci "import_docs artifacts need a short expire_in" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 days\n");'
+split_case "another job joining the docs-import environment" $ci "renovate names the docs-import environment" '
+  y = y.replace("renovate:\n  stage: maintenance\n", "renovate:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
+split_case "a hidden template naming the docs-import environment" $ci "names the docs-import environment" '
+  y = y + "\n.template:\n  environment:\n    name: docs-import\n";'
+# Cases (s12)-(s14): the renovate job joins the environment renovate (the
+# schedule's token scope), and no other job or template may name it.
+split_case "renovate without its environment" $ci "renovate.*environment" '
+  y = y.replace(/(\nrenovate:\n(?:[ \t][^\n]*\n|\n(?=[ \t]))*?)  environment:\n(?:    [^\n]*\n)+/, "$1");'
+split_case "another job joining the renovate environment" $ci "lint.*renovate" '
+  y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  environment:\n    name: renovate\n");'
+split_case "a hidden template naming the renovate environment" $ci "renovate" '
+  y = y + "\n.t:\n  environment:\n    name: renovate\n";'
+split_case "a template joining renovate by the short form" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate\n";'
+# The forms a line reader misses and a word test does not (fix review round 2).
+# Each must be refused however the environment key is written.
+split_case "a template joining renovate with a trailing comment" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate # tokens\n";'
+split_case "a template joining renovate in flow style" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: {name: renovate}\n";'
+split_case "publish_docs joining renovate by a second environment key" $ci "publish_docs names the renovate environment" '
+  y = y.replace("    name: docs-import\n", "    name: docs-import\n  environment: renovate\n");'
+split_case "a four-space-indented template joining renovate" $ci "names the renovate environment" '
+  y = y + "\n.t:\n    environment:\n        name: renovate\n";'
+split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
+  y = y.replace("    name: docs-import\n", "    name: other\n");'
+split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
+  y = y.replace("      artifacts: false\n", "      artifacts: true\n");'
+split_case "publish_docs on a reused build folder" $ci "publish_docs needs GIT_STRATEGY: clone" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "");'
+split_case "publish_docs on a different schedule rule" $ci "publish_docs rules must be" '
+  y = y.replace("publish_docs:", "publish_docs:").replace(/(publish_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "main"\n/, "$1\n");'
+split_case "publish_docs running npm" $ci "publish_docs runs npm" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - npm ci --prefix tools\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
+  y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
+split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '
+  y = y.replace("  node tools/import-docs.mjs\n", "  node tools/import-docs.mjs\n  curl -fsS https://gitlab.invalid/api\n");'
+split_case "the publish script running npm" tools/ci/nightly-publish.sh "runs npm" '
+  y = y.replace("  echo \"== the artifact\"\n", "  echo \"== the artifact\"\n  npm ci --prefix tools\n");'
+
+# Cases (d1)-(d3) judge the section "the imported docs have the shape the import
+# writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
+# shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
+shape_case() {
+  F="assets/docs/$2" JS="$3" node -e '
+    const fs = require("fs"); const j = JSON.parse(fs.readFileSync(process.env.F, "utf8"));
+    new Function("j", process.env.JS)(j); fs.writeFileSync(process.env.F, JSON.stringify(j));
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -i '^==' "$out" | grep -iq 'shape the import writes' && grep -q "$2" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $2)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+shape_case "an index colour carrying markup" index.json 'j.sources[0].c = "#fff\"><img src=x onerror=alert(1)>";'
+shape_case "an index slug carrying a quote" index.json 'j.sources[1].slug = "a\"b";'
+shape_case "a page section id with a space" readme.json 'j.sections[0].id = "a b";'
+git rm -q assets/docs/security.json
+commit_all "a page missing"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q "security.json" "$out"; then
+  echo "ok   a page missing from assets/docs fails"
+else
+  echo "FAIL a page missing from assets/docs fails (exit $rc)"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (s): the committed tree as it is -> the section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'docs import is split'; then
+  echo "ok   the committed pipeline passes the split-import section"
+else
+  echo "FAIL the committed pipeline passes the split-import section (exit $rc, want 0 with a == heading naming the split import)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+
 rm -f "$out"
 
 exit "$failed"

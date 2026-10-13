@@ -166,7 +166,10 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     if (ready && !reduced && !pinned) {
       const warp = beats.find((b) => b.act === "warp")?.at ?? 0;
       body.classList.add("holding");
-      clock.holdAt(Math.max(0, warp - 10), ready.finally(() => body.classList.remove("holding")));
+      /* (only the flight that set the class takes it off: an older flight's ready settling late must not clear the
+         class a newer flight has set) */
+      const mine = flight;
+      clock.holdAt(Math.max(0, warp - 10), ready.finally(() => { if (flight === mine) body.classList.remove("holding"); }));
     }
     flight.gone = gone(beats, at, "land");
     cancelTimeline = runTimeline(beats, ascentStep, pinned ? { at } : clock);

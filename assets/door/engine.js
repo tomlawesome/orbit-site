@@ -1198,6 +1198,8 @@ export function createFlight(canvas, options = {}) {
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
       }
+      /* (a later ask lets the world try once more for a map that failed: voyage.js warm; it settles by itself) */
+      else if (world3d && !world3d.dead) world3d.warm({ prove: false }).catch(() => {});
       if (!prove) return warmed;
       if (!proved) {
         proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); });

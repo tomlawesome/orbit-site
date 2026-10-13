@@ -75,6 +75,12 @@ const SOFT = new Set(["zod", "sway1", "sway2", "glow", "belt", "afterglow", "sun
    at half of that, which a blur that wide cannot tell apart */
 const SOFTEST = new Set(["zod", "sway1", "sway2", "glow", "belt"]);
 const cache = new Map();
+/* a picture of a size no longer current: out of the cache, its blob: URL revoked (a data: URL holds nothing) */
+function forget(key) {
+  const url = cache.get(key);
+  cache.delete(key);
+  if (typeof url === "string" && url.startsWith("blob:")) URL.revokeObjectURL(url);
+}
 function decodeSvg(svg) {
   const img = new Image();
   const done = new Promise((resolve, reject) => { img.onload = () => resolve(img); img.onerror = reject; });
@@ -113,7 +119,7 @@ const hash = (x, y, seed) => {
 };
 const tpdf = (r) => (r & 0xffff) / 0x10000 + (r >>> 16) / 0x10000 - 1;
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-async function paintSun(key, w, h) {
+async function paintSun(key, w, h, live = () => true) {
   const hit = cache.get(key);
   if (hit) return hit;
   const canvas = document.createElement("canvas");
@@ -147,7 +153,11 @@ async function paintSun(key, w, h) {
       d[i + 3] = a8;
     }
     ctx.putImageData(im, 0, y0);
-    if (y0 + rows < h) await new Promise((r) => setTimeout(r, 0));
+    if (y0 + rows < h) {
+      await new Promise((r) => setTimeout(r, 0));
+      /* a build that a newer size has superseded stops painting between bands (nothing is made for it) */
+      if (!live()) return null;
+    }
   }
   return keep(key, canvas);
 }
@@ -161,7 +171,7 @@ const frame = (defs, body, w, h) =>
    picture is handed to `drawn(url, name)` as it is set, for a host to
    decode it ahead of showing it (the dawn's, #32). */
 export function mountRasters(world, groups, prefix, { until = () => null, drawn = () => {} } = {}) {
-  let timer, run = 0;
+  let timer, run = 0, current = new Set();
   /* where the sunrise point (800, 920 in the slice) falls on screen, for the
      layers that turn about it */
   const origin = () => {
@@ -175,19 +185,27 @@ export function mountRasters(world, groups, prefix, { until = () => null, drawn 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const base = Math.max(innerWidth / 1600, innerHeight / 1000);
     world.dataset.rasterised = "pending";
-    for (const [name, group] of Object.entries(groups)) {
+    /* this build's pictures: name -> [key, w, h] (the key says the size), the newest build's being the current sizes */
+    const sizes = Object.fromEntries(Object.keys(groups).map((name) => {
       const scale = base * (SOFTEST.has(name) ? 0.5 : SOFT.has(name) ? 1 : dpr);
       const w = Math.max(1, Math.round(1600 * scale)), h = Math.max(1, Math.round(1000 * scale));
-      const key = `${prefix}-${name}|${w}|${h}`;
+      return [name, [`${prefix}-${name}|${w}|${h}`, w, h]];
+    }));
+    current = new Set(Object.values(sizes).map(([key]) => key));
+    for (const [name, group] of Object.entries(groups)) {
+      const [key, w, h] = sizes[name];
       /* the sun is painted (paintSun); the rest are drawn from their SVG */
-      const url = await (group === SUN ? paintSun(key, w, h) : rasterise(key, frame(group.defs, group.body, w, h), w, h));
-      if (id !== run) return;
+      const url = await (group === SUN ? paintSun(key, w, h, () => id === run) : rasterise(key, frame(group.defs, group.body, w, h), w, h));
+      /* superseded: what it made for a size that is no longer current is let go (the newer build's own sizes are kept) */
+      if (id !== run) { if (url && !current.has(key)) forget(key); return; }
       world.querySelector(`image[data-raster="${name}"]`)?.setAttribute("href", url);
       drawn(url, name);
       await new Promise((r) => setTimeout(r, 0));
       if (id !== run) return;
     }
     /* "ready" is "drawn": the host may hold it for more (`until()`: a promise it never rejects; the dawn's Earth) */
+    /* the newer build has ended: the pictures of sizes no longer current are let go (their blob: URLs revoked) */
+    for (const k of [...cache.keys()]) if (k.startsWith(`${prefix}-`) && !current.has(k)) forget(k);
     await until();
     if (id !== run) return;
     world.dataset.rasterised = "ready";

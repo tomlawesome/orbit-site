@@ -44,9 +44,10 @@ export async function run() {
       const t0 = performance.now();
       const B = await uploadBanded(gl, banded, { internal: fmt, tag: "test", name: "test", setup: wrap, drawable: (t) => { first = apart(read(A, 0, w, h), read(t, 0, w, h)); } });
       const ms = performance.now() - t0;
+      if (first < 0) { gl.deleteTexture(A); gl.deleteTexture(B); throw new Error("drawable never fired"); }
       gl.bindTexture(gl.TEXTURE_2D, A); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       const w2 = Math.max(1, w >> 2), h2 = Math.max(1, h >> 2), third = apart(read(A, 2, w2, h2), read(B, 2, w2, h2));
-      out.push(line(`${label} ${w}x${h}`, `level 0: ${first} bytes differ of ${w * h * 4}; level 2 (${w2}x${h2}): ${third} of ${w2 * h2 * 4}; banded in ${round(ms, 0)} ms (a band a frame)`));
+      out.push(line(`${label} ${w}x${h}`, `${first === 0 && third === 0 ? "pass" : "FAIL"}: level 0: ${first} bytes differ of ${w * h * 4}; level 2 (${w2}x${h2}): ${third} of ${w2 * h2 * 4}; banded in ${round(ms, 0)} ms (a band a frame)`));
       gl.deleteTexture(A); gl.deleteTexture(B);
     } catch (e) { out.push(line(label, `failed: ${e.message}`)); }
   }

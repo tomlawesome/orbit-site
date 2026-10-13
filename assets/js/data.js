@@ -33,6 +33,16 @@ function item(fields) {
   };
 }
 
+/* The version of the sample below. BUMP IT whenever the sample changes (an item added, removed, renamed or re-dated, a
+   household changed): a returning visitor's saved sample is then replaced with this one (hydrate), keeping only the
+   items they added themselves. */
+export const SAMPLE_VERSION = 1;
+/* An item the visitor adds gets a time-based id (newItemId: "i-" and the clock in base 36, 8 characters until the year
+   5188); the sample's ids are names or counts. Only an id of that shape is a visitor's own. So a sample id must never be
+   8 characters of 0-9 a-z after the "i-". */
+export const newItemId = () => `i-${Date.now().toString(36)}`;
+const isVisitorId = (id) => /^i-[0-9a-z]{8}$/.test(String(id));
+
 export const households = {
   willow: {
     id: "willow",
@@ -95,15 +105,27 @@ export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStar
 export function serialise() {
   return {
     v: STATE_VERSION,
+    sampleVersion: SAMPLE_VERSION,
     households: Object.fromEntries(Object.values(households).map((h) => [h.id, h.items.map((it) => ({ ...it, dueDate: ymd(it.dueDate), completedOn: it.completedOn ? ymd(it.completedOn) : undefined }))])),
     review: inbox.review.map((r) => r.id),
   };
 }
+/* the date a typed or saved "yyyy-mm-dd" gives: that day when it is a four-digit-year date that parses, otherwise 30 days
+   past `now` (a year of more than four digits, or "NaN-NaN-NaN" left by an old bug, reads as no date, not an invalid one) */
+export function createDate(value, now) {
+  const typed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
+  return typed && !Number.isNaN(typed.getTime()) ? typed : addDays(now, 30);
+}
 export function hydrate(saved) {
   if (!saved || saved.v !== STATE_VERSION) return false;
+  const revive = (it) => ({ ...it, dueDate: createDate(it.dueDate, today), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined });
+  /* a state saved from an older sample (or before versions were recorded) keeps only what the visitor added: the
+     sample items come from the current sample. Same version: everything as saved */
+  const older = !(saved.sampleVersion >= SAMPLE_VERSION);
+  const sampleIds = older ? new Set(Object.values(pristineState.households).flat().map((it) => it.id)) : null;
   for (const [id, items] of Object.entries(saved.households ?? {})) {
     if (!households[id]) continue;
-    households[id].items = items.map((it) => ({ ...it, dueDate: new Date(`${it.dueDate}T00:00:00`), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined }));
+    households[id].items = (older ? [...(pristineState.households[id] ?? []), ...items.filter((it) => isVisitorId(it.id) && !sampleIds.has(it.id))] : items).map(revive);
   }
   if (Array.isArray(saved.review)) inbox.review = pristineReview.filter((r) => saved.review.includes(r.id));
   return true;
@@ -115,7 +137,12 @@ export function recall() {
   try { const raw = localStorage.getItem(STATE_KEY); return raw ? hydrate(JSON.parse(raw)) : false; } catch { return false; }
 }
 export function forget() {
-  try { localStorage.removeItem(STATE_KEY); localStorage.removeItem("orbit-pack"); sessionStorage.removeItem("orbit-site-arrived"); } catch { /* nothing kept */ }
+  /* every key the site (and the door, "orbit-probe …") keeps, so the next load is a first visit */
+  try {
+    const keys = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("orbit")) keys.push(k); }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch { /* nothing kept */ }
+  try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* nothing kept */ }
 }
 
 /** The account: a fictional member, and their relay. */

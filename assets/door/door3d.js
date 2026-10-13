@@ -61,7 +61,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   /* the first light: a bead of the sun along the limb, shimmering as the air over it moves */
   float s=uCirc.z/3000.0;
   vec2 p=css-uSunPt;
-  float along=exp(-pow(p.x/(150.0*s),2.0)), across=exp(-pow((p.y+1.5*s)/(2.2*s+0.7),2.0));
+  float along=exp(-sq(p.x/(150.0*s))), across=exp(-sq((p.y+1.5*s)/(2.2*s+0.7)));
   float sh=0.75+0.5*vnoise(vec3(p.x/(9.0*s),uTime*0.3,1.3))*vnoise(vec3(p.x/(23.0*s)+4.0,uTime*0.13,7.1));
   e+=vec3(1.0,0.66,0.4)*along*across*sh*uFirst*0.7;
   /* the picture's own film (dawn.py: tonemap, --expo 0.35), faded in over the band's top as the picture is */
@@ -110,7 +110,8 @@ const finish = (gl, p) => {
 };
 const compiled = (gl, par, p) => new Promise((resolve) => {
   if (!par) { resolve(); return; }
-  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
+  /* (a lost context never reports complete: stop waiting; finish() then finds no link status and throws, as for a failed compile) */
+  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) || gl.isContextLost() ? resolve() : setTimeout(poll, 40));
   poll();
 });
 /* a weight made, once: its program asked for, waited for (in the background where the browser can), and finished.
@@ -179,6 +180,8 @@ export function liveDoor(world) {
   /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept); mode: the weights chosen (the
      probe's: capability.js); rich: the rich program, once there is one (its passes draw the fields and the glow) */
   let prog = null, sunTex = null, glowT = null, mode = "both", rich = null;
+  /* taken down (destroy: the dawn's), or its context lost: it acts no more, and stays down until a remount makes another */
+  let dead = false;
   /* mipped: the maps whose mipmaps are made too (a field is made from a map only then) */
   const maps = {}, dims = {}, fields = {}, mipped = new Set();
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
@@ -220,15 +223,17 @@ export function liveDoor(world) {
   const load = (key) => fetchOnce(pictures()[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => {
+      if (dead) { bm.close?.(); return; }
       const wh = [bm.width, bm.height];
       return uploadBanded(gl, bm, { tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
     .then(() => {
+      if (dead) return;
       mipped.add(key);
       /* a clouds map's slab field, made with it if the rich program is already there (else with it: richMaps) */
       if (key === "clouds" || key === "cloudsN") fieldOf(key);
     })
-    .catch(() => { /* drawn without it */ });
+    .catch(() => { /* drawn without it (upload.js has deleted the texture of an upload that failed) */ delete maps[key]; delete dims[key]; });
   const vao = gl.createVertexArray();
 
   /* the band the Earth fills: the frame's y 640..1000 (as the picture is laid), at the door's own scale */
@@ -269,7 +274,7 @@ export function liveDoor(world) {
   };
   /* into: a framebuffer to draw into instead of the canvas (a measure of a weight not yet kept, while the canvas is seen) */
   function draw(into = null) {
-    if (!prog) return;
+    if (!prog || dead) return;
     /* the sun table, put on the GPU with the first frame (not with the compile, which may come before the reveal) */
     if (!sunTex) sunTex = sunTexture(gl);
     const u = prog.u;
@@ -320,6 +325,7 @@ export function liveDoor(world) {
   const shown = () => !document.hidden && door && !door.hidden && !away() && getComputedStyle(door).opacity !== "0";
   function tick(now) {
     raf = 0;
+    if (dead) return;
     if (!shown()) { prev = 0; return; }
     clock += prev ? Math.min(now - prev, 100) / 1000 : 0; prev = now;
     if (dirty || (!reduced && now - last >= 48)) { last = now; draw(); }
@@ -327,7 +333,7 @@ export function liveDoor(world) {
   }
   /* (and only once it is shown: until then the canvas is drawn only to be measured) */
   let seen = false;
-  const wake = () => { if (!raf && prog && seen) raf = requestAnimationFrame(tick); };
+  const wake = () => { if (!raf && prog && seen && !dead) raf = requestAnimationFrame(tick); };
 
   /* a measure, after a weight's first frame: three frames, each waited for (a pixel read back, as voyage.js's
      calibrate does), the last two timed (the first may still be finishing the driver's work); their mean (ms) */
@@ -384,6 +390,7 @@ export function liveDoor(world) {
   /* then shown: the frame as the measure left it (drawn again if it was made coarser), the picture let go, and the
      flight told to take up this Earth (voyage.js: followDoor; rich from the first, wantRich: the flight draws the same) */
   function show() {
+    if (dead) return;
     if (dirty) draw();
     requestAnimationFrame(() => world.classList.add("live"));
     if (mode === "rich") { state.rich = !fell; wantRich(); }
@@ -397,11 +404,13 @@ export function liveDoor(world) {
   /* (the try is measured unseen, into a target of its own, so the rich frame is never shown before it is kept; and
      the world planets wait for its decision too: doorMeasured, so the measure is the door's alone) */
   function tryRich() {
+    if (dead) { measuredNow(); return; }
     if (!up) { measuredNow(); return; }
     /* (not waited for here: its chores come after this one) */
     compile(true)
-      .then((p) => chore(() => { rich = p; richMaps(); return p; }, 60, "rich"))
+      .then((p) => chore(() => { if (dead) return p; rich = p; richMaps(); return p; }, 60, "rich"))
       .then((rich) => quiet().then(() => {
+        if (dead) return;
         const was = prog;
         prog = rich;
         let mean = Infinity;
@@ -435,22 +444,45 @@ export function liveDoor(world) {
     .then((p) => { prog = p; if (mode === "rich") rich = p; })
     .then(() => Promise.all(keys.map(load)))
     /* the sharper strip, once the small one is in (sharpStrip): put on the GPU beside it, and drawn from then on */
-    .then(() => { if (maps.lightsS) stripS.ready((bm) => { maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
+    .then(() => { if (maps.lightsS) stripS.ready((bm) => { if (dead) return; maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
     /* the rich weight's fields (those not made with their maps) and the cities' glow, before its first frame */
-    .then(() => mode === "rich" && chore(richMaps, 60, "door"))
+    .then(() => mode === "rich" && chore(() => (dead ? undefined : richMaps()), 60, "door"))
     /* the first frame, on the page but unseen (site.css: canvas.live, until .world.live) */
     .then(() => chore(() => {
+      if (dead) return;
       world.querySelector(".wl.earth")?.after(canvas);
       resize(); draw();
     }, 60, "door"))
-    .then(prove)
+    .then(() => (dead ? undefined : prove()))
     .then(show)
     .then(tryRich)
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); measuredNow(); });
-  addEventListener("resize", () => { if (prog) { resize(); wake(); } });
+  const onResize = () => { if (prog && !dead) { resize(); wake(); } };
+  /* a lost context: no call on it, the loop stopped, and the door down until a remount (the page draws its pictures) */
+  const onLost = () => { dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; measuredNow(); };
+  addEventListener("resize", onResize);
   document.addEventListener("visibilitychange", wake);
+  canvas.addEventListener("webglcontextlost", onLost);
   /* the door coming back (its class or its hidden flag changing) starts the clock again */
-  if (door) new MutationObserver(wake).observe(door, { attributes: true, attributeFilter: ["class", "hidden"] });
-  new MutationObserver(wake).observe(document.body, { attributes: true, attributeFilter: ["class"] });
-  return { ready, state, wake };
+  const watchers = [];
+  if (door) watchers.push(new MutationObserver(wake));
+  watchers.push(new MutationObserver(wake));
+  if (door) watchers[0].observe(door, { attributes: true, attributeFilter: ["class", "hidden"] });
+  watchers[watchers.length - 1].observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  /* taken down (dawn.destroy): the loop stopped, its listeners and observers removed, nothing it was waiting for acts
+     (a door destroyed before it was shown never becomes the world's door: followDoor), and it leaves the sharp strip's
+     queue so it holds no other context back. Its textures stay on the context until the page goes (as a flight world's do
+     not): a remount makes its own */
+  const destroy = () => {
+    dead = true;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    removeEventListener("resize", onResize);
+    document.removeEventListener("visibilitychange", wake);
+    canvas.removeEventListener("webglcontextlost", onLost);
+    for (const w of watchers) w.disconnect();
+    stripS.leave();
+    measuredNow();
+  };
+  return { ready, state, wake, destroy };
 }

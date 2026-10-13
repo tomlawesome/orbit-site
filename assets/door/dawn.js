@@ -49,13 +49,17 @@ export function mountDawn(host) {
   let earthSettled = Promise.resolve();
   const rasters = mountRasters(world, { sun: SUN }, "dawn", { until: () => earthSettled, drawn: (url, name) => holdRaster(url, name) });
   /* the Earth under the dawn: two pictures, asked for once the dawn is being drawn, each shown when it has come */
+  let preSettled = null;
   const loadEarth = () => {
-    const settled = [];
+    const settled = [], pre = world.querySelector(".earth image.pre");
     for (const im of world.querySelectorAll(".earth image[data-href]")) {
-      settled.push(new Promise((done) => {
+      const one = new Promise((done) => {
         im.addEventListener("load", () => { im.classList.add("in"); if (im.classList.contains("pre")) world.classList.add("earthy"); done(); }, { once: true });
         im.addEventListener("error", done, { once: true });
-      }));
+      });
+      settled.push(one);
+      /* (remembered from here: a light() that comes after the picture has loaded or failed would miss the event) */
+      if (im === pre) preSettled = one;
       im.setAttribute("href", im.dataset.href); im.removeAttribute("data-href");
     }
     earthSettled = Promise.all(settled);
@@ -87,6 +91,7 @@ export function mountDawn(host) {
   const critical = () => {
     const pre = world.querySelector(".earth image.pre");
     const earthHere = world.classList.contains("earthy") || !pre ? Promise.resolve()
+      : preSettled ? preSettled
       : new Promise((r) => { pre.addEventListener("load", r, { once: true }); pre.addEventListener("error", r, { once: true }); });
     return Promise.all([document.fonts?.ready, earthHere]);
   };
@@ -159,13 +164,14 @@ export function mountDawn(host) {
   /* the live door (door3d.js), fetched only where the host's flag asks for it: its compiles, its start, and when it
      has been measured and shown (the host's own planets start only after that, so the door's measure is its own) */
   const door3d = flag("door3d") ? import("./door3d.js") : null;
+  let liveStarted = null;
   const live = door3d ? {
     compile: () => door3d.then((m) => m.compileDoor()),
-    start: () => door3d.then((m) => m.liveDoor(world)),
+    start: () => (gone ? null : (liveStarted = door3d.then((m) => m.liveDoor(world)))),
     measured: door3d.then((m) => m.doorMeasured, () => null),
     firstCompiled: () => door3d.then((m) => m.doorFirstCompiled()),
   } : null;
-  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); held = []; rastered.clear(); };
+  const destroy = () => { gone = true; for (const stop of stops) stop(); stops.clear(); unsky(); rasters.stop(); held = []; rastered.clear(); liveStarted?.then((d) => d?.destroy?.(), () => {}); };
   return { host, world, start, light, live, destroy, get held() { return [...held, ...rastered.values()]; } };
 }
 

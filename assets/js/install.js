@@ -125,18 +125,20 @@ export function createInstall(pad, opts = {}) {
       shared = { world: w, canvas: own, owner: null };
     }
     world = shared.world;
+    /* a page that adopts the shared world after its context was lost takes the flat path, and does not draw to it */
+    if (world && (shared.lost || world.gl.isContextLost())) { shared.lost = true; world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
     look = world.lookOf(opts.world || {});
     /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
     shared.canvas.addEventListener("webglcontextlost", (e) => {
-      e.preventDefault(); world = null; failed = true; pad.classList.add("flat");
+      e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
       if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
     });
     return world;
   }
   /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
   function adopt() {
-    if (!shared?.world) return;
+    if (!shared?.world || shared.lost) return;
     if (shared.owner && shared.owner !== api) shared.owner.stop();
     shared.owner = api;
     canvas = shared.canvas;
@@ -345,8 +347,9 @@ export function createInstall(pad, opts = {}) {
   function frame(now) {
     if (!running) return;
     if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, last ? now - last : 0); if (now - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
-    /* a world that could not be made or loaded draws nothing: no loop for it */
-    if (failed || pad.classList.contains("flat")) { running = false; return; }
+    /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
+       tried again on the next start (prepare), so its flat is not final and does not stop the loop */
+    if (failed) { running = false; return; }
     raf = requestAnimationFrame(frame);
     const dt = last ? Math.min(100, now - last) : 16; last = now;
     let handing = false;
@@ -465,6 +468,11 @@ export function createInstall(pad, opts = {}) {
             if (ok) chore(touch, 60, TAG);
             return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
           });
+        /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is
+           flat (no world, or its context lost) keeps the false: only a map failure is worth another try */
+        const attempt = this.prepared;
+        const retry = () => { if (!failed && !shared?.lost && this.prepared === attempt) this.prepared = null; };
+        attempt.then((ok) => { if (!ok) retry(); }, retry);
       }
       return this.prepared;
     },
@@ -475,7 +483,8 @@ export function createInstall(pad, opts = {}) {
       running = true; last = 0;
       const t0 = performance.now(); size(); sized = performance.now() - t0;
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
-      if (w) w.bake().then((ok) => pad.classList.add(ok ? "lit" : "flat"));
+      /* flat follows each bake, set or cleared, since a failed map is tried again; a lost context keeps it */
+      if (w) w.bake().then((ok) => { if (ok) pad.classList.add("lit"); pad.classList.toggle("flat", !ok || failed); });
       cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
     },
     /* the shot in from the door's planet: resolves when the camera has all but settled */

@@ -46,7 +46,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
@@ -80,7 +80,14 @@ star fields and sets the glows' origin.
 - `live`: the live door (`door3d.js`), only where `flags.door3d` is set,
   else `null`: `compile()`, `start()` → the live door, `measured` (a promise:
   it has been measured and shown), `firstCompiled()`. The live door is an
-  experiment behind its flag and has no teardown yet.
+  experiment behind its flag. The dawn's `destroy()` calls its own teardown: its
+  frame loop stops, its resize and visibility listeners and its observers are
+  removed, nothing it was waiting for acts any more (a door destroyed before it
+  was shown never becomes the flight's door), and it leaves the sharp strip's
+  queue (so it holds no other context back). A lost context takes it down the
+  same way, and it stays down until a remount. Its textures stay on the
+  context; a remount makes its own. `dawn.live.start()` on a destroyed dawn
+  returns `null`.
 - `destroy()`: the surface taken down (a host that remounts its door): its
   resize listeners removed, a glow build under way stopped, and a first light
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from

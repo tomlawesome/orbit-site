@@ -22,16 +22,17 @@ const CANCEL = Symbol("cancel");
 function makeClock() {
   let playing = true, run = 0, stopped = false;
   const waiters = new Set();
-  const wait = (ms) => new Promise((resolve, reject) => {
+  /* once stopped, nothing arms again: a chapter that carries on after the stop (a flight ended under it) ends at its next wait */
+  const wait = (ms) => (stopped ? Promise.reject(CANCEL) : new Promise((resolve, reject) => {
     const token = run;
     const w = { remaining: ms, started: 0, timer: null, resolve, reject, token };
     const arm = () => { w.started = performance.now(); w.timer = setTimeout(() => { waiters.delete(w); resolve(); }, w.remaining); };
     waiters.add(w);
     if (playing) arm();
     w.arm = arm;
-  });
+  }));
   return {
-    w: (ms) => (reduced ? Promise.resolve() : wait(ms)),
+    w: (ms) => (stopped ? Promise.reject(CANCEL) : reduced ? Promise.resolve() : wait(ms)),
     hold: (ms) => wait(reduced ? Math.min(ms, 1200) : ms),
     wait,
     playing: () => playing,
@@ -44,6 +45,7 @@ function makeClock() {
     },
     cancel() { run++; for (const w of waiters) { clearTimeout(w.timer); w.reject(CANCEL); } waiters.clear(); },
     async tween(ms, fn) {
+      if (stopped) throw CANCEL;
       if (reduced) { fn(1); return; }
       const start = performance.now(); let elapsed = 0, last = start;
       while (elapsed < ms) {
@@ -63,12 +65,18 @@ function makeClock() {
 const veilEl = () => $("#veil");
 let holes = [];
 let veilRaf = 0;
+/* the mask is rebuilt only when what it draws changes (a hole's box, size or shape), not on every frame of the loop */
+let veilKey = null;
 function drawVeil() {
   const svg = veilEl().querySelector("svg");
   const mask = svg.querySelector("mask");
+  const boxes = holes.map((h) => h.el.getBoundingClientRect());
+  const key = holes.map((h, i) => `${h.round ? "o" : "r"}|${h.pad}|${h.radius}|${boxes[i].left},${boxes[i].top},${boxes[i].width},${boxes[i].height}`).join(";");
+  if (key === veilKey) return;
+  veilKey = key;
   Array.from(mask.children).slice(1).forEach((c) => c.remove());
-  for (const h of holes) {
-    const box = h.el.getBoundingClientRect();
+  for (const [i, h] of holes.entries()) {
+    const box = boxes[i];
     const NS = "http://www.w3.org/2000/svg";
     if (h.round) {
       const c = document.createElementNS(NS, "circle");
