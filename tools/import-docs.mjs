@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
-import { plain, resolveLink, droppedBlockWarning, logSafe, slugger } from "./import-docs-lib.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading } from "./import-docs-lib.mjs";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
 
@@ -90,7 +90,11 @@ function render(md, src, bySourcePath) {
     },
   };
   marked.use({ gfm: true, renderer });
-  let tokens = marked.lexer(md);
+  /* a heading written as raw html becomes a heading token, so it takes the markdown heading's path: id, anchor, section, contents */
+  let tokens = marked.lexer(md).map((t) => {
+    const h = t.type === "html" && t.block ? rawHeading(t.text) : null;
+    return h ? { type: "heading", raw: t.raw, depth: h.depth, text: h.text, tokens: marked.Lexer.lexInline(h.text) } : t;
+  });
   /* the page begins at the named heading; what comes before is the repository's own banner */
   if (src.from) {
     const at = tokens.findIndex((t) => t.type === "heading" && t.text.trim() === src.from);
