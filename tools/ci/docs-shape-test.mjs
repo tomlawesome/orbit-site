@@ -60,5 +60,24 @@ refuses("a file the import does not write", (d) => writeFileSync(join(d, "extra.
 refuses("a page missing", (d) => unlinkSync(join(d, "security.json")), "security.json: missing");
 refuses("a page that is a symlink", (d) => { unlinkSync(join(d, "security.json")); symlinkSync("/etc/hostname", join(d, "security.json")); }, "security.json: not a regular file");
 
+/* One colour rule (audit 4): a source's colour is "#" and six hex digits in either case, here and in the docs pad
+   (assets/js/pads.js). `recolour` sets one colour in the index entry, in the page, and in the sources list passed in, so a
+   colour the rule accepts is not refused for the three disagreeing. */
+const recoloured = (c) => {
+  const d = fresh();
+  edit(d, "index.json", (j) => { j.sources[0].c = c; });
+  edit(d, "readme.json", (j) => { j.c = c; });
+  const list = JSON.parse(JSON.stringify(sources));
+  list[0].c = c;
+  return checkDocs(d, list);
+};
+for (const c of ["#a1b2c3", "#A1B2C3", "#a1B2c3"]) {
+  const p = recoloured(c);
+  check(`the colour ${c} is accepted${c === "#a1b2c3" ? " (control: lower case passes today)" : ""}`, p.length === 0, `want no problems, got ${JSON.stringify(p.slice(0, 3))}`);
+}
+for (const c of ["#abc", "#abcdeg", "abcdef", "#abcdef0", ""]) {
+  refuses(`the colour ${JSON.stringify(c)} is refused (control: refused today)`, (d) => edit(d, "index.json", (j) => { j.sources[0].c = c; }), "index.json sources[0]: c is");
+}
+
 rmSync(tmp, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

@@ -9,7 +9,7 @@
  *   and index.json;
  *   a page has the keys slug, name, c, title, repo, path and sections, at least
  *   one; slug, name, c, repo and path are the source's own, and c is "#" and six
- *   hex digits;
+ *   hex digits, either case;
  *   a section has the keys id, title, html, summary, text and subs; ids (and the
  *   ids of subs) are lower-case letters, digits and dashes;
  *   the index has the keys generated (a date) and sources: one entry per source,
@@ -25,7 +25,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ID = /^[a-z0-9-]+$/;
-const COLOUR = /^#[0-9a-f]{6}$/;
+/* the same rule as the docs pad's SAFE_COLOUR (assets/js/pads.js): either case */
+const COLOUR = /^#[0-9a-fA-F]{6}$/;
 const MAX_SECTIONS = 300, MAX_SUBS = 300, MAX_TEXT = 1_000_000;
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);

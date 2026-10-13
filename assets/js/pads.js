@@ -176,9 +176,13 @@ export function createDocs(pad) {
     chart.querySelector(`.star[data-star="${starOf.get(href)}"]`)?.classList.add("read");
     results.querySelector(`.entry[data-href="${CSS.escape(href)}"]`)?.classList.add("read");
   };
+  /* a fault in drawing the docs is a bug in the page: logged with its message as text (a console shows an error object
+     alone as a placeholder in some places) */
+  const drawFault = (e) => { console.error(`docs: drawing failed: ${e?.message ?? e}`, e); };
   function load() {
     if (loading) return loading;
     /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
+    /* a failed fetch and a fault in drawing are told apart: only the first means the docs are not there (#52) */
     loading = fetch(DOCS_DIR + "index.json").then((r) => { if (!r.ok) throw new Error(`index.json: ${r.status}`); return r.json(); }).then((data) => chore(() => {
       DOCS = cleanSources(data && data.sources); generated = typeof (data && data.generated) === "string" ? data.generated : ""; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
@@ -188,7 +192,7 @@ export function createDocs(pad) {
       keys.innerHTML = KEYS.map((h) => ENTRIES.find((e) => e.href === h)).filter(Boolean).map((e) => `<a class="key" href="${e.href}" style="--c:${GROUPS[e.g].c}">${esc(e.t)}</a>`).join("");
       if (stamp) stamp.textContent = generated ? `charted from the repositories · ${when(generated)}` : "";
       drawChart(); render();
-    }, 60, "docs")).catch(() => {
+    }, 60, "docs").catch(drawFault), () => {
       /* a failed fetch is not remembered: the next look tries again */
       loading = null;
       results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
@@ -468,7 +472,7 @@ export function createDocs(pad) {
     /* arriving by flight the chart is already on the canvas, so the page's own
        chart appears whole under it rather than drawing itself in again */
     settle() { chart.classList.add("drawn", "settled"); },
-    start() { load().then(() => { render(); if (!chart.classList.contains("settled")) { chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); } if (location.hash.startsWith("#docs/")) go(location.hash, false); }); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
+    start() { load().then(() => { render(); if (!chart.classList.contains("settled")) { chart.classList.remove("drawn"); void chart.getBoundingClientRect(); chart.classList.add("drawn"); } if (location.hash.startsWith("#docs/")) go(location.hash, false); }).catch(drawFault); clearTimeout(mt); if (!reduced) mt = setTimeout(meteor, 5000 + Math.random() * 4000); },
     stop() { close(false); input.value = ""; group = null; if (DOCS.length) render(); input.blur(); chart.classList.remove("drawn", "settled"); clearTimeout(mt); },
     go,
   };
