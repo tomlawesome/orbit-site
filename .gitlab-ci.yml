@@ -199,11 +199,13 @@ import_docs:
 # protected environment is a GitLab Premium feature, and this instance is CE):
 # its environment scope is `docs-import`, so only a job that names that
 # environment gets it, and its Protect flag limits it to pipelines on protected
-# branches. Joining the environment therefore means editing this file, which
-# reaches `main` by a reviewed merge, and the lint refuses any job but
-# `publish_docs` that names `docs-import`. `action` is left at its default,
-# `start`: the scope does not need it (any action matches the name), it only
-# records each run as a deployment, a record of when the token was used.
+# branches. A job joins the environment by a change to this file merged into
+# `main` or `dev`, which only a Maintainer can do, and a Maintainer can already
+# merge into `main`; the lint refuses any job but `publish_docs` that names
+# `docs-import`, so such a change is also visible in review. `action` is left
+# at its default, `start`: the scope does not need it (any action matches the
+# name), it only records each run as a deployment, a record of when the token
+# was used.
 # `deployment_tier: other` because nothing is deployed to a server.
 #
 # `needs` takes no artifacts (artifacts: false): the runner would load any
@@ -233,8 +235,10 @@ publish_docs:
     - sh tools/ci/nightly-publish.sh
 
 # Renovate, weekly, on a schedule the owner created on `dev` with
-# RENOVATE=true and RENOVATE_TOKEN Masked + Protected. renovate.json has
-# what it watches.
+# RENOVATE=true. RENOVATE_TOKEN and GITHUB_COM_TOKEN are Masked + Protected,
+# scoped to the `renovate` environment, which only this job joins: every other
+# job in a dev or main pipeline runs other people's code (npm) and must be
+# given nothing. renovate.json has what it watches.
 renovate:
   stage: maintenance
   image:
@@ -242,6 +246,9 @@ renovate:
     pull_policy: if-not-present
   timeout: 1h
   interruptible: false
+  environment:
+    name: renovate
+    deployment_tier: other
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
   variables:

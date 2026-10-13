@@ -73,15 +73,18 @@ node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
 
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through. This reads the html
-# the way a browser does, since a hand edit or a hole in the sanitiser can
-# produce what its own tokeniser would allow: attributes are found after any
-# separator (a space, a slash, a control character, a closing quote) and in
-# any case; a URL attribute has its entities decoded and its whitespace and
-# control characters removed before the scheme is looked at.
+# run on every visitor, whatever the importer let through. A stored section
+# may hold only tags written the one way a browser and this check read alike:
+# an ascii name, html whitespace, name="value" with no quote or angle bracket
+# inside, and no attributes on an end tag. Anything else is refused outright:
+# the import never writes it, and the browser's tokeniser has states this check
+# does not follow. A URL attribute has its entities decoded and its whitespace
+# and control characters removed before the scheme is looked at. A construct
+# that would put a browser into a comment or a raw-text element is refused
+# outright, since the import never writes one and the check cannot follow it.
 node -e '
   const fs = require("fs");
-  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template)\b/i];
+  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template|textarea|title|xmp|noembed|noframes|noscript|plaintext)\b/i];
   const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
   const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
   const decode = (v) => {
@@ -97,23 +100,18 @@ node -e '
   const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
   const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
   const danger = (h) => {
-    const tagRe = /<([a-z][^\s\/>\x00-\x20]*)/gi;
-    let m;
-    while ((m = tagRe.exec(h))) {
-      let i = tagRe.lastIndex;
-      for (;;) {
-        const sep = /[\s\/\x00-\x20"\x27=]*/y; sep.lastIndex = i; sep.exec(h); i = sep.lastIndex;
-        if (i >= h.length || h[i] === ">") break;
-        const a = /([^\s\/>=\x00-\x20"\x27]+)(?:[\s\x00-\x20]*=[\s\x00-\x20]*("[^"]*"|\x27[^\x27]*\x27|[^\s>\x00-\x20]*))?/y;
-        a.lastIndex = i;
-        const r = a.exec(h);
-        if (!r) break;
-        i = a.lastIndex;
-        const name = r[1].toLowerCase(), value = (r[2] || "").replace(/^["\x27]|["\x27]$/g, "");
+    // every < must open a start or end tag of the one shape the import writes, else refuse:
+    // WS is html whitespace only, a value is double-quoted with no quote or angle bracket inside
+    const tag = /<(?:\/[a-zA-Z][a-zA-Z0-9]*[\t\n\f\r ]*|[a-zA-Z][a-zA-Z0-9]*((?:[\t\n\f\r ]+[a-zA-Z][a-zA-Z0-9:-]*(?:="[^"<>]*")?)*)[\t\n\f\r ]*\/?)>/y;
+    for (let i = h.indexOf("<"); i !== -1; i = h.indexOf("<", tag.lastIndex)) {
+      tag.lastIndex = i;
+      const m = tag.exec(h);
+      if (!m) return true;
+      for (const a of (m[1] || "").matchAll(/[\t\n\f\r ]+([a-zA-Z][a-zA-Z0-9:-]*)(?:="([^"<>]*)")?/g)) {
+        const name = a[1].toLowerCase(), value = a[2] || "";
         if (/^on/.test(name)) return true;
-        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/.test(scheme(value))) return true;
+        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/i.test(scheme(value))) return true;
       }
-      tagRe.lastIndex = i;
     }
     return bad.some((re) => re.test(h));
   };
@@ -183,11 +181,13 @@ WF="$wf" node -e '
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
 
-echo "== the docs import is split: import_docs holds no token, publish_docs is in the docs-import environment"
+echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
 # worth stealing; the publish holds the token, runs no third-party code, and is
 # the only job in the docs-import environment, where the token is scoped (#18).
 # Both run from the schedule on main alone, never on a merge request pipeline.
+# The Renovate tokens are scoped the same way to the renovate environment,
+# which only the renovate job joins, since every other job runs npm packages.
 node -e '
   const fs = require("fs");
   const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
@@ -212,11 +212,16 @@ node -e '
     if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
     if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
   }
-  // the token is scoped to the docs-import environment: no job but publish_docs may name it
+  // each environment holds tokens scoped to it: no job but its own may name it
   // (anywhere in the file, comments aside: a job, an extends template, defaults)
+  const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
   for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
-    if (m[1] !== "publish_docs" && /docs-import/.test(m[2])) bad(`.gitlab-ci.yml: ${m[1]} names the docs-import environment; only publish_docs may, since the token is scoped to it`);
+    for (const [e, j] of Object.entries(envs)) {
+      if (m[1] !== j && m[2].includes(e)) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
+    }
   }
+  const ren = job("renovate");
+  if (ren !== null && !/^    name: renovate$/m.test(section(ren, "environment") || "")) bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
   if (pub !== null) {
     const env = section(pub, "environment") || "";
     if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");

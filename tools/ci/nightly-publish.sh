@@ -64,7 +64,10 @@ MAX_ZIP_BYTES=16777216
 # lock on that door, and for LD_PRELOAD it can only be a check after the fact.)
 for name in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
   case $name in
-    GIT_DEPTH|GIT_STRATEGY|GIT_CLONE_PATH|GIT_FETCH_EXTRA_FLAGS|GIT_CHECKOUT|GIT_CLEAN_FLAGS|GIT_SUBMODULE_*|NODE_VERSION) ;;
+    # the runner's git settings, the image's version stamp and the pipeline's
+    # own image reference (GitLab exports every pipeline variable to the job):
+    # nothing here reads them
+    GIT_DEPTH|GIT_STRATEGY|GIT_CLONE_PATH|GIT_FETCH_EXTRA_FLAGS|GIT_CHECKOUT|GIT_CLEAN_FLAGS|GIT_SUBMODULE_*|NODE_VERSION|NODE_IMAGE) ;;
     # the runner's own CA file, where it sets one, is the only trust store accepted
     GIT_SSL_CAINFO|SSL_CERT_FILE|CURL_CA_BUNDLE)
       val=; eval "val=\${$name}"

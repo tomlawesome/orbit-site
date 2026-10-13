@@ -7,8 +7,9 @@
  *
  *   the files are exactly <slug>.json for each source in tools/docs-sources.json,
  *   and index.json;
- *   a page has the keys slug, name, c, title, repo, path and sections; slug,
- *   name, c, repo and path are the source's own, and c is "#" and six hex digits;
+ *   a page has the keys slug, name, c, title, repo, path and sections, at least
+ *   one; slug, name, c, repo and path are the source's own, and c is "#" and six
+ *   hex digits;
  *   a section has the keys id, title, html, summary, text and subs; ids (and the
  *   ids of subs) are lower-case letters, digits and dashes;
  *   the index has the keys generated (a date) and sources: one entry per source,
@@ -64,7 +65,9 @@ export function checkDocs(dir, sources) {
     });
   };
   const sections = (f, list, withHtml) => {
-    if (!Array.isArray(list) || list.length > MAX_SECTIONS) return bad(`${f}: sections is not a list of at most ${MAX_SECTIONS}`);
+    /* at least one: a source with nothing to chart, search or read is an import that went wrong (an empty or
+       heading-only file, or every section skipped), not a page */
+    if (!Array.isArray(list) || !list.length || list.length > MAX_SECTIONS) return bad(`${f}: sections is not a list of 1 to ${MAX_SECTIONS}`);
     const keys = withHtml ? ["id", "title", "html", "summary", "text", "subs"] : ["id", "title", "summary", "text", "subs"];
     list.forEach((s, k) => {
       const where = `sections[${k}]`;

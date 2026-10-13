@@ -36,6 +36,19 @@ refuses("a path changed in a page", (d) => edit(d, "security.json", (j) => { j.p
 refuses("a section id with a quote", (d) => edit(d, "index.json", (j) => { j.sources[0].sections[0].id = 'a"b'; }), "sections[0].id");
 refuses("a section id in a page with a space", (d) => edit(d, "readme.json", (j) => { j.sections[1].id = "a b"; }), "sections[1].id");
 refuses("a sub id with markup", (d) => edit(d, "index.json", (j) => { const s = j.sources[0].sections.find((x) => x.subs.length); s.subs[0].id = "<x>"; }), "subs[0].id");
+refuses("a section id with an accented letter (the importer once wrote these)", (d) => edit(d, "index.json", (j) => { j.sources[0].sections[0].id = "über-orbit"; }), "sections[0].id");
+refuses("an empty section id in a page", (d) => edit(d, "readme.json", (j) => { j.sections[0].id = ""; }), "sections[0].id");
+refuses("a sub id with an accented letter", (d) => edit(d, "index.json", (j) => { const s = j.sources[0].sections.find((x) => x.subs.length); s.subs[0].id = "café"; }), "subs[0].id");
+refuses("a page with no sections", (d) => edit(d, "readme.json", (j) => { j.sections = []; }), "readme.json: sections is");
+refuses("an index entry with no sections", (d) => edit(d, "index.json", (j) => { j.sources[2].sections = []; }), "sources[2]: sections is");
+{
+  /* one section is the least a page or an entry may have: the chart draws from at least one */
+  const d = fresh();
+  edit(d, "readme.json", (j) => { j.sections = [j.sections[0]]; });
+  edit(d, "index.json", (j) => { j.sources[0].sections = [j.sources[0].sections[0]]; });
+  const p = checkDocs(d, sources);
+  check("a page and an entry with a single section", p.length === 0, JSON.stringify(p.slice(0, 3)));
+}
 refuses("an extra key in a section", (d) => edit(d, "readme.json", (j) => { j.sections[0].onclick = "x"; }), "sections[0]");
 refuses("an extra key in the index", (d) => edit(d, "index.json", (j) => { j.extra = 1; }), "index.json: does not have exactly");
 refuses("a non-string title", (d) => edit(d, "readme.json", (j) => { j.sections[0].title = { a: 1 }; }), "title is not a string");
