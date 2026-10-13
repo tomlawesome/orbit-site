@@ -247,8 +247,9 @@ export const compiledWithin = (gl, par, list, every = 40, stop = () => false) =>
   if (!par) { resolve(true); return; }
   const t0 = performance.now();
   const poll = () => {
-    if (gl.isContextLost() || stop() || performance.now() - t0 > COMPILE_WAIT) resolve(false);
+    if (gl.isContextLost() || stop()) resolve(false);
     else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) resolve(true);
+    else if (performance.now() - t0 > COMPILE_WAIT) resolve(false);
     else setTimeout(poll, every);
   };
   poll();
