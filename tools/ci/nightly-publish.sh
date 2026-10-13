@@ -62,7 +62,9 @@ MAX_ZIP_BYTES=16777216
 # Variables that change what a program loads, trusts or runs are never set
 # here. (The job takes no variables from the import job; this is the second
 # lock on that door, and for LD_PRELOAD it can only be a check after the fact.)
-for name in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
+# The names come from awk's ENVIRON, not `env` read line by line, where a value
+# holding a newline would read as more names (#52).
+for name in $(awk 'BEGIN { for (k in ENVIRON) if (k ~ /^[A-Za-z_][A-Za-z0-9_]*$/) print k }'); do
   case $name in
     # the runner's git settings, the image's version stamp and the pipeline's
     # own image reference (GitLab exports every pipeline variable to the job):
