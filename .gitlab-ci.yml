@@ -84,6 +84,7 @@ lint:
     - sh tools/ci/lint-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
+    - sh tools/ci/door-timing-lookup-test.sh
     - node tools/ci/fetch-once-test.mjs
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs
@@ -117,6 +118,7 @@ lint:
     - node tools/ci/site-data-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/import-docs-test.mjs
+    - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs
 
 # ---------------------------------------------------------------- live --
