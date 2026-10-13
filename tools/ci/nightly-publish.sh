@@ -313,6 +313,14 @@ main() {
     printf '%s\n' "$shape"
     exit 1
   fi
+  # the lint's no-script check, here too: a bad artifact is refused in this job,
+  # not left as a failed merge request (#52)
+  if ! script=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+      node tools/ci/docs-noscript.mjs "$art/assets/docs"); then
+    echo "refusing the artifact: the imported docs carry script:"
+    printf '%s\n' "$script"
+    exit 1
+  fi
 
   if [ -n "$DRY_RUN" ]; then
     # the commit is built in a scratch repository whose base is HEAD; the
