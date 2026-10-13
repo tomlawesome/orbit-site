@@ -12,7 +12,7 @@
  * doorWeight(): from that, the live door's weight (door3d.js): the rich Earth alone, the lean one alone, or both (the
  * lean first, the rich tried by the ladder), so only what will be drawn is compiled.
  */
-import { note } from "./chores.js";
+import { note, compiledWithin } from "./chores.js";
 import { settings, flag } from "./settings.js";
 import { gpu } from "./fitness.js";
 
@@ -78,11 +78,9 @@ async function measure(gl) {
       const sh = (type, src) => { const s = keep("Shader", gl.createShader(type)); gl.shaderSource(s, src); gl.compileShader(s); return s; };
       const p = keep("Program", gl.createProgram());
       gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, salted(PROBE))); gl.linkProgram(p);
-      if (par) while (!gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) {
-        /* (a context lost mid-compile never reports complete: the probe fails, it does not poll for ever) */
-        if (gl.isContextLost()) throw new Error("probe: context lost");
-        await new Promise((r) => setTimeout(r, 4));
-      }
+      /* (a context lost mid-compile never reports complete, nor may a stuck compiler: past COMPILE_WAIT the probe
+         fails, so the door keeps its pictures, rather than polling for ever) */
+      if (!(await compiledWithin(gl, par, [p], 4))) throw new Error("probe: the compile did not finish");
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "probe: no program");
       return { p, ms: performance.now() - t0 };
     };

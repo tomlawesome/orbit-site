@@ -24,7 +24,7 @@
  * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor, gpu } from "../door/index.js";
+import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor, gpu, compiledWithin } from "../door/index.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -145,11 +145,8 @@ function layersOf(door) {
     gl.linkProgram(p); linked("planets");
     L.p = p;
   };
-  const compiled = (L) => new Promise((resolve) => {
-    if (!L.par) { resolve(); return; }
-    const poll = () => (L.gl.getProgramParameter(L.p, L.par.COMPLETION_STATUS_KHR) ? resolve() : setTimeout(poll, 40));
-    poll();
-  });
+  /* (past COMPILE_WAIT, or on a lost context, they fail: the planets stay pictures) */
+  const compiled = (L) => compiledWithin(L.gl, L.par, [L.p]).then((done) => { if (!done) throw new Error("planets3d: the compile did not finish"); });
   const finish = (L) => {
     const { gl, p } = L;
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(L.sh.map((s) => gl.getShaderInfoLog(s)).join("") || gl.getProgramInfoLog(p) || "planets3d: no program");
