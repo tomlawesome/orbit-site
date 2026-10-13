@@ -195,8 +195,6 @@ node -e '
   const job = (n) => { const m = yml.match(new RegExp(`^${n}:\\n((?:[ \\t].*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
   // the lines under a key of the job (two-space indent), up to the next such key
   const section = (b, k) => { const m = b.match(new RegExp(`^  ${k}:[^\\n]*\\n((?:   .*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
-  // the environment a block joins: its job-level environment: value, inline or as the name: under it
-  const envOf = (b) => { const m = b.match(/^  environment:[ \t]*([^\s#][^\n]*)?$/m); if (!m) return null; const n = m[1] ? m[1] : ((section(b, "environment") || "").match(/^    name:[ \t]*(.+)$/m) || [])[1]; return n ? n.trim().replace(/^(["\x27])(.*)\1$/, "$2") : null; };
   const RULE = `if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
   const imp = job("import_docs"), pub = job("publish_docs");
   if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
@@ -214,13 +212,12 @@ node -e '
     if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
     if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
   }
-  // each environment holds tokens scoped to it: no job but its own may join it
-  // (any top-level block: a job, an extends template, defaults; by its
-  // environment: key, not by the word, which names files and branches too)
+  // each environment holds tokens scoped to it: no job but its own may name it
+  // (anywhere in the file, comments aside: a job, an extends template, defaults)
   const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
   for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
     for (const [e, j] of Object.entries(envs)) {
-      if (m[1] !== j && envOf(m[2]) === e) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
+      if (m[1] !== j && m[2].includes(e)) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
     }
   }
   const ren = job("renovate");
