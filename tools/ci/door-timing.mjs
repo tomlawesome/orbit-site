@@ -4,8 +4,12 @@
  * before and after a change, on the same machine, and compare.
  *
  *   node tools/ci/door-timing.mjs                 Firefox, site on :8787 (served by this script)
+ *
  *   RUNS=5 BROWSER=chromium node tools/ci/door-timing.mjs
  *   HEADED=1 (headed, for Xvfb + software GL), SITE=http://127.0.0.1:8787/
+ *
+ * Playwright is $PLAYWRIGHT_ROOT if set, else the newest copy in Orbit's pnpm store
+ * ($ORBIT_DIR, default: the orbit checkout beside this one); none found, it exits 2.
  *
  * Each run is a fresh browser context (a first visit: nothing kept, the probe
  * run afresh) at 1280x800 with motion on. Reported per run and as the median:
@@ -21,13 +25,41 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 
-const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
+const here = dirname(fileURLToPath(import.meta.url));
+
+/* Playwright: $PLAYWRIGHT_ROOT, or else the newest copy in Orbit's pnpm store
+   ($ORBIT_DIR, default: the orbit checkout beside this one), as journey-local.sh looks */
+function findPlaywright() {
+  if (process.env.PLAYWRIGHT_ROOT) return process.env.PLAYWRIGHT_ROOT;
+  const orbit = process.env.ORBIT_DIR || join(dirname(dirname(dirname(here))), "orbit");
+  const store = join(orbit, "node_modules/.pnpm");
+  const version = (n) => n.slice("playwright@".length).split(/[.+-]/).map((x) => (/^\d+$/.test(x) ? Number(x) : x));
+  const cmp = (a, b) => {
+    const x = version(a), y = version(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      if (x[i] === y[i]) continue;
+      if (x[i] === undefined) return -1;
+      if (y[i] === undefined) return 1;
+      if (typeof x[i] === "number" && typeof y[i] === "number") return x[i] - y[i];
+      return String(x[i]) < String(y[i]) ? -1 : 1;
+    }
+    return 0;
+  };
+  let names = [];
+  try { names = readdirSync(store).filter((n) => n.startsWith("playwright@") && existsSync(join(store, n, "node_modules/playwright"))); } catch {}
+  if (!names.length) {
+    console.error(`door-timing: no playwright found under ${orbit}; set PLAYWRIGHT_ROOT or ORBIT_DIR`);
+    process.exit(2);
+  }
+  return join(store, names.sort(cmp).pop(), "node_modules/playwright");
+}
+const playwright = createRequire(import.meta.url)(findPlaywright());
 const SITE = process.env.SITE || "http://127.0.0.1:8787/";
 const BROWSER = process.env.BROWSER || "firefox";
 const RUNS = Number(process.env.RUNS || 3);
-const here = dirname(fileURLToPath(import.meta.url));
 
 let server = null;
 if (!process.env.SITE) {

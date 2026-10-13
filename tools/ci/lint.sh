@@ -208,6 +208,28 @@ node -e '
   }
 ' || fail=1
 
+echo "== the service worker's picture cache name follows the pictures"
+# sw.js keeps pictures in the visitor's browser under the name MEDIA; replacing
+# a picture without a new name would leave the old one served for 36 hours. So
+# the name is computed: orbit-media- and the first 12 hex characters of the
+# SHA-256 over one line "<path> <git blob sha>" for each tracked file the
+# worker caches as media (its isMedia extensions), outside assets/docs/ (the
+# nightly import owns that), sorted by path in byte order. A changed, added or
+# removed picture changes the name; paste the one printed here into sw.js.
+node -e '
+  const fs = require("fs");
+  const { execFileSync } = require("child_process");
+  const rows = execFileSync("git", ["ls-files", "-s", "-z"]).toString("utf8").split("\0").filter(Boolean)
+    .map((r) => { const m = /^\d+ ([0-9a-f]+) \d\t([\s\S]*)$/.exec(r); return { sha: m[1], path: m[2] }; })
+    .filter((r) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(r.path) && !r.path.startsWith("assets/docs/"))
+    .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+  const body = rows.map((r) => `${r.path} ${r.sha}\n`).join("");
+  const want = "orbit-media-" + require("crypto").createHash("sha256").update(body).digest("hex").slice(0, 12);
+  const m = /const MEDIA = "([^"]*)"/.exec(fs.readFileSync("sw.js", "utf8"));
+  if (!m) { console.log("   sw.js: no const MEDIA = \"...\" found"); process.exitCode = 1; }
+  else if (m[1] !== want) { console.log(`   sw.js: MEDIA is ${m[1]}, but the pictures hash to ${want}; set MEDIA to ${want}`); process.exitCode = 1; }
+' || fail=1
+
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)

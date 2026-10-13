@@ -235,7 +235,7 @@ fi
 # instead of stopping the run.
 commit_all() {
   git add -A
-  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$1"   # (a case may change nothing: m2 sets the name it already has)
 }
 lint_to_out() {
   rc=0
