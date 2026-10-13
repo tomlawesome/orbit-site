@@ -116,6 +116,14 @@ if sc == 'notobject': files['readme.json'] = b'[]'
 if sc == 'xss': edit('index.json', lambda j: j['sources'][0].update(c='#fff"><img src=x onerror=alert(1)>'))
 if sc == 'badid': edit('readme.json', lambda j: j['sections'][1].update(id='a"b'))
 if sc == 'extrakey': edit('readme.json', lambda j: j['sections'][0].update(onclick='x'))
+# a page whose section html carries script-capable markup (the lint refuses it, and so must the publish)
+def addhtml(extra): edit('readme.json', lambda j: j['sections'][1].update(html=j['sections'][1]['html'] + extra))
+if sc == 'scriptel': addhtml('<script>alert(1)</script>')
+if sc == 'handler': addhtml('<p><img src="x" onerror="alert(1)"></p>')
+if sc == 'jsurl': addhtml('<p><a href="jav&#x61;script:alert(1)">x</a></p>')
+if sc == 'svgel': addhtml('<svg onload="alert(1)"></svg>')
+# the control: harmless html that only looks like the above (entities, "on x=" and data: in prose)
+if sc == 'benign': addhtml('<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p>')
 if sc == 'notzip':
     open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
 def zi(name, mode):
@@ -362,7 +370,7 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = benign ] || [ "$SCENARIO" = scriptel ] || [ "$SCENARIO" = handler ] || [ "$SCENARIO" = jsurl ] || [ "$SCENARIO" = svgel ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -622,8 +630,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
 rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
 check "job 2: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 6"
-rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
-check "job 2: no npm, node only for -e and the shape check, and never with a token file on disk" "$rc"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-noscript.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "job 2: no npm, node only for -e and the shape and no-script checks, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
@@ -879,6 +887,33 @@ refused failedjob "an import job that failed" "successful import_docs jobs"
 refused wrongsha "an import job at another commit" "successful import_docs jobs"
 refused wrongpipeline "an import job of another pipeline" "successful import_docs jobs"
 refused twojobs "two import jobs" "successful import_docs jobs"
+
+# The publish runs the lint's "the imported docs carry no script" check itself:
+# the artifact is untrusted, and the import merge request's lint is not the only
+# line of defence. A docs page whose section html carries script-capable markup
+# is refused with the lint's wording, before any write to GitLab, any push or any
+# branch. The same artifact without the script is published as usual.
+# script_refused <scenario> <what it is>
+script_refused() {
+  refused "$1" "$2" 'carries script\|carry no script'
+  rc=0; grep -q 'readme.json' "$out" || rc=1
+  check "job 2: the refusal of $2 names the page (readme.json)" "$rc"
+}
+script_refused scriptel "a script element in a docs page"
+script_refused handler "an onerror handler in a docs page"
+script_refused jsurl "an encoded javascript: link in a docs page"
+script_refused svgel "an svg element in a docs page"
+# control: harmless html in the same place is published as today
+run_push "$out" benign
+rcb=$rc
+rc=0; [ "$rcb" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || rc=1
+check "job 2: the same page with harmless html (entities, on x=, data: in prose) is published (exit $rcb)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -q '^POST /merge_requests' "$aux/api.log" && grep -q 'push' "$aux/shim.log" \
+  && printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}$' || rc=1
+check "job 2: the harmless page was pushed and a merge request opened" "$rc"
+rc=0; ! grep -q -e 'carries script' -e 'carry no script' "$out" || rc=1
+check "job 2: the harmless page is not reported as carrying script" "$rc"
 
 reset_tree
 rm -f "$out"

@@ -82,46 +82,7 @@ echo "== the imported docs carry no script"
 # and control characters removed before the scheme is looked at. A construct
 # that would put a browser into a comment or a raw-text element is refused
 # outright, since the import never writes one and the check cannot follow it.
-node -e '
-  const fs = require("fs");
-  const bad = [/<(script|style|iframe|svg|math|object|embed|form|base|meta|link|template|textarea|title|xmp|noembed|noframes|noscript|plaintext)\b/i];
-  const named = { colon: ":", tab: "\t", newline: "\n", nbsp: "\xa0", amp: "&", quot: "\"", apos: "\x27", lt: "<", gt: ">", lpar: "(", rpar: ")" };
-  const cp = (n) => { try { return String.fromCodePoint(n); } catch { return ""; } };
-  const decode = (v) => {
-    for (let i = 0; i < 4; i++) {
-      const w = v.replace(/&#x([0-9a-f]+);?/gi, (m, h) => cp(parseInt(h, 16)))
-        .replace(/&#(\d+);?/g, (m, d) => cp(Number(d)))
-        .replace(/&([a-z]+);/gi, (m, n) => (named[n.toLowerCase()] !== undefined ? named[n.toLowerCase()] : m));
-      if (w === v) break;
-      v = w;
-    }
-    return v;
-  };
-  const scheme = (v) => decode(v).replace(/[\p{Cc}\p{Z}\p{Cf}]/gu, "");
-  const urlAttr = new Set(["href", "src", "xlink:href", "action", "formaction", "data", "poster", "background", "ping", "srcset"]);
-  const danger = (h) => {
-    // every < must open a start or end tag of the one shape the import writes, else refuse:
-    // WS is html whitespace only, a value is double-quoted with no quote or angle bracket inside
-    const tag = /<(?:\/[a-zA-Z][a-zA-Z0-9]*[\t\n\f\r ]*|[a-zA-Z][a-zA-Z0-9]*((?:[\t\n\f\r ]+[a-zA-Z][a-zA-Z0-9:-]*(?:="[^"<>]*")?)*)[\t\n\f\r ]*\/?)>/y;
-    for (let i = h.indexOf("<"); i !== -1; i = h.indexOf("<", tag.lastIndex)) {
-      tag.lastIndex = i;
-      const m = tag.exec(h);
-      if (!m) return true;
-      for (const a of (m[1] || "").matchAll(/[\t\n\f\r ]+([a-zA-Z][a-zA-Z0-9:-]*)(?:="([^"<>]*)")?/g)) {
-        const name = a[1].toLowerCase(), value = a[2] || "";
-        if (/^on/.test(name)) return true;
-        if (urlAttr.has(name) && /(^|,)(javascript|vbscript|data):/i.test(scheme(value))) return true;
-      }
-    }
-    return bad.some((re) => re.test(h));
-  };
-  const files = fs.existsSync("assets/docs") ? fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json") : [];
-  for (const f of files) {
-    for (const s of JSON.parse(fs.readFileSync(`assets/docs/${f}`, "utf8")).sections || []) {
-      if (danger(s.html || "")) { console.log(`   assets/docs/${f} section ${s.id} carries script`); process.exitCode = 1; }
-    }
-  }
-' || fail=1
+node tools/ci/docs-noscript.mjs assets/docs || fail=1
 
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
 for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
