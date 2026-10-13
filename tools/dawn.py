@@ -277,7 +277,7 @@ def main():
     global GLOW
     if CLOUDS is not None:
         g = LIGHTS.a ** 2.2
-        GLOW = Map.__new__(Map); GLOW.a = gaussian_filter(g, (6, 6, 0)) * 1.0
+        GLOW = Map.__new__(Map); GLOW.a = gaussian_filter(g, (6, 6, 0))
         GLOW.lon0, GLOW.lon1, GLOW.lat0, GLOW.lat1 = LIGHTS.lon0, LIGHTS.lon1, LIGHTS.lat0, LIGHTS.lat1
     s, ss = args.scale, args.ss
     W = int(round((args.x1 - args.x0) * s)); H = int(round((1000 - args.y0) * s))
@@ -305,7 +305,8 @@ def main():
     # over the door's sky: the Earth is opaque, the air is light laid over what is behind it
     glow = c * (1 - cov[..., None])
     alpha = np.clip(np.maximum(cov, glow.max(-1)), 0, 1)
-    col = np.where(alpha[..., None] > 1e-4, c * cov[..., None] / np.maximum(alpha, 1e-4)[..., None] + glow / np.maximum(alpha, 1e-4)[..., None], 0)
+    am = np.maximum(alpha, 1e-4)[..., None]
+    col = np.where(alpha[..., None] > 1e-4, c * cov[..., None] / am + glow / am, 0)
     col = np.clip(col, 0, 1)
     rgba = np.concatenate([col ** (1 / 2.2), alpha[..., None]], -1)
     Image.fromarray((rgba * 255 + 0.5).astype(np.uint8), "RGBA").save(args.out)
