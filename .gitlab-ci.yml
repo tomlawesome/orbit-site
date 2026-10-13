@@ -156,6 +156,7 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/phone-door-test.mjs
+    - node tools/ci/dropped-warning-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
