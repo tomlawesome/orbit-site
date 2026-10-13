@@ -523,6 +523,20 @@ pin_run "$tmp" SSL_CERT_FILE=/ca.pem CI_SERVER_TLS_CA_FILE=/ca.pem NODE_VERSION=
 rc=0; ! grep -q 'is set in the environment' "$out" || rc=1
 check "job 2: the runner's own CA file, NODE_VERSION, GIT_DEPTH and GIT_STRATEGY are not refused" "$rc"
 
+# The guard names a variable that exists (audit 4). A harmless variable whose
+# VALUE holds a newline and then text shaped like an assignment is one variable,
+# HARMLESS_NOTE; it must not be read as a second, GIT_FAKE, and being harmless it
+# must not be refused at all. Control: a real GIT_FAKE is refused, by name.
+multiline=$(printf 'line one\nGIT_FAKE=1')
+pin_run "$tmp" "HARMLESS_NOTE=$multiline"
+rc=0; ! grep -q 'GIT_FAKE' "$out" || rc=1
+check "job 2: a newline and GIT_FAKE=1 inside a harmless variable's value does not name GIT_FAKE" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; ! grep -q 'is set in the environment' "$out" && grep -q '^== the checkout' "$out" || rc=1
+check "job 2: a harmless variable whose value holds a newline is not refused" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+pinned "with a real GIT_FAKE set (control for the newline case)" "$tmp" "refusing to run: GIT_FAKE is set" GIT_FAKE=1
+
 # The pipeline's own variables are not refused (#18). GitLab puts every variable
 # of .gitlab-ci.yml's top-level `variables:` and of publish_docs's own into the
 # job's shell, NODE_IMAGE (the job's image reference) among them; the guard must
