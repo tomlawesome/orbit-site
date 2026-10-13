@@ -155,6 +155,33 @@ else
 fi
 git reset -q --hard HEAD~1
 
+# Cases (b15)-(b19): html the import never writes, which a browser reads
+# differently from the check's tokeniser (an HTML comment, a doctype, a <?
+# construct, a </ not followed by a letter, and the elements textarea, title,
+# xmp, noembed, noframes, noscript and plaintext, whose content is raw text).
+# The import writes such text escaped (&lt;!--), so a stored section holding
+# any of them is refused outright. The attacker's quote opens inside one
+# construct and closes inside another, so a handler hides in an attribute value.
+poison_case "(b15) an html comment hiding a quote" '<!-- <a x=" --><img src=x onerror=alert(1)><!-- "> -->'
+poison_case "(b16) a textarea holding a closing tag in an attribute" '<textarea><a title="</textarea><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b17) a <? construct hiding a quote" '<? <a x=" ><img src=x onerror=alert(1)><a x=" >'
+poison_case "(b18) an upper-case noscript holding a closing tag in an attribute" '<NOSCRIPT><a title="</noscript><img src=x onerror=alert(1)>">x</a>'
+poison_case "(b19) a </ not followed by a letter" '</ x="><img src=x onerror=alert(1)><a x="'
+
+# Case (b20): what the import writes when a document mentions these words
+# (escaped, in a code block; a diagram; a note) -> passes.
+sid=$(poison '<pre class="code" data-lang="html"><code>&lt;!-- a --&gt; &lt;textarea&gt; &lt;?x&gt;</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram, drawing…</figcaption></figure><aside class="alert note"><b>note</b><p>titled</p></aside>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   escaped comment, textarea and <? text in code, a diagram and a note pass"
+else
+  echo "FAIL escaped comment, textarea and <? text in code, a diagram and a note pass (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
 # Case (c): the committed docs as they are -> the section runs and passes.
 rc=0
 sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
@@ -515,6 +542,14 @@ split_case "another job joining the docs-import environment" $ci "renovate names
   y = y.replace("renovate:\n  stage: maintenance\n", "renovate:\n  stage: maintenance\n  environment:\n    name: docs-import\n");'
 split_case "a hidden template naming the docs-import environment" $ci "names the docs-import environment" '
   y = y + "\n.template:\n  environment:\n    name: docs-import\n";'
+# Cases (s12)-(s14): the renovate job joins the environment renovate (the
+# schedule's token scope), and no other job or template may name it.
+split_case "renovate without its environment" $ci "renovate.*environment" '
+  y = y.replace(/(\nrenovate:\n(?:[ \t][^\n]*\n|\n(?=[ \t]))*?)  environment:\n(?:    [^\n]*\n)+/, "$1");'
+split_case "another job joining the renovate environment" $ci "lint.*renovate" '
+  y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  environment:\n    name: renovate\n");'
+split_case "a hidden template naming the renovate environment" $ci "renovate" '
+  y = y + "\n.t:\n  environment:\n    name: renovate\n";'
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
   y = y.replace("    name: docs-import\n", "    name: other\n");'
 split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
