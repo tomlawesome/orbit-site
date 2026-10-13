@@ -128,6 +128,7 @@ poison_case() {
   git reset -q --hard HEAD~1
 }
 tab=$(printf '\t'); nl=$(printf '\n'); ctl=$(printf '\001')
+nbsp=$(printf '\302\240'); vt=$(printf '\013'); bom=$(printf '\357\273\277')
 poison_case "a hex-encoded letter in a javascript: scheme" '<a href="jav&#x61;script:alert(1)">x</a>'
 poison_case "a decimal-encoded letter in a javascript: scheme" '<a href="&#106;avascript:alert(1)">x</a>'
 poison_case "an encoded tab inside a scheme" '<a href="java&#9;script:alert(1)">x</a>'
@@ -168,6 +169,22 @@ poison_case "(b17) a <? construct hiding a quote" '<? <a x=" ><img src=x onerror
 poison_case "(b18) an upper-case noscript holding a closing tag in an attribute" '<NOSCRIPT><a title="</noscript><img src=x onerror=alert(1)>">x</a>'
 poison_case "(b19) a </ not followed by a letter" '</ x="><img src=x onerror=alert(1)><a x="'
 
+# Cases (b21)-(b29): the lint reads the html by the strict grammar the import
+# writes, not by a browser's lenient one. The attacker hides a quote with a
+# character a browser treats as space or name (a no-break space, a vertical tab,
+# a byte-order mark) or with a construct the import never writes (an end tag
+# with attributes, a < in text or in a value, an upper-case javascript: scheme).
+# The import escapes every < as &lt;, so each of these is refused outright.
+poison_case "(b21) a no-break space after = before a quote" "<a b=${nbsp}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b22) a vertical tab after = before a quote" "<a b=${vt}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b23) a byte-order mark after = before a quote" "<a b=${bom}\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b24) a no-break space inside a tag name" "<a${nbsp}b=\"><img src=x onerror=alert(1)><a b=\"\">x</a>"
+poison_case "(b25) a no-break space ending an unquoted value" "<a b=x${nbsp}c=\"><img src=x onerror=alert(1)><a c=\"\">x</a>"
+poison_case "(b26) an end tag carrying a quoted attribute" '</a b="><a c="><img src=x onerror=alert(1)><a d="">x</a>'
+poison_case "(b27) an upper-case javascript: scheme" '<a href="JAVASCRIPT:alert(1)">x</a>'
+poison_case "(b28) a < inside a quoted value" '<a title="<b>">x</a>'
+poison_case "(b29) a bare < in text" '<p>a < b</p>'
+
 # Case (b20): what the import writes when a document mentions these words
 # (escaped, in a code block; a diagram; a note) -> passes.
 sid=$(poison '<pre class="code" data-lang="html"><code>&lt;!-- a --&gt; &lt;textarea&gt; &lt;?x&gt;</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram, drawing…</figcaption></figure><aside class="alert note"><b>note</b><p>titled</p></aside>')
@@ -177,6 +194,21 @@ if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
   echo "ok   escaped comment, textarea and <? text in code, a diagram and a note pass"
 else
   echo "FAIL escaped comment, textarea and <? text in code, a diagram and a note pass (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (b30): the forms the import does write -> passes: a non-ASCII id and
+# label, an apostrophe and entities in a value, an empty value, a bare
+# attribute, and a > in text.
+sid=$(poison '<h2 id="café"><a class="anchor" href="#docs/x/café" aria-label="Link to this heading">#</a>Café &gt; a > b</h2><p>it'"'"'s <a href="https://e.com/a?b=1&amp;c='"'"'d'"'"'" target="_blank" rel="noopener">x</a></p><td class=""></td><figure data-mermaid><pre hidden>graph TD</pre></figure><br>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
+  echo "ok   the forms the import writes (non-ASCII, entities, empty and bare attributes) pass"
+else
+  echo "FAIL the forms the import writes (non-ASCII, entities, empty and bare attributes) pass (exit $rc, section $sid)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -550,6 +582,20 @@ split_case "another job joining the renovate environment" $ci "lint.*renovate" '
   y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  environment:\n    name: renovate\n");'
 split_case "a hidden template naming the renovate environment" $ci "renovate" '
   y = y + "\n.t:\n  environment:\n    name: renovate\n";'
+split_case "a template joining renovate by the short form" $ci "names the renovate environment" '
+  y = y + "\n.t:\n  environment: renovate\n";'
+# A job that only mentions renovate.json in its script joins no environment -> passes.
+printf '\n.note:\n  script:\n    - test -f renovate.json\n' >> $ci
+commit_all "a job that mentions renovate.json in a script"
+lint_to_out
+if [ "$rc" -eq 0 ] && ! grep -q "names the renovate environment" "$out"; then
+  echo "ok   a job that only mentions renovate.json in a script passes"
+else
+  echo "FAIL a job that only mentions renovate.json in a script passes (exit $rc, want 0 and no \"names the renovate environment\")"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
   y = y.replace("    name: docs-import\n", "    name: other\n");'
 split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
