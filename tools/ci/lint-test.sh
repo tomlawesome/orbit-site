@@ -40,8 +40,8 @@
 # (cases y10-y15): extends: publish_docs; extends: [ .something, publish_docs ]; environment: !reference
 # [publish_docs, environment]; extends a hidden template that names docs-import (the template is refused as well,
 # case y14); and extends: renovate.
-# Further refusals (issue #52 review, #59; cases p1-p18): a YAML merge key after an explicit key in the same
-# mapping (Ruby Psych lets the later << win, other readers keep the explicit key; a << first stays allowed); a
+# Further refusals (issue #52 review, #59; cases p1-p20): a YAML merge key after an explicit key in the same
+# mapping (Ruby Psych lets the later << win, other readers keep the explicit key; a << first stays allowed; two << in one mapping are refused, a << list passes, cases p19-p20); a
 # child pipeline (trigger: include, file or artifact); a package manager through !reference, or in
 # publish_docs's before_script or after_script (its own, extended or from default:); services: on publish_docs or
 # default:, or a changed publish_docs image; and import_docs expire_in of 999 hours or 2 days (24 hours and
@@ -765,6 +765,14 @@ yaml_pass_case "p17: import_docs with expire_in 24 hours passes" '
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 24 hours\n");'
 yaml_pass_case "p18: import_docs with expire_in 30 minutes passes" '
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 minutes\n");'
+# Two merge keys in ONE mapping before any explicit key (#52): Ruby Psych (GitLab's reader) takes the
+# second <<, js-yaml the first, so the file is ambiguous and is refused (case p19). The list form
+# <<: [*a, *b] is one key and both readers keep the first, so it passes (case p20).
+split_case "p19: two merge keys in one environment mapping" $ci "evil\|merge key\|<<" '
+  y = y.replace("  environment:\n    name: docs-import\n", "  environment: &penv\n    name: docs-import\n");
+  y = y + "\n.stg: &a\n  name: staging\n\nevil:\n  stage: lint\n  environment:\n    <<: *a\n    <<: *penv\n    url: https://example.invalid\n  script:\n    - \"true\"\n";'
+yaml_pass_case "p20: a merge key list of two harmless anchors passes" '
+  y = y + "\n.h1: &h1\n  interruptible: false\n\n.h2: &h2\n  retry: 1\n\nfine2:\n  <<: [*h1, *h2]\n  stage: lint\n  script:\n    - \"true\"\n";'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
