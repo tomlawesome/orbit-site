@@ -85,7 +85,7 @@ lint:
     COVERAGE_DIR: coverage
   artifacts:
     paths: [coverage/]
-    expire_in: 1 day
+    expire_in: 24 hours
   script:
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-test.sh
