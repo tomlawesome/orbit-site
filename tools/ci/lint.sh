@@ -153,7 +153,12 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # Also refused (#52, #59): a << merge key after an explicit key, a child
 # pipeline, a package manager in publish_docs's script or hooks (extended,
 # referenced or from default:), services or a changed image beside the token,
-# and import_docs artifacts kept over a day.
+# and import_docs artifacts kept over a day. And (#60) anything GitLab's reader
+# (Ruby Psych) could read differently from js-yaml: a quoted "<<", a key led by a
+# colon or read as a boolean, null or number, a tag but !reference, a %VAR% in an
+# environment name; and on publish_docs, needs beyond import_docs without its
+# artifacts, hooks or a cache (its own, a parent's or default:'s), or NODE_IMAGE
+# set anywhere but once in the global variables.
 # Read as YAML with js-yaml from tools/node_modules (#52), so the lint job runs
 # npm ci --prefix tools first; without it, or if the file does not parse, this fails.
 node tools/ci/ci-split.mjs || fail=1
