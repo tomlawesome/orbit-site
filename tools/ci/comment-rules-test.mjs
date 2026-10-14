@@ -117,6 +117,10 @@ shows("end: a</ in a paragraph shows as text", "<p>a</", "a</");
 // ---- removing a comment, tag or bogus comment must not join a character reference
 // (the browser shows the text on the right: "&" and "lt;" are two runs, so it is a plain "&lt;")
 shows("join: a comment between & and lt;", "a&<!-- x -->lt;b", "a&lt;b");
+// a numeric reference cut off by a comment is closed where it was cut: "&#9" + "7" would join into "&#97" ("a"); the
+// browser shows a tab then 7. (shown() reads named references only, so the want is the sealed form.)
+shows("join: a comment cuts a numeric reference off", "a&#9<!-- x -->7", "a&#9;7");
+shows("join: a comment cuts a hex reference off", "a&#x9<!-- x -->7", "a&#x9;7");
 shows("join: an img between & and amp;", "AT&<img alt=1>amp;T", "AT&amp;T");
 shows("join: an img between & and lt;", "a&<img alt=1>lt;b", "a&lt;b");
 shows("join: a bogus comment <!x> between & and lt;", "a&<!x>lt;b", "a&lt;b");
