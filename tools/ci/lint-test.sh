@@ -47,6 +47,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
+# the lint reads .gitlab-ci.yml with js-yaml from tools/node_modules (#52), which the archive leaves out:
+# the scratch copy uses the checkout's install (npm ci --prefix tools), or the lint fails closed
+[ ! -d "$root/tools/node_modules" ] || export NODE_PATH="$root/tools/node_modules"
 cd "$tmp"
 git init -q
 git add -A
