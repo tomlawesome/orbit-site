@@ -143,7 +143,7 @@ for (const [label, inn, out] of pairs) {
 // ---- controls: a real loss warns ---------------------------------------------
 // Blocks where the sanitiser drops an element holding text (found by comparing the browser's text in and out).
 for (const input of ["<p>a <font>b</font></p>", "<center>mid</center>", "<p>a</p><section>sec</section>", "<a1>x</a1>", "<x-y>text</x-y>",
-  "<p>a</p><!-- x<font>f</font>"]) {
+  "<p>a</p><!-- x --><font>f</font>", "<p>a</p><!-- x --!><font>f</font>"]) {
   const output = sanitise(input);
   const [a, b] = [await visible(input), await visible(output)];
   const lost = lostWords(a, b);
