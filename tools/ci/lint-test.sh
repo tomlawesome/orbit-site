@@ -40,6 +40,12 @@
 # (cases y10-y15): extends: publish_docs; extends: [ .something, publish_docs ]; environment: !reference
 # [publish_docs, environment]; extends a hidden template that names docs-import (the template is refused as well,
 # case y14); and extends: renovate.
+# Further refusals (issue #52 review, #59; cases p1-p18): a YAML merge key after an explicit key in the same
+# mapping (Ruby Psych lets the later << win, other readers keep the explicit key; a << first stays allowed); a
+# child pipeline (trigger: include, file or artifact); a package manager through !reference, or in
+# publish_docs's before_script or after_script (its own, extended or from default:); services: on publish_docs or
+# default:, or a changed publish_docs image; and import_docs expire_in of 999 hours or 2 days (24 hours and
+# 30 minutes pass).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -697,6 +703,68 @@ split_case "the template that names docs-import is still refused" $ci "\\.tpl.*d
   y = y + "\n.tpl:\n  environment: docs-import\n\ninheritor:\n  stage: lint\n  extends: .tpl\n  script:\n    - \"true\"\n";'
 split_case "a job extending renovate" $ci "inheritor.*renovate" '
   y = y + "\ninheritor:\n  stage: lint\n  extends: renovate\n  script:\n    - \"true\"\n";'
+
+# Cases (M1)-(M6) judge the same section against .gitlab-ci.yml edits GitLab
+# accepts and the first YAML check let through (issue #52 review, issue #59).
+# A YAML merge key AFTER an explicit key in the same mapping: GitLab's reader
+# (Ruby Psych) lets the later << overwrite the explicit key, other readers keep
+# the explicit key, so the file is ambiguous and is refused (cases p1-p2); a
+# << that comes FIRST is unambiguous and passes (case p3). A child pipeline
+# (trigger: include) may hold a job the check never sees (cases p4-p5). A package
+# manager reached through !reference (case p6), or in publish_docs's
+# before_script or after_script, its own, through extends, or from default:
+# (cases p7-p11). publish_docs gaining services:, default: gaining services:,
+# or publish_docs's image changing (cases p12-p14). import_docs's expire_in
+# 999 hours and 2 days are refused, 24 hours and 30 minutes pass (cases p15-p18).
+# M1: merge key after an explicit key, the environment mapping form.
+split_case "p1: a merge key after an explicit environment name" $ci "evil\|merge key\|<<" '
+  y = y.replace("  environment:\n    name: docs-import\n", "  environment: &penv\n    name: docs-import\n");
+  y = y + "\nevil:\n  stage: lint\n  environment:\n    name: production\n    <<: *penv\n  script:\n    - \"true\"\n";'
+# M1: the whole-job form.
+split_case "p2: a whole-job merge key after an explicit environment" $ci "evil\|merge key\|<<" '
+  y = y.replace("\npublish_docs:\n", "\npublish_docs: &pub\n");
+  y = y + "\nevil:\n  stage: lint\n  environment: production\n  <<: *pub\n  script:\n    - \"true\"\n";'
+# M1: a merge key first, then explicit keys, with a harmless anchor: unambiguous, allowed.
+yaml_pass_case "p3: a merge key before the explicit keys passes" '
+  y = y + "\n.harmless: &harmless\n  interruptible: false\n\nfine:\n  <<: *harmless\n  stage: lint\n  script:\n    - \"true\"\n";'
+# M2: child pipelines.
+split_case "p4: a child pipeline from a file" $ci "spawner\|trigger\|child pipeline" '
+  y = y + "\nspawner:\n  stage: lint\n  trigger: { include: ci/child.yml }\n";'
+split_case "p5: a child pipeline from an artifact" $ci "spawner\|trigger\|child pipeline" '
+  y = y + "\nspawner:\n  stage: lint\n  trigger: { include: [ { artifact: x.yml, job: lint } ] }\n";'
+# M3: a package manager through !reference.
+split_case "p6: publish_docs running a package manager through !reference" $ci "publish_docs" '
+  y = y + "\n.n: { script: [ \"npx evil\" ] }\n";
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script: [ !reference [.n, script], sh tools/ci/nightly-publish.sh ]\n");'
+# M4 (#59): a package manager in a hook of publish_docs.
+split_case "p7: publish_docs with a package manager in its before_script" $ci "publish_docs\|before_script" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  before_script:\n    - npm ci --prefix tools\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p8: publish_docs with a package manager in its after_script" $ci "publish_docs\|after_script" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script:\n    - sh tools/ci/nightly-publish.sh\n  after_script:\n    - npm ci --prefix tools\n");'
+split_case "p9: publish_docs extending a parent with a package manager in before_script" $ci "publish_docs\|before_script" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .pre\n  stage: publish\n");
+  y = y + "\n.pre:\n  before_script:\n    - npm ci --prefix tools\n";'
+split_case "p10: publish_docs extending a parent with a package manager in after_script" $ci "publish_docs\|after_script" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .post\n  stage: publish\n");
+  y = y + "\n.post:\n  after_script:\n    - npm ci --prefix tools\n";'
+split_case "p11: a package manager in default before_script" $ci "publish_docs\|default\|before_script" '
+  y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  before_script:\n    - npm ci --prefix tools\n");'
+# M5: services and image.
+split_case "p12: publish_docs gaining services" $ci "publish_docs\|services" '
+  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n  services:\n    - some/image\n");'
+split_case "p13: default gaining services" $ci "publish_docs\|default\|services" '
+  y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  services:\n    - some/image\n");'
+split_case "p14: publish_docs with a different image" $ci "publish_docs\|image" '
+  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: some/other:1\n");'
+# M6 (#59): expire_in is a short time in hours or minutes, one day at most.
+split_case "p15: import_docs with expire_in 999 hours" $ci "import_docs\|expire_in" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 999 hours\n");'
+split_case "p16: import_docs with expire_in 2 days" $ci "import_docs\|expire_in" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 2 days\n");'
+yaml_pass_case "p17: import_docs with expire_in 24 hours passes" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 24 hours\n");'
+yaml_pass_case "p18: import_docs with expire_in 30 minutes passes" '
+  y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 minutes\n");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
