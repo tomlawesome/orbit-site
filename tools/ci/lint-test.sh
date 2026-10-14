@@ -25,7 +25,12 @@
 # 'unsafe-eval' in script-src, no object-src 'none' or base-uri 'self', or an inline event handler fails and names the
 # page (cases c0-c8). And section "no real names, host logins or private addresses" (#56): a private or
 # shared-space IPv4 address in a tracked text file fails and names file:line without printing the address, an
-# edit to the one LICENSE line the owner keeps fails and names LICENSE:3, and a documentation address passes (cases n1-n3).
+# edit to the one LICENSE line the owner keeps fails and names LICENSE:3, and a documentation address passes (cases n1-n3). The same section also refuses history carrying a banned
+# email (#56, decision 8a): a commit reachable from HEAD whose author or committer email is banned (stored only
+# as sha256 digests) fails and names the commit by short id and the field, author or committer, never the
+# address; a commit with an invented address is not reported. The tests plant the digest of an invented address
+# in NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS (comma-separated sha256 of the lower-cased address, added to the banned
+# set for tests): cases n4 (invented address, not reported), n5 (author) and n6 (committer).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -936,6 +941,59 @@ if [ -s "$names_out" ] && ! grep -q "README.md" "$names_out"; then
   echo "ok   a documentation address is not reported"
 else
   echo "FAIL a documentation address is not reported (want the names section present and not naming README.md)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Cases n4-n6: history carrying a banned email (#56, decision 8a). The address is invented and built from
+# parts; "banned" is made by planting its sha256 (of the lower-cased address) in the extra-digest variable.
+e_user="history-probe"; e_addr="$e_user@example.invalid"
+e_mixed="History-Probe@Example.Invalid"
+e_digest=$(printf '%s' "$e_addr" | sha256sum | cut -d' ' -f1)
+
+# Case n4: a commit with an invented address, nothing planted -> not reported.
+echo n4 >> README.md
+git add -A
+GIT_AUTHOR_EMAIL="$e_addr" GIT_COMMITTER_EMAIL="$e_addr" git -c user.name=t commit -q -m "invented address"
+sid=$(git rev-parse --short HEAD)
+names_lint
+if [ -s "$names_out" ] && ! grep -qF "$sid" "$out" && ! grep -qiF "$e_addr" "$out"; then
+  echo "ok   a commit with an unbanned address is not reported"
+else
+  echo "FAIL a commit with an unbanned address is not reported (want the names section present and not naming $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case n5: author email banned (committer is not) -> fails, names the short id and "author", never the address.
+echo n5 >> README.md
+git add -A
+GIT_AUTHOR_EMAIL="$e_mixed" GIT_COMMITTER_EMAIL="t@t" git -c user.name=t commit -q -m "banned author"
+sid=$(git rev-parse --short HEAD)
+NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$e_digest" names_lint
+if [ "$rc" -ne 0 ] && grep -qi "$sid.*author" "$names_out" && ! grep -qi "$sid.*committer" "$names_out" \
+   && ! grep -qiF "$e_addr" "$out"; then
+  echo "ok   a banned author email fails, naming $sid and author, not the address"
+else
+  echo "FAIL a banned author email fails (exit $rc, want non-zero naming $sid and author, not the address)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case n6: committer email banned (author is not) -> fails, names the short id and "committer", never the address.
+echo n6 >> README.md
+git add -A
+GIT_AUTHOR_EMAIL="t@t" GIT_COMMITTER_EMAIL="$e_addr" git -c user.name=t commit -q -m "banned committer"
+sid=$(git rev-parse --short HEAD)
+NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$e_digest" names_lint
+if [ "$rc" -ne 0 ] && grep -qi "$sid.*committer" "$names_out" && ! grep -qi "$sid.*author" "$names_out" \
+   && ! grep -qiF "$e_addr" "$out"; then
+  echo "ok   a banned committer email fails, naming $sid and committer, not the address"
+else
+  echo "FAIL a banned committer email fails (exit $rc, want non-zero naming $sid and committer, not the address)"
   sed 's/^/     /' "$out"
   failed=1
 fi

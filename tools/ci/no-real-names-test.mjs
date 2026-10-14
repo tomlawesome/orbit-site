@@ -5,7 +5,9 @@
  *
  *   node tools/ci/no-real-names-test.mjs
  */
+import { createHash } from "node:crypto";
 import { IPV4, isPrivateOrShared, loginsOf, scan, wordsOf } from "./no-real-names.mjs";
+import * as guard from "./no-real-names.mjs";
 
 let failed = false;
 let count = 0;
@@ -53,6 +55,21 @@ check("ipv4: ignores 172.15 and 172.32", flagged(`${quad(172, 15, 0, 1)} ${quad(
 check("ipv4: flags 192.168/16", flagged(`at ${quad(192, 168, 1, 5)}`).length === 1, "not flagged");
 check("ipv4: flags 100.64/10 (both ends)", flagged(`${quad(100, 64, 0, 1)} ${quad(100, 127, 255, 1)}`).length === 2, "not flagged");
 check("ipv4: ignores 100.63 and 100.128", flagged(`${quad(100, 63, 0, 1)} ${quad(100, 128, 0, 1)}`).length === 0, "flagged");
+
+// bannedEmail (commit author/committer addresses): digests only, never a real address.
+// Read through the namespace so a missing export fails these checks, not the whole file.
+const invented = ["pat", "nobody"].join(".") + "@" + ["mail", "invalid"].join(".");
+const inventedDigest = createHash("sha256").update(invented.toLowerCase()).digest("hex");
+const bannedEmail = guard.bannedEmail;
+check("bannedEmail: is exported as a function", typeof bannedEmail === "function", typeof bannedEmail);
+check("bannedEmail: returns a boolean for an invented address", typeof bannedEmail === "function" && typeof bannedEmail(invented) === "boolean", String(typeof bannedEmail === "function" && typeof bannedEmail(invented)));
+check("bannedEmail: an invented address is not banned", typeof bannedEmail === "function" && bannedEmail(invented) === false, "banned or missing");
+check("bannedEmail: an invented address in capitals is not banned", typeof bannedEmail === "function" && bannedEmail(invented.toUpperCase()) === false, "banned or missing");
+const digests = guard.BANNED_EMAILS;
+check("BANNED_EMAILS: is an exported Set", digests instanceof Set, String(digests));
+check("BANNED_EMAILS: holds at least 2 entries", digests instanceof Set && digests.size >= 2, String(digests && digests.size));
+check("BANNED_EMAILS: every entry is 64 lower-case hex characters", digests instanceof Set && [...digests].every((d) => typeof d === "string" && /^[0-9a-f]{64}$/u.test(d)), "bad entry or missing");
+check("BANNED_EMAILS: does not hold the digest of an invented address", digests instanceof Set && !digests.has(inventedDigest), "present or missing");
 
 // scan reports file:line only
 const hits = scan([{ name: "a.txt", text: `fine\nunder ${quad(10, 1, 2, 3)} here\n` }, { name: "b.txt", text: "nothing\n" }]);
