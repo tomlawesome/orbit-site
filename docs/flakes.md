@@ -19,7 +19,3 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 ## Docker image pull from the dependency proxy: not found
 
 - 2026-10-12 · 0acc271 (and 3 other Renovate heads) · pipelines 2547-2550 lint · node:22-bookworm digest "not found" from the dependency proxy; 2547 passed on retry 2026-10-13
-
-## door-lows-test L3: "could not be judged: the rich door was not kept here"
-
-- 2026-10-14 · f301c7d · pipeline 2587 live:journey (CI runner, no GPU) · all three tries judged the host too slow (flight world off: frame 34-37 ms; lean door 28 ms a frame); the same commit passed locally on a quiet host (L3 ok, 51 s)
