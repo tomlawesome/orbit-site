@@ -4,6 +4,7 @@
  * network or the disk, so tools/ci/import-docs-test.mjs can import it.
  */
 import { posix } from "node:path";
+import { htmlTokens } from "./sanitise-html.mjs";
 
 /* the words of some markdown tokens, as the search and the summaries read them.
    Words in one run of inline marks join with nothing between them (`2 \* 3`
@@ -88,39 +89,14 @@ const entities = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);
   return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "�";
 });
 
-/* the text a reader would see in some html: comments and tags removed, entities
-   read, spaces folded. One pass; a "<" that does not open a tag, or whose tag
-   never closes, is text, as the sanitiser writes it out. A comment ends as a
-   browser ends it, at "-->" or "--!>" ("<!-->" and "<!--->" at once), and one
-   never closed hides the rest (#52: read as text, it gave a false "lost text"). */
+/* the text a reader would see in some html: read as a browser reads it, by
+   the sanitiser's own reader (htmlTokens in sanitise-html.mjs), so tags,
+   comments and bogus comments are hidden by the same rules there and here;
+   entities read in each run of text, spaces folded */
 export function visibleText(html) {
-  let out = "", i = 0;
-  const noClose = {}; /* a character with none after the place it was last looked for */
-  while (i < html.length) {
-    const lt = html.indexOf("<", i);
-    if (lt < 0) { out += html.slice(i); break; }
-    out += html.slice(i, lt);
-    let end = -1;
-    if (html.startsWith("<!--", lt)) {
-      const c = /--!?>/g; c.lastIndex = lt + 2;
-      const m = c.exec(html);
-      if (!m) break;
-      end = m.index + m[0].length;
-    } else if (/^<\/?[a-z]/i.test(html.slice(lt, lt + 3))) {
-      let p = lt + 2;
-      for (;;) {
-        const c = /[>"']/g; c.lastIndex = p;
-        const m = c.exec(html);
-        if (!m) break;
-        if (m[0] === ">") { end = m.index + 1; break; }
-        const q = noClose[m[0]] <= m.index ? -1 : html.indexOf(m[0], m.index + 1);
-        if (q < 0) { noClose[m[0]] = m.index; break; }
-        p = q + 1;
-      }
-    }
-    if (end < 0) { out += "<"; i = lt + 1; } else i = end;
-  }
-  return entities(out).replace(/\s+/g, " ").trim();
+  let out = "";
+  for (const t of htmlTokens(html)) if (typeof t === "string") out += entities(t);
+  return out.replace(/\s+/g, " ").trim();
 }
 
 /* control characters in text fetched from another repository are not written
