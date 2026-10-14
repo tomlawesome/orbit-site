@@ -10,6 +10,9 @@
  * makes the whole call return "". `warn(message)` is optional: it hears of a
  * pre or details left open, which is closed at the end. Time is linear in the
  * length of the text, whatever is crafted into it.
+ *
+ * The text is read as a browser reads it (htmlTokens, below), so the output
+ * shows no text the browser hid and hides none it showed.
  */
 
 /* each allowed tag and, in the order they are written, its attributes */
@@ -22,11 +25,6 @@ const ALLOWED = {
   ...Object.fromEntries("br hr strong em b i code kbd sub sup summary span table thead tbody tr h1 h2 h3 h4 h5 h6 ul ol li blockquote pre".split(" ").map((t) => [t, []])),
 };
 
-const ATTR = /([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
-const NAME = /([a-z][a-z0-9-]*)/iy;
-const ATTR_NAME = /[^\s"'>\/=]+/y;
-const UNQUOTED = /[^\s"'=<>`]+/y;
-const SPACE = /\s*/y;
 const NAMED = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
 
 const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);?/gi, (m, e) => {
@@ -35,16 +33,6 @@ const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);?/
   return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "\ufffd";
 });
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-/* the attributes of one tag, names lower-cased, values decoded; the first of a name wins */
-function attributes(s) {
-  const at = new Map();
-  for (const m of s.matchAll(ATTR)) {
-    const name = m[1].toLowerCase();
-    if (!at.has(name)) at.set(name, decode(m[2] ?? m[3] ?? m[4] ?? ""));
-  }
-  return at;
-}
 
 /* one opening tag written out, or "" when it is dropped */
 function open(name, at, { link, image }) {
@@ -72,46 +60,99 @@ function open(name, at, { link, image }) {
   return `<${name}${ALLOWED[name].filter((k) => out.has(k)).map((k) => out.get(k) === null ? ` ${k}` : ` ${k}="${esc(out.get(k))}"`).join("")}>`;
 }
 
-/* one tag read at text[lt] in a single left-to-right pass, no backtracking:
-   { end, closing, name, attrs } when it is a tag, else { fail: true }. What
-   is left to read after the tag name or an attribute depends only on where
-   that is, so every such place a failed read passed is remembered in `dead`
-   and a later read that reaches one fails there: no stretch is read twice. */
-function scanTag(text, lt, quotes, dead) {
-  const at = (re, p) => { re.lastIndex = p; return re.test(text) ? re.lastIndex : -1; };
-  const space = (p) => at(SPACE, p);
+/* ---- reading html as a browser does ----------------------------------------
+   The WHATWG HTML tokeniser (https://html.spec.whatwg.org/#tokenization,
+   13.2.5), as far as text and tags go, in one left-to-right pass with no
+   backtracking. After a "<":
+     - a letter, or "/" and a letter: a tag, ending at the first ">" outside a
+       quoted attribute value; one cut off by the end of the text is dropped,
+       and so is everything after it;
+     - "!--": a comment. "<!-->" and "<!--->" are empty ones; otherwise it ends
+       at the first "-->" or "--!>", and one never closed hides the rest;
+     - "!" (a bogus comment, a doctype, CDATA outside svg and math), "?", or
+       "/" and anything else: hidden up to the next ">", or to the end ("</>"
+       is hidden whole);
+     - anything else, or the end of the text: the "<" is text.
+   Raw-text elements (script, style, textarea...) and foreign content are not
+   read specially: no such tag is on the sanitiser's list. */
+const WS = new Set(["\t", "\n", "\f", "\r", " "]);
+const isLetter = (c) => c !== undefined && ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z"));
+const lower = (s) => s.replace(/[A-Z]+/g, (m) => m.toLowerCase());
+const COMMENT_END = /--!?>/g;
+
+/* where the comment whose "<!--" ends just before p ends */
+function commentEnd(s, p) {
+  if (s[p] === ">") return p + 1;
+  if (s[p] === "-" && s[p + 1] === ">") return p + 2;
+  COMMENT_END.lastIndex = p;
+  const m = COMMENT_END.exec(s);
+  return m ? m.index + m[0].length : s.length;
+}
+
+/* the tag at s[lt]: { end, closing, name, at } with names lower-cased and the
+   first of each attribute's value as written, or null when the text ends first */
+function readTag(s, lt) {
+  const n = s.length;
   let p = lt + 1;
-  const closing = text[p] === "/";
+  const closing = s[p] === "/";
   if (closing) p++;
-  NAME.lastIndex = p;
-  const nm = NAME.exec(text);
-  if (!nm) return { fail: true };
-  p = NAME.lastIndex;
-  const attrs = p;
-  const passed = [];
-  const fail = () => { for (const x of passed) dead.add(x); return { fail: true }; };
+  const n0 = p;
+  while (p < n && !WS.has(s[p]) && s[p] !== "/" && s[p] !== ">") p++;
+  const name = lower(s.slice(n0, p));
+  const at = new Map();
   for (;;) {
-    if (dead.has(p)) return fail();
-    passed.push(p);
-    const q = space(p);
-    if (text[q] === ">") return { end: q + 1, closing, name: nm[1].toLowerCase(), attrs: text.slice(attrs, q) };
-    if (text[q] === "/" && text[q + 1] === ">") return { end: q + 2, closing, name: nm[1].toLowerCase(), attrs: text.slice(attrs, q) };
-    if (q === p) return fail();
-    let r = at(ATTR_NAME, q);
-    if (r < 0) return fail();
-    const s = space(r);
-    if (text[s] !== "=") { p = r; continue; }
-    const v = space(s + 1);
-    const c = text[v];
-    if (c === '"' || c === "'") {
-      /* a quote with no partner after it cannot close: asked once, not again */
-      const close = quotes[c] === undefined || v < quotes[c] ? text.indexOf(c, v + 1) : -1;
-      if (close < 0) { quotes[c] = v; return fail(); }
-      p = close + 1;
+    while (p < n && WS.has(s[p])) p++;
+    if (p >= n) return null;
+    if (s[p] === ">") return { end: p + 1, closing, name, at };
+    if (s[p] === "/") { p++; continue; }
+    const a0 = p++; /* a name may start with "=" */
+    while (p < n && !WS.has(s[p]) && s[p] !== "/" && s[p] !== ">" && s[p] !== "=") p++;
+    const key = lower(s.slice(a0, p));
+    let value = "";
+    while (p < n && WS.has(s[p])) p++;
+    if (s[p] === "=") {
+      p++;
+      while (p < n && WS.has(s[p])) p++;
+      const q = s[p];
+      if (q === '"' || q === "'") {
+        const close = s.indexOf(q, p + 1);
+        if (close < 0) return null;
+        value = s.slice(p + 1, close);
+        p = close + 1;
+      } else if (q !== ">") {
+        const v0 = p;
+        while (p < n && !WS.has(s[p]) && s[p] !== ">") p++;
+        value = s.slice(v0, p);
+      }
+    }
+    if (!at.has(key)) at.set(key, value);
+  }
+}
+
+/* the text and tags of some html, in order: a run of text as written (no
+   character reference read; a "<" that is text comes alone), or a tag from
+   readTag. Comments, bogus comments and a cut-off tag are left out. */
+export function* htmlTokens(s) {
+  const n = s.length;
+  let i = 0;
+  while (i < n) {
+    const lt = s.indexOf("<", i);
+    if (lt < 0) { yield s.slice(i); return; }
+    if (lt > i) yield s.slice(i, lt);
+    const c = s[lt + 1], d = s[lt + 2];
+    if (isLetter(c) || (c === "/" && isLetter(d))) {
+      const tag = readTag(s, lt);
+      if (!tag) return;
+      yield tag;
+      i = tag.end;
+    } else if (c === "!" && d === "-" && s[lt + 3] === "-") {
+      i = commentEnd(s, lt + 4);
+    } else if (c === "!" || c === "?" || (c === "/" && d !== undefined)) {
+      const gt = s.indexOf(">", lt + 2);
+      i = gt < 0 ? n : gt + 1;
     } else {
-      r = at(UNQUOTED, v);
-      if (r < 0) return fail();
-      p = r;
+      yield "<";
+      i = lt + 1;
     }
   }
 }
@@ -119,32 +160,16 @@ function scanTag(text, lt, quotes, dead) {
 export function sanitiseHtml(text, resolvers) {
   const warn = resolvers.warn ?? (() => {});
   let out = "";
-  let i = 0;
   const unclosed = []; /* the pre and details tags still open */
-  let noCommentEnd = false; /* no "-->" anywhere after the last look */
-  const quotes = {};
-  const dead = new Set();
-  while (i < text.length) {
-    const lt = text.indexOf("<", i);
-    if (lt < 0) { out += text.slice(i); break; }
-    out += text.slice(i, lt);
-    if (!noCommentEnd && text.startsWith("<!--", lt)) {
-      const end = text.indexOf("-->", lt + 4);
-      if (end > -1) { i = end + 3; continue; }
-      noCommentEnd = true;
-    }
-    const tag = scanTag(text, lt, quotes, dead);
-    if (tag.fail) {
-      out += "&lt;"; i = lt + 1; continue;
-    }
-    i = tag.end;
-    const { name } = tag;
+  for (const t of htmlTokens(text)) {
+    if (typeof t === "string") { out += t === "<" ? "&lt;" : t; continue; }
+    const { name } = t;
     if (!Object.hasOwn(ALLOWED, name)) return "";
     if (name === "pre" || name === "details") {
-      if (!tag.closing) unclosed.push(name);
+      if (!t.closing) unclosed.push(name);
       else if (unclosed.lastIndexOf(name) > -1) unclosed.splice(unclosed.lastIndexOf(name), 1);
     }
-    out += tag.closing ? `</${name}>` : open(name, attributes(tag.attrs), resolvers);
+    out += t.closing ? `</${name}>` : open(name, new Map([...t.at].map(([k, v]) => [k, decode(v)])), resolvers);
   }
   /* an unclosed pre or details would swallow what follows it on the page: close it here and say so */
   for (const name of unclosed.reverse()) { warn(`unclosed <${name}> closed at the end of the block`); out += `</${name}>`; }
