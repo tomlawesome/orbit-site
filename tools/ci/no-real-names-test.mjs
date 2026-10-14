@@ -88,7 +88,7 @@ check("loginsOf: suffix after a dash, no other text", has(loginsOf("/home/alex-o
 check("loginsOf: a longer login is not the shorter one", !loginsOf("/home/alexxyz").has("alex"), show(loginsOf("/home/alexxyz")));
 check("loginsOf: a longer login after /HOME is not the shorter one", !loginsOf("/HOME/alexxyz/x").has("alex"), show(loginsOf("/HOME/alexxyz/x")));
 
-// IPv4 link-local 169.254.0.0/16 (#60 item 9)
+// IPv4 link-local 169.254/16 (#60 item 9)
 check("ipv4: flags 169.254/16 (both ends)", flagged(`${quad(169, 254, 0, 1)} ${quad(169, 254, 255, 254)}`).length === 2, "not flagged");
 check("ipv4: ignores 169.253 and 169.255", flagged(`${quad(169, 253, 1, 1)} ${quad(169, 255, 1, 1)}`).length === 0, "flagged");
 
@@ -191,13 +191,13 @@ check("extra digests: a hit never carries the value", Array.isArray(leak) && lea
 
 // IPv6 private addresses (#60 item 9), built from parts so this file holds no literal one
 const v6 = (...g) => g.join(":");
-hitsAre("ipv6: flags unique-local fd7a:115c::1", `fine\nat ${v6("fd7a", "115c", "", "1")} here\n`, ["f.txt:2"], {});
-hitsAre("ipv6: flags unique-local fc00::/7 (both ends)", `${v6("fc00", "", "1")}\n${v6("fdff", "ffff", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("ipv6: flags a unique-local address", `fine\nat ${v6("fd7a", "115c", "", "1")} here\n`, ["f.txt:2"], {});
+hitsAre("ipv6: flags the unique-local range, fc00 to fdff (both ends)", `${v6("fc00", "", "1")}\n${v6("fdff", "ffff", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
 hitsAre("ipv6: flags unique-local in capitals", `${v6("FD7A", "115C", "", "1")}\n`, ["f.txt:1"], {});
 hitsAre("ipv6: flags unique-local in brackets with a port", `http://[${v6("fd7a", "115c", "", "1")}]:8080/x\n`, ["f.txt:1"], {});
 hitsAre("ipv6: flags unique-local written in full", `${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}\n`, ["f.txt:1"], {});
-hitsAre("ipv6: flags link-local fe80::/10 (both ends)", `${v6("fe80", "", "1")}\n${v6("febf", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
-hitsAre("ipv6: ignores just outside fc00::/7 and fe80::/10", `${v6("fbff", "", "1")}\n${v6("fe00", "", "1")}\n${v6("fec0", "", "1")}\n`, [], {});
+hitsAre("ipv6: flags the link-local range, fe80 to febf (both ends)", `${v6("fe80", "", "1")}\n${v6("febf", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("ipv6: ignores just outside the unique-local and link-local ranges", `${v6("fbff", "", "1")}\n${v6("fe00", "", "1")}\n${v6("fec0", "", "1")}\n`, [], {});
 hitsAre("ipv6: ignores the documentation range 2001:db8::/32", `${v6("2001", "db8", "", "1")}\n${v6("2001", "0db8", "1", "2", "3", "4", "5", "6")}\n`, [], {});
 hitsAre("ipv6: ignores times of day", "at 12:34:56 on 2026-10-14T10:20:30Z\n", [], {});
 hitsAre("ipv4: link-local 169.254.x.x in text is reported as file:line", `fine\nat ${quad(169, 254, 7, 7)}\n`, ["f.txt:2"], {});
