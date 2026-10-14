@@ -36,6 +36,10 @@
 # the renovate environment is not refused (cases y1-y3); a job joining docs-import or renovate from a YAML shape
 # a line reader does not see (a key with a trailing comment, a job in flow style, environment as a mapping,
 # in flow style or after a comment) fails and names the job (cases y4-y9).
+# A job that inherits a scoped environment without naming it is refused too, naming the job and the environment
+# (cases y10-y15): extends: publish_docs; extends: [ .something, publish_docs ]; environment: !reference
+# [publish_docs, environment]; extends a hidden template that names docs-import (the template is refused as well,
+# case y14); and extends: renovate.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -613,7 +617,7 @@ split_case "a template joining renovate with a trailing comment" $ci "names the 
 split_case "a template joining renovate in flow style" $ci "names the renovate environment" '
   y = y + "\n.t:\n  environment: {name: renovate}\n";'
 split_case "publish_docs joining renovate by a second environment key" $ci "publish_docs names the renovate environment" '
-  y = y.replace("    name: docs-import\n", "    name: docs-import\n  environment: renovate\n");'
+  y = y.replace(/(\npublish_docs:\n[\s\S]*?    deployment_tier: other\n)/, "$1  environment: renovate\n");'
 split_case "a four-space-indented template joining renovate" $ci "names the renovate environment" '
   y = y + "\n.t:\n    environment:\n        name: renovate\n";'
 split_case "publish_docs without its environment" $ci "publish_docs has no environment named docs-import" '
@@ -678,6 +682,21 @@ split_case "a job in flow style joining renovate" $ci "sneaky names the renovate
 split_case "a job with environment as a mapping joining renovate after a comment" $ci "sneaky names the renovate environment" '
   y = y + "\nsneaky: # note\n  stage: lint\n  environment: { name: renovate } # tokens\n  script:\n    - \"true\"\n";'
 
+# A job may also INHERIT a scoped environment without naming it (issue #52): by
+# extends (one name or a list), by !reference, or by extending a template that
+# names it. The lint must fail naming the inheriting job and the environment.
+split_case "a job extending publish_docs" $ci "inheritor.*docs-import" '
+  y = y + "\ninheritor:\n  stage: lint\n  extends: publish_docs\n  script:\n    - \"true\"\n";'
+split_case "a job extending publish_docs in a list" $ci "inheritor.*docs-import" '
+  y = y + "\n.something:\n  interruptible: true\n\ninheritor:\n  stage: lint\n  extends: [ .something, publish_docs ]\n  script:\n    - \"true\"\n";'
+split_case "a job taking the environment of publish_docs by !reference" $ci "inheritor.*docs-import" '
+  y = y + "\ninheritor:\n  stage: lint\n  environment: !reference [publish_docs, environment]\n  script:\n    - \"true\"\n";'
+split_case "a job extending a template that names docs-import" $ci "inheritor.*docs-import" '
+  y = y + "\n.tpl:\n  environment: docs-import\n\ninheritor:\n  stage: lint\n  extends: .tpl\n  script:\n    - \"true\"\n";'
+split_case "the template that names docs-import is still refused" $ci "\\.tpl.*docs-import" '
+  y = y + "\n.tpl:\n  environment: docs-import\n\ninheritor:\n  stage: lint\n  extends: .tpl\n  script:\n    - \"true\"\n";'
+split_case "a job extending renovate" $ci "inheritor.*renovate" '
+  y = y + "\ninheritor:\n  stage: lint\n  extends: renovate\n  script:\n    - \"true\"\n";'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
