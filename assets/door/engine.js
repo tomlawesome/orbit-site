@@ -232,6 +232,19 @@ export const mirror = (t) => UPDUR * (1 - Math.min(1, Math.max(0, t / DOWNDUR)))
 export const MARK_RING = 166.4 * 72 / 200, FAR_T0 = 1080, FAR_T1 = 1750;
 /* the way in: from out beyond the disc, down into it, to rest among the stars of an arm (voyage.js: REST) */
 export const PATH = [[0.7, 2.35, 1.85], [0.95, 0.95, 1.35], [0.82, 0.1, 0.42], [0.56, 0.006, 0]];
+/* on a portrait screen (taller than wide: width / height <= 10/11, the site's threshold) the way in stops short of the
+   disc: above it, 1.1 from the core and looking down at it from 55 degrees off its axis, where the whole spiral fills
+   the height (#51). The first point is the rush's arrival, the same on every screen; the two between bring the camera
+   down onto its rest from above and further out, braking as the wide way in does */
+export const PATH_TALL = [PATH[0], [0.72, 1.75, 1.45], [0.42, 0.95, 1.0], [0.319, 0.631, 0.843]];
+/* the roll as the camera comes to rest: the band turned to lie as the docs page shows it; on a portrait screen a
+   quarter turn more, so the tilted disc stands up the screen, its long axis the screen's */
+const ROLL = 0.34, ROLL_TALL = ROLL + Math.PI / 2;
+export const tallScreen = (width, height) => width / height <= 10 / 11;
+const pathFor = (width, height) => (tallScreen(width, height) ? PATH_TALL : PATH);
+/** where the docs' flight comes to rest on a screen of this size (CSS px): its distance from the galaxy's core, in the
+    galaxy's own units (the disc's radius is about 1) */
+export function docsRest({ width, height }) { return { distance: Math.hypot(...pathFor(width, height)[3]) }; }
 const A_LEN = Math.hypot(...PATH[0]);
 /** the camera's distance from the galaxy's core, on the rush in (tu ≤ FAR_T1), for a screen H tall */
 export function deepDistance(tu, H) {
@@ -984,7 +997,7 @@ export function createFlight(canvas, options = {}) {
   const hexLin = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.pow(x / 255, 2.2)); };
   const v3 = { sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
     norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
-  const bez = (s) => { const u = 1 - s; return [0, 1, 2].map((k) => u * u * u * PATH[0][k] + 3 * u * u * s * PATH[1][k] + 3 * u * s * s * PATH[2][k] + s * s * s * PATH[3][k]); };
+  const bez = (s) => { const [p0, p1, p2, p3] = pathFor(W, H), u = 1 - s; return [0, 1, 2].map((k) => u * u * u * p0[k] + 3 * u * u * s * p1[k] + 3 * u * s * s * p2[k] + s * s * s * p3[k]); };
   /* how far along: the climb's own speed, summed, so the camera goes as fast as the flight feels */
   const ALONG = (() => { const out = [], t0 = FAR_T1, t1 = 3500; let acc = 0; for (let t = t0; t <= t1; t += 10) { out.push(acc); acc += UP.speed(t) * 10; } return { t0, t1, out, total: acc }; })();
   const along = (tu) => { if (tu <= ALONG.t0) return 0; if (tu >= ALONG.t1) return 1; const i = (tu - ALONG.t0) / 10, k = Math.floor(i); return (ALONG.out[k] + (ALONG.out[Math.min(k + 1, ALONG.out.length - 1)] - ALONG.out[k]) * (i - k)) / ALONG.total; };
@@ -1003,7 +1016,7 @@ export function createFlight(canvas, options = {}) {
     let r, u;
     if (tu < FAR_T1) { u = swung(deepTilt(tu)).up; r = v3.cross(u, f); }
     else { r = v3.norm(v3.cross([0, 1, 0], f)); u = v3.cross(f, r); }
-    const roll = 0.34 * smoothq(2600, 3700, tu), cr = Math.cos(roll), sr = Math.sin(roll);
+    const roll = (tallScreen(W, H) ? ROLL_TALL : ROLL) * smoothq(2600, 3700, tu), cr = Math.cos(roll), sr = Math.sin(roll);
     [r, u] = [[r[0] * cr + u[0] * sr, r[1] * cr + u[1] * sr, r[2] * cr + u[2] * sr], [u[0] * cr - r[0] * sr, u[1] * cr - r[1] * sr, u[2] * cr - r[2] * sr]];
     return { P, R: [...r, ...u, ...f] };
   }
