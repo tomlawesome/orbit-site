@@ -18,6 +18,15 @@
 #
 #   sh tools/ci/nightly-import-test.sh      run from anywhere inside the repository
 #
+# Part 2 also tries the git config the runner's own clone writes (#57): an
+# include.path to an absolute file outside the work tree that holds only
+# allowed keys, with lfs.repositoryformatversion, passes the guard (runnerinc);
+# a relative include.path (increl), one into the work tree (incwork) or into
+# .git (incgit), a missing file (include) and any includeIf (includeif) are
+# refused naming the key; keys in an included file are judged by the same
+# allowlist (incssh core.sshCommand, incfsmon core.fsmonitor, incfilter
+# filter.x.clean), nested includes too (incnest, incnestmiss).
+#
 # Runs on a scratch copy of the current commit, so the checkout is untouched.
 # npm, node, git, curl and sleep are shims first on PATH that log what they were
 # called with; nothing touches the network.
@@ -79,7 +88,7 @@ reset_tree() {
   done
   cp "$aux/config.orig" .git/config
   find .git/hooks -type f ! -name '*.sample' -delete
-  rm -f .git/fsm .git/info/attributes
+  rm -f .git/fsm .git/info/attributes .git/inc.cfg
 }
 
 # What the runner's artifact upload would hold, good and hostile. mkzip.py <out>
@@ -444,6 +453,37 @@ prepare() {
     cfgonly) # the filter without the attributes file: still refused
       printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" >> .git/config ;;
     include) printf '[include]\n\tpath = /nonexistent\n' >> .git/config ;;
+    runnerinc) # the runner's own clone: include.path to an absolute file outside the work tree, allowed keys only
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n' > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n[lfs]\n\trepositoryformatversion = 0\n' "$aux" >> .git/config ;;
+    increl) # a relative include.path: git resolves it against .git/, so this reaches the work tree
+      printf '[credential]\n\tinteractive = never\n' > inc.cfg
+      printf '[include]\n\tpath = ../inc.cfg\n' >> .git/config ;;
+    incwork) # an absolute include.path to a file inside the work tree
+      printf '[credential]\n\tinteractive = never\n' > inc.cfg
+      printf '[include]\n\tpath = %s/inc.cfg\n' "$PWD" >> .git/config ;;
+    incgit) # an absolute include.path to a file under .git (inside the work tree)
+      printf '[credential]\n\tinteractive = never\n' > .git/inc.cfg
+      printf '[include]\n\tpath = %s/.git/inc.cfg\n' "$PWD" >> .git/config ;;
+    incssh) # an outside include holding core.sshCommand
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    incfsmon) # an outside include naming an fsmonitor program
+      printf '[core]\n\tfsmonitor = %s/fsm\n' "$aux" > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    incfilter) # an outside include holding a clean filter
+      printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    incnest) # an outside include that includes a second outside file holding core.sshCommand
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$aux/runner2.cfg"
+      printf '[include]\n\tpath = %s/runner2.cfg\n' "$aux" > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    incnestmiss) # an outside include that includes a missing file
+      printf '[include]\n\tpath = %s/no-such-file.cfg\n' "$aux" > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    includeif) # a conditional include, even to a harmless file
+      printf '[credential]\n\tinteractive = never\n' > "$aux/runner.cfg"
+      printf '[includeIf "gitdir:/x"]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
     worktreecfg) printf '[extensions]\n\tworktreeConfig = true\n' >> .git/config ;;
     runnerlike) # what a runner's clone writes besides git's own: all of it allowed
       printf '[remote "origin"]\n\turl = https://gitlab-ci-token:x@gitlab.invalid/ai/orbit-site.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[init]\n\tdefaultBranch = none\n[fetch]\n\trecurseSubmodules = false\n[credential]\n\tinteractive = never\n[gc]\n\tautoDetach = false\n[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n[http]\n\tuserAgent = x\n' >> .git/config ;;
@@ -718,6 +758,22 @@ for sc in cfgonly include worktreecfg fsmonitorcfg; do
   rcz=$rc
   rc=0; [ "$rcz" -ne 0 ] && grep -q "checkout's git" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
   check "job 2: a checkout git config with $sc is refused before anything is sent (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+run_push "$out" runnerinc
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" && ! grep -q "checkout's git" "$out" || rc=1
+check "job 2: runnerinc, an include.path to an outside file of allowed keys with lfs.repositoryformatversion, is accepted (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+# refused, and the refusal names the key: <scenario>:<key>
+for pair in increl:include.path incwork:include.path incgit:include.path include:include.path \
+  incssh:core.sshCommand incfsmon:core.fsmonitor incfilter:filter.x.clean incnest:core.sshCommand \
+  incnestmiss:include.path includeif:includeif.gitdir:/x.path; do
+  sc=${pair%%:*}; key=${pair#*:}
+  run_push "$out" "$sc"
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -q "checkout's git" "$out" && grep -qiF "$key" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+  check "job 2: a checkout git config with $sc is refused, naming $key (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 done
 run_push "$out" runnerlike
