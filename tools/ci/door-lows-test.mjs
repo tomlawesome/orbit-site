@@ -20,8 +20,8 @@
  *       stall). The probe kept in localStorage (CAPABILITIES.md: 7 days, keyed by the user agent, the screen and the
  *       pixel ratio) is seeded to say compiles are in the background, so the live door starts at the reveal's end rather
  *       than late, after every journey is ready (Firefox's own probe says "page thread").
- *   L3  a second journey still gets the door's rich Earth: on a door whose weight is "both" (lean shown first, then the
- *       rich tried and kept: the console's `door: weight both` and `door: live (rich)`), the first flight up from the
+ *   L3  a second journey still gets the door's rich Earth: on a door whose weight is rich (the console's `door: weight
+ *       rich` and `door: live (rich)`), the first flight up from the
  *       gate draws the rich Earth. The visitor comes back to the door (Back: the descent onto the dawn), the host
  *       remounts its journey (journey.destroy() and a new door.journey(), readied as main.js readies one: warm({ prove:
  *       false }), then warm() at leisure), and the visitor flies again: the second flight must draw the rich Earth too.
@@ -31,12 +31,15 @@
  *       `sceneHead({ slab: true })` defines HAS_PASSES; the lean head does not), recorded by an init script wrapping
  *       WebGL2RenderingContext's shaderSource, attachShader, linkProgram, useProgram and draw calls. The console's
  *       `flight: rich Earth compiled` lines are printed beside it, not judged.
- *       Weight "both" is forced by seeding the kept probe (as in L2) with a speed that predicts the rich Earth at 24-40
- *       ms for this window's band (the door's weight line prints the prediction), at a window small enough for software
- *       GL to keep the rich door (a lean frame at 16 ms or less) and to pass the flight world's fitness test (30 ms):
- *       480x300 by default (L3_WIDTH, L3_HEIGHT, L3_MPX). If the weight line says otherwise, the probe is reseeded from
- *       the band the line names and the page reloaded; a try whose rich door is not kept or whose world is judged too
- *       slow (a busy host) is tried again, up to L3_TRIES (3).
+ *       No speed verdict is waited on (owner decision 2026-10-14: CI runners have no GPU and shared CPUs, so software-GL
+ *       timings prove nothing; speed is judged on real browsers). The door's weight is forced by the address flag `&rich`
+ *       (the rich door is kept whatever its frames cost: door3d.js, RICH()), and the flight world's speed test is not run by
+ *       `&fit=skip` (the world is taken as fit: voyage.js). So the weight line is `door: weight rich` and the first world's
+ *       is `flight world: on (fitness skipped)`, on any runner. The kept probe is still seeded (as in L2) so that the probe has
+ *       worked (the level and the flags need it), not to get a weight. The window is small (480x300 by default, L3_WIDTH and
+ *       L3_HEIGHT) only to keep software GL's draw cost down. Note: with `&rich` the weight is "rich", not "both" (lean first,
+ *       then the rich tried): "both" can only be had by a probe seeded to predict the rich Earth in a band, and the rich is
+ *       then kept only on a measured frame time, which is the runner's speed.
  *       The site keeps one journey for the page, so the remount is a seam: main.js is served with its journey made a
  *       `let` and a `__remountJourney()` added at its end, nothing else changed (a single-page host remounts its door's
  *       journey when its component unmounts: assets/door/README.md, journey.destroy()). Explored by hand on this host
@@ -46,7 +49,7 @@
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/door-lows-test.mjs [L1|L2|L3 ...]
  *
  * Firefox headed under Xvfb with software GL: headless draws no world. Every case forces the live door at level 2
- * (`?preview&door3d&gpu=force&level=2`, CAPABILITIES.md). A case that cannot be judged says so and fails, rather than
+ * (`?preview&door3d&gpu=force&level=2`, CAPABILITIES.md; L3 adds `&rich&fit=skip`). A case that cannot be judged says so and fails, rather than
  * passing for nothing. The whole run has its own deadline (DEADLINE_MS, default 15 minutes).
  */
 import { spawn } from "node:child_process";
@@ -67,6 +70,8 @@ const PORT = await new Promise((ok, no) => {
 });
 const SITE = `http://127.0.0.1:${PORT}/`;
 const LIVE = "preview&door3d&gpu=force&level=2";
+/* L3: the door's weight and the flight world's fitness are forced, so no runner timing decides the path taken */
+const FORCED = `${LIVE}&rich&fit=skip`;
 const here = dirname(fileURLToPath(import.meta.url));
 
 const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
@@ -309,11 +314,10 @@ const mapCase = async (fail) => {
 
 /* ── L3: a second journey still gets the door's rich Earth ───────────────────────────────────────────────────── */
 const SEAM = "const journey = door.journey({";
-/* the host is shared and software GL is slow: a try whose door or world comes out too slow to judge is tried again */
-class TooSlow extends Error {}
-const remountTry = async (want, n) => {
+const remountTry = async (want) => {
   const W = Number(process.env.L3_WIDTH || 480), H = Number(process.env.L3_HEIGHT || 300);
-  const { ctx, page } = await open({ viewport: { width: W, height: H }, seed: { background: false, msPerMpx: Number(process.env.L3_MPX || 1100) } });
+  /* (the probe is seeded to have worked, not to give a weight: &rich says the weight) */
+  const { ctx, page } = await open({ viewport: { width: W, height: H }, seed: { background: false, msPerMpx: 1100 } });
   try {
     await needWebgl(page);
     await ctx.route("**/assets/js/main.js", async (route) => {
@@ -326,31 +330,14 @@ const remountTry = async (want, n) => {
           "\n/* door-lows-test's seam: the host remounts its journey */\nglobalThis.__remountJourney = () => { journey.destroy(); journey = door.journey(globalThis.__journeyOptions); journey.warm({ prove: false }); journey.later(() => journey.warm(), { after: 2000 }); };\n",
       });
     });
-    await page.goto(`${SITE}?${LIVE}`, { waitUntil: "load" });
-    await page.waitSaid(/door: weight/, 60000, `L3 try ${n}: the door's weight`);
-    let weight = page.said(/door: weight/)[0].text;
-    if (!/door: weight both/.test(weight)) {
-      /* the seeded speed did not land in "both" for this window: seed one that predicts the rich at 32 ms for the band
-         the line names (rich = ms per Mpx x band Mpx x 0.55, CAPABILITIES.md), and load again */
-      const band = Number(weight.match(/at ([\d.]+) Mpx/)?.[1]);
-      if (!(band > 0)) throw new Error(`the door's weight is not "both" and its line names no band: ${weight.slice(0, 120)}`);
-      const mpx = 32 / (band * 0.55);
-      progress(`L3 try ${n}: reseeding the probe at ${mpx.toFixed(0)} ms per Mpx for a ${band} Mpx band`);
-      await page.evaluate((m) => {
-        for (const k of Object.keys(localStorage)) if (k.startsWith("orbit-probe")) localStorage.setItem(k, JSON.stringify({ t: Date.now(), r: { background: false, compileMs: 60, msPerMpx: m, ok: true } }));
-      }, mpx);
-      page.log.length = 0;
-      await page.reload({ waitUntil: "load" });
-      await page.waitSaid(/door: weight/, 60000, `L3 try ${n}: the door's weight, reseeded`);
-      weight = page.said(/door: weight/)[0].text;
-      if (!/door: weight both/.test(weight)) throw new Error(`the door's weight is not "both" even reseeded: ${weight.slice(0, 120)}`);
-    }
-    await page.waitSaid(/door: live \((lean|rich)\)/, 180000, `L3 try ${n}: the live door`);
-    const rich = await until(async () => page.said(/door: live \(rich\)/).length, (k) => k > 0, 30000, 250);
-    if (!rich) throw new TooSlow(`the rich door was not kept here (${page.said(/door: (lean|rich) /).map((m) => m.text.slice(0, 60)).join(" | ")})`);
-    progress(`L3 try ${n}: ${page.said(/door: live \(rich\)/)[0].text.slice(0, 80)}`);
-    await page.waitSaid(/flight world: (on|off)/, 120000, `L3 try ${n}: the first world's verdict`);
-    if (!page.said(/flight world: on/).length) throw new TooSlow(`the flight's world was judged too slow (${page.said(/flight world:/)[0].text.slice(0, 80)})`);
+    await page.goto(`${SITE}?${FORCED}`, { waitUntil: "load" });
+    await page.waitSaid(/door: weight/, 60000, "L3: the door's weight");
+    const weight = page.said(/door: weight/)[0].text;
+    if (!/door: weight rich/.test(weight)) throw new Error(`the door's weight is not rich although &rich was asked: ${weight.slice(0, 120)}`);
+    await page.waitSaid(/door: live \((lean|rich)\)/, 180000, "L3: the live door");
+    if (!page.said(/door: live \(rich\)/).length) throw new Error(`the door is not live rich although &rich was asked (${page.said(/door: (lean|rich) /).map((m) => m.text.slice(0, 60)).join(" | ")})`);
+    await page.waitSaid(/flight world: (on|off)/, 120000, "L3: the first world's verdict");
+    if (!page.said(/flight world: on/).length) throw new Error(`the flight's world is not taken as fit although fit=skip was asked (${page.said(/flight world:/)[0].text.slice(0, 80)})`);
     await until(async () => page.said(/flight: rich Earth compiled/).length, (k) => k > 0, 30000, 250);
     await page.waitForFunction(() => !!document.querySelector("#gate") && document.body.classList.contains("lit"), null, { timeout: 60000 });
     await sleep(3000);
@@ -363,7 +350,7 @@ const remountTry = async (want, n) => {
       const bare = await until(() => page.evaluate(() => document.body.className), (c) => /\bbare\b/.test(c), 45000, 100);
       if (!/\bbare\b/.test(bare)) throw new Error(`flight ${k} never reached the bare sky (body: ${bare})`);
       const d = delta(a, await draws());
-      progress(`L3 try ${n}: flight ${k} climbed; the flight's draws by program: ${JSON.stringify(d)}`);
+      progress(`L3: flight ${k} climbed; the flight's draws by program: ${JSON.stringify(d)}`);
       await until(() => page.evaluate(() => document.body.className), (c) => /\binstrument\b/.test(c), 20000, 200);
       await sleep(2000);
       return d;
@@ -375,14 +362,14 @@ const remountTry = async (want, n) => {
     const atDoor = await until(() => page.evaluate(() => ({ cls: document.body.className, shown: document.querySelector("#door").classList.contains("shown") })),
       (s) => s.shown && /\bat-door\b/.test(s.cls) && /\blit\b/.test(s.cls) && !/showdawn|dispersing|farewell|withdrawing|showwarp|launching/.test(s.cls), 60000, 200);
     if (!atDoor.shown) throw new Error(`the descent never landed back on the door (body: ${atDoor.cls})`);
-    progress(`L3 try ${n}: back at the door; remounting the journey`);
+    progress(`L3: back at the door; remounting the journey`);
     await sleep(2000);
     const linesAtRemount = page.log.length;
     await page.evaluate(() => globalThis.__remountJourney());
     const verdict = await until(async () => page.log.slice(linesAtRemount).find((m) => /flight world: (on|off)/.test(m.text))?.text, (v) => !!v, 90000, 250);
     if (!verdict) throw new Error("the remounted journey's world was never proved (no 'flight world:' line within 90 s of the remount)");
-    if (!/flight world: on/.test(verdict)) throw new TooSlow(`the remounted journey's world was judged too slow (${verdict.slice(0, 80)})`);
-    progress(`L3 try ${n}: the remounted journey's world: ${verdict.slice(0, 60)}`);
+    if (!/flight world: on/.test(verdict)) throw new Error(`the remounted journey's world is not taken as fit although fit=skip was asked (${verdict.slice(0, 80)})`);
+    progress(`L3: the remounted journey's world: ${verdict.slice(0, 60)}`);
     await sleep(10000);
     const second = await climb(2);
     const richCompiled2 = page.said(/flight: rich Earth compiled/).length - richCompiled1;
@@ -396,13 +383,7 @@ const remountTry = async (want, n) => {
 };
 const remountCase = async () => {
   await runCase("L3", "a second journey (the host's journey remounted) still draws the door's rich Earth", async (want) => {
-    const tries = Number(process.env.L3_TRIES || 3);
-    for (let n = 1; ; n++) {
-      try { await remountTry(want, n); return; } catch (e) {
-        if (!(e instanceof TooSlow) || n >= tries) throw e;
-        progress(`L3 try ${n} could not be judged (${e.message}); trying again`);
-      }
-    }
+    await remountTry(want);
   });
 };
 

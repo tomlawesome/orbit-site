@@ -70,7 +70,7 @@ if (process.argv[2] === "--child") {
     },
     getParameter: (n) => (n === 0x1f01 ? "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0)" : 4096),
     getProgramParameter: (p, n) => !(noLink && n === 0x8b82), getShaderParameter: () => true,
-    getProgramInfoLog: () => "", getShaderInfoLog: () => "",
+    getProgramInfoLog: () => (noLink ? "fake link failure: would not link" : ""), getShaderInfoLog: () => "",
     getActiveUniform: (p, i) => ({ name: `u${i}` }),
     getUniformLocation: (p, n) => ({ n }),
     checkFramebufferStatus: () => 0x8cd5, FRAMEBUFFER_COMPLETE: 0x8cd5,
@@ -182,7 +182,7 @@ if (process.argv[2] === "--child") {
   let release; const gate = new Promise((r) => { release = r; });
   globalThis.fetch = () => gate.then(() => ({ ok: true, blob: async () => ({ size: 1 }) }));
   const said = [];
-  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (!(name === "t8" && a.length === 1 && a[0] instanceof Error)) swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link warns of that one error and says so; any other warning there is a fault too */
+  console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (!(name === "t8" && a.length === 1 && a[0] instanceof Error && /would not link/.test(a[0].message))) swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link warns of that one error (the fake link log says "would not link") and says so; any other warning there is a fault too */
   console.error = (...a) => { swallowed.push("console.error: " + a.join(" ").slice(0, 160)); };
   process.on("uncaughtException", (e) => swallowed.push("uncaught: " + (e && e.message))); process.on("unhandledRejection", (e) => swallowed.push("unhandled rejection: " + (e && e.message)));
 

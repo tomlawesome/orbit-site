@@ -48,6 +48,15 @@ export function slugger() {
   };
 }
 
+/* a block of raw html that is one heading, h1 to h6, and nothing else: { depth, text } with
+   the heading's inner text, or null. Its attributes are not read: the import gives the
+   heading its own id, as for a markdown heading, and keeps nothing the source set on it. */
+const RAW_HEADING = /^\s*<h([1-6])(?:\s(?:"[^"]*"|'[^']*'|[^>"'])*)?>((?:(?!<\/?h[1-6][\s>\/])[\s\S])*)<\/h\1\s*>\s*$/i;
+export function rawHeading(html) {
+  const m = RAW_HEADING.exec(html);
+  return m ? { depth: Number(m[1]), text: m[2].trim() } : null;
+}
+
 /* an editor may write a fragment percent-encoded ("#caf%C3%A9"): decoded, it
    folds to the same id as the heading; a broken escape is folded as written */
 const unescapeFragment = (f) => { try { return decodeURIComponent(f); } catch { return f; } };

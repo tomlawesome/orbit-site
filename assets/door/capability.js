@@ -182,7 +182,9 @@ const NAMES = ["still", "live lean", "live rich"];
    no WebGL2 or no probe (whatever ?level= says), reduced motion or save-data, compiles on the page's own thread (each one stalls the page:
    the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on
    every later compile), or a lean frame predicted over 16 ms. Else 2, live rich, where the rich is predicted to fit
-   the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which, whatever the probe */
+   the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which instead of that rule (reduced motion,
+   save-data, a slow lean frame, page-thread compiles), but only once the probe has worked: that is, under ?door3d with
+   the GPU accepted. Without a probe the level is 0 whatever ?level= says */
 let lvl = null;
 export function level() {
   if (lvl !== null) return lvl;
@@ -192,7 +194,8 @@ export function level() {
   const asked = /^[012]$/.test(String(flag("level"))) ? String(flag("level")) : null;
   const quiet = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
   const p = predicted(...band());
-  /* (no probe, no level: ?level= chooses among the live door's weights once the GPU is accepted, it never grants it) */
+  /* (no probe, no level: ?level= takes the place of the rule only once the probe has worked, under ?door3d with the GPU
+     accepted; it never grants the GPU) */
   if (!got.ok) { lvl = 0; why = navigator.connection?.saveData ? "save-data" : "no WebGL2, or no probe"; }
   else if (asked) { lvl = +asked; why = `?level=${asked}`; }
   else if (quiet) { lvl = 0; why = "reduced motion"; }

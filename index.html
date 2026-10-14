@@ -5,6 +5,7 @@
 <html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <!-- ?preview in the address shows the whole site past the maintenance door (for checking before launch) -->
   <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -552,6 +553,9 @@
   <div id="launchname" aria-hidden="true"></div>
 
   <div class="grain" aria-hidden="true"><canvas></canvas></div>
+  <!-- if assets/js/main.js fails to load or run before the page has loaded, the <noscript> note is shown (the same
+       words, the same look); an error after the page has loaded leaves it alone. Its hash is in the policy meta. -->
+  <script>(function(){function show(){stop();var n=document.querySelector("noscript");if(!n||document.querySelector(".nojs"))return;var d=document.createElement("div");d.className="nojs";d.innerHTML=n.textContent;document.body.insertBefore(d,document.body.firstChild)}function fail(e){var t=e.target;if(t===window||(t&&t.tagName==="SCRIPT"))show()}function stop(){removeEventListener("error",fail,true)}addEventListener("error",fail,true);document.addEventListener("DOMContentLoaded",stop)})();</script>
   <script type="module" src="assets/js/main.js"></script>
 </body>
 </html>

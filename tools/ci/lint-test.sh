@@ -16,7 +16,14 @@
 # outside the folder, and an index.html whose door differs from markup.js; and
 # section "the docs import is split" (issue #18): import_docs holding the token
 # or an environment, publish_docs losing its environment, taking npm, or its
-# artifact, or either job running anywhere but the schedule on main.
+# artifact, or either job running anywhere but the schedule on main; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
+# sw.js must be orbit-media- plus the first 12 hex characters of a SHA-256 over the
+# tracked picture files outside assets/docs/ (a change to a picture without a new
+# name fails and names sw.js and the expected name; a change only under
+# assets/docs/ does not). And section "the pages carry a Content-Security-Policy" (audit #12): a page without the meta,
+# with it after a script, link or style, with an inline script and no matching hash, a stale hash, 'unsafe-inline' or
+# 'unsafe-eval' in script-src, no object-src 'none' or base-uri 'self', or an inline event handler fails and names the
+# page (cases c0-c8).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -231,7 +238,7 @@ fi
 # instead of stopping the run.
 commit_all() {
   git add -A
-  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$1"   # (a case may change nothing: m2 sets the name it already has)
 }
 lint_to_out() {
   rc=0
@@ -653,6 +660,231 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
+
+# Cases (m1)-(m7) judge the section for the service worker's picture cache name.
+# media_name prints the name sw.js must carry in this scratch tree: orbit-media-
+# and the first 12 hex characters of the SHA-256 of one line "<path> <blob sha>"
+# per tracked file whose name ends in a picture or font extension (the regex
+# isMedia in sw.js), outside assets/docs/, sorted by path in byte order.
+media_name() {
+  node -e '
+    const { execFileSync } = require("child_process");
+    const rows = execFileSync("git", ["ls-files", "-s", "-z"]).toString("utf8").split("\0").filter(Boolean)
+      .map((r) => { const m = /^\d+ ([0-9a-f]+) \d\t([\s\S]*)$/.exec(r); return { sha: m[1], path: m[2] }; })
+      .filter((r) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(r.path) && !r.path.startsWith("assets/docs/"))
+      .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+    const body = rows.map((r) => r.path + " " + r.sha + "\n").join("");
+    console.log("orbit-media-" + require("crypto").createHash("sha256").update(body).digest("hex").slice(0, 12));
+  '
+}
+# set MEDIA in sw.js to the given name (or to the correct one) and commit
+set_media() {
+  sed -E "s/(const MEDIA = )\"[^\"]*\"/\\1\"$1\"/" sw.js > sw.js.new && mv sw.js.new sw.js
+  commit_all "MEDIA $1"
+}
+# expect_media_fail <label>: lint exits 1, names sw.js and prints the expected name
+expect_media_fail() {
+  want=$(media_name)
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "sw.js" "$out" && grep -qF "$want" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming sw.js and $want)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+}
+# expect_media_pass <label>: lint passes as a whole (the tree is otherwise clean)
+expect_media_pass() {
+  lint_to_out
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0; expected name $(media_name))"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+}
+pic=$(git ls-files | grep -E '\.png$' | grep -v '^assets/docs/' | head -1)
+
+# Case (m1): the name the tree committed with is not the digest of its pictures -> fails.
+set_media "orbit-media-0000000000000"
+expect_media_fail "a MEDIA that is not the digest of the pictures"
+git reset -q --hard HEAD~1
+
+# Case (m2)/(b): MEDIA set to the correct name for this tree -> the section passes.
+set_media "$(media_name)"
+expect_media_pass "MEDIA set to the correct name"
+
+# Case (m3)/(a): a picture changed, MEDIA left alone -> fails, naming sw.js and the new expected name.
+printf 'changed' >> "$pic"
+commit_all "change a picture"
+expect_media_fail "a changed picture with MEDIA unchanged"
+git reset -q --hard HEAD~1
+
+# Case (m4): a picture added outside assets/docs/ -> fails likewise.
+cp "$pic" assets/img/added-picture.png
+commit_all "add a picture"
+expect_media_fail "an added picture with MEDIA unchanged"
+git reset -q --hard HEAD~1
+
+# Case (m5): a picture removed (one no page names, so no other check fails) -> fails likewise.
+git rm -q assets/door/img/dawn/lights-strip-120.webp
+commit_all "remove a picture"
+expect_media_fail "a removed picture with MEDIA unchanged"
+git reset -q --hard HEAD~1
+
+# Case (m6)/(c): a change only under assets/docs/ (the nightly import owns it) -> passes.
+node -e '
+  const fs = require("fs");
+  const j = JSON.parse(fs.readFileSync("assets/docs/readme.json", "utf8"));
+  j.sections[0].summary = "a changed summary";
+  fs.writeFileSync("assets/docs/readme.json", JSON.stringify(j));
+'
+commit_all "change a page under assets/docs"
+expect_media_pass "a change only under assets/docs/"
+git reset -q --hard HEAD~1
+
+# Case (m6b): a picture file added under assets/docs/ is not counted in the name. The
+# shape check ("not a file the import writes") rightly fails that tree, so this case
+# only asks that the cache-name check says nothing: no sw.js in the output.
+cp "$pic" assets/docs/imported-picture.png
+commit_all "add a picture under assets/docs"
+lint_to_out
+if ! grep -q "sw.js" "$out"; then
+  echo "ok   a picture added under assets/docs/ is not counted in the cache name"
+else
+  echo "FAIL a picture added under assets/docs/ is not counted in the cache name (want no mention of sw.js)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (m7): a change to a file that is not a picture -> passes.
+printf '\n' >> README.md
+commit_all "change a document"
+expect_media_pass "a change to a non-picture file"
+git reset -q --hard HEAD~1
+
+# Case (m8): assets/img/docs/ is not assets/docs/: a picture changed there still fails.
+dpic=$(git ls-files assets/img/docs | grep -iE '\.(webp|png|jpe?g|gif|svg)$' | head -1)
+printf 'changed' >> "$dpic"
+commit_all "change a picture under assets/img/docs"
+expect_media_fail "a changed picture under assets/img/docs/"
+git reset -q --hard HEAD~1
+
+# Cases (c0)-(c8) judge the section for the pages' Content-Security-Policy (audit #12). GitHub Pages cannot send
+# headers, so index.html, 404.html and install.html each carry the policy in a <meta http-equiv="Content-Security-Policy">.
+# The pages in the scratch tree are rewritten here, by a small node program, to the policy the owner decided on, so
+# these cases do not depend on the real pages carrying it yet (c8 alone judges the real ones). The program puts the
+# meta straight after <meta charset> (a meta policy covers only what follows it), hashes every inline script of the
+# page into script-src, and, for a fault, applies one change to one page (FAULT_PAGE) given by environment variables.
+cspjs=$(mktemp)
+cat > "$cspjs" <<'CSPJS_EOF'
+const fs = require("fs");
+const crypto = require("crypto");
+const E = process.env;
+const strip = (h) => h.replace(/[ \t]*<meta\s+http-equiv=["']Content-Security-Policy["'][^>]*>[ \t]*\n?/gi, "");
+const inline = (h) => [...h.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter((m) => !/\bsrc\s*=/i.test(m[1])).map((m) => m[2]);
+const hash = (t) => "'sha256-" + crypto.createHash("sha256").update(t, "utf8").digest("base64") + "'";
+for (const page of ["index.html", "404.html", "install.html"]) {
+  const bad = E.FAULT_PAGE === page;
+  let h = strip(fs.readFileSync(page, "utf8"));
+  const hs = inline(h).map(hash);
+  if (bad && E.NOHASH) hs.shift();
+  if (bad && E.STALE) hs.push("'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='");
+  const src = ["'self'", ...hs, "https://cdn.jsdelivr.net"];
+  if (bad && E.UNSAFE) src.splice(1, 0, `'${E.UNSAFE}'`);
+  const parts = [
+    "default-src 'self'", "script-src " + src.join(" "),
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:", "connect-src 'self'", "worker-src 'self'",
+    ...(bad && E.NOOBJECT ? [] : ["object-src 'none'"]), ...(bad && E.NOBASE ? [] : ["base-uri 'self'"]), "form-action 'self'",
+  ];
+  const meta = `  <meta http-equiv="Content-Security-Policy" content="${parts.join("; ")}" />\n`;
+  if (bad && E.DROP_LINK) h = h.replace(/[ \t]*<link rel="stylesheet"[^>]*>\n/, "");
+  if (bad && E.EDIT_SCRIPT) h = h.replace("catch(e){}", "catch(e){/* edited */}");
+  if (bad && E.HANDLER) h = h.replace(/<a href=/, '<a onclick="void 0" href=');
+  const at = bad ? E.META_AT || "start" : "start";
+  if (bad && E.DROP) { fs.writeFileSync(page, h); continue; }
+  if (at === "before-viewport") h = h.replace(/([ \t]*<meta name="viewport")/, meta + "$1");
+  else if (at === "head-end") h = h.replace(/([ \t]*<\/head>)/, meta + "$1");
+  else h = h.replace(/(<meta charset="utf-8" \/>\n)/, "$1" + meta);
+  if (!h.includes("Content-Security-Policy")) throw new Error(page + ": no place to put the policy");
+  fs.writeFileSync(page, h);
+}
+CSPJS_EOF
+# csp_set <env assignments...>: rewrite the three pages, then commit
+csp_set() {
+  env "$@" node "$cspjs"
+  commit_all "pages with a policy"
+}
+# csp_fail <label> <page> <env assignments...>: one fault on one page -> lint exits 1 and names the page
+csp_fail() {
+  label=$1; page=$2; shift 2
+  csp_set FAULT_PAGE="$page" "$@"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$page" "$out"; then
+    echo "ok   $label fails"
+  else
+    echo "FAIL $label fails (exit $rc, want 1 naming $page)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+
+# Case (c8): the real committed pages as they are -> the policy section runs and passes.
+lint_to_out
+if [ "$rc" -eq 0 ] && grep '^==' "$out" | grep -iEq 'content.security|csp|policy'; then
+  echo "ok   the committed pages carry a policy the lint accepts"
+else
+  echo "FAIL the committed pages carry a policy the lint accepts (exit $rc, want 0 with a == heading naming the content security policy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+
+# Case (c0): control, the pages set up correctly -> lint passes, with the policy section's heading in the output.
+csp_set NOTHING=1
+lint_to_out
+if [ "$rc" -eq 0 ] && grep '^==' "$out" | grep -iEq 'content.security|csp|policy'; then
+  echo "ok   correctly set-up pages pass the policy section"
+else
+  echo "FAIL correctly set-up pages pass the policy section (exit $rc, want 0 with a == heading naming the content security policy)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (c1): a page with no policy meta.
+csp_fail "index.html with no policy meta" index.html DROP=1
+csp_fail "404.html with no policy meta" 404.html DROP=1
+csp_fail "install.html with no policy meta" install.html DROP=1
+
+# Case (c2): the meta after something that loads (a script, a link, a style), so it covers only part of the head.
+csp_fail "index.html with the meta after an inline script" index.html META_AT=before-viewport
+csp_fail "install.html with the meta after a link" install.html META_AT=head-end
+csp_fail "404.html with the meta after a style" 404.html META_AT=head-end DROP_LINK=1
+
+# Case (c3): an inline script with no matching hash (left out; or edited after it was hashed).
+csp_fail "an inline script with no hash in script-src" index.html NOHASH=1
+csp_fail "an inline script edited after it was hashed" index.html EDIT_SCRIPT=1
+
+# Case (c4): a hash that matches no inline script on the page.
+csp_fail "a stale hash in script-src" index.html STALE=1
+
+# Case (c5): script-src allowing 'unsafe-inline' or 'unsafe-eval'.
+csp_fail "script-src with 'unsafe-inline'" index.html UNSAFE=unsafe-inline
+csp_fail "script-src with 'unsafe-eval'" index.html UNSAFE=unsafe-eval
+
+# Case (c6): object-src 'none' or base-uri 'self' missing.
+csp_fail "a policy with no object-src 'none'" 404.html NOOBJECT=1
+csp_fail "a policy with no base-uri 'self'" install.html NOBASE=1
+
+# Case (c7): an inline event handler attribute.
+csp_fail "an inline event handler attribute" install.html HANDLER=1
+
+rm -f "$cspjs"
 
 rm -f "$out"
 

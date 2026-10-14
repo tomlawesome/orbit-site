@@ -43,6 +43,8 @@ ap.add_argument("--ovals", type=int, default=22)
 ap.add_argument("--stir", type=float, default=1.0)
 ap.add_argument("--base", default=None, help="a real planet's map to start from (equirectangular); its bands set the jets")
 args = ap.parse_args()
+if args.out and not args.out.endswith(".webp"):
+    ap.error("--out must end in .webp (the 2048-wide map is written beside it, named from it)")
 
 W = 4
 NX, NY = args.n, args.n // 2

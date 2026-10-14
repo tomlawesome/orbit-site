@@ -18,7 +18,9 @@
  *          Max and an Apple-silicon MacBook). FROM=poll counts from the first poll instead of the link, COMPILE_MS and
  *          FIRST_MS change the times;
  *   stuck  false for ever.
- * Pages with faking open `?preview&door3d&gpu=force&level=2` (the live door forced, CAPABILITIES.md).
+ * Pages with faking open `?preview&door3d&gpu=force&level=2&lean&fit=skip` (the live door forced, CAPABILITIES.md; the door's
+ * weight and the flight world's speed test forced too, so neither the real probe nor the runner's frame times decide which
+ * path the page takes: owner decision 2026-10-14, CI runners have no GPU and shared CPUs).
  *
  *   D1   fast, RUNS times (default 3; the docs planet's lateness depends on how the page's background queue falls,
  *        which varies run to run: explored 2026-10-13, 3 of 4 runs late with the first-compile model, 1 of 5 without):
@@ -72,7 +74,8 @@ const PORT = await new Promise((ok, no) => {
   probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
 });
 const SITE = `http://127.0.0.1:${PORT}/`;
-const LIVE = "preview&door3d&gpu=force&level=2";
+/* (&lean and &fit=skip: the weight and the flight world's fitness are forced, not left to the real probe and frame times) */
+const LIVE = "preview&door3d&gpu=force&level=2&lean&fit=skip";
 const PLAIN = "preview&door3d";
 const here = dirname(fileURLToPath(import.meta.url));
 
