@@ -197,9 +197,11 @@ const visibleMessage = (page) => page.evaluate(([msg, tail]) => {
     }
     const r = el.getBoundingClientRect();
     if (!shown || r.width <= 0 || r.height <= 0) continue;
+    /* innerText follows the look (the note is set in capitals, text-transform), so the words are compared in any case */
+    const has = (e) => (e.innerText || "").toLowerCase().includes(tail.toLowerCase());
     let whole = el;
-    while (whole && whole !== document.body && !(whole.innerText || "").includes(tail)) whole = whole.parentElement;
-    if (whole && (whole.innerText || "").includes(tail)) return true;
+    while (whole && whole !== document.body && !has(whole)) whole = whole.parentElement;
+    if (whole && has(whole)) return true;
   }
   return false;
 }, [MESSAGE, MESSAGE_TAIL]);

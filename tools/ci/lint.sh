@@ -230,6 +230,54 @@ node -e '
   else if (m[1] !== want) { console.log(`   sw.js: MEDIA is ${m[1]}, but the pictures hash to ${want}; set MEDIA to ${want}`); process.exitCode = 1; }
 ' || fail=1
 
+echo "== the pages carry a Content-Security-Policy that covers what they run"
+# GitHub Pages sends no headers, so index.html, 404.html and install.html each carry the policy as a
+# <meta http-equiv="Content-Security-Policy">. A meta covers only what follows it, so it comes first in <head>, before
+# any script, link or style. Scripts run only from the site, jsDelivr (the pinned Mermaid) and the page's own inline
+# scripts, each allowed by its sha256 in script-src: no 'unsafe-inline' or 'unsafe-eval' for scripts, object-src 'none',
+# base-uri 'self', and no inline event handler (it would need 'unsafe-inline'). An inline script edited without its
+# hash changed is blocked in every visitor's browser, so a missing or stale hash prints the value to paste (audit #12).
+node - <<'CSP_EOF' || fail=1
+const fs = require("fs");
+const crypto = require("crypto");
+const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+const hash = (t) => "\x27sha256-" + crypto.createHash("sha256").update(t, "utf8").digest("base64") + "\x27";
+for (const page of ["index.html", "404.html", "install.html"]) {
+  const raw = fs.readFileSync(page, "utf8");
+  // comments set aside, but keeping every offset, so a tag named in a comment is not read as a tag
+  const text = raw.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
+  const scripts = [...text.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)]
+    .map((m) => ({ at: m.index, attrs: m[1], src: /\bsrc\s*=/i.test(m[1]), body: raw.slice(m.index + m[0].indexOf(">") + 1, m.index + m[0].length - m[0].match(/<\/script\s*>$/i)[0].length) }));
+  const meta = [...text.matchAll(/<meta\b[^>]*\bhttp-equiv\s*=\s*["\x27]?content-security-policy["\x27]?[^>]*>/gi)];
+  if (!meta.length) { bad(`${page}: has no <meta http-equiv="Content-Security-Policy"> (Pages sends no header, so the page carries its own policy)`); continue; }
+  if (meta.length > 1) bad(`${page}: has ${meta.length} policy metas; one`);
+  const tag = meta[0][0], at = meta[0].index;
+  const early = text.slice(0, at).match(/<(script|link|style)\b/i);
+  if (early) bad(`${page}: the policy meta comes after a <${early[1].toLowerCase()}>; a meta covers only what follows it, so put it first in <head>, before any script, link or style`);
+  const content = (tag.match(/\bcontent\s*=\s*"([^"]*)"/i) || tag.match(/\bcontent\s*=\s*\x27([^\x27]*)\x27/i) || [, ""])[1];
+  const dir = {};
+  for (const d of content.split(";").map((x) => x.trim()).filter(Boolean)) { const [n, ...v] = d.split(/\s+/); dir[n.toLowerCase()] = v; }
+  const src = dir["script-src"];
+  if (!src) { bad(`${page}: the policy has no script-src`); continue; }
+  for (const u of ["\x27unsafe-inline\x27", "\x27unsafe-eval\x27"]) {
+    if (src.includes(u)) bad(`${page}: script-src allows ${u}; allow an inline script by its hash instead`);
+  }
+  if (!(dir["object-src"] || []).includes("\x27none\x27")) bad(`${page}: the policy lacks object-src \x27none\x27`);
+  if (!(dir["base-uri"] || []).includes("\x27self\x27")) bad(`${page}: the policy lacks base-uri \x27self\x27`);
+  const inline = scripts.filter((s) => !s.src).map((s) => hash(s.body));
+  for (const h of inline) if (!src.includes(h)) bad(`${page}: an inline script has no matching hash in script-src (it would be blocked); add ${h}`);
+  for (const h of src.filter((t) => /^\x27sha(256|384|512)-/.test(t))) if (!inline.includes(h)) bad(`${page}: script-src has ${h}, which matches no inline script (an edited script keeps its old hash?); the inline scripts hash to ${inline.join(" ") || "nothing"}`);
+  // an inline event handler (onclick=, …) or a javascript: address needs 'unsafe-inline'; attribute values and script text set aside
+  const markup = text.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "<script></script>");
+  for (const m of markup.matchAll(/<[a-zA-Z][^>]*>/g)) {
+    const t = m[0].replace(/"[^"]*"|\x27[^\x27]*\x27/g, '""');
+    const h = t.match(/\son[a-z]+\s*=/i);
+    if (h) bad(`${page}: an inline event handler (${h[0].trim()}) in ${m[0].slice(0, 60)}; the policy would block it, so attach it from a script`);
+    if (/\b(href|src|action|formaction)\s*=\s*["\x27]?\s*javascript:/i.test(m[0])) bad(`${page}: a javascript: address in ${m[0].slice(0, 60)}`);
+  }
+}
+CSP_EOF
+
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)

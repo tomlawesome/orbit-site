@@ -239,6 +239,28 @@ body once the flight is ready to begin (the site: `openNow` in
 - `window.__chores`: set only under the `door3d` flag, by `createDoor`, to a
   function returning the chore queue as it is now (for the live door's tests).
 
+### What a page's Content-Security-Policy must allow for the door
+
+Found by reading what the folder loads (`fetch`, `Image`, `createObjectURL`,
+`toDataURL`, `style.` and `import(` in `*.js`; `url()` in `door.css`):
+
+- `img-src 'self' data: blob:`: `glows.js` draws each glow as an image from a
+  `data:image/svg+xml` URL, then rasterises it into a `blob:` URL (a `data:`
+  PNG where a canvas cannot make a blob); the stylesheet's pictures and the
+  flight's own textures are same-origin files.
+- `connect-src 'self'`: `chores.js` `fetchOnce` fetches the pictures
+  (`image(path)` URLs) with `fetch`, so they must be on the page's own origin
+  (or named here if the host serves them from another).
+- `script-src 'self'`: the modules import each other, and `door3d.js` is
+  loaded with `import()`; nothing is evaluated (no `eval`, no `new Function`),
+  so `'unsafe-eval'` is not needed. The folder adds no inline script.
+- `style-src 'self'`: its sizes and origins are set from script through the
+  style object (`style.setProperty`, `style.width`), which a policy does not
+  block, and the markup has no `style=""` attribute. A host that keeps
+  `'unsafe-inline'` for its own styles loses nothing.
+- No `worker-src` beyond `'self'` (it starts no worker), no `font-src` (it
+  loads no font), no frames, no `object-src`.
+
 ### The GPU gate (`fitness.js`, ADR-0002)
 
 `gpu()` → `{ canvas, gl, parallel, renderer } | null`: whether the page may use the GPU at all, decided

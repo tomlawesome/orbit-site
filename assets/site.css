@@ -103,8 +103,8 @@ p{margin:0}
 .mono{font-family:var(--mono)}
 .corner{font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-quiet);
   text-shadow:0 0 2px var(--bg),0 0 5px var(--bg),0 0 11px var(--bg)}
-noscript .corner{display:block;max-width:60ch;margin:0;padding:24px;line-height:1.8}
-noscript .corner a{color:var(--accent-text)}
+noscript .corner,.nojs .corner{display:block;max-width:60ch;margin:0;padding:24px;line-height:1.8}
+noscript .corner a,.nojs .corner a{color:var(--accent-text)}
 
 /* the sky: two tiled layers, drifting (POL-11), never sitting still */
 .sky{position:fixed;inset:-4%;z-index:0;pointer-events:none;opacity:var(--stars);transition:opacity .4s;overflow:hidden}
