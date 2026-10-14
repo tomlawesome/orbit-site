@@ -34,8 +34,8 @@
 # Hardening (#60), cases n0 and n7 onward (invented values only, planted as sha256 digests in NO_REAL_NAMES_EXTRA_WORD_DIGESTS,
 # NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS and NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS): a banned word, login or email in tracked text;
 # a file holding a NUL byte, and UTF-16 files with a byte-order mark, are still scanned; banned words, logins and private
-# addresses in file and directory paths; banned values in author and committer names and in the whole commit message
-# (body and trailers); AI attribution in a commit message; link-local and unique-local addresses. The section is judged by
+# addresses in file and directory paths; banned values in the whole commit message
+# (body and trailers), and banned logins and emails (not the word: owner decision 4b) in author and committer names; AI attribution in a commit message; link-local and unique-local addresses. The section is judged by
 # the guard's own verdict (it prints "no-real-names: ok" only when it passes), and a file:line match is a whole-token
 # match (README.md:12 does not match README.md:123), checked in case n0.
 # And the "docs import is split" section reads .gitlab-ci.yml as YAML, not line by line (issue #52): a job that
@@ -1316,8 +1316,16 @@ hist_case() {
   n_clean "$1: without the digest it is not reported"
   n_back
 }
-hist_case "a banned word in the author name" "Zyxwordq Tester" t "name probe" "" "author" "committer" "$nw_d" "" "" "$nw"
-hist_case "a banned word in the committer name" t "Zyxwordq Tester" "name probe" "" "committer" "author" "$nw_d" "" "" "$nw"
+# The owner commits under their own name (#56, owner decision 4b), so a banned WORD in an author or committer name is
+# not refused; logins and emails there are. hist_name_clean LABEL AUTHOR_NAME COMMITTER_NAME: passes with the word planted.
+hist_name_clean() {
+  GIT_AUTHOR_NAME="$2" GIT_COMMITTER_NAME="$3" GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "name probe"
+  names_run "$nw_d" "" ""
+  n_clean "$1 is not reported, even with the word planted"
+  n_back
+}
+hist_name_clean "a banned word in the author name" "Zyxwordq Tester" t
+hist_name_clean "a banned word in the committer name" t "Zyxwordq Tester"
 hist_case "a banned login as the author name" "$nl" t "name probe" "" "author" "committer" "" "$nl_d" "" "$nl"
 hist_case "a banned login as the committer name" t "$nl" "name probe" "" "committer" "author" "" "$nl_d" "" "$nl"
 hist_case "a banned email as the author name" "$ne" t "name probe" "" "author" "committer" "" "" "$ne_d" "$ne"
