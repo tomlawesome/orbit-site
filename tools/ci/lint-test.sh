@@ -23,7 +23,9 @@
 # assets/docs/ does not). And section "the pages carry a Content-Security-Policy" (audit #12): a page without the meta,
 # with it after a script, link or style, with an inline script and no matching hash, a stale hash, 'unsafe-inline' or
 # 'unsafe-eval' in script-src, no object-src 'none' or base-uri 'self', or an inline event handler fails and names the
-# page (cases c0-c8).
+# page (cases c0-c8). And section "no real names, host logins or private addresses" (#56): a private or
+# shared-space IPv4 address in a tracked text file fails and names file:line without printing the address, an
+# edit to the one LICENSE line the owner keeps fails and names LICENSE:3, and a documentation address passes (cases n1-n3).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -883,6 +885,62 @@ csp_fail "a policy with no base-uri 'self'" install.html NOBASE=1
 
 # Case (c7): an inline event handler attribute.
 csp_fail "an inline event handler attribute" install.html HANDLER=1
+
+# Cases n1-n3: section "no real names, host logins or private addresses" (#56).
+# The private address is built from parts, so this file holds no literal one
+# and does not trip the guard it tests.
+names_out=$(mktemp)
+names_lint() {
+  rc=0
+  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  # Only what the names section printed: from its heading to the next one.
+  awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+}
+
+# Case n1: a private address in a tracked file -> fails, names file:line, never prints the address.
+a=10; addr="$a.0.0.7"
+printf 'host %s\n' "$addr" >> README.md
+ln=$(wc -l < README.md | tr -d ' ')
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "add a private address"
+names_lint
+if [ "$rc" -ne 0 ] && grep -q "README.md:$ln" "$names_out" && ! grep -qF "$addr" "$out"; then
+  echo "ok   a private address fails, naming README.md:$ln and not printing it"
+else
+  echo "FAIL a private address fails (exit $rc, want non-zero naming README.md:$ln and not printing the address)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case n2: the kept LICENSE line (3) edited -> fails, names LICENSE:3.
+sed '3s/$/ /' LICENSE > LICENSE.new && mv LICENSE.new LICENSE
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "edit LICENSE line 3"
+names_lint
+if [ "$rc" -ne 0 ] && grep -q "LICENSE:3" "$names_out"; then
+  echo "ok   an edited LICENSE line 3 fails, naming LICENSE:3"
+else
+  echo "FAIL an edited LICENSE line 3 fails (exit $rc, want non-zero naming LICENSE:3)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case n3: a documentation address (RFC 5737) -> the names section does not report it.
+echo 'host 192.0.2.7' >> README.md
+git add -A
+git -c user.name=t -c user.email=t@t commit -q -m "add a documentation address"
+names_lint
+if [ -s "$names_out" ] && ! grep -q "README.md" "$names_out"; then
+  echo "ok   a documentation address is not reported"
+else
+  echo "FAIL a documentation address is not reported (want the names section present and not naming README.md)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+rm -f "$names_out"
 
 rm -f "$cspjs"
 
