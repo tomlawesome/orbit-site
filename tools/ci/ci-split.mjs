@@ -30,13 +30,29 @@ const reference = yaml.defineSequenceTag("!reference", {
   identify: () => false,
 });
 const SHADOW = Symbol("replaced values");
+// A merge key (<<) after an explicit key in the same mapping is read two ways:
+// GitLab's reader (Ruby Psych) applies each << in order, so it overwrites the
+// explicit key, while js-yaml keeps the explicit key. Such a mapping is refused
+// (LATE), since the job GitLab runs is not the one judged here; a << before
+// every explicit key reads the same in both. js-yaml asks `has` once per key a
+// << brings in (and nowhere else when reading with json: true), then adds the
+// keys that are not there yet with addPair: so `has` marks the next addPair of
+// that key as merged, and any other addPair is an explicit key, in file order.
+const EXPLICIT = new WeakSet(), MERGING = new WeakMap(), LATE = new WeakSet();
 const map = yaml.defineMappingTag("tag:yaml.org,2002:map", {
   create: () => ({}),
   addPair: (c, key, value) => {
+    if (MERGING.get(c) === key) MERGING.delete(c);
+    else EXPLICIT.add(c);
     if ((key === null || typeof key !== "object") && Object.hasOwn(c, String(key))) (c[SHADOW] ??= []).push([String(key), c[String(key)]]);
     return yaml.mapTag.addPair(c, key, value);
   },
-  has: yaml.mapTag.has,
+  has: (c, key) => {
+    if (EXPLICIT.has(c)) LATE.add(c);
+    const there = yaml.mapTag.has(c, key);
+    if (!there) MERGING.set(c, key);
+    return there;
+  },
   keys: yaml.mapTag.keys,
   get: yaml.mapTag.get,
   identify: yaml.mapTag.identify,
@@ -51,6 +67,18 @@ try {
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) stop(".gitlab-ci.yml: is not a mapping of jobs");
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+// whether a mapping with a late << is in v, replaced values included
+const late = (v, seen = new Set()) => {
+  if (v === null || typeof v !== "object" || seen.has(v)) return false;
+  seen.add(v);
+  if (LATE.has(v)) return true;
+  if (Array.isArray(v)) return v.some((x) => late(x, seen));
+  return Object.values(v).some((x) => late(x, seen)) || (v[SHADOW] || []).some(([, x]) => late(x, seen));
+};
+const lateMsg = "a merge key (<<) after an explicit key in the same mapping; GitLab's reader lets the later << overwrite the explicit key and this check's reader keeps it, so the job GitLab runs is not the one judged here: put the << first";
+if (LATE.has(doc)) bad(`.gitlab-ci.yml: the top level has ${lateMsg}`);
+for (const [k, v] of Object.entries(doc)) if (late(v)) bad(`.gitlab-ci.yml: ${k} has ${lateMsg}`);
+for (const [k, v] of doc[SHADOW] || []) if (late(v)) bad(`.gitlab-ci.yml: ${k} (an earlier, replaced ${k}) has ${lateMsg}`);
 const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : v === undefined ? [] : [v]).map((l) => (typeof l === "string" ? l : JSON.stringify(l)));
 const envName = (v) => (typeof v === "string" ? v : isObj(v) ? v.name : undefined);
 // every scalar string in a value, mapping keys and replaced values included
@@ -73,6 +101,34 @@ const environments = (v, out = []) => {
   return out;
 };
 
+// expire_in as GitLab reads it (a ChronicDuration string: "1 day", "24 hours",
+// "30 min", "1h 30m", "2 hrs and 20 mins"; a bare number is seconds), in
+// seconds; NaN for anything else ("never" included), which is refused.
+const UNIT = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, mo: 2592000, y: 31557600 };
+const UNITS = [
+  [/^(s|secs?|seconds?)$/, "s"], [/^(m|mins?|minutes?)$/, "m"], [/^(h|hrs?|hours?)$/, "h"],
+  [/^(d|days?)$/, "d"], [/^(w|wks?|weeks?)$/, "w"], [/^(mos?|months?)$/, "mo"], [/^(y|yrs?|years?)$/, "y"],
+];
+const seconds = (v) => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  if (typeof v !== "string") return NaN;
+  const t = v.trim().toLowerCase();
+  if (/^\d+$/.test(t)) return Number(t);
+  const parts = t.replace(/,|\band\b/g, " ").match(/\d+(?:\.\d+)?\s*[a-z]+|\S+/g) || [];
+  if (parts.length === 0) return NaN;
+  let total = 0;
+  for (const p of parts) {
+    const m = /^(\d+(?:\.\d+)?)\s*([a-z]+)$/.exec(p);
+    const u = m && UNITS.find(([re]) => re.test(m[2]));
+    if (!u) return NaN;
+    total += Number(m[1]) * UNIT[u[1]];
+  }
+  return total;
+};
+
+// publish_docs's image, as .gitlab-ci.yml has it. The image runs beside the
+// token, so changing it is a deliberate edit to this check, not to the CI file alone.
+const PUBLISH_IMAGE = "$NODE_IMAGE";
 const RULE = `$CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
 const job = (n) => (isObj(doc[n]) ? doc[n] : null);
 const imp = job("import_docs"), pub = job("publish_docs");
@@ -91,7 +147,8 @@ if (imp !== null) {
   const art = isObj(imp.artifacts) ? imp.artifacts : {};
   const paths = Array.isArray(art.paths) ? art.paths : art.paths === undefined ? [] : [art.paths];
   if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
-  if (!/^(\d+ (minutes?|hours?)|1 days?)$/.test(String(art.expire_in ?? ""))) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
+  const life = seconds(art.expire_in);
+  if (!(life > 0 && life <= 86400)) bad(`.gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day), found: ${art.expire_in ?? "none"}`);
 }
 
 // each environment holds tokens scoped to it: no top-level entry but its own job
@@ -204,6 +261,12 @@ for (const k of Object.keys(doc)) {
 }
 // another file could add a job this check never sees
 if ("include" in doc) bad(".gitlab-ci.yml: has a top-level include; a job in another file would escape this check");
+// so could a child pipeline (trigger: include, a file, a list or an artifact),
+// whether the job writes it, extends it or takes it by !reference
+for (const k of Object.keys(doc)) {
+  const own = isObj(doc[k]) ? doc[k].trigger : undefined, x = expand(k);
+  if ([own, isObj(x) ? x.trigger : undefined].some((t) => isObj(t) && Object.hasOwn(t, "include"))) bad(`.gitlab-ci.yml: ${k} starts a child pipeline (trigger: include); a job in that pipeline would escape this check`);
+}
 
 const ren = job("renovate");
 if (ren !== null && envName(ren.environment) !== "renovate") bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
@@ -212,10 +275,25 @@ if (pub !== null) {
   const needs = Array.isArray(pub.needs) ? pub.needs : [];
   if (!needs.some((n) => isObj(n) && n.job === "import_docs" && n.artifacts === false)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false); a dotenv report in them would set this job's variables");
   if (!(isObj(pub.variables) && pub.variables.GIT_STRATEGY === "clone")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
-  const script = lines(pub.script);
-  if (!script.some((l) => /nightly-publish\.sh/.test(l))) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
-  if (script.some((l) => /\b(npm|npx|yarn|pnpm)\b/.test(l))) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
+  if (!lines(pub.script).some((l) => /nightly-publish\.sh/.test(l))) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
+  // what runs beside the token is judged on the job as GitLab runs it: extends
+  // and !reference resolved, and default:'s hooks where the job sets none
+  const ex = isObj(expand("publish_docs")) ? expand("publish_docs") : {};
+  const def = isObj(doc.default) && isObj(expand("default")) ? expand("default") : {};
+  const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
+  for (const h of ["script", "before_script", "after_script"]) {
+    const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
+    if (from === null || !lines(from ? def[h] : ex[h]).some(pm)) continue;
+    if (h === "script" && !from) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
+    else bad(`.gitlab-ci.yml: publish_docs runs npm or another package manager ${from ? `in the ${h} it takes from default` : `in its ${h}`}; it holds the token and runs no third-party code`);
+  }
+  // the image runs beside the token, so publish_docs names its own, and it is
+  // PUBLISH_IMAGE; NODE_IMAGE itself is pinned to a digest by lint.sh
+  if (!Object.hasOwn(pub, "image") || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: publish_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
+  if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: publish_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token");
+  if (Object.hasOwn(ex, "services")) bad(".gitlab-ci.yml: publish_docs has services; a service container runs beside the token");
 }
+if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 
 const read = (p) => (fs.existsSync(at(p)) ? fs.readFileSync(at(p), "utf8") : null);
 const imps = read("tools/ci/nightly-import.sh"), pubs = read("tools/ci/nightly-publish.sh");

@@ -150,6 +150,10 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
 # Joining counts whether by name or inherited by extends or !reference (#52).
+# Also refused (#52, #59): a << merge key after an explicit key, a child
+# pipeline, a package manager in publish_docs's script or hooks (extended,
+# referenced or from default:), services or a changed image beside the token,
+# and import_docs artifacts kept over a day.
 # Read as YAML with js-yaml from tools/node_modules (#52), so the lint job runs
 # npm ci --prefix tools first; without it, or if the file does not parse, this fails.
 node tools/ci/ci-split.mjs || fail=1
