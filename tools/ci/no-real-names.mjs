@@ -70,6 +70,36 @@ const BANNED_LOGINS = new Set([
 ]);
 export const bannedLogin = (login) => BANNED_LOGINS.has(sha(login));
 
+/*
+ * Email addresses that must never again be an author or committer: the
+ * history was rewritten to remove them (#56, owner answer 8a), and a branch
+ * cut before that rewrite would bring them back. Digests of the lower-cased
+ * address only. NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS (comma-separated) adds more,
+ * for tests.
+ */
+export const BANNED_EMAILS = new Set([
+  // the owner's two personal addresses, removed from history 2026-10-14
+  "1027221ce9257f19167a81709f2f4b8695655a4a8b0d8fe208b6745d603c627c",
+  "261f593acda73db451a02fc7382f490b64dff16426c90f60cc9af59cb077ae67",
+]);
+const EXTRA_EMAILS = new Set((process.env.NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS || "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean));
+export const bannedEmail = (address) => { const d = sha(String(address).toLowerCase()); return BANNED_EMAILS.has(d) || EXTRA_EMAILS.has(d); };
+
+/* `<short id> author` / `<short id> committer` for every commit reachable from
+   HEAD that carries a banned email. Never the address. A shallow clone cannot
+   see the whole history, so it is refused rather than passed. */
+function commitHits() {
+  const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 });
+  if (git("rev-parse", "--is-shallow-repository").trim() === "true") return null;
+  const hits = [];
+  for (const row of git("log", "--format=%h%x00%ae%x00%ce", "HEAD").split("\n").filter(Boolean)) {
+    const [id, author, committer] = row.split("\0");
+    if (bannedEmail(author)) hits.push(`${id} author`);
+    if (bannedEmail(committer)) hits.push(`${id} committer`);
+  }
+  return hits;
+}
+
 /** `/home/<login>`, `/Users/<login>`, `C:\Users\<login>` (any slash, escaped or not, either case), `~<login>/`. */
 const HOME_DIRECTORY = /(?:\/home\/|[/\\]+[Uu][Ss][Ee][Rr][Ss][/\\]+|(?<![\w/])~)([A-Za-z0-9._-]+)/gu;
 
@@ -134,9 +164,10 @@ export function scan(files) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const hits = scan(trackedTextFiles());
   for (const h of hits) console.log(`   ${h}`);
-  if (hits.length) {
-    console.log(`no-real-names: ${hits.length} line(s) hold a real name, host login or private address (#56): use an invented name, ~/..., <project root> or a documentation address (192.0.2.x, 198.51.100.x, 203.0.113.x)`);
-    process.exit(1);
-  }
+  if (hits.length) console.log(`no-real-names: ${hits.length} line(s) hold a real name, host login or private address (#56): use an invented name, ~/..., <project root> or a documentation address (192.0.2.x, 198.51.100.x, 203.0.113.x)`);
+  const commits = commitHits() ?? (console.log("no-real-names: the clone is shallow, so the commits' emails cannot all be checked: fetch the whole history (GIT_DEPTH: 0)"), [""]);
+  for (const h of commits.filter(Boolean)) console.log(`   ${h}`);
+  if (commits.some(Boolean)) console.log(`no-real-names: ${commits.length} commit field(s) carry a banned email (#56): this branch was cut before the history rewrite of 2026-10-14; rebase it onto the current dev`);
+  if (hits.length || commits.length) process.exit(1);
   console.log("no-real-names: ok");
 }

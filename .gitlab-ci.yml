@@ -76,6 +76,8 @@ variables:
 lint:
   stage: lint
   image: $NODE_IMAGE
+  variables:
+    GIT_DEPTH: 0 # the names guard reads every commit's emails (#56)
   rules:
     - *not_scheduled
     - when: on_success
