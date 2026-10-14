@@ -181,4 +181,30 @@ for (const [name, input] of [
   check(`18 ${name} finishes in under 1 s`, ms < 1000, `took ${ms.toFixed(0)} ms (want < 1000)${note}`);
 }
 
+// 19. (#60 item 1) raw-text and plain-text elements are not on the list: the whole block is refused.
+for (const input of [
+  "<textarea>w</textarea>", "<textarea><!-- config --></textarea>", "<p>k</p><textarea>w</textarea>", "<xmp>w</xmp>",
+  "<plaintext>w", "<title>w</title>", "<noscript>w</noscript>", "<iframe>w</iframe>", "<noembed>w</noembed>",
+  "<noframes>w</noframes>", "<svg><![CDATA[w]]></svg>", "<math><![CDATA[w]]></math>", "<style>p{color:red}</style>",
+]) eq(`19 ${JSON.stringify(input)} returns an empty string`, input, std, "");
+
+// 20. (#60 item 3) attribute syntax: the browser reads these as an href and a title, so the output keeps both.
+{
+  const U = "https://h/u";
+  const has = (name, input, wants) => {
+    let got;
+    try { got = sanitiseHtml(input, std); } catch (e) { got = `threw: ${e.message}`; }
+    check(name, wants.every((w) => got.includes(w)), `${JSON.stringify(input)} gave ${JSON.stringify(got)} (want it to hold ${wants.map((w) => JSON.stringify(w)).join(" and ")})`);
+  };
+  has("20 / between attributes is a separator", `<a/href="${U}"/title="t">x</a>`, [`href="${U}"`, `title="t"`, ">x</a>"]);
+  has("20 an unquoted value keeps /", "<a href=https://h/a/b title=t>x</a>", [`href="https://h/a/b"`, `title="t"`]);
+  has("20 an unquoted value keeps a trailing /", "<a href=https://h/a/ title=t>x</a>", [`href="https://h/a/"`, `title="t"`]);
+  has("20 an unquoted value stops at whitespace", `<a href=${U}  title=t>x</a>`, [`href="${U}"`, `title="t"`]);
+  has("20 spaces around = are skipped", `<a href = "${U}" title = 't'>x</a>`, [`href="${U}"`, `title="t"`]);
+  has("20 an attribute name may start with =", `<a =x href="${U}" title="t">x</a>`, [`href="${U}"`, `title="t"`]);
+  has("20 a name made of = and a quoted word", `<a ="y" href="${U}" title="t">x</a>`, [`href="${U}"`, `title="t"`]);
+  eq("20 a tag name with : is not <a>", "<a:b>x</a:b>", std, "");
+  eq("20 a tag name with : beside an allowed tag is not <a>", `<p>k</p><a:b href="${U}">x</a:b>`, std, "");
+}
+
 process.exit(failed ? 1 : 0);
