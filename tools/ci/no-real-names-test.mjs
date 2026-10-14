@@ -6,6 +6,8 @@
  *   node tools/ci/no-real-names-test.mjs
  */
 import { createHash } from "node:crypto";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { IPV4, isPrivateOrShared, loginsOf, scan, wordsOf } from "./no-real-names.mjs";
 import * as guard from "./no-real-names.mjs";
 
@@ -74,6 +76,175 @@ check("BANNED_EMAILS: does not hold the digest of an invented address", digests 
 // scan reports file:line only
 const hits = scan([{ name: "a.txt", text: `fine\nunder ${quad(10, 1, 2, 3)} here\n` }, { name: "b.txt", text: "nothing\n" }]);
 check("scan: reports file:line and nothing else", hits.length === 1 && hits[0] === "a.txt:2", JSON.stringify(hits));
+
+
+// loginsOf (#60 item 8): "/home" is matched in any case, and the login ends at the first character that is not a
+// letter or digit, or at the end of the text
+check("loginsOf: /home/<login> ending the text", has(loginsOf("/home/alex"), ["alex"]), show(loginsOf("/home/alex")));
+check("loginsOf: upper-case /HOME", has(loginsOf("/HOME/alex"), ["alex"]), show(loginsOf("/HOME/alex")));
+check("loginsOf: mixed-case /Home", has(loginsOf("see /Home/alex/x"), ["alex"]), show(loginsOf("see /Home/alex/x")));
+check("loginsOf: suffix after an underscore", has(loginsOf("/home/alex_old"), ["alex"]), show(loginsOf("/home/alex_old")));
+check("loginsOf: suffix after a dash, no other text", has(loginsOf("/home/alex-old"), ["alex"]), show(loginsOf("/home/alex-old")));
+check("loginsOf: a longer login is not the shorter one", !loginsOf("/home/alexxyz").has("alex"), show(loginsOf("/home/alexxyz")));
+check("loginsOf: a longer login after /HOME is not the shorter one", !loginsOf("/HOME/alexxyz/x").has("alex"), show(loginsOf("/HOME/alexxyz/x")));
+
+// IPv4 link-local 169.254/16 (#60 item 9)
+check("ipv4: flags 169.254/16 (both ends)", flagged(`${quad(169, 254, 0, 1)} ${quad(169, 254, 255, 254)}`).length === 2, "not flagged");
+check("ipv4: ignores 169.253 and 169.255", flagged(`${quad(169, 253, 1, 1)} ${quad(169, 255, 1, 1)}`).length === 0, "flagged");
+
+// The probes below run the guard in a child process with a clean environment (no NO_REAL_NAMES_* variables, so
+// they judge the built-in sets and give the same answer under the lint-test runs that plant digests), or with
+// exactly the variables given. The module is read through its exports only.
+const guardUrl = new URL("./no-real-names.mjs", import.meta.url).href;
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const sha = (s) => createHash("sha256").update(s).digest("hex");
+const cleanEnv = () => {
+  const e = { ...process.env };
+  for (const k of Object.keys(e)) if (k.startsWith("NO_REAL_NAMES_")) delete e[k];
+  return e;
+};
+const CHILD = `
+const g = await import(process.env.PROBE_URL);
+const p = JSON.parse(process.env.PROBE_INPUT);
+const hex = /^[0-9a-f]{64}$/;
+const shape = (x) => {
+  if (x === undefined || x === null) return { kind: "missing" };
+  let entries;
+  if (x instanceof Set) entries = [...x];
+  else if (Array.isArray(x)) entries = x;
+  else if (x instanceof Map) entries = [...x].map(([k, v]) => (typeof v === "string" && hex.test(v) ? v : k));
+  else if (typeof x === "object") entries = Object.values(x);
+  else return { kind: typeof x };
+  return { kind: "ok", size: entries.length, entries };
+};
+const out = {};
+if (p.shapes) for (const n of ["BANNED_WORDS", "BANNED_LOGINS", "BANNED_EMAILS", "KEPT"]) out[n] = shape(g[n]);
+if (p.files) out.hits = g.scan(p.files);
+console.log(JSON.stringify(out));
+`;
+function probe(input, extraEnv = {}) {
+  try {
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", CHILD], {
+      env: { ...cleanEnv(), PROBE_URL: guardUrl, PROBE_INPUT: JSON.stringify(input), ...extraEnv },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(stdout.trim().split("\n").pop());
+  } catch (e) {
+    return { error: String(e.stderr || e.message).split("\n").find((l) => l.trim()) || "failed" };
+  }
+}
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Built-in digest sets (#60 item 2): exact counts, every entry 64 lower-case hex
+const shapes = probe({ shapes: true });
+for (const [name, n] of [["BANNED_WORDS", 1], ["BANNED_LOGINS", 2], ["BANNED_EMAILS", 2], ["KEPT", 1]]) {
+  const s = shapes[name];
+  check(`${name}: is exported and readable`, !!s && s.kind === "ok", JSON.stringify(s ?? shapes));
+  check(`${name}: holds exactly ${n} built-in ${n === 1 ? "entry" : "entries"}`, !!s && s.size === n, JSON.stringify(s ? s.size : shapes));
+  check(`${name}: every entry is 64 lower-case hex characters`, !!s && s.kind === "ok" && s.size > 0 && s.entries.every((d) => typeof d === "string" && /^[0-9a-f]{64}$/u.test(d)), JSON.stringify(s ?? shapes));
+}
+
+// Extra digests from the environment, one variable per category (#60 item 1). Invented values only.
+const W = "zyx" + "wordq"; // built from parts, so this file holds no planted value
+const L = "zyx" + "loginq";
+const E = ["zyx.probe", "example.invalid"].join("@");
+const extra = {
+  NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W),
+  NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(L),
+  NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E),
+};
+const run = (text, env = extra) => probe({ files: [{ name: "f.txt", text }] }, env).hits;
+const hitsAre = (name, text, want, env = extra) => { const h = run(text, env); check(name, same(h, want), JSON.stringify(h ?? "no result")); };
+
+// word variable
+hitsAre("extra words: a bare word is reported as file:line", `fine\nthe ${W} case\nfine\n`, ["f.txt:2"]);
+hitsAre("extra words: plural and possessive", `${W[0].toUpperCase()}${W.slice(1)}s\nthe ${W}s' boiler\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("extra words: camelCase and UPPER_SNAKE runs", `const ${W}Items = 1\n${W.toUpperCase()}_ITEMS\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("extra words: not set, the same text is clean", `${W}\n/home/${L}\n${E}\n`, [], {});
+hitsAre("extra words: only the word variable set, logins and emails stay clean", `/home/${L}\n${E}\n`, [], { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W) });
+hitsAre("extra words: several digests, comma-separated", `${W}\nzyxwordp\nunrelated\n`, ["f.txt:1", "f.txt:2"], { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: `${sha("zyxwordp")},${sha(W)}` });
+hitsAre("extra words: a longer word is another word", `${W}ness\n`, []);
+
+// login variable
+hitsAre("extra logins: /home/<login> is reported as file:line", `fine\nunder /home/${L}/work\n`, ["f.txt:2"]);
+hitsAre("extra logins: ~<login> with a sentence-ending dot", `under ~${L}.\n`, ["f.txt:1"]);
+hitsAre("extra logins: /HOME/<login> in capitals", `/HOME/${L}\n`, ["f.txt:1"]);
+hitsAre("extra logins: /home/<login> ending the text with no newline", `a\n/home/${L}`, ["f.txt:2"]);
+hitsAre("extra logins: /home/<login>-old and /home/<login>_old", `/home/${L}-old\n/home/${L}_old\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("extra logins: a longer login is not reported", `/home/${L}xyz\n/HOME/${L}xyz/x\n`, []);
+hitsAre("extra logins: only the login variable set, words and emails stay clean", `${W}\n${E}\n`, [], { NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(L) });
+hitsAre("extra logins: not set, /home/<login> is clean", `/home/${L}\n`, [], {});
+
+// email variable, and tracked text checked against the banned email digests (#60 item 3)
+hitsAre("extra emails: an address in text is reported as file:line", `fine\nwrite to ${E} now\n`, ["f.txt:2"]);
+hitsAre("extra emails: case-insensitive", `Write to ${E.toUpperCase()} now\n${E[0].toUpperCase()}${E.slice(1)}\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("extra emails: in angle brackets and after mailto:", `Pat <${E}>\nmailto:${E}?subject=x\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("extra emails: before a sentence-ending dot", `Write to ${E}.\n`, ["f.txt:1"]);
+hitsAre("extra emails: another address is clean", `other.person@example.invalid\n${E}.au\n`, []);
+hitsAre("extra emails: not set, the address is clean", `${E}\n`, [], {});
+hitsAre("extra emails: only the email variable set, words and logins stay clean", `${W}\n/home/${L}\n`, [], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
+
+// a hit is "file:line" and nothing else, so no value reaches a public log
+const leak = run(`${W} /home/${L} ${E}\n`);
+check("extra digests: a hit never carries the value", Array.isArray(leak) && leak.length > 0 && leak.every((h) => /^f\.txt:\d+$/u.test(h)), JSON.stringify(leak ?? "no result"));
+
+// IPv6 private addresses (#60 item 9), built from parts so this file holds no literal one
+const v6 = (...g) => g.join(":");
+hitsAre("ipv6: flags a unique-local address", `fine\nat ${v6("fd7a", "115c", "", "1")} here\n`, ["f.txt:2"], {});
+hitsAre("ipv6: flags the unique-local range, fc00 to fdff (both ends)", `${v6("fc00", "", "1")}\n${v6("fdff", "ffff", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("ipv6: flags unique-local in capitals", `${v6("FD7A", "115C", "", "1")}\n`, ["f.txt:1"], {});
+hitsAre("ipv6: flags unique-local in brackets with a port", `http://[${v6("fd7a", "115c", "", "1")}]:8080/x\n`, ["f.txt:1"], {});
+hitsAre("ipv6: flags unique-local written in full", `${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}\n`, ["f.txt:1"], {});
+hitsAre("ipv6: flags the link-local range, fe80 to febf (both ends)", `${v6("fe80", "", "1")}\n${v6("febf", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("ipv6: ignores just outside the unique-local and link-local ranges", `${v6("fbff", "", "1")}\n${v6("fe00", "", "1")}\n${v6("fec0", "", "1")}\n`, [], {});
+hitsAre("ipv6: ignores the documentation range 2001:db8::/32", `${v6("2001", "db8", "", "1")}\n${v6("2001", "0db8", "1", "2", "3", "4", "5", "6")}\n`, [], {});
+hitsAre("ipv6: ignores times of day", "at 12:34:56 on 2026-10-14T10:20:30Z\n", [], {});
+hitsAre("ipv4: link-local 169.254.x.x in text is reported as file:line", `fine\nat ${quad(169, 254, 7, 7)}\n`, ["f.txt:2"], {});
+hitsAre("ipv4: documentation range stays allowed in text", `at ${quad(192, 0, 2, 7)} and ${quad(198, 51, 100, 7)} and ${quad(203, 0, 113, 7)}\n`, [], {});
+
+// File and directory paths (#60 item 5): a hit reports the path with the offending part masked as *** and the
+// category, never the value, because CI logs are public. Invented values only, distinct from the ones above.
+const PW = "qxvpathword";
+const PL = "qxvpathlogin";
+const PATHS_CHILD = `
+const g = await import(process.env.PROBE_URL);
+console.log(JSON.stringify(typeof g.scanPaths === "function" ? g.scanPaths(JSON.parse(process.env.PROBE_INPUT)) : null));
+`;
+function pathProbe(names, env = { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(PW), NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(PL) }) {
+  try {
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", PATHS_CHILD], {
+      env: { ...cleanEnv(), PROBE_URL: guardUrl, PROBE_INPUT: JSON.stringify(names), ...env },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(stdout.trim().split("\n").pop());
+  } catch { return null; }
+}
+// one report per path; true when it shows MASKED, names CATEGORY and holds none of the HIDDEN values (any case)
+const masked = (reports, want, category, hidden) => Array.isArray(reports) && reports.length === 1 && typeof reports[0] === "string"
+  && reports[0].includes(want) && reports[0].includes(category) && hidden.every((v) => !reports[0].toLowerCase().includes(v.toLowerCase()));
+const pathCase = (name, paths, want, category, hidden, env) => {
+  const r = pathProbe(paths, env);
+  // the detail shows only whether a hidden value leaked, never the report itself
+  check(name, masked(r, want, category, hidden), Array.isArray(r) ? `${r.length} report(s), want 1 showing ${want} and ${category}` : "scanPaths missing or failed");
+};
+check("scanPaths: is exported as a function", pathProbe([]) !== null, "missing or failed");
+pathCase("scanPaths: a banned word in a directory name is masked", ["docs/" + PW + "/notes.txt"], "docs/***/notes.txt", "word", [PW]);
+pathCase("scanPaths: a banned word in a file name is masked", ["docs/notes-" + PW.toUpperCase() + ".txt"], "docs/notes-***.txt", "word", [PW]);
+pathCase("scanPaths: a banned login in home/<login> is masked", ["home/" + PL + "/x.txt"], "home/***/x.txt", "login", [PL]);
+pathCase("scanPaths: a private address in a file name is masked", ["docs/host-" + quad(10, 0, 0, 7) + ".txt"], "docs/host-***.txt", "private address", [quad(10, 0, 0, 7)], {});
+{
+  const r = pathProbe(["docs/notes.txt", "docs/host-" + quad(192, 0, 2, 7) + ".txt", "home/" + PL + "xyz/x.txt"]);
+  check("scanPaths: clean paths, a documentation address and a longer login are not reported", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "missing or failed");
+  const u = pathProbe(["docs/" + PW + "/notes.txt", "home/" + PL + "/x.txt"], {});
+  check("scanPaths: without the digests the same paths are not reported", Array.isArray(u) && u.length === 0, Array.isArray(u) ? `${u.length} report(s)` : "missing or failed");
+}
+
+// the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
+const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
+check("real tree and history: the guard exits 0", real.status === 0, `exit ${real.status}: ${String(real.stdout).split("\n").slice(0, 3).join(" | ")}`);
+check("real tree and history: the guard prints its ok verdict", /^no-real-names: ok/mu.test(String(real.stdout)), String(real.stdout).split("\n").slice(0, 3).join(" | "));
 
 console.log(`${count} checks`);
 process.exit(failed ? 1 : 0);
