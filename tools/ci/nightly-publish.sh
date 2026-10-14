@@ -141,14 +141,47 @@ check_git() {
     echo "refusing to run: the checkout's git has an info/attributes or config.worktree file"
     exit 1
   fi
-  keys=$(cgit config --list --show-scope --name-only | awk -F'\t' '$1=="local"||$1=="worktree"{print $2}' |
-    grep -v -i -E '^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|symlinks|ignorecase|precomposeunicode)|extensions\.objectformat|remote\.origin\.(url|fetch|tagopt)|branch\..+\.(remote|merge)|init\.defaultbranch|fetch\.recursesubmodules|fetch\.uriprotocols|credential\.interactive|gc\.(auto|autodetach)|transfer\.bundleuri|http\.(useragent|extraheader)|http\..+\.(proactiveauth|extraheader)|url\..+\.insteadof|credential\..+\.helper)$' |
-    head -n 5 || true)
-  if [ -n "$keys" ]; then
-    echo "refusing to run: the checkout's git config has settings the runner's clone does not write; stopping:"
-    printf '%s\n' "$keys" | sed 's/^/   /' | cut -c1-100
-    exit 1
+  # The runner's clone includes a config file of its own, kept in its folder
+  # beside the checkout (<checkout>.tmp/, #57). git reports that file's keys in
+  # the local scope, so the list below judges them too; the include itself is
+  # taken only as an absolute path to a regular file in that folder. The listing
+  # is read NUL-separated (-z), so no character in a path or value can split an
+  # entry, and a listing git could not make stops the job.
+  cfg=$(mktemp)
+  if ! cgit config --list --show-scope -z > "$cfg"; then
+    rm -f "$cfg"; echo "refusing to run: git could not list the checkout's config"; exit 1
   fi
+  CFG=$cfg TOP=$top node -e '
+    const fs = require("fs"), path = require("path");
+    const allowed = /^(include\.path|lfs\.repositoryformatversion|core\.(repositoryformatversion|filemode|bare|logallrefupdates|symlinks|ignorecase|precomposeunicode)|extensions\.objectformat|remote\.origin\.(url|fetch|tagopt)|branch\..+\.(remote|merge)|init\.defaultbranch|fetch\.recursesubmodules|fetch\.uriprotocols|credential\.interactive|gc\.(auto|autodetach)|transfer\.bundleuri|http\.(useragent|extraheader)|http\..+\.(proactiveauth|extraheader)|url\..+\.insteadof|credential\..+\.helper)$/is;
+    const parts = fs.readFileSync(process.env.CFG, "utf8").split("\0");
+    if (parts[parts.length - 1] === "") parts.pop();
+    if (parts.length % 2) { console.log("refusing to run: the checkout\x27s git config listing is malformed"); process.exit(1); }
+    /* the runner folder, resolved: <checkout>.tmp, beside the checkout */
+    const top = process.env.TOP, base = path.join(fs.realpathSync(path.dirname(top)), path.basename(top) + ".tmp");
+    const bad = [];
+    for (let i = 0; i < parts.length; i += 2) {
+      const scope = parts[i], nl = parts[i + 1].indexOf("\n");
+      if (scope !== "local" && scope !== "worktree") continue;
+      const key = nl < 0 ? parts[i + 1] : parts[i + 1].slice(0, nl), val = nl < 0 ? "" : parts[i + 1].slice(nl + 1);
+      if (!allowed.test(key)) { bad.push(key); continue; }
+      if (key.toLowerCase() !== "include.path") continue;
+      let why = null;
+      if (!path.isAbsolute(val)) why = "not an absolute path";
+      else {
+        let st = null; try { st = fs.lstatSync(val); } catch {}
+        if (!st || !st.isFile()) why = "not a regular file";
+        else if (!fs.realpathSync(val).startsWith(base + path.sep)) why = "outside the runner\x27s folder " + base;
+      }
+      if (why) { console.log(`refusing to run: the checkout\x27s git config has include.path ${JSON.stringify(val)}, ${why}`); process.exit(1); }
+    }
+    if (bad.length) {
+      console.log("refusing to run: the checkout\x27s git config has settings the runner\x27s clone does not write; stopping:");
+      for (const k of bad.slice(0, 5)) console.log("   " + k.slice(0, 97));
+      process.exit(1);
+    }
+  ' || { rm -f "$cfg"; exit 1; }
+  rm -f "$cfg"
 }
 
 # The rest of the checkout is what git has at HEAD (a fresh clone, so it is; this
