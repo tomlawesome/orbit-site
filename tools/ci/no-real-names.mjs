@@ -26,6 +26,13 @@ const BANNED = new Set([
 ]);
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
+
+/* lines the owner keeps on purpose, by file and the sha256 of the whole line:
+   any edit to such a line brings the check back */
+const KEPT = new Map([
+  // the copyright holder in LICENSE (owner, 2026-10-14, #56 answer 3a)
+  ["LICENSE", new Set(["51c60ba09ba9ae97a0e28aca0fb02c227a07f2e092275a082e2f9c4962d78e5c"])],
+]);
 const seen = new Map();
 export function banned(word) {
   let hit = seen.get(word);
@@ -114,6 +121,7 @@ export function scan(files) {
     const lines = text.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (KEPT.get(name)?.has(sha(line))) continue;
       const bad = [...wordsOf(line)].some(banned)
         || [...loginsOf(line)].some(bannedLogin)
         || [...line.matchAll(IPV4)].some((m) => isPrivateOrShared(m[0]));
