@@ -82,6 +82,24 @@ const map = yaml.defineMappingTag("tag:yaml.org,2002:map", {
 const schema = yaml.CORE_SCHEMA.withTags(map, mergeKey, reference);
 const src = fs.readFileSync(at(".gitlab-ci.yml"), "utf8");
 
+// The file holds only tab, line feed and printable ASCII (0x20-0x7E), judged on
+// the raw text before any YAML is read (#60). GitLab's reader ends a line at a
+// carriage return, U+0085, U+2028 or U+2029, so a comment holding one can hide a
+// job this check's reader never sees; other control characters, a byte order
+// mark and any non-ASCII letter are refused too, since the rule is plain ASCII.
+// Lines count line feeds; a byte that is not UTF-8 reads as U+FFFD and is refused.
+{
+  const found = [];
+  let line = 1;
+  for (const ch of src) {
+    const c = ch.codePointAt(0);
+    if (c === 0x0a) line++;
+    else if (c !== 0x09 && !(c >= 0x20 && c <= 0x7e) && found.at(-1)?.[0] !== line) found.push([line, c]);
+  }
+  for (const [l, c] of found) console.log(`   .gitlab-ci.yml: line ${l}: the character U+${c.toString(16).toUpperCase().padStart(4, "0")} is not plain ASCII; the file holds only tab, line feed and printable ASCII, since GitLab's reader can split a line where this check's does not`);
+  if (found.length) process.exit(1);
+}
+
 // GitLab reads the file with Ruby Psych (YAML.safe_load, Symbol permitted,
 // aliases on, then deep_symbolize_keys), this check with js-yaml. Rather than
 // imitate Psych, the file must keep to a subset both read the same way (#60),
@@ -370,6 +388,11 @@ for (const k of Object.keys(doc)) {
   }
   if (/[$%]/.test(n) && !varied.has(k)) bad(`.gitlab-ci.yml: ${k} inherits environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
 }
+// The deprecated global keywords: GitLab still applies each at the top level to
+// every job, publish_docs included, and this check judges default: instead (#60).
+for (const k of ["before_script", "after_script", "cache", "services", "image", "hooks"]) {
+  if (Object.hasOwn(doc, k)) bad(`.gitlab-ci.yml: has a top-level ${k}, a deprecated global keyword GitLab still applies to every job, publish_docs included; put it under default:, which this check judges`);
+}
 // another file could add a job this check never sees
 if ("include" in doc) bad(".gitlab-ci.yml: has a top-level include; a job in another file would escape this check");
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
@@ -406,6 +429,12 @@ if (pub !== null) {
     for (const p of from) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has ${what}; ${why}`);
     if (has(key, doc.default, expand("default"))) bad(`.gitlab-ci.yml: default has ${what}, which publish_docs takes; ${why}`);
   }
+  // dependencies, whatever its value, would be a second say in which artifacts
+  // publish_docs takes beside needs: none, its own or through extends (#60)
+  const depWhy = "whatever its value, it is a second say in which jobs' artifacts (dotenv reports included) reach the job holding the token; needs alone decides that";
+  const depFrom = ancestors("publish_docs").filter((p) => has("dependencies", doc[p], expand(p)));
+  if (has("dependencies", pub) || (has("dependencies", ex) && depFrom.length === 0)) bad(`.gitlab-ci.yml: publish_docs has dependencies; ${depWhy}`);
+  for (const p of depFrom) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has dependencies; ${depWhy}`);
   const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
   for (const h of ["script", "before_script", "after_script"]) {
     const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
