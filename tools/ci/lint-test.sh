@@ -31,6 +31,11 @@
 # address; a commit with an invented address is not reported. The tests plant the digest of an invented address
 # in NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS (comma-separated sha256 of the lower-cased address, added to the banned
 # set for tests): cases n4 (invented address, not reported), n5 (author) and n6 (committer).
+# And the "docs import is split" section reads .gitlab-ci.yml as YAML, not line by line (issue #52): a job that
+# only mentions renovate.json or a renovate/ branch name, in a script line or a trailing comment, without joining
+# the renovate environment is not refused (cases y1-y3); a job joining docs-import or renovate from a YAML shape
+# a line reader does not see (a key with a trailing comment, a job in flow style, environment as a mapping,
+# in flow style or after a comment) fails and names the job (cases y4-y9).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -624,6 +629,51 @@ split_case "the import script calling the API" tools/ci/nightly-import.sh "calls
   y = y.replace("  node tools/import-docs.mjs\n", "  node tools/import-docs.mjs\n  curl -fsS https://gitlab.invalid/api\n");'
 split_case "the publish script running npm" tools/ci/nightly-publish.sh "runs npm" '
   y = y.replace("  echo \"== the artifact\"\n", "  echo \"== the artifact\"\n  npm ci --prefix tools\n");'
+
+# Cases (y1)-(y9) judge the same section once it reads .gitlab-ci.yml as YAML
+# (issue #52). yaml_pass_case <label> <js>: <js> edits the string y and must
+# change it; the whole lint must pass and print no line saying a job names the
+# docs-import or renovate environment (a job that only mentions them is no
+# member). The refusal cases use split_case: the lint must fail naming the job.
+yaml_pass_case() {
+  F="$ci" Y="$(cat "$ci")" JS="$2" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 0 ] && ! grep -Eq "names the (docs-import|renovate) environment" "$out" \
+    && grep -i '^==' "$out" | grep -iq 'docs import is split'; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0 and no job refused for naming an environment)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# Over-refusal: the words appear, no environment is joined.
+yaml_pass_case "a job running a script line that names renovate.json" '
+  y = y.replace("    - sh tools/ci/lint.sh\n", "    - sh tools/ci/lint.sh\n    - test -f renovate.json\n");'
+yaml_pass_case "a job with a trailing comment naming renovate.json" '
+  y = y.replace("    - sh tools/ci/lint.sh\n", "    - sh tools/ci/lint.sh # renovate.json is read by the renovate job\n");'
+yaml_pass_case "a job naming a renovate/ branch" '
+  y = y.replace("    - sh tools/ci/lint.sh\n", "    - sh tools/ci/lint.sh\n    - test \"$CI_COMMIT_BRANCH\" != renovate/marked-18.x\n");'
+# Under-refusal: valid YAML a line reader does not see, joining an environment.
+split_case "a job key with a trailing comment joining docs-import" $ci "sneaky names the docs-import environment" '
+  y = y + "\nsneaky: # note\n  stage: lint\n  environment: docs-import\n  script:\n    - \"true\"\n";'
+split_case "a job in flow style joining docs-import" $ci "sneaky names the docs-import environment" '
+  y = y + "\nsneaky: { stage: lint, environment: docs-import, script: [ \"true\" ] }\n";'
+split_case "a job with environment as a mapping joining docs-import" $ci "sneaky names the docs-import environment" '
+  y = y + "\nsneaky:\n  stage: lint\n  environment: { name: docs-import }\n  script:\n    - \"true\"\n";'
+split_case "a job key with a trailing comment joining renovate" $ci "sneaky names the renovate environment" '
+  y = y + "\nsneaky: # note\n  stage: lint\n  environment:\n    name: renovate\n  script:\n    - \"true\"\n";'
+split_case "a job in flow style joining renovate" $ci "sneaky names the renovate environment" '
+  y = y + "\nsneaky: { stage: lint, environment: { name: renovate }, script: [ \"true\" ] }\n";'
+split_case "a job with environment as a mapping joining renovate after a comment" $ci "sneaky names the renovate environment" '
+  y = y + "\nsneaky: # note\n  stage: lint\n  environment: { name: renovate } # tokens\n  script:\n    - \"true\"\n";'
 
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
