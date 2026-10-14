@@ -100,15 +100,107 @@ if (imp !== null) {
 // other string that is exactly e is refused; e inside a longer string
 // (renovate.json, a renovate/ branch) is not a name and passes.
 const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
+const named = new Set(); // `${k}\n${e}` already refused for naming e
+const varied = new Set(); // k already refused for a variable in an environment name
 for (const [k, v] of Object.entries(doc)) {
   for (const [e, j] of Object.entries(envs)) {
-    if (k !== j && strings(v).some((s) => s.trim() === e)) bad(`.gitlab-ci.yml: ${k} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
+    if (k !== j && strings(v).some((s) => s.trim() === e)) { named.add(`${k}\n${e}`); bad(`.gitlab-ci.yml: ${k} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`); }
   }
   // a variable in an environment name could resolve to a scoped one
   for (const env of environments(v)) {
     const n = envName(env);
-    if (typeof n === "string" && n.includes("$")) bad(`.gitlab-ci.yml: ${k} has environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
+    if (typeof n === "string" && n.includes("$")) { varied.add(k); bad(`.gitlab-ci.yml: ${k} has environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`); }
   }
+}
+
+// A job can also inherit a scoped environment without naming it (#52): by
+// `extends` (a name or a list, followed recursively, later parents and then the
+// job's own keys winning, mappings deep-merged as GitLab does) or by
+// `!reference [job, ..., environment]`. Each top-level key's environment is
+// resolved that way and judged by its name. Fails closed: an extends target
+// that is missing, an extends cycle, or a !reference that does not resolve is
+// refused, since the environment it would give cannot be judged.
+const GLOBAL = new Set(["default", "workflow", "variables", "stages", "include", "spec"]);
+const merge = (a, b) => {
+  if (!isObj(a) || !isObj(b)) return b;
+  const out = { ...a };
+  for (const [k, x] of Object.entries(b)) out[k] = Object.hasOwn(a, k) ? merge(a[k], x) : x;
+  return out;
+};
+const expanded = new Map(), expanding = [];
+// v with every !reference replaced by the value it points at (GitLab allows 10 levels)
+const resolve = (k, v, depth = 0) => {
+  if (Array.isArray(v)) return v.map((x) => resolve(k, x, depth));
+  if (!isObj(v)) return v;
+  if (Object.hasOwn(v, "!reference")) {
+    const path = v["!reference"];
+    const shown = `!reference [${(Array.isArray(path) ? path : [path]).map((p) => (typeof p === "string" ? p : JSON.stringify(p))).join(", ")}]`;
+    const no = (why) => { bad(`.gitlab-ci.yml: ${k} has ${shown}, which ${why}; the environment it gives cannot be judged`); return undefined; };
+    if (depth >= 10) return no("nests more than 10 references deep");
+    if (!Array.isArray(path) || path.length === 0 || !path.every((p) => typeof p === "string")) return no("is not a list of names");
+    if (!Object.hasOwn(doc, path[0])) return no(`points at ${path[0]}, which is not in the file`);
+    let at = expand(path[0]);
+    for (const p of path.slice(1)) {
+      if (!isObj(at) || !Object.hasOwn(at, p)) return no("does not resolve");
+      at = at[p];
+    }
+    return resolve(k, at, depth + 1);
+  }
+  const out = {};
+  for (const [x, y] of Object.entries(v)) out[x] = resolve(k, y, depth);
+  return out;
+};
+// a top-level key as GitLab runs it: its extends merged in, its references resolved
+function expand(k) {
+  if (expanded.has(k)) return expanded.get(k);
+  if (expanding.includes(k)) {
+    bad(`.gitlab-ci.yml: ${k} extends or references itself (${[...expanding.slice(expanding.indexOf(k)), k].join(" -> ")}); the environment it inherits cannot be judged`);
+    return {};
+  }
+  expanding.push(k);
+  const own = resolve(k, doc[k]);
+  let out = own;
+  if (isObj(own) && !GLOBAL.has(k) && Object.hasOwn(own, "extends")) {
+    const ext = own.extends;
+    const parents = typeof ext === "string" ? [ext] : Array.isArray(ext) ? ext.flat(Infinity) : [ext];
+    out = {};
+    for (const p of parents) {
+      if (typeof p !== "string") bad(`.gitlab-ci.yml: ${k} extends ${JSON.stringify(p)}, which is not a name; the environment it inherits cannot be judged`);
+      else if (!isObj(doc[p])) bad(`.gitlab-ci.yml: ${k} extends ${p}, which is not a job or template in the file; the environment it inherits cannot be judged`);
+      else out = merge(out, expand(p));
+    }
+    const rest = { ...own };
+    delete rest.extends;
+    out = merge(out, rest);
+  }
+  expanding.pop();
+  expanded.set(k, out);
+  return out;
+}
+// where k's environment named e came from: a !reference in its own environment,
+// else the last parent in its extends that has it
+const source = (k, e) => {
+  const raw = isObj(doc[k]) ? doc[k] : {};
+  const refs = [];
+  const walk = (v) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (isObj(v)) for (const [x, y] of Object.entries(v)) { if (x === "!reference" && Array.isArray(y)) refs.push(String(y[0])); else walk(y); }
+  };
+  walk(raw.environment);
+  if (refs.length) return `${[...new Set(refs)].join(", ")} by !reference`;
+  const parents = [raw.extends].flat(Infinity).filter((p) => typeof p === "string" && isObj(doc[p]));
+  const p = parents.reverse().find((q) => { const n = envName(expand(q).environment); return typeof n === "string" && n.trim() === e; });
+  return p ?? "its extends";
+};
+for (const k of Object.keys(doc)) {
+  const x = expand(k);
+  if (GLOBAL.has(k) || !isObj(x)) continue;
+  const n = envName(x.environment);
+  if (typeof n !== "string") continue;
+  for (const [e, j] of Object.entries(envs)) {
+    if (k !== j && n.trim() === e && !named.has(`${k}\n${e}`)) bad(`.gitlab-ci.yml: ${k} inherits the ${e} environment from ${source(k, e)}; only ${j} may, since the tokens there are scoped to it`);
+  }
+  if (n.includes("$") && !varied.has(k)) bad(`.gitlab-ci.yml: ${k} inherits environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
 }
 // another file could add a job this check never sees
 if ("include" in doc) bad(".gitlab-ci.yml: has a top-level include; a job in another file would escape this check");
