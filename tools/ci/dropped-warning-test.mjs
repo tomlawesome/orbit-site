@@ -179,6 +179,10 @@ for (const input of ["<p>a <font>b</font></p>", "<center>mid</center>", "<p>a</p
     "<xmp>some <b>words</b> here</xmp>", "<plaintext>some words here", "<title>some words</title>",
     "<noscript>some words</noscript>", "<iframe>some words</iframe>", "<noembed>some words</noembed>",
     "<noframes>some words</noframes>", "<svg><![CDATA[some words]]></svg>", "<math><![CDATA[some words]]></math>",
+    // a body that looks like markup is still raw text (or plain text), so each rule is pinned on its own
+    "<xmp><b>x</b></xmp>", "<noscript><b>x</b></noscript>", "<plaintext><b>x", "<title><b>x</b></title>", "<iframe><b>x</b></iframe>",
+    // the first </textareax> is not the end tag: the element runs to the real </textarea>
+    "<textarea>a</textareax>b</textarea>c",
   ];
   for (const input of rawBlocks) {
     const output = sanitise(input);
@@ -212,6 +216,9 @@ const readerRules = [
   ["a<!-x>b", "ab"], ["<!-x>shown", "shown"], ["a<!-x y>b", "ab"], ["a<!-x --> b", "a b"], ["a<!-x<p>y</p>", "ay"],
   ["a<!->b", "ab"], ["<!->shown", "shown"], ["a<!->b -->c", "ab -->c"], ["x<!-x>y<!->z", "xyz"],
   ["a<!-", "a"], ["a<!-x", "a"], ["<p>a</p><!-", "a"],
+  // a legacy named reference (no ; needed) cut off at the end of a run by a comment: the browser decodes the
+  // longest legacy prefix there (&not is the legacy prefix of &notin, so it shows the not sign then "in")
+  ["a&nbsp<!-- -->x", "a x"], ["a&copy<!-- -->x", "a\u00a9x"], ["a&Aacute<!-- -->x", "a\u00c1x"], ["a&notin<!-- -->x", "a\u00acinx"],
   // a lone </ at the end of the block is text
   ["a</", "a</"], ["<p>a</", "a</"],
 ];

@@ -136,4 +136,14 @@ shows("join: & and nbsp;", "&<!-- x -->nbsp;", "&nbsp;");
 shows("join: a reference without ; ends at the comment", "a&amp<!-- x -->;b", "a&;b");
 shows("join: &lt without ; ends at the comment", "a&lt<!-- x -->b", "a<b");
 
+// ---- raw-text elements whose body looks like markup: the block is refused whole ----
+// (the browser shows the body as text, so the importer warns: dropped-warning-test.mjs checks that)
+shows("raw text: <xmp> holding markup", "<xmp><b>x</b></xmp>", "");
+shows("raw text: <noscript> holding markup", "<noscript><b>x</b></noscript>", "");
+shows("raw text: <plaintext> holding markup", "<plaintext><b>x", "");
+shows("raw text: <title> holding markup", "<title><b>x</b></title>", "");
+shows("raw text: <iframe> holding markup", "<iframe><b>x</b></iframe>", "");
+// the end tag must be </textarea> exactly: </textareax> is not it, so the element runs on to the real one
+shows("raw text: </textareax> does not end a <textarea>", "<textarea>a</textareax>b</textarea>c", "");
+
 process.exit(failed ? 1 : 0);
