@@ -29,10 +29,13 @@
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/flight-context-loss-test.mjs
  *
  * (or `sh tools/ci/journey-local.sh`'s environment: Firefox headed under Xvfb with software GL; headless draws no
- * world). The page is forced to the live door (`?preview&door3d&gpu=force&level=2`, CAPABILITIES.md) in a small window
- * (400x250, smaller than door-lows-test.mjs L3's 480x300) so software GL passes the flight world's fitness test ('flight world: on'), with
- * the kept probe seeded as there. A run that cannot be judged (no WebGL2, the flight world judged off, the loss coming
- * after the climb) says so and fails, rather than passing for nothing. The whole run has its own deadline
+ * world). The page is forced to the live door (`?preview&door3d&gpu=force&level=2`, CAPABILITIES.md) with the lean weight
+ * (`&lean`) and the flight world's speed test not run (`&fit=skip`: the world is taken as fit, `flight world: on (fitness
+ * skipped)`), so no runner timing decides which path the flight takes (owner decision 2026-10-14: CI runners have no GPU
+ * and shared CPUs, so software-GL timings prove nothing; speed is judged on real browsers). The window is small (400x250)
+ * only to keep software GL's draw cost down. The kept probe is seeded as in door-lows-test.mjs. A run that cannot be judged
+ * (no WebGL2, the flight world not on, the climb already over when measured) says so and fails, rather than passing for
+ * nothing. The whole run has its own deadline
  * (DEADLINE_MS, default 8 minutes).
  */
 import { spawn } from "node:child_process";
@@ -180,13 +183,14 @@ const perCanvas = async (page) => {
 const isDrawn = (look) => look.share > DRAWN && look.moved > MOVED;
 const show = (look) => `drawn ${look.share.toFixed(3)}, moving ${look.moved.toFixed(3)}`;
 
-/* the host is shared and software GL is slow: a page whose flight world is judged too slow (off) is tried again */
-class TooSlow extends Error {}
+/* the climb is a race against the runner's pace, not a speed verdict: a page whose flight was already over when it was
+   measured is tried again */
+class TooLate extends Error {}
 const TRIES = Number(process.env.FLIGHT_TRIES || 8);
 const retrying = async (run) => {
   for (let n = 1; ; n++) {
     try { return await run(); } catch (e) {
-      if (!(e instanceof TooSlow) || n >= TRIES) throw e;
+      if (!(e instanceof TooLate) || n >= TRIES) throw e;
       progress(`try ${n} could not be judged (${e.message.slice(0, 90)}); trying again`);
     }
   }
@@ -196,9 +200,9 @@ const retrying = async (run) => {
 const atGate = async (page, what) => {
   const ok = await page.evaluate(() => !!document.createElement("canvas").getContext("webgl2"));
   if (!ok) throw new Error(`no WebGL2 in ${BROWSER} here (headed Firefox under Xvfb with software GL is needed): the flight is never drawn`);
-  await page.goto(`${SITE}?${LIVE}&lean`, { waitUntil: "load" });
+  await page.goto(`${SITE}?${LIVE}&lean&fit=skip`, { waitUntil: "load" });
   await page.waitSaid(/flight world: (on|off)/, 150000, `${what}: the flight world's verdict`);
-  if (!page.said(/flight world: on/).length) throw new TooSlow(`${what}: the flight's world was judged off (${page.said(/flight world:/)[0].text.slice(0, 100)}), so the flight is not drawn in WebGL; a busy host or a window too big for software GL`);
+  if (!page.said(/flight world: on/).length) throw new Error(`${what}: the flight's world is not on although fit=skip was asked (${page.said(/flight world:/)[0].text.slice(0, 100)})`);
   await page.waitForFunction(() => !!document.querySelector("#gate") && document.body.classList.contains("lit"), null, { timeout: 90000 });
   await sleep(2000);
 };
@@ -233,7 +237,7 @@ const controlFlight = async (lostFirst) => {
     await sleep(500);
     const cls = await bodyClass(page);
     const look = await flightLook(page);
-    if (isBare(cls)) throw new TooSlow(`${what}: already at the bare sky when measured`);
+    if (isBare(cls)) throw new TooLate(`${what}: already at the bare sky when measured`);
     const per = await perCanvas(page);
     return { ...look, parts: per.text, warp: per.warp, draws: (await page.evaluate(() => window.__flightDraws)) - drawsAtClick, lost, errors: page.errors.slice() };
   } finally { await ctx.close(); }
@@ -251,7 +255,7 @@ const lostMidFlight = async (notes, when, extraMs, need) => {
     const underWay = await bodyClass(page);
     await sleep(500 + extraMs);
     const cls = await bodyClass(page);
-    if (extraMs && isBare(cls)) throw new TooSlow(`${when} loss: already at the bare sky`);
+    if (extraMs && isBare(cls)) throw new TooLate(`${when} loss: already at the bare sky`);
     const result = { drewInWebgl: drew > drawsAtClick + 5, underWay: !isBare(underWay) && !isBare(cls) };
     if (!result.drewInWebgl || !result.underWay) { result.cls = cls; result.errors = page.errors.slice(); return result; }
     const drawsBefore = await page.evaluate(() => window.__flightDraws);

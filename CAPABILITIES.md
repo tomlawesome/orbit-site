@@ -74,6 +74,7 @@ live rich (?level=2)`), but only under `?door3d` and once the GPU is accepted an
 there is no probe, the level is 0 and `?level=` changes nothing. It never grants the GPU. It beats reduced motion,
 save-data, a lean frame predicted over 16 ms and page-thread compiles. At level 2 `&rich` and `&lean` still force
 the weight, at level 1 the weight is lean whatever they say.
+`?fit=skip` does not run the flight world's speed test and takes the world as fit (`flight world: on (fitness skipped)`); for CI tests on software GL, where frame times prove nothing. It grants no GPU.
 While the live door is tried it is drawn only with `?door3d`: without it every level ships the still door, and the
 level line is all that changes.
 
