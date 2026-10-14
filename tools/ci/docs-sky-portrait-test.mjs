@@ -1,0 +1,82 @@
+/*
+ * Tests for #51 (the docs' sky on a phone), option B, written from the specification alone (owner, 2026-10-14):
+ *
+ *   On a portrait screen (taller than wide; the site's portrait threshold is `max-aspect-ratio: 10/11`, that is
+ *   width / height <= 10/11) the docs flight's camera comes to rest further from the galaxy's core than on a landscape
+ *   screen, so the whole spiral fills the height. On landscape screens nothing changes. The docs page then wears a second,
+ *   tall picture, assets/img/docs/milkyway-sky-tall.webp, drawn by tools/docsky.cjs and listed like every picture.
+ *
+ *   node tools/ci/docs-sky-portrait-test.mjs
+ *
+ * No browser and no dependencies. Needs from the door (the builder adds it; assets/door/index.js is the only file a host
+ * imports, so it is exported there):
+ *
+ *   docsRest({ width, height }) -> { distance }
+ *
+ * where width and height are the screen's size in CSS pixels, and distance is how far the docs flight's camera comes to
+ * rest from the galaxy's core (the galaxy's own units, the ones engine.js: PATH is in). Today the door exposes no way
+ * to ask: the resting point is the last point of engine.js PATH, [0.56, 0.006, 0], for every screen, 0.56 from the core
+ * (read from the code, 2026-10-14). The distance is a plain number, `distance`, however the builder builds the point.
+ *
+ *   P1  390x844 (a phone) rests further out than 1920x1080 (a laptop).
+ *   P2  1920x1080 is unchanged from today: 0.56 (within 0.001).
+ *   P3  1280x800 (another laptop) is unchanged too: 0.56. Landscape does not depend on the exact size.
+ *   P4  the threshold is the site's: 900x1000 (0.9, portrait) rests further out than 1000x1000 (square, landscape) and
+ *       than 1100x1000 (landscape), and those two are today's 0.56.
+ *   P5  the tall picture is tracked by git, so the lint's MEDIA name (sw.js) follows it, and README.md lists it (a row
+ *       naming milkyway-sky-tall.webp, as it lists milkyway-sky.webp).
+ */
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+let failed = false;
+const check = (name, ok, detail) => {
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${detail}`);
+  if (!ok) failed = true;
+};
+
+/* today's value, read from the code (a note, not a check: the builder may rebuild PATH) */
+let today = null;
+try {
+  const { PATH } = await import("../../assets/door/engine.js");
+  today = Math.hypot(...PATH[PATH.length - 1]);
+} catch { /* engine.js needs a page in some builds; the recorded 0.56 stands */ }
+const TODAY = 0.56;
+console.log(`note: the resting distance in the code today is ${today == null ? "(not read)" : today.toFixed(4)}; recorded: ${TODAY}`);
+
+let docsRest = null, importError = null;
+try {
+  ({ docsRest } = await import("../../assets/door/index.js"));
+} catch (e) { importError = String(e && e.message || e).split("\n")[0]; }
+
+const rest = (width, height) => {
+  if (typeof docsRest !== "function") return NaN;
+  const r = docsRest({ width, height });
+  return typeof r?.distance === "number" ? r.distance : NaN;
+};
+const num = (x) => (Number.isFinite(x) ? x.toFixed(4) : "no value");
+const missing = typeof docsRest === "function" ? "" : ` (assets/door/index.js exports no docsRest${importError ? `: import failed: ${importError}` : ""})`;
+const near = (a, b) => Number.isFinite(a) && Math.abs(a - b) <= 0.001;
+
+const phone = rest(390, 844), laptop = rest(1920, 1080), laptop2 = rest(1280, 800);
+check("P1 a phone (390x844) rests further from the core than a laptop (1920x1080)",
+  Number.isFinite(phone) && Number.isFinite(laptop) && phone > laptop, `phone ${num(phone)}, laptop ${num(laptop)}${missing}`);
+check("P2 1920x1080 is unchanged from today", near(laptop, TODAY), `${num(laptop)} (want ${TODAY})${missing}`);
+check("P3 1280x800 is unchanged from today", near(laptop2, TODAY), `${num(laptop2)} (want ${TODAY})${missing}`);
+
+const portrait = rest(900, 1000), square = rest(1000, 1000), wideish = rest(1100, 1000);
+check("P4 the threshold is the site's (10/11): 900x1000 further out; 1000x1000 and 1100x1000 as today",
+  Number.isFinite(portrait) && portrait > TODAY + 0.001 && near(square, TODAY) && near(wideish, TODAY),
+  `900x1000 ${num(portrait)}, 1000x1000 ${num(square)}, 1100x1000 ${num(wideish)} (want first > ${TODAY}, others ${TODAY})${missing}`);
+
+const pic = "assets/img/docs/milkyway-sky-tall.webp";
+let tracked = false;
+try { execFileSync("git", ["ls-files", "--error-unmatch", "--", pic], { cwd: root, stdio: "ignore" }); tracked = true; } catch { /* not tracked */ }
+const readme = readFileSync(resolve(root, "README.md"), "utf8");
+check("P5 the tall picture is tracked by git (so sw.js's MEDIA name follows it) and README.md lists it",
+  tracked && readme.includes("milkyway-sky-tall.webp"), `tracked ${tracked}, README names it ${readme.includes("milkyway-sky-tall.webp")}`);
+
+process.exit(failed ? 1 : 0);
