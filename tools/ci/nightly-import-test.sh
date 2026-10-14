@@ -18,18 +18,24 @@
 #
 #   sh tools/ci/nightly-import-test.sh      run from anywhere inside the repository
 #
-# Part 2 also tries the git config the runner's own clone writes (#57): an
-# include.path is accepted only as an absolute path to a regular, non-symlink
-# file inside the runner's own folder beside the checkout, <checkout>.tmp/
-# (where it keeps its git template config), and then only if the file holds
-# allowed keys, with lfs.repositoryformatversion (runnerinc). Anything else is
-# refused naming include.path: a relative path (increl), one into the work tree
-# (incwork) or into .git (incgit), a missing file (include), an absolute file
-# elsewhere (incelse), a symlink under <checkout>.tmp/ (inclink), a value with a
-# tab in it that is not itself an existing file there (inctab); any includeIf is
-# refused too (includeif). Keys in an accepted included file are judged by the
-# same allowlist (incssh core.sshCommand, incfsmon core.fsmonitor, incfilter
-# filter.x.clean), nested includes too (incnest, incnestmiss).
+# Part 2 also tries the git config the runner's own clone writes (#57, #60):
+# the runner copies its template config into .git/config and adds an
+# include.path to <checkout>.tmp/.gitlab-runner.ext.conf (holding its own keys
+# and lfs.repositoryformatversion: runnerinc). That is the only include
+# accepted: the value must be exactly that absolute path, a regular file, not a
+# symlink, with that real path. Anything else is refused naming include.path:
+# another file in <checkout>.tmp/ (incevil, incgtpl), a sibling folder with the
+# same prefix (incsib), a path with .. (incdots, incdotsame), <checkout>.tmp as
+# a symlink (incdirlink), the file as a symlink (inclink), a relative path that
+# means something else from .git/ (increlcwd, increl), one into the work tree
+# (incwork) or .git (incgit), a missing file (include), a file elsewhere
+# (incelse), a value with a tab in it (inctab); any includeIf is refused too
+# (includeif). Keys in the accepted file are judged by the allowlist (incssh
+# core.sshCommand, incfsmon core.fsmonitor, incfilter filter.x.clean); a nested
+# include is refused, naming its key (incnest, incnestmiss). An include cycle stops the job
+# with "could not list" (inccycle). A value with a newline in it is one value,
+# not two keys (nlval accepted, nlreal refused for its real core.sshCommand).
+# No file is left in TMPDIR after a refused run.
 #
 # Runs on a scratch copy of the current commit, so the checkout is untouched.
 # npm, node, git, curl and sleep are shims first on PATH that log what they were
@@ -39,7 +45,7 @@ set -eu
 root=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)
 aux=$(mktemp -d)          # shims, state and logs; outside the scratch repo
-trap 'rm -rf "$tmp" "$tmp.tmp" "$aux"' EXIT
+trap 'rm -rf "$tmp" "$tmp.tmp" "$tmp.tmpX" "$tmp.elsewhere" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
 # a second, untouched copy: the publish script pins its host, and the copy under
@@ -93,7 +99,7 @@ reset_tree() {
   cp "$aux/config.orig" .git/config
   find .git/hooks -type f ! -name '*.sample' -delete
   rm -f .git/fsm .git/info/attributes .git/inc.cfg
-  rm -rf "$PWD.tmp"          # the runner's folder beside the checkout
+  rm -rf "$PWD.tmp" "$PWD.tmpX" "$PWD.elsewhere"   # the runner's folder beside the checkout, and look-alikes
 }
 
 # What the runner's artifact upload would hold, good and hostile. mkzip.py <out>
@@ -384,7 +390,7 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = benign ] || [ "$SCENARIO" = scriptel ] || [ "$SCENARIO" = handler ] || [ "$SCENARIO" = jsurl ] || [ "$SCENARIO" = svgel ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ] || [ "$SCENARIO" = runnerinc ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = benign ] || [ "$SCENARIO" = scriptel ] || [ "$SCENARIO" = handler ] || [ "$SCENARIO" = jsurl ] || [ "$SCENARIO" = svgel ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ] || [ "$SCENARIO" = runnerinc ] || [ "$SCENARIO" = nlval ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -458,22 +464,60 @@ prepare() {
     cfgonly) # the filter without the attributes file: still refused
       printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" >> .git/config ;;
     include) printf '[include]\n\tpath = /nonexistent\n' >> .git/config ;;
-    runnerinc) # the runner's own clone: include.path to an absolute file in <checkout>.tmp/, allowed keys only
+    runnerinc) # the runner's own layout: .git/config includes <checkout>.tmp/.gitlab-runner.ext.conf (its keys + lfs)
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n[lfs]\n\trepositoryformatversion = 0\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incevil) # another file in <checkout>.tmp/, allowed keys
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/evil"
+      printf '[include]\n\tpath = %s.tmp/evil\n' "$PWD" >> .git/config ;;
+    incgtpl) # the runner's template folder file: not the one include accepted
       mkdir -p "$PWD.tmp/git-template"
-      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n' > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n[lfs]\n\trepositoryformatversion = 0\n' "$PWD" >> .git/config ;;
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/git-template/config"
+      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
+    incsib) # a sibling folder with the same prefix, the right file name inside, allowed keys
+      mkdir -p "$PWD.tmpX"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmpX/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmpX/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incdots) # a path through <checkout>.tmp/.. that resolves to another folder holding the file
+      mkdir -p "$PWD.tmp" "$PWD.elsewhere"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.elsewhere/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/../%s.elsewhere/.gitlab-runner.ext.conf\n' "$PWD" "${PWD##*/}" >> .git/config ;;
+    incdotsame) # a path with .. that resolves to the right file: not the exact value, so refused
+      mkdir -p "$PWD.tmp/sub"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/sub/../.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incdirlink) # <checkout>.tmp is a symlink to another folder that holds the file
+      mkdir -p "$aux/runnerdir"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$aux/runnerdir/.gitlab-runner.ext.conf"
+      ln -s "$aux/runnerdir" "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    inclink) # the file itself is a symlink to a regular file with the right name
+      mkdir -p "$PWD.tmp/real"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/real/.gitlab-runner.ext.conf"
+      ln -s "$PWD.tmp/real/.gitlab-runner.ext.conf" "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    increlcwd) # relative: from the checkout it is the right file, from .git/ (where git resolves it) another one
+      mkdir -p "$PWD.tmp" "$PWD/${PWD##*/}.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD/${PWD##*/}.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = ../%s.tmp/.gitlab-runner.ext.conf\n' "${PWD##*/}" >> .git/config ;;
+    inccycle) # the accepted file includes itself: git cannot list the config
+      mkdir -p "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    nlval) # one value with a newline and key-shaped text in it, in an allowed key: one value, accepted
+      printf '[remote "origin"]\n\turl = "https://gitlab.invalid/ai/orbit-site.git\\ncore.sshCommand=evil"\n' >> .git/config ;;
+    nlreal) # the same value, and a real core.sshCommand after it: refused for the real one
+      printf '[remote "origin"]\n\turl = "https://gitlab.invalid/ai/orbit-site.git\\ncredential.helper=x"\n[core]\n\tsshCommand = evil\n' >> .git/config ;;
     incelse) # an absolute include.path to a harmless file elsewhere (outside the checkout and <checkout>.tmp/)
       printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$aux/runner.cfg"
       printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
-    inclink) # a symlink under <checkout>.tmp/ to a file of allowed keys elsewhere
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$aux/target.cfg"
-      ln -s "$aux/target.cfg" "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
-    inctab) # a value with a tab: the part before it is a good file, the whole value is not a file
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/git-template/ok.cfg"
-      printf '[include]\n\tpath = %s.tmp/git-template/ok.cfg\tx\n' "$PWD" >> .git/config ;;
+    inctab) # a value with a tab: the part before it is the right file, the whole value is not a file
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\tx\n' "$PWD" >> .git/config ;;
     increl) # a relative include.path: git resolves it against .git/, so this reaches the work tree
       printf '[credential]\n\tinteractive = never\n' > inc.cfg
       printf '[include]\n\tpath = ../inc.cfg\n' >> .git/config ;;
@@ -483,27 +527,27 @@ prepare() {
     incgit) # an absolute include.path to a file under .git (inside the work tree)
       printf '[credential]\n\tinteractive = never\n' > .git/inc.cfg
       printf '[include]\n\tpath = %s/.git/inc.cfg\n' "$PWD" >> .git/config ;;
-    incssh) # an include in <checkout>.tmp/ holding core.sshCommand
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
-    incfsmon) # an include in <checkout>.tmp/ naming an fsmonitor program
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[core]\n\tfsmonitor = %s/fsm\n' "$aux" > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
-    incfilter) # an include in <checkout>.tmp/ holding a clean filter
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
-    incnest) # an include in <checkout>.tmp/ that includes a second one there holding core.sshCommand
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/git-template/config2"
-      printf '[include]\n\tpath = %s.tmp/git-template/config2\n' "$PWD" > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
-    incnestmiss) # an include in <checkout>.tmp/ that includes a missing file
-      mkdir -p "$PWD.tmp/git-template"
-      printf '[include]\n\tpath = %s.tmp/git-template/no-such-file.cfg\n' "$PWD" > "$PWD.tmp/git-template/config"
-      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
+    incssh) # the accepted include holding core.sshCommand
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incfsmon) # the accepted include naming an fsmonitor program
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tfsmonitor = %s/fsm\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incfilter) # the accepted include holding a clean filter
+      mkdir -p "$PWD.tmp"
+      printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incnest) # the accepted include includes a second file in <checkout>.tmp/ holding core.sshCommand
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/second.cfg"
+      printf '[include]\n\tpath = %s.tmp/second.cfg\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incnestmiss) # the accepted include includes a missing file
+      mkdir -p "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/no-such-file.cfg\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
     includeif) # a conditional include, even to a harmless file
       printf '[credential]\n\tinteractive = never\n' > "$aux/runner.cfg"
       printf '[includeIf "gitdir:/x"]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
@@ -786,20 +830,32 @@ done
 run_push "$out" runnerinc
 rcz=$rc
 rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" && ! grep -q "checkout's git" "$out" || rc=1
-check "job 2: runnerinc, an include.path to a file of allowed keys in the runner folder beside the checkout, with lfs.repositoryformatversion, is accepted (exit $rcz)" "$rc"
+check "job 2: runnerinc, the runner's layout (include.path to <checkout>.tmp/.gitlab-runner.ext.conf with its keys and lfs.repositoryformatversion), is accepted (exit $rcz)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 # refused, and the refusal names the key: <scenario>:<key>
 for pair in increl:include.path incwork:include.path incgit:include.path include:include.path \
   incelse:include.path inclink:include.path inctab:include.path \
+  incevil:include.path incgtpl:include.path incsib:include.path incdots:include.path incdotsame:include.path \
+  incdirlink:include.path increlcwd:include.path \
   incssh:core.sshCommand incfsmon:core.fsmonitor incfilter:filter.x.clean incnest:core.sshCommand \
-  incnestmiss:include.path includeif:includeif.gitdir:/x.path; do
+  incnestmiss:include.path includeif:includeif.gitdir:/x.path nlreal:core.sshCommand inccycle:"could not list"; do
   sc=${pair%%:*}; key=${pair#*:}
   run_push "$out" "$sc"
   rcz=$rc
-  rc=0; [ "$rcz" -ne 0 ] && grep -q "checkout's git" "$out" && grep -qiF "$key" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+  rc=0; [ "$rcz" -ne 0 ] && grep -qiF "$key" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+  [ "$sc" = inccycle ] || grep -q "checkout's git" "$out" || rc=1
   check "job 2: a checkout git config with $sc is refused, naming $key (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+  # the listing file lives in the script's own scratch folder: nothing is left in TMPDIR
+  rc=0; [ -z "$(ls -A scratch-tmp)" ] || rc=1
+  check "job 2: after refusing $sc, nothing is left in TMPDIR" "$rc"
+  [ "$rc" -eq 0 ] || ls -A scratch-tmp | sed 's/^/     left: /'
 done
+run_push "$out" nlval
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" && ! grep -q "checkout's git" "$out" || rc=1
+check "job 2: nlval, a remote.origin.url holding a newline and text shaped like core.sshCommand, is one value and is accepted (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 run_push "$out" runnerlike
 rcz=$rc
 rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" || rc=1
