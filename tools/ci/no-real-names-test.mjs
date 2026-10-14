@@ -241,6 +241,104 @@ pathCase("scanPaths: a private address in a file name is masked", ["docs/host-" 
   check("scanPaths: without the digests the same paths are not reported", Array.isArray(u) && u.length === 0, Array.isArray(u) ? `${u.length} report(s)` : "missing or failed");
 }
 
+// ---- Round 3 (#60 re-review, specs/names-r3.md). Invented values only, built from parts.
+
+// Item 1: no report ever prints a raw path holding a banned value. A file whose path AND content both hold a banned
+// value must give reports with none of it anywhere, and the banned part shown as ***.
+const addr7 = quad(10, 0, 0, 7);
+const hitsFor = (files, env) => { const r = probe({ files }, env); return Array.isArray(r.hits) ? r.hits : null; };
+const noLeak = (name, files, env, hidden) => {
+  const h = hitsFor(files, env);
+  const leaked = Array.isArray(h) && h.some((x) => hidden.some((v) => x.toLowerCase().includes(v.toLowerCase())));
+  check(name, Array.isArray(h) && h.length > 0 && !leaked && h.every((x) => x.includes("***")),
+    h === null ? "no result" : h.length === 0 ? "nothing reported" : leaked ? "a report holds the banned value" : "a report has no *** mask");
+};
+const envWL = { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W), NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(L), NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) };
+noLeak("scan report: a banned word in a directory name is masked when the content also hits", [{ name: `docs/${W}/notes.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: a banned word in a file name is masked when the content also hits", [{ name: `docs/notes-${W}.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: a banned word in capitals in a path is masked", [{ name: `docs/${W.toUpperCase()}/notes.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: home/<login> in a path is masked when the content also hits", [{ name: `home/${L}/x.txt`, text: `under /home/${L}/work\n` }], envWL, [L]);
+noLeak("scan report: a private address in a file name is masked when the content also hits", [{ name: `docs/host-${addr7}.txt`, text: `host ${addr7}\n` }], {}, [addr7]);
+noLeak("scan report: a private address in a directory name is masked when the content also hits", [{ name: `docs/${addr7}/notes.txt`, text: `host ${addr7}\n` }], {}, [addr7]);
+noLeak("scan report: a banned email in a file name is masked when the content also hits", [{ name: `docs/${E}.txt`, text: `write to ${E}\n` }], envWL, [E]);
+{
+  const h = hitsFor([{ name: `docs/${W}/notes.txt`, text: `fine\nthe ${W} case\nfine\nthe ${W}s again\n` }], envWL);
+  check("scan report: each hit in a masked path still ends with its own line number", Array.isArray(h) && h.length === 2 && /:2$/u.test(h[0]) && /:4$/u.test(h[1]) && h.every((x) => !x.toLowerCase().includes(W)), JSON.stringify(h && h.map((x) => x.replace(W, "?"))));
+}
+check("scan report: a clean path keeps its name in full", same(hitsFor([{ name: "docs/notes.txt", text: `the ${W} case\n` }], envWL), ["docs/notes.txt:1"]), "name changed");
+
+// Item 2: email matching is linear. One 200,000-letter line with no @ must be scanned in under 2 s. The text is built
+// inside the child process (an environment variable cannot carry 200,000 characters), which times scan itself.
+const SPEED_CHILD = `
+const g = await import(process.env.PROBE_URL);
+const text = process.env.PROBE_SHAPE === "letters" ? "a".repeat(200000) + "\\n" : "ab.".repeat(33333) + "\\n" + "x-".repeat(50000) + "\\n";
+const t0 = Date.now();
+const hits = g.scan([{ name: "f.txt", text }]);
+console.log(JSON.stringify({ ms: Date.now() - t0, hits }));
+`;
+const speedProbe = (shape) => {
+  try {
+    const t0 = Date.now();
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", SPEED_CHILD], {
+      env: { ...cleanEnv(), PROBE_URL: guardUrl, PROBE_SHAPE: shape, ...envWL },
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000,
+    });
+    return { ...JSON.parse(stdout.trim().split("\n").pop()), wall: Date.now() - t0 };
+  } catch (e) { return { error: String(e.message).split("\n")[0], ms: 99999 }; }
+};
+for (const [label, shape] of [["a 200,000-letter line with no @", "letters"], ["200,000 characters of letters and separators with no @", "mixed"]]) {
+  const r = speedProbe(shape);
+  check(`scan speed: ${label} is clean and takes under 2 s`, r.error === undefined && same(r.hits, []) && r.ms < 2000, r.error ?? `${r.ms} ms, result ${JSON.stringify(r.hits)}`);
+}
+
+// Item 3: a banned address is found however it is glued into text, in any letter case.
+const [eLocal, eDomain] = E.split("@");
+const glued = [
+  ["after a path and a dash", `docs/notes-${E}`],
+  ["after a dash", `-${E}`],
+  ["after a letter run and an underscore", `abc_${E}`],
+  ["after a digit run and a dot", `123.${E}`],
+  ["after a letter run and a plus", `abc+${E}`],
+  ["after a letter run and a percent sign", `abc%${E}`],
+  ["after a percent sign", `%${E}`],
+  ["between underscores", `_${E}_`],
+  ["as a file name with an extension", `docs/${E}.txt`],
+  ["before a sentence word joined by a dot", `${E}.Thanks`],
+  ["before a dash and letters", `${E}-abc`],
+  ["before an underscore and a digit", `${E}_2`],
+  ["before a plus and a tag", `${E}+tag`],
+  ["percent-encoded @", `${eLocal}%40${eDomain}`],
+  ["percent-encoded @ in a mailto link", `mailto:${eLocal}%40${eDomain}?subject=x`],
+  ["percent-encoded angle brackets", `%3C${E}%3E`],
+  ["percent-encoded angle brackets in lower case", `%3c${E}%3e`],
+  ["percent-encoded angle brackets and @", `%3C${eLocal}%40${eDomain}%3E`],
+  ["in capitals after a dash", `docs/notes-${E.toUpperCase()}`],
+  ["in capitals between underscores", `_${E.toUpperCase()}_`],
+  ["in capitals and percent-encoded", `${eLocal.toUpperCase()}%40${eDomain.toUpperCase()}`],
+  ["in mixed case before a dot word", `${E[0].toUpperCase()}${E.slice(1)}.Thanks`],
+];
+for (const [label, text] of glued) hitsAre(`email glue: ${label}`, `fine\n${text}\n`, ["f.txt:2"]);
+hitsAre("email glue: an unrelated address glued the same ways is clean", `docs/notes-other.person@${eDomain}\n_other.person@${eDomain}_\nother.person%40${eDomain}\n%3Cother.person@${eDomain}%3E\n`, []);
+hitsAre("email glue: the glued forms are clean when the digest is not set", `docs/notes-${E}\n_${E}_\n${eLocal}%40${eDomain}\n${E}.Thanks\n`, [], {});
+hitsAre("email glue: a longer local part is not the banned one", `zz${eLocal}@${eDomain} and ${eLocal}z@${eDomain}\n`, []);
+// in paths (reports mask the path, never print the address)
+const pathReports = (names, env) => pathProbe(names, env);
+for (const [label, name] of [["a file name", `docs/${E}.txt`], ["after a dash", `docs/notes-${E}`], ["in capitals", `docs/${E.toUpperCase()}.txt`]]) {
+  const r = pathReports([name], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
+  check(`email glue in a path: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && !r[0].toLowerCase().includes(E), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+{
+  const r = pathReports([`docs/${E}.txt`], {});
+  check("email glue in a path: not reported without the digest", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+
+// Item 4: a private IPv6 address followed by a colon is found.
+const ula6 = v6("fd7a", "115c", "", "1");
+hitsAre("ipv6: a unique-local address followed by a colon", `fine\nat ${ula6}: refused\n`, ["f.txt:2"], {});
+hitsAre("ipv6: a link-local address followed by a colon", `at ${v6("fe80", "", "1")}: refused\n`, ["f.txt:1"], {});
+hitsAre("ipv6: a full-form unique-local address followed by a colon", `${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}: refused\n`, ["f.txt:1"], {});
+hitsAre("ipv6: a documentation address followed by a colon is clean", `at ${v6("2001", "db8", "", "1")}: refused\n`, [], {});
+
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
 check("real tree and history: the guard exits 0", real.status === 0, `exit ${real.status}: ${String(real.stdout).split("\n").slice(0, 3).join(" | ")}`);
