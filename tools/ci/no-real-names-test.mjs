@@ -146,8 +146,8 @@ for (const [name, n] of [["BANNED_WORDS", 1], ["BANNED_LOGINS", 2], ["BANNED_EMA
 }
 
 // Extra digests from the environment, one variable per category (#60 item 1). Invented values only.
-const W = "zyxwordq";
-const L = "zyxloginq";
+const W = "zyx" + "wordq"; // built from parts, so this file holds no planted value
+const L = "zyx" + "loginq";
 const E = ["zyx.probe", "example.invalid"].join("@");
 const extra = {
   NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W),

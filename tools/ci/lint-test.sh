@@ -1211,7 +1211,8 @@ git reset -q --hard HEAD~1
 # ---- Cases n7 and on (#60): the hardened guard. Invented values only: "banned" is made by planting the sha256 of the
 # lower-cased value in the matching extra-digest variable. Every refusal is paired with a run without the digest that
 # passes, so a case cannot pass by the guard refusing everything.
-nw="zyxwordq"; nl="zyxloginq"; ne="zyx.probe@example.invalid"
+# built from parts, so this file holds none of them and the controls that plant a digest judge only the probe
+nw="zyx""wordq"; nwc="Zyx""wordq"; nl="zyx""loginq"; ne="zyx.probe""@example.invalid"
 sha() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
 nw_d=$(sha "$nw"); nl_d=$(sha "$nl"); ne_d=$(sha "$ne")
 
@@ -1229,7 +1230,7 @@ n_text() {
 # Cases n7-n9: a banned word, login and email in tracked text (items 1 and 3).
 n_text "a banned word in a tracked file" "the $nw case" w "$nw"
 n_text "a banned login (/home/<login>) in a tracked file" "files under /home/$nl/work" l "$nl"
-n_text "a banned email in a tracked file" "write to Zyx.Probe@Example.Invalid today" e "$ne"
+n_text "a banned email in a tracked file" "write to Zyx.Probe""@Example.Invalid today" e "$ne"
 # Case n10: all three variables at once, each on its own line.
 printf '%s\n' "the $nw case" "files under /home/$nl/work" "write to $ne today" >> README.md
 ln=$(wc -l < README.md | tr -d ' ')
@@ -1324,8 +1325,8 @@ hist_name_clean() {
   n_clean "$1 is not reported, even with the word planted"
   n_back
 }
-hist_name_clean "a banned word in the author name" "Zyxwordq Tester" t
-hist_name_clean "a banned word in the committer name" t "Zyxwordq Tester"
+hist_name_clean "a banned word in the author name" "$nwc Tester" t
+hist_name_clean "a banned word in the committer name" t "$nwc Tester"
 hist_case "a banned login as the author name" "$nl" t "name probe" "" "author" "committer" "" "$nl_d" "" "$nl"
 hist_case "a banned login as the committer name" t "$nl" "name probe" "" "committer" "author" "" "$nl_d" "" "$nl"
 hist_case "a banned email as the author name" "$ne" t "name probe" "" "author" "committer" "" "" "$ne_d" "$ne"
@@ -1337,7 +1338,7 @@ The $nw remark, late in the body." "message" "author|committer" "$nw_d" "" "" "$
 hist_case "a banned login in the commit body" t t "message probe" "Kept under /home/$nl/work." "message" "author|committer" "" "$nl_d" "" "$nl"
 hist_case "a banned email in the commit body" t t "message probe" "Write to $ne about it." "message" "author|committer" "" "" "$ne_d" "$ne"
 hist_case "a banned email in a Co-authored-by trailer" t t "message probe" "Co-authored-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
-hist_case "a banned word in a Signed-off-by trailer" t t "message probe" "Signed-off-by: Zyxwordq Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
+hist_case "a banned word in a Signed-off-by trailer" t t "message probe" "Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
 hist_case "a banned email in a Signed-off-by trailer" t t "message probe" "Signed-off-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
 
 # Cases n40-n52: AI attribution in a commit message is refused with no planted digest (item 7); the names are built from
