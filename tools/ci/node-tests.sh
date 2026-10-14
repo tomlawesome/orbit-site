@@ -19,7 +19,7 @@ for t in fetch-once dates sanitise-html comment-rules home-props goodbye-markup 
   gpu-gate hurry dawn-destroyed-light retire-after-destroy destroyed-world released-world \
   rich-remount sharp-strip-remount fit-skip door-context-restore door-wordmark door-shimmer \
   door-probe-chores door-world door-banded-upload door-sky door-live-teardown local-server \
-  site-world site-home-date site-lock site-pads site-pads-sources docs-shape site-data; do
+  site-world site-home-date site-lock site-pads site-pads-sources docs-shape site-data sw; do
   echo "== $t"
   node "tools/ci/$t-test.mjs"
 done
