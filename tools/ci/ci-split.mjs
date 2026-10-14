@@ -80,15 +80,118 @@ const map = yaml.defineMappingTag("tag:yaml.org,2002:map", {
   identify: yaml.mapTag.identify,
 });
 const schema = yaml.CORE_SCHEMA.withTags(map, mergeKey, reference);
+const src = fs.readFileSync(at(".gitlab-ci.yml"), "utf8");
+
+// The file holds only tab, line feed and printable ASCII (0x20-0x7E), judged on
+// the raw text before any YAML is read (#60). GitLab's reader ends a line at a
+// carriage return, U+0085, U+2028 or U+2029, so a comment holding one can hide a
+// job this check's reader never sees; other control characters, a byte order
+// mark and any non-ASCII letter are refused too, since the rule is plain ASCII.
+// Lines count line feeds; a byte that is not UTF-8 reads as U+FFFD and is refused.
+{
+  const found = [];
+  let line = 1;
+  for (const ch of src) {
+    const c = ch.codePointAt(0);
+    if (c === 0x0a) line++;
+    else if (c !== 0x09 && !(c >= 0x20 && c <= 0x7e) && found.at(-1)?.[0] !== line) found.push([line, c]);
+  }
+  for (const [l, c] of found) console.log(`   .gitlab-ci.yml: line ${l}: the character U+${c.toString(16).toUpperCase().padStart(4, "0")} is not plain ASCII; the file holds only tab, line feed and printable ASCII, since GitLab's reader can split a line where this check's does not`);
+  if (found.length) process.exit(1);
+}
+
+// GitLab reads the file with Ruby Psych (YAML.safe_load, Symbol permitted,
+// aliases on, then deep_symbolize_keys), this check with js-yaml. Rather than
+// imitate Psych, the file must keep to a subset both read the same way (#60),
+// judged on js-yaml's event stream, which still shows how each node is written:
+// no directive and one document; no explicit tag but !reference on a list; every
+// mapping key a plain name or a quoted string, so not a quoted "<<" (Psych merges
+// it, js-yaml keeps a key named <<), not a key led by a colon (Psych makes :x a
+// Symbol, which GitLab folds onto x), and not a plain yes, on, y, ~, null, true,
+// 1 or the like (a boolean, null or number to one reader or both). The variables
+// publish_docs's image reads are defined once, in the global variables.
+
+// publish_docs's image, as .gitlab-ci.yml has it. The image runs beside the
+// token, so changing it is a deliberate edit to this check, not to the CI file alone.
+const PUBLISH_IMAGE = "$NODE_IMAGE";
+const IMAGE_VARS = new Set([...PUBLISH_IMAGE.matchAll(/\$\{?(\w+)\}?/g)].map((m) => m[1]));
+const NAME = /^\.?[A-Za-z_][A-Za-z0-9_.:/ -]*$/, NOT_NAME = /^(y|n|yes|no|on|off|true|false|null|\.inf|\.nan)$/i;
+const E = yaml.EVENT_ID, STYLE = yaml.SCALAR_STYLE;
+let events;
+try {
+  events = yaml.parseEvents(src, {});
+} catch (e) {
+  stop(`.gitlab-ci.yml: does not parse as YAML: ${String(e.message).split("\n")[0]}`);
+}
+const lineAt = (i) => src.slice(0, Math.max(i, 0)).split("\n").length;
+const startOf = (e) => (e.type === E.SCALAR ? e.valueStart : e.type === E.ALIAS ? e.anchorStart : e.start);
+let ev = 0;
+const node = () => {
+  const e = events[ev++];
+  if (e.type === E.SCALAR || e.type === E.ALIAS) return { e };
+  const items = [];
+  while (events[ev].type !== E.POP) items.push(node());
+  ev++;
+  return { e, items };
+};
+const docs = [];
+while (ev < events.length) {
+  const d = events[ev++];
+  docs.push({ d, root: events[ev].type === E.POP ? null : node() });
+  ev++;
+}
+const imageVars = []; // [name, path, line] for every key naming a variable the image reads
+const at_ = (path, e) => `line ${lineAt(startOf(e))}${path.length ? `, in ${path.join(" > ")}` : ""}`;
+const walk = (n, path) => {
+  const e = n.e;
+  if (e.tagStart >= 0) {
+    const t = src.slice(e.tagStart, e.tagEnd);
+    if (!(t === "!reference" && e.type === E.SEQUENCE)) bad(`.gitlab-ci.yml: ${at_(path, e)}: the explicit tag ${t}; GitLab's reader can read a tagged node differently from this check's, so no tag but !reference [...] is allowed`);
+  }
+  if (e.type === E.SEQUENCE) n.items.forEach((x, i) => walk(x, [...path, String(i)]));
+  if (e.type !== E.MAPPING) return;
+  for (let i = 0; i + 1 < n.items.length; i += 2) {
+    const k = n.items[i], v = n.items[i + 1];
+    walk(k, path);
+    let name = null;
+    const ke = k.e;
+    if (ke.type !== E.SCALAR || ![STYLE.PLAIN, STYLE.SINGLE_QUOTED, STYLE.DOUBLE_QUOTED].includes(ke.style)) {
+      bad(`.gitlab-ci.yml: ${at_(path, ke)}: a key that is an alias, a list, a mapping or a block scalar is not a plain string to both readers; write keys as names`);
+    } else {
+      const t = yaml.getScalarValue(src, ke);
+      if (ke.style !== STYLE.PLAIN && t === "<<") bad(`.gitlab-ci.yml: ${at_(path, ke)}: a quoted merge key ${src.slice(ke.valueStart - 1, ke.valueEnd + 1)}; GitLab's reader (Ruby Psych) merges it as <<, this check's reader keeps a key named <<, so it is an ambiguous merge key: write << unquoted`);
+      else if (t.startsWith(":")) bad(`.gitlab-ci.yml: ${at_(path, ke)}: the key ${t} starts with a colon; GitLab's reader makes it a symbol and folds it onto ${t.slice(1) || "an empty key"}, which this check's reader does not, so the job GitLab runs is not the one judged here`);
+      else if (ke.style === STYLE.PLAIN && t !== "<<" && (!NAME.test(t) || NOT_NAME.test(t))) bad(`.gitlab-ci.yml: ${at_(path, ke)}: the key ${t || "(empty)"} is not a plain string to both readers (GitLab's reader takes yes, on, ~, null, true, numbers and the like as a boolean, a null or a number); write a key as a name (a letter, _ or . first, then letters, digits, spaces or _ . : / -) or quote it`);
+      else name = t;
+    }
+    if (name !== null && IMAGE_VARS.has(name)) imageVars.push([name, path, lineAt(ke.valueStart)]);
+    walk(v, [...path, name ?? "?"]);
+  }
+};
+if (docs.length !== 1) stop(`.gitlab-ci.yml: holds ${docs.length} YAML documents; GitLab's reader takes the first and this check's reader refuses more than one, so the file is one document`);
+if (docs[0].d.directives.length) bad(".gitlab-ci.yml: has a %YAML or %TAG directive; it can change how either reader reads tags, so the file has none");
+if (docs[0].root !== null) walk(docs[0].root, []);
+for (const v of IMAGE_VARS) {
+  const defs = imageVars.filter(([n]) => n === v);
+  const global = defs.filter(([, p]) => p.length === 1 && p[0] === "variables");
+  if (global.length !== 1) bad(`.gitlab-ci.yml: ${v} is defined ${global.length} times in the global variables${global.length > 1 ? ` (a duplicate key, lines ${global.map(([, , l]) => l).join(", ")})` : ""}; publish_docs's image reads it, so it is defined once there, pinned`);
+  for (const [, p, l] of defs.filter((d) => !global.includes(d))) bad(`.gitlab-ci.yml: line ${l}, in ${p.join(" > ") || "the top level"}: sets ${v}; publish_docs's image reads it, so it is defined once, pinned, in the global variables and nowhere else (not in workflow rules, default, a job or a template)`);
+}
+
 let doc;
 try {
-  doc = yaml.load(fs.readFileSync(at(".gitlab-ci.yml"), "utf8"), { schema, json: true });
+  doc = yaml.load(src, { schema, json: true });
 } catch (e) {
   stop(`.gitlab-ci.yml: does not parse as YAML: ${String(e.message).split("\n")[0]}`);
 }
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) stop(".gitlab-ci.yml: is not a mapping of jobs");
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+// the one global definition of each variable the image reads is pinned to a digest
+for (const v of IMAGE_VARS) {
+  const val = isObj(doc.variables) ? doc.variables[v] : undefined;
+  if (!(typeof val === "string" && /^\$\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\}\/\S+@sha256:[a-f0-9]{64}$/.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that starts with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
+}
 // whether a mapping in the set (LATE or TWICE) is in v, replaced values included
 const within = (set, v, seen = new Set()) => {
   if (v === null || typeof v !== "object" || seen.has(v)) return false;
@@ -153,9 +256,6 @@ const seconds = (v) => {
   return total;
 };
 
-// publish_docs's image, as .gitlab-ci.yml has it. The image runs beside the
-// token, so changing it is a deliberate edit to this check, not to the CI file alone.
-const PUBLISH_IMAGE = "$NODE_IMAGE";
 const RULE = `$CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
 const job = (n) => (isObj(doc[n]) ? doc[n] : null);
 const imp = job("import_docs"), pub = job("publish_docs");
@@ -190,10 +290,11 @@ for (const [k, v] of Object.entries(doc)) {
   for (const [e, j] of Object.entries(envs)) {
     if (k !== j && strings(v).some((s) => s.trim() === e)) { named.add(`${k}\n${e}`); bad(`.gitlab-ci.yml: ${k} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`); }
   }
-  // a variable in an environment name could resolve to a scoped one
+  // a variable in an environment name ($A, ${A} or %A%, which GitLab also
+  // expands) could resolve to a scoped one
   for (const env of environments(v)) {
     const n = envName(env);
-    if (typeof n === "string" && n.includes("$")) { varied.add(k); bad(`.gitlab-ci.yml: ${k} has environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`); }
+    if (typeof n === "string" && /[$%]/.test(n)) { varied.add(k); bad(`.gitlab-ci.yml: ${k} has environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`); }
   }
 }
 
@@ -211,7 +312,7 @@ const merge = (a, b) => {
   for (const [k, x] of Object.entries(b)) out[k] = Object.hasOwn(a, k) ? merge(a[k], x) : x;
   return out;
 };
-const expanded = new Map(), expanding = [];
+const expanded = new Map(), expanding = [], parentsOf = new Map();
 // v with every !reference replaced by the value it points at (GitLab allows 10 levels)
 const resolve = (k, v, depth = 0) => {
   if (Array.isArray(v)) return v.map((x) => resolve(k, x, depth));
@@ -247,6 +348,7 @@ function expand(k) {
   if (isObj(own) && !GLOBAL.has(k) && Object.hasOwn(own, "extends")) {
     const ext = own.extends;
     const parents = typeof ext === "string" ? [ext] : Array.isArray(ext) ? ext.flat(Infinity) : [ext];
+    parentsOf.set(k, parents.filter((p) => typeof p === "string" && isObj(doc[p])));
     out = {};
     for (const p of parents) {
       if (typeof p !== "string") bad(`.gitlab-ci.yml: ${k} extends ${JSON.stringify(p)}, which is not a name; the environment it inherits cannot be judged`);
@@ -284,7 +386,12 @@ for (const k of Object.keys(doc)) {
   for (const [e, j] of Object.entries(envs)) {
     if (k !== j && n.trim() === e && !named.has(`${k}\n${e}`)) bad(`.gitlab-ci.yml: ${k} inherits the ${e} environment from ${source(k, e)}; only ${j} may, since the tokens there are scoped to it`);
   }
-  if (n.includes("$") && !varied.has(k)) bad(`.gitlab-ci.yml: ${k} inherits environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
+  if (/[$%]/.test(n) && !varied.has(k)) bad(`.gitlab-ci.yml: ${k} inherits environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
+}
+// The deprecated global keywords: GitLab still applies each at the top level to
+// every job, publish_docs included, and this check judges default: instead (#60).
+for (const k of ["before_script", "after_script", "cache", "services", "image", "hooks"]) {
+  if (Object.hasOwn(doc, k)) bad(`.gitlab-ci.yml: has a top-level ${k}, a deprecated global keyword GitLab still applies to every job, publish_docs included; put it under default:, which this check judges`);
 }
 // another file could add a job this check never sees
 if ("include" in doc) bad(".gitlab-ci.yml: has a top-level include; a job in another file would escape this check");
@@ -299,14 +406,35 @@ const ren = job("renovate");
 if (ren !== null && envName(ren.environment) !== "renovate") bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
 if (pub !== null) {
   if (envName(pub.environment) !== "docs-import") bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
-  const needs = Array.isArray(pub.needs) ? pub.needs : [];
-  if (!needs.some((n) => isObj(n) && n.job === "import_docs" && n.artifacts === false)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false); a dotenv report in them would set this job's variables");
   if (!(isObj(pub.variables) && pub.variables.GIT_STRATEGY === "clone")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
   if (!lines(pub.script).some((l) => /nightly-publish\.sh/.test(l))) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
   // what runs beside the token is judged on the job as GitLab runs it: extends
   // and !reference resolved, and default:'s hooks where the job sets none
   const ex = isObj(expand("publish_docs")) ? expand("publish_docs") : {};
   const def = isObj(doc.default) && isObj(expand("default")) ? expand("default") : {};
+  // needs is one entry, import_docs without its artifacts: another entry would
+  // bring that job's artifacts (artifacts defaults to true), dotenv reports included
+  const needs = ex.needs;
+  const one = Array.isArray(needs) && needs.length === 1 && isObj(needs[0]) && Object.keys(needs[0]).length === 2 && needs[0].job === "import_docs" && needs[0].artifacts === false;
+  if (!one) bad(`.gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false) and nothing else, exactly one entry { job: import_docs, artifacts: false }, found: ${JSON.stringify(needs ?? null)}; artifacts from any job could carry a dotenv report that sets this job's variables`);
+  // hooks run shell commands, and a cache is files other jobs (which run npm)
+  // can write, both beside the token: neither on publish_docs, on anything it
+  // extends (at any depth), nor under default:, which every job takes
+  const ancestors = (k, out = []) => { for (const p of parentsOf.get(k) || []) if (!out.includes(p)) { out.push(p); ancestors(p, out); } return out; };
+  const has = (key, ...vs) => vs.some((v) => isObj(v) && Object.hasOwn(v, key));
+  for (const [key, what, why] of [["hooks", "hooks", "a hook runs shell commands beside the token"], ["cache", "a cache", "a cache holds files other jobs, which run npm, can write"]]) {
+    const from = ancestors("publish_docs").filter((p) => has(key, doc[p], expand(p)));
+    // its own, or by !reference, where no parent gives it
+    if (has(key, pub) || (has(key, ex) && from.length === 0)) bad(`.gitlab-ci.yml: publish_docs has ${what}; ${why}`);
+    for (const p of from) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has ${what}; ${why}`);
+    if (has(key, doc.default, expand("default"))) bad(`.gitlab-ci.yml: default has ${what}, which publish_docs takes; ${why}`);
+  }
+  // dependencies, whatever its value, would be a second say in which artifacts
+  // publish_docs takes beside needs: none, its own or through extends (#60)
+  const depWhy = "whatever its value, it is a second say in which jobs' artifacts (dotenv reports included) reach the job holding the token; needs alone decides that";
+  const depFrom = ancestors("publish_docs").filter((p) => has("dependencies", doc[p], expand(p)));
+  if (has("dependencies", pub) || (has("dependencies", ex) && depFrom.length === 0)) bad(`.gitlab-ci.yml: publish_docs has dependencies; ${depWhy}`);
+  for (const p of depFrom) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has dependencies; ${depWhy}`);
   const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
   for (const h of ["script", "before_script", "after_script"]) {
     const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
