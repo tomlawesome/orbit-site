@@ -223,12 +223,12 @@ for (const asDawn of [false, true]) {
     const script = probe("</div><script>alert(1)</script>");
     check(`text. ${how}, ${key}: a closing tag and a script cannot break out`, find(parse(script), (n) => n.tag === "script").length === 0 && !script.includes("<script") && byClass(parse(script), "farewell").length === 1, script.includes("<script") ? "a raw <script was written" : "no raw <script");
 
-    const mixed = probe(`Tom's <b>"best"</b> & more`);
+    const mixed = probe(`Ada's <b>"best"</b> & more`);
     const inner = (mixed.match(new RegExp(`class="${key}">([^\n]*?)</div>`)) || [])[1] || "";
     check(`text. ${how}, ${key}: no raw < in the text and every & starts an entity`, inner.length > 0 && !inner.includes("<") && !/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/i.test(inner), `text written: ${JSON.stringify(inner)}`);
 
-    const plain = probe("Signed out, Tom Lawson");
-    check(`text. ${how}, ${key}: ordinary words are written as given`, plain.includes(">Signed out, Tom Lawson<"), "ordinary words unchanged");
+    const plain = probe("Signed out, Ada Quill");
+    check(`text. ${how}, ${key}: ordinary words are written as given`, plain.includes(">Signed out, Ada Quill<"), "ordinary words unchanged");
   }
 }
 
