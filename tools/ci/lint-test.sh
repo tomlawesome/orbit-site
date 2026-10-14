@@ -31,6 +31,13 @@
 # address; a commit with an invented address is not reported. The tests plant the digest of an invented address
 # in NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS (comma-separated sha256 of the lower-cased address, added to the banned
 # set for tests): cases n4 (invented address, not reported), n5 (author) and n6 (committer).
+# Hardening (#60), cases n0 and n7 onward (invented values only, planted as sha256 digests in NO_REAL_NAMES_EXTRA_WORD_DIGESTS,
+# NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS and NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS): a banned word, login or email in tracked text;
+# a file holding a NUL byte, and UTF-16 files with a byte-order mark, are still scanned; banned words, logins and private
+# addresses in file and directory paths; banned values in author and committer names and in the whole commit message
+# (body and trailers); AI attribution in a commit message; link-local and unique-local addresses. The section is judged by
+# the guard's own verdict (it prints "no-real-names: ok" only when it passes), and a file:line match is a whole-token
+# match (README.md:12 does not match README.md:123), checked in case n0.
 # And the "docs import is split" section reads .gitlab-ci.yml as YAML, not line by line (issue #52): a job that
 # only mentions renovate.json or a renovate/ branch name, in a script line or a trailing comment, without joining
 # the renovate environment is not refused (cases y1-y3); a job joining docs-import or renovate from a YAML shape
@@ -1050,6 +1057,60 @@ names_lint() {
   awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
 }
 
+# True when the names section names REF as a whole token: README.md:12 must not match README.md:123 or
+# docs/README.md:12 (#60 item 11).
+names_hit() {
+  _pat=$(printf '%s' "$1" | sed 's/[][\.*^$/]/\\&/g')
+  grep -Eq "(^|[^0-9A-Za-z_./-])${_pat}([^0-9A-Za-z_]|\$)" "$names_out"
+}
+# The guard's own verdict: it prints this line only when it passes.
+names_ok() { grep -q "^no-real-names: ok" "$names_out"; }
+
+# Run the lint with extra banned digests (comma-separated sha256; "" leaves that variable unset).
+names_run() {
+  rc=0
+  ( [ -z "$1" ] || export NO_REAL_NAMES_EXTRA_WORD_DIGESTS="$1"
+    [ -z "$2" ] || export NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$2"
+    [ -z "$3" ] || export NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$3"
+    exec sh tools/ci/lint.sh ) > "$out" 2>&1 || rc=$?
+  awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+}
+n_fail() { echo "FAIL $1"; sed 's/^/     /' "$out"; failed=1; }
+# n_hit LABEL REF [HIDDEN...]: the guard failed (no ok verdict, non-zero exit), named REF (if given), and printed no HIDDEN value.
+n_hit() {
+  _l=$1; _r=$2; shift 2; _ok=1
+  [ "$rc" -ne 0 ] || _ok=0
+  ! names_ok || _ok=0
+  [ -z "$_r" ] || names_hit "$_r" || _ok=0
+  for _v in "$@"; do [ -z "$_v" ] || ! grep -qiF -- "$_v" "$out" || _ok=0; done
+  if [ "$_ok" = 1 ]; then echo "ok   $_l"; else n_fail "$_l (exit $rc, want a failing guard naming ${_r:-the commit or file} and printing no banned value)"; fi
+}
+# n_clean LABEL: the guard passed (its ok verdict is there).
+n_clean() {
+  if names_ok; then echo "ok   $1"; else n_fail "$1 (want the guard's own verdict: no-real-names: ok)"; fi
+}
+# n_hist LABEL SID PART NOTPART [HIDDEN...]: failing guard naming SID and the PART of the commit (a regex), not NOTPART.
+n_hist() {
+  _l=$1; _s=$2; _p=$3; _n=$4; shift 4; _ok=1
+  [ "$rc" -ne 0 ] || _ok=0
+  ! names_ok || _ok=0
+  grep -Eqi "$_s.*($_p)" "$names_out" || _ok=0
+  [ -z "$_n" ] || ! grep -Eqi "$_s.*($_n)" "$names_out" || _ok=0
+  for _v in "$@"; do [ -z "$_v" ] || ! grep -qiF -- "$_v" "$out" || _ok=0; done
+  if [ "$_ok" = 1 ]; then echo "ok   $_l"; else n_fail "$_l (exit $rc, want a failing guard naming $_s and $_p, not $_n, and printing no banned value)"; fi
+}
+n_commit() { git add -A; git -c user.name=t -c user.email=t@t commit -q -m "$1"; }
+n_back() { git reset -q --hard HEAD~1; }
+
+# Case n0: the whole-token match used by n1 onward (#60 item 11): README.md:12 must not match README.md:123 or docs/README.md:12.
+printf '   README.md:123\n   docs/README.md:12\n' > "$names_out"
+if ! names_hit "README.md:12" && names_hit "README.md:123" && names_hit "docs/README.md:12"; then
+  echo "ok   a file:line match is the whole line number"
+else
+  echo "FAIL a file:line match is the whole line number (README.md:12 matched README.md:123 or docs/README.md:12)"
+  failed=1
+fi
+
 # Case n1: a private address in a tracked file -> fails, names file:line, never prints the address.
 a=10; addr="$a.0.0.7"
 printf 'host %s\n' "$addr" >> README.md
@@ -1057,7 +1118,7 @@ ln=$(wc -l < README.md | tr -d ' ')
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m "add a private address"
 names_lint
-if [ "$rc" -ne 0 ] && grep -q "README.md:$ln" "$names_out" && ! grep -qF "$addr" "$out"; then
+if [ "$rc" -ne 0 ] && ! names_ok && names_hit "README.md:$ln" && ! grep -qF "$addr" "$out"; then
   echo "ok   a private address fails, naming README.md:$ln and not printing it"
 else
   echo "FAIL a private address fails (exit $rc, want non-zero naming README.md:$ln and not printing the address)"
@@ -1071,7 +1132,7 @@ sed '3s/$/ /' LICENSE > LICENSE.new && mv LICENSE.new LICENSE
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m "edit LICENSE line 3"
 names_lint
-if [ "$rc" -ne 0 ] && grep -q "LICENSE:3" "$names_out"; then
+if [ "$rc" -ne 0 ] && ! names_ok && names_hit "LICENSE:3"; then
   echo "ok   an edited LICENSE line 3 fails, naming LICENSE:3"
 else
   echo "FAIL an edited LICENSE line 3 fails (exit $rc, want non-zero naming LICENSE:3)"
@@ -1085,7 +1146,7 @@ echo 'host 192.0.2.7' >> README.md
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m "add a documentation address"
 names_lint
-if [ -s "$names_out" ] && ! grep -q "README.md" "$names_out"; then
+if names_ok && ! grep -q "README.md" "$names_out"; then
   echo "ok   a documentation address is not reported"
 else
   echo "FAIL a documentation address is not reported (want the names section present and not naming README.md)"
@@ -1106,7 +1167,7 @@ git add -A
 GIT_AUTHOR_EMAIL="$e_addr" GIT_COMMITTER_EMAIL="$e_addr" git -c user.name=t commit -q -m "invented address"
 sid=$(git rev-parse --short HEAD)
 names_lint
-if [ -s "$names_out" ] && ! grep -qF "$sid" "$out" && ! grep -qiF "$e_addr" "$out"; then
+if names_ok && ! grep -qF "$sid" "$out" && ! grep -qiF "$e_addr" "$out"; then
   echo "ok   a commit with an unbanned address is not reported"
 else
   echo "FAIL a commit with an unbanned address is not reported (want the names section present and not naming $sid)"
@@ -1121,7 +1182,7 @@ git add -A
 GIT_AUTHOR_EMAIL="$e_mixed" GIT_COMMITTER_EMAIL="t@t" git -c user.name=t commit -q -m "banned author"
 sid=$(git rev-parse --short HEAD)
 NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$e_digest" names_lint
-if [ "$rc" -ne 0 ] && grep -qi "$sid.*author" "$names_out" && ! grep -qi "$sid.*committer" "$names_out" \
+if [ "$rc" -ne 0 ] && ! names_ok && grep -qi "$sid.*author" "$names_out" && ! grep -qi "$sid.*committer" "$names_out" \
    && ! grep -qiF "$e_addr" "$out"; then
   echo "ok   a banned author email fails, naming $sid and author, not the address"
 else
@@ -1137,7 +1198,7 @@ git add -A
 GIT_AUTHOR_EMAIL="t@t" GIT_COMMITTER_EMAIL="$e_addr" git -c user.name=t commit -q -m "banned committer"
 sid=$(git rev-parse --short HEAD)
 NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$e_digest" names_lint
-if [ "$rc" -ne 0 ] && grep -qi "$sid.*committer" "$names_out" && ! grep -qi "$sid.*author" "$names_out" \
+if [ "$rc" -ne 0 ] && ! names_ok && grep -qi "$sid.*committer" "$names_out" && ! grep -qi "$sid.*author" "$names_out" \
    && ! grep -qiF "$e_addr" "$out"; then
   echo "ok   a banned committer email fails, naming $sid and committer, not the address"
 else
@@ -1146,6 +1207,178 @@ else
   failed=1
 fi
 git reset -q --hard HEAD~1
+
+# ---- Cases n7 and on (#60): the hardened guard. Invented values only: "banned" is made by planting the sha256 of the
+# lower-cased value in the matching extra-digest variable. Every refusal is paired with a run without the digest that
+# passes, so a case cannot pass by the guard refusing everything.
+nw="zyxwordq"; nl="zyxloginq"; ne="zyx.probe@example.invalid"
+sha() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+nw_d=$(sha "$nw"); nl_d=$(sha "$nl"); ne_d=$(sha "$ne")
+
+# n_text LABEL LINE DIGEST_KIND (w|l|e) HIDDEN: a line of tracked text carrying a banned value fails and names README.md:line.
+n_text() {
+  printf '%s\n' "$2" >> README.md
+  ln=$(wc -l < README.md | tr -d ' ')
+  n_commit "$1"
+  case "$3" in w) names_run "$nw_d" "" "" ;; l) names_run "" "$nl_d" "" ;; e) names_run "" "" "$ne_d" ;; esac
+  n_hit "$1 fails, naming README.md:$ln and not printing the value" "README.md:$ln" "$4"
+  names_run "" "" ""
+  n_clean "$1: without the digest it is not reported"
+  n_back
+}
+# Cases n7-n9: a banned word, login and email in tracked text (items 1 and 3).
+n_text "a banned word in a tracked file" "the $nw case" w "$nw"
+n_text "a banned login (/home/<login>) in a tracked file" "files under /home/$nl/work" l "$nl"
+n_text "a banned email in a tracked file" "write to Zyx.Probe@Example.Invalid today" e "$ne"
+# Case n10: all three variables at once, each on its own line.
+printf '%s\n' "the $nw case" "files under /home/$nl/work" "write to $ne today" >> README.md
+ln=$(wc -l < README.md | tr -d ' ')
+n_commit "all three categories"
+names_run "$nw_d" "$nl_d" "$ne_d"
+if [ "$rc" -ne 0 ] && ! names_ok && names_hit "README.md:$((ln - 2))" && names_hit "README.md:$((ln - 1))" && names_hit "README.md:$ln"; then
+  echo "ok   a word, a login and an email together are each reported with their own line"
+else
+  n_fail "a word, a login and an email together are each reported (exit $rc, want README.md:$((ln - 2)), $((ln - 1)) and $ln)"
+fi
+n_back
+
+# Cases n11-n13: a NUL byte does not exempt a file (item 4). The banned word sits between control bytes.
+node -e 'require("fs").writeFileSync("data.bin", Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(process.argv[1] + " tail"), Buffer.from([0, 3])]))' "$nw"
+n_commit "a file with NUL bytes"
+names_run "$nw_d" "" ""
+n_hit "a banned word in a file holding NUL bytes fails, naming data.bin" "data.bin" "$nw"
+names_run "" "" ""
+n_clean "a file holding NUL bytes with no banned word is not reported"
+n_back
+node -e 'require("fs").writeFileSync("data.bin", Buffer.concat([Buffer.from([0, 1]), Buffer.from("pre " + process.argv[1].slice(0, 3)), Buffer.from([0]), Buffer.from(process.argv[1].slice(3) + " post"), Buffer.from([0])]))' "$nw"
+n_commit "a word split by a NUL byte"
+names_run "$nw_d" "" ""
+n_clean "a word split by a NUL byte is two runs, not the banned word"
+n_back
+
+# Cases n14-n15: UTF-16 with a byte-order mark is decoded and scanned (item 4).
+node -e '
+  const fs = require("fs"); const t = "line one\n" + process.argv[1] + " here\n";
+  fs.writeFileSync("u16le.txt", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(t, "utf16le")]));
+  fs.writeFileSync("u16be.txt", Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(t, "utf16le").swap16()]));
+' "$nw"
+n_commit "UTF-16 files with a byte-order mark"
+names_run "$nw_d" "" ""
+if [ "$rc" -ne 0 ] && ! names_ok && names_hit "u16le.txt" && names_hit "u16be.txt" && ! grep -qiF "$nw" "$out"; then
+  echo "ok   a banned word in UTF-16 LE and BE files fails, naming both and not printing it"
+else
+  n_fail "a banned word in UTF-16 LE and BE files fails (exit $rc, want non-zero naming u16le.txt and u16be.txt)"
+fi
+names_run "" "" ""
+n_clean "UTF-16 files with no banned word are not reported"
+n_back
+
+# Cases n16-n20: file and directory paths are scanned (item 5).
+n_path() { # n_path LABEL PATH KIND
+  mkdir -p "$(dirname "$2")"; echo harmless > "$2"
+  n_commit "$1"
+  case "$3" in w) names_run "$nw_d" "" "" ;; l) names_run "" "$nl_d" "" ;; n) names_run "" "" "" ;; esac
+  if [ "$3" = n ]; then
+    if [ "$rc" -ne 0 ] && ! names_ok; then echo "ok   $1 fails"; else n_fail "$1 fails (exit $rc, want a failing guard)"; fi
+  else
+    n_hit "$1 fails" ""
+    names_run "" "" ""
+    n_clean "$1: without the digest it is not reported"
+  fi
+  n_back
+}
+n_path "a banned word in a directory name" "docs/$nw/notes.txt" w
+n_path "a banned word in a file name" "docs/notes-$nw.txt" w
+n_path "a banned login in a directory name (home/<login>)" "home/$nl/notes.txt" l
+a=10; n_path "a private address in a file name" "docs/host-$a.0.0.7.txt" n
+n_path "a private address in a directory name" "docs/$a.0.0.7/notes.txt" n
+b=192; mkdir -p docs; echo harmless > "docs/host-$b.0.2.7.txt"
+n_commit "a documentation address in a file name"
+names_run "" "" ""
+n_clean "a documentation address in a file name is not reported"
+n_back
+
+# Cases n21-n39: history (item 6). hist_case LABEL AUTHOR_NAME COMMITTER_NAME SUBJECT BODY PART NOTPART WORD LOGIN EMAIL HIDDEN:
+# an empty commit with those names and message; fails naming the short id and the part when the digests are planted
+# (arguments 8-10, "" for none), and is not reported without them.
+hist_case() {
+  if [ -n "$5" ]; then
+    GIT_AUTHOR_NAME="$2" GIT_COMMITTER_NAME="$3" GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$4" -m "$5"
+  else
+    GIT_AUTHOR_NAME="$2" GIT_COMMITTER_NAME="$3" GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$4"
+  fi
+  sid=$(git rev-parse --short HEAD)
+  names_run "$8" "$9" "${10}"
+  n_hist "$1 fails, naming $sid and its $6, not printing the value" "$sid" "$6" "$7" "${11}"
+  names_run "" "" ""
+  n_clean "$1: without the digest it is not reported"
+  n_back
+}
+hist_case "a banned word in the author name" "Zyxwordq Tester" t "name probe" "" "author" "committer" "$nw_d" "" "" "$nw"
+hist_case "a banned word in the committer name" t "Zyxwordq Tester" "name probe" "" "committer" "author" "$nw_d" "" "" "$nw"
+hist_case "a banned login as the author name" "$nl" t "name probe" "" "author" "committer" "" "$nl_d" "" "$nl"
+hist_case "a banned login as the committer name" t "$nl" "name probe" "" "committer" "author" "" "$nl_d" "" "$nl"
+hist_case "a banned email as the author name" "$ne" t "name probe" "" "author" "committer" "" "" "$ne_d" "$ne"
+hist_case "a banned email as the committer name" t "$ne" "name probe" "" "committer" "author" "" "" "$ne_d" "$ne"
+hist_case "a banned word in the commit subject" t t "the $nw case" "" "message" "author|committer" "$nw_d" "" "" "$nw"
+hist_case "a banned word in the commit body" t t "message probe" "A line.
+
+The $nw remark, late in the body." "message" "author|committer" "$nw_d" "" "" "$nw"
+hist_case "a banned login in the commit body" t t "message probe" "Kept under /home/$nl/work." "message" "author|committer" "" "$nl_d" "" "$nl"
+hist_case "a banned email in the commit body" t t "message probe" "Write to $ne about it." "message" "author|committer" "" "" "$ne_d" "$ne"
+hist_case "a banned email in a Co-authored-by trailer" t t "message probe" "Co-authored-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
+hist_case "a banned word in a Signed-off-by trailer" t t "message probe" "Signed-off-by: Zyxwordq Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
+hist_case "a banned email in a Signed-off-by trailer" t t "message probe" "Signed-off-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
+
+# Cases n40-n52: AI attribution in a commit message is refused with no planted digest (item 7); the names are built from
+# parts so this file holds no attribution line of its own.
+c1="Cl""aude"; a1="Anth""ropic"; d1="anth""ropic.com"
+attr_hit() { # attr_hit LABEL BODY
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "attribution probe" -m "$2"
+  sid=$(git rev-parse --short HEAD)
+  names_run "" "" ""
+  n_hit "$1 fails, naming $sid" "$sid"
+  n_back
+}
+attr_clean() { # attr_clean LABEL BODY
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "attribution probe" -m "$2"
+  names_run "" "" ""
+  n_clean "$1 is not reported"
+  n_back
+}
+attr_hit "a Co-authored-by trailer naming $c1 with an $d1 address" "Co-authored-by: $c1 <noreply@$d1>"
+attr_hit "a mixed-case Co-Authored-By trailer naming a $c1 model" "Co-Authored-By: $c1 Sonnet 4 <someone@example.invalid>"
+attr_hit "a lower-case co-authored-by trailer naming $a1" "co-authored-by: $a1 Bot <bot@example.invalid>"
+attr_hit "an upper-case CO-AUTHORED-BY trailer with only an $d1 address" "CO-AUTHORED-BY: Helper <helper@$d1>"
+attr_hit "a Generated with line naming $c1" "Generated with [$c1 Code](https://example.invalid/tool)"
+attr_hit "a lower-case generated with line naming $c1" "generated with $c1"
+attr_hit "an upper-case GENERATED WITH AI line" "GENERATED WITH AI TOOLS"
+attr_hit "a $c1-Session line" "$c1-Session: https://example.invalid/session/1"
+attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr 'A-Z' 'a-z')-session: abc123"
+attr_clean "a Co-authored-by trailer naming a person" "Co-authored-by: Pat Example <pat@example.invalid>"
+attr_clean "a Generated with line that names neither $c1 nor AI" "Generated with care from the template."
+attr_clean "a commit message that only mentions $c1 in prose" "Document how $c1 reads the project file."
+
+# Cases n53-n54: more private addresses in a tracked file (item 9), built from parts. Documentation ranges stay allowed.
+v6() { _o=$1; shift; for _g in "$@"; do _o="$_o:$_g"; done; printf '%s' "$_o"; }
+ll4="169.254"; ll4="$ll4.7.7"
+ula=$(v6 fd7a 115c "" 1); ll6=$(v6 fe80 "" 1); doc6=$(v6 2001 db8 "" 1); doc4="192.0.2.7"
+printf '%s\n' "link-local $ll4" "unique-local $ula" "link-local $ll6" "documentation $doc4 $doc6" >> README.md
+ln=$(wc -l < README.md | tr -d ' ')
+n_commit "link-local and unique-local addresses"
+names_run "" "" ""
+if [ "$rc" -ne 0 ] && ! names_ok && names_hit "README.md:$((ln - 3))" && names_hit "README.md:$((ln - 2))" && names_hit "README.md:$((ln - 1))" \
+   && ! names_hit "README.md:$ln" && ! grep -qF "$ll4" "$out" && ! grep -qF "$ula" "$out" && ! grep -qF "$ll6" "$out"; then
+  echo "ok   link-local IPv4, unique-local and link-local IPv6 fail with their own lines; the documentation line is not named"
+else
+  n_fail "link-local IPv4, unique-local and link-local IPv6 fail (exit $rc, want README.md:$((ln - 3)), $((ln - 2)) and $((ln - 1)) named, README.md:$ln not, no address printed)"
+fi
+n_back
+printf '%s\n' "documentation $doc4 $doc6" >> README.md
+n_commit "documentation addresses only"
+names_run "" "" ""
+n_clean "the documentation ranges (IPv4 and IPv6) are not reported"
+n_back
 rm -f "$names_out"
 
 rm -f "$cspjs"
