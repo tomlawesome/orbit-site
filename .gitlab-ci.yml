@@ -224,7 +224,11 @@ import_docs:
 # code in import_docs holds a job token that can upload one. The script fetches
 # the archive itself by job id and opens it entry by entry (tools/ci/
 # nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
-# a build folder an earlier job on this runner left things in.
+# a build folder an earlier job on this runner left things in. The clone does
+# not clear the runner's folder beside it, <checkout>.tmp/, which holds the
+# .gitlab-runner.ext.conf the checkout's git config includes: the Docker
+# executor's per-job build volume is what makes that folder clean. The script
+# takes that one include, by its exact path, and nothing else in the folder.
 # The job asks GitLab which job to fetch with the import token (a job token
 # cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:
