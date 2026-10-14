@@ -38,9 +38,31 @@ const SHADOW = Symbol("replaced values");
 // << brings in (and nowhere else when reading with json: true), then adds the
 // keys that are not there yet with addPair: so `has` marks the next addPair of
 // that key as merged, and any other addPair is an explicit key, in file order.
+// Two << keys in one mapping (block or flow) are read two ways as well: Psych takes
+// the second, js-yaml the first, so that mapping is refused too (TWICE), even with
+// no explicit key. The list form <<: [*a, *b] is one key and both keep the first.
+// Mappings are tracked while open (OPEN: pushed by create, popped by finalize), and
+// each << key scalar the schema resolves counts for the innermost open mapping.
 const EXPLICIT = new WeakSet(), MERGING = new WeakMap(), LATE = new WeakSet();
+const OPEN = [], MERGE_KEYS = new WeakMap(), TWICE = new WeakSet();
+const mergeKey = yaml.defineScalarTag(yaml.mergeTag.tagName, {
+  implicit: true,
+  implicitFirstChars: ["<"],
+  resolve: (source, isExplicit, tagName) => {
+    const r = yaml.mergeTag.resolve(source, isExplicit, tagName);
+    const c = OPEN[OPEN.length - 1];
+    if (r !== yaml.NOT_RESOLVED && c !== undefined) {
+      const n = (MERGE_KEYS.get(c) ?? 0) + 1;
+      MERGE_KEYS.set(c, n);
+      if (n > 1) TWICE.add(c);
+    }
+    return r;
+  },
+  identify: () => false,
+});
 const map = yaml.defineMappingTag("tag:yaml.org,2002:map", {
-  create: () => ({}),
+  create: () => { const c = {}; OPEN.push(c); return c; },
+  finalize: (c) => { OPEN.pop(); return c; },
   addPair: (c, key, value) => {
     if (MERGING.get(c) === key) MERGING.delete(c);
     else EXPLICIT.add(c);
@@ -57,7 +79,7 @@ const map = yaml.defineMappingTag("tag:yaml.org,2002:map", {
   get: yaml.mapTag.get,
   identify: yaml.mapTag.identify,
 });
-const schema = yaml.CORE_SCHEMA.withTags(map, yaml.mergeTag, reference);
+const schema = yaml.CORE_SCHEMA.withTags(map, mergeKey, reference);
 let doc;
 try {
   doc = yaml.load(fs.readFileSync(at(".gitlab-ci.yml"), "utf8"), { schema, json: true });
@@ -67,18 +89,23 @@ try {
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) stop(".gitlab-ci.yml: is not a mapping of jobs");
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
-// whether a mapping with a late << is in v, replaced values included
-const late = (v, seen = new Set()) => {
+// whether a mapping in the set (LATE or TWICE) is in v, replaced values included
+const within = (set, v, seen = new Set()) => {
   if (v === null || typeof v !== "object" || seen.has(v)) return false;
   seen.add(v);
-  if (LATE.has(v)) return true;
-  if (Array.isArray(v)) return v.some((x) => late(x, seen));
-  return Object.values(v).some((x) => late(x, seen)) || (v[SHADOW] || []).some(([, x]) => late(x, seen));
+  if (set.has(v)) return true;
+  if (Array.isArray(v)) return v.some((x) => within(set, x, seen));
+  return Object.values(v).some((x) => within(set, x, seen)) || (v[SHADOW] || []).some(([, x]) => within(set, x, seen));
 };
+const late = (v) => within(LATE, v), twice = (v) => within(TWICE, v);
 const lateMsg = "a merge key (<<) after an explicit key in the same mapping; GitLab's reader lets the later << overwrite the explicit key and this check's reader keeps it, so the job GitLab runs is not the one judged here: put the << first";
 if (LATE.has(doc)) bad(`.gitlab-ci.yml: the top level has ${lateMsg}`);
 for (const [k, v] of Object.entries(doc)) if (late(v)) bad(`.gitlab-ci.yml: ${k} has ${lateMsg}`);
 for (const [k, v] of doc[SHADOW] || []) if (late(v)) bad(`.gitlab-ci.yml: ${k} (an earlier, replaced ${k}) has ${lateMsg}`);
+const twiceMsg = "two merge keys (<<) in one mapping; GitLab's reader (Ruby Psych) takes the second and this check's reader the first, so the job GitLab runs is not the one judged here: use one << with a list (<<: [*a, *b])";
+if (TWICE.has(doc)) bad(`.gitlab-ci.yml: the top level has ${twiceMsg}`);
+for (const [k, v] of Object.entries(doc)) if (twice(v)) bad(`.gitlab-ci.yml: ${k} has ${twiceMsg}`);
+for (const [k, v] of doc[SHADOW] || []) if (twice(v)) bad(`.gitlab-ci.yml: ${k} (an earlier, replaced ${k}) has ${twiceMsg}`);
 const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : v === undefined ? [] : [v]).map((l) => (typeof l === "string" ? l : JSON.stringify(l)));
 const envName = (v) => (typeof v === "string" ? v : isObj(v) ? v.name : undefined);
 // every scalar string in a value, mapping keys and replaced values included
