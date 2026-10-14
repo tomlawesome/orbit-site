@@ -1274,24 +1274,26 @@ n_clean "UTF-16 files with no banned word are not reported"
 n_back
 
 # Cases n16-n20: file and directory paths are scanned (item 5).
-n_path() { # n_path LABEL PATH KIND
+# The path is reported with the offending part masked, so HIDDEN (the word, login or address) never reaches the log.
+n_path() { # n_path LABEL PATH KIND HIDDEN
   mkdir -p "$(dirname "$2")"; echo harmless > "$2"
   n_commit "$1"
   case "$3" in w) names_run "$nw_d" "" "" ;; l) names_run "" "$nl_d" "" ;; n) names_run "" "" "" ;; esac
   if [ "$3" = n ]; then
-    if [ "$rc" -ne 0 ] && ! names_ok; then echo "ok   $1 fails"; else n_fail "$1 fails (exit $rc, want a failing guard)"; fi
+    if [ "$rc" -ne 0 ] && ! names_ok && grep -q '\*\*\*' "$names_out" && ! grep -qF -- "$4" "$out"; then echo "ok   $1 fails, masking it"; else n_fail "$1 fails (exit $rc, want a failing guard naming the path masked, not printing the address)"; fi
   else
-    n_hit "$1 fails" ""
+    n_hit "$1 fails, masking it" "" "$4"
+    grep -q '\*\*\*' "$names_out" || n_fail "$1 (want the path shown with the value masked as ***)"
     names_run "" "" ""
     n_clean "$1: without the digest it is not reported"
   fi
   n_back
 }
-n_path "a banned word in a directory name" "docs/$nw/notes.txt" w
-n_path "a banned word in a file name" "docs/notes-$nw.txt" w
-n_path "a banned login in a directory name (home/<login>)" "home/$nl/notes.txt" l
-a=10; n_path "a private address in a file name" "docs/host-$a.0.0.7.txt" n
-n_path "a private address in a directory name" "docs/$a.0.0.7/notes.txt" n
+n_path "a banned word in a directory name" "docs/$nw/notes.txt" w "$nw"
+n_path "a banned word in a file name" "docs/notes-$nw.txt" w "$nw"
+n_path "a banned login in a directory name (home/<login>)" "home/$nl/notes.txt" l "$nl"
+a=10; n_path "a private address in a file name" "docs/host-$a.0.0.7.txt" n "$a.0.0.7"
+n_path "a private address in a directory name" "docs/$a.0.0.7/notes.txt" n "$a.0.0.7"
 b=192; mkdir -p docs; echo harmless > "docs/host-$b.0.2.7.txt"
 n_commit "a documentation address in a file name"
 names_run "" "" ""

@@ -203,6 +203,44 @@ hitsAre("ipv6: ignores times of day", "at 12:34:56 on 2026-10-14T10:20:30Z\n", [
 hitsAre("ipv4: link-local 169.254.x.x in text is reported as file:line", `fine\nat ${quad(169, 254, 7, 7)}\n`, ["f.txt:2"], {});
 hitsAre("ipv4: documentation range stays allowed in text", `at ${quad(192, 0, 2, 7)} and ${quad(198, 51, 100, 7)} and ${quad(203, 0, 113, 7)}\n`, [], {});
 
+// File and directory paths (#60 item 5): a hit reports the path with the offending part masked as *** and the
+// category, never the value, because CI logs are public. Invented values only, distinct from the ones above.
+const PW = "qxvpathword";
+const PL = "qxvpathlogin";
+const PATHS_CHILD = `
+const g = await import(process.env.PROBE_URL);
+console.log(JSON.stringify(typeof g.scanPaths === "function" ? g.scanPaths(JSON.parse(process.env.PROBE_INPUT)) : null));
+`;
+function pathProbe(names, env = { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(PW), NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(PL) }) {
+  try {
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", PATHS_CHILD], {
+      env: { ...cleanEnv(), PROBE_URL: guardUrl, PROBE_INPUT: JSON.stringify(names), ...env },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(stdout.trim().split("\n").pop());
+  } catch { return null; }
+}
+// one report per path; true when it shows MASKED, names CATEGORY and holds none of the HIDDEN values (any case)
+const masked = (reports, want, category, hidden) => Array.isArray(reports) && reports.length === 1 && typeof reports[0] === "string"
+  && reports[0].includes(want) && reports[0].includes(category) && hidden.every((v) => !reports[0].toLowerCase().includes(v.toLowerCase()));
+const pathCase = (name, paths, want, category, hidden, env) => {
+  const r = pathProbe(paths, env);
+  // the detail shows only whether a hidden value leaked, never the report itself
+  check(name, masked(r, want, category, hidden), Array.isArray(r) ? `${r.length} report(s), want 1 showing ${want} and ${category}` : "scanPaths missing or failed");
+};
+check("scanPaths: is exported as a function", pathProbe([]) !== null, "missing or failed");
+pathCase("scanPaths: a banned word in a directory name is masked", ["docs/" + PW + "/notes.txt"], "docs/***/notes.txt", "word", [PW]);
+pathCase("scanPaths: a banned word in a file name is masked", ["docs/notes-" + PW.toUpperCase() + ".txt"], "docs/notes-***.txt", "word", [PW]);
+pathCase("scanPaths: a banned login in home/<login> is masked", ["home/" + PL + "/x.txt"], "home/***/x.txt", "login", [PL]);
+pathCase("scanPaths: a private address in a file name is masked", ["docs/host-" + quad(10, 0, 0, 7) + ".txt"], "docs/host-***.txt", "private address", [quad(10, 0, 0, 7)], {});
+{
+  const r = pathProbe(["docs/notes.txt", "docs/host-" + quad(192, 0, 2, 7) + ".txt", "home/" + PL + "xyz/x.txt"]);
+  check("scanPaths: clean paths, a documentation address and a longer login are not reported", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "missing or failed");
+  const u = pathProbe(["docs/" + PW + "/notes.txt", "home/" + PL + "/x.txt"], {});
+  check("scanPaths: without the digests the same paths are not reported", Array.isArray(u) && u.length === 0, Array.isArray(u) ? `${u.length} report(s)` : "missing or failed");
+}
+
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
 check("real tree and history: the guard exits 0", real.status === 0, `exit ${real.status}: ${String(real.stdout).split("\n").slice(0, 3).join(" | ")}`);
