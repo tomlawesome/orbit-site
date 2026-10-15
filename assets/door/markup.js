@@ -61,17 +61,16 @@ const attr = (s) => text(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 /* the release tag under the wordmark (#63): one string of TEXT, the channel word first and, after the first
    whitespace, the build ("alpha", "beta", "preview 3f2a9c1"). Only a string is a tag. Any run of whitespace in it
-   (tabs, line breaks, U+2028, non-breaking spaces) is folded to one space, so the element stays on one line. The
+   (tabs, line breaks, U+0085, U+2028, non-breaking spaces) is folded to one space, so the element stays on one line. The
    result is [] when there is no tag, so the markup is byte for byte what it was. The channel is the first word if it
    is alpha, beta or preview in any case, else "build" (door.css shows the tag in lowercase); the word and the build
    go through text(), so nothing of the tag is markup, and the attribute only ever holds a fixed word */
 const releaseTag = (tag) => {
-  const m = typeof tag === "string" ? tag.replace(/\s+/g, " ").trim().match(/^(\S+)(?: (.*))?$/) : null;
+  const m = typeof tag === "string" ? tag.replace(/[\s\u0085]+/g, " ").trim().match(/^(\S+)(?: (.*))?$/) : null;
   if (!m) return [];
   const channel = ["alpha", "beta", "preview"].find((c) => c === m[1].toLowerCase()) || "build";
   return [`<div class="release" data-channel="${channel}">${text(m[1])}${m[2] ? ` <span class="build">${text(m[2])}</span>` : ""}</div>`];
 };
-
 
 /* lines joined with the page's indent: a nested array is one level deeper; a slot (raw) is kept as it came */
 const raw = (s) => ({ raw: s });
