@@ -36,7 +36,8 @@ fi
 
 if [ "$mode" = browser ]; then
   # records of earlier runs would be counted as this run's; Node's stay
-  find "$COVERAGE_DIR" -maxdepth 1 -type f -name 'browser-*.json' -exec rm -f {} +
+  # (the trailing slash makes find enter $COVERAGE_DIR when it is a symbolic link)
+  find "$COVERAGE_DIR/" -maxdepth 1 -type f -name 'browser-*.json' -exec rm -f {} +
 fi
 
 if [ "$mode" != check ]; then
