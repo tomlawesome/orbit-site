@@ -578,7 +578,7 @@ run_push() { # run_push <outfile> <scenario>
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
     FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
-    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule \
+    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
@@ -610,8 +610,13 @@ pin_run() {
       FAKE="$fake" FAKE_JOB="$fakejob" \
       ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
-      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
+      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
 }
+# The job runs with GIT_STRATEGY=clone (the CI file sets it, #60 round 4), and the script
+# refuses to run without it. So every run here has it, as the runner gives it; pin_strategy
+# is that default, and a scenario for another value (or none) sets it first, or passes
+# GIT_STRATEGY=value among the changes, which comes later and wins.
+pin_strategy=clone
 pinned() { # pinned <label> <script dir> <text the refusal must carry> [VAR=value ...]
   label=$1; dir=$2; want=$3; shift 3
   pin_run "$dir" "$@"
@@ -701,6 +706,22 @@ done
 # lint-time gate: it fails on any new NODE_ variable in the YAML)
 set -f; set -- $realvars NODE_FUTURE=1; set +f
 pinned "with a new NODE_FUTURE beside the pipeline's real variables" "$tmp" "refusing to run: NODE_FUTURE is set" "$@"
+
+# Round 4 (#60) item 6: the script checks GIT_STRATEGY=clone itself, at the point of use, in
+# case the CI file's setting were overridden (a parallel matrix, a rule's variables, a project
+# variable). Anything but clone is refused, before any call to GitLab, with the one wording.
+# pin_strategy is cleared for the unset case so the harness does not supply the variable.
+pin_strategy=
+pinned "with GIT_STRATEGY unset" "$tmp" "refusing to run: GIT_STRATEGY is not clone"
+pin_strategy=clone
+pinned "with GIT_STRATEGY empty" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=
+pinned "with GIT_STRATEGY=fetch" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=fetch
+pinned "with GIT_STRATEGY=none" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=none
+pinned "with GIT_STRATEGY=Clone (not exactly clone)" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=Clone
+pinned "with GIT_STRATEGY=clone and a space after it" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "GIT_STRATEGY=clone "
+set -f; set -- $realvars GIT_STRATEGY=fetch; set +f
+pinned "with GIT_STRATEGY=fetch beside the pipeline's real variables" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "$@"
+passes_guard "GIT_STRATEGY=clone" GIT_STRATEGY=clone
 
 # Run 6: GitLab refuses every auto-merge request (405). The job must fail and
 # show why: the merge request, GitLab's status code and its message.

