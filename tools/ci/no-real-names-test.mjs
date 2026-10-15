@@ -181,7 +181,7 @@ hitsAre("extra emails: an address in text is reported as file:line", `fine\nwrit
 hitsAre("extra emails: case-insensitive", `Write to ${E.toUpperCase()} now\n${E[0].toUpperCase()}${E.slice(1)}\n`, ["f.txt:1", "f.txt:2"]);
 hitsAre("extra emails: in angle brackets and after mailto:", `Pat <${E}>\nmailto:${E}?subject=x\n`, ["f.txt:1", "f.txt:2"]);
 hitsAre("extra emails: before a sentence-ending dot", `Write to ${E}.\n`, ["f.txt:1"]);
-hitsAre("extra emails: another address is clean", `other.person@example.invalid\n${E}.au\n`, []);
+hitsAre("extra emails: another address is clean", `other.person@example.invalid\n${E.replace("@", "x@")}\n`, []);
 hitsAre("extra emails: not set, the address is clean", `${E}\n`, [], {});
 hitsAre("extra emails: only the email variable set, words and logins stay clean", `${W}\n/home/${L}\n`, [], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
 
@@ -239,6 +239,173 @@ pathCase("scanPaths: a private address in a file name is masked", ["docs/host-" 
   check("scanPaths: clean paths, a documentation address and a longer login are not reported", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "missing or failed");
   const u = pathProbe(["docs/" + PW + "/notes.txt", "home/" + PL + "/x.txt"], {});
   check("scanPaths: without the digests the same paths are not reported", Array.isArray(u) && u.length === 0, Array.isArray(u) ? `${u.length} report(s)` : "missing or failed");
+}
+
+// ---- Round 3 (#60 re-review, specs/names-r3.md). Invented values only, built from parts.
+
+// Item 1: no report ever prints a raw path holding a banned value. A file whose path AND content both hold a banned
+// value must give reports with none of it anywhere, and the banned part shown as ***.
+const addr7 = quad(10, 0, 0, 7);
+const hitsFor = (files, env) => { const r = probe({ files }, env); return Array.isArray(r.hits) ? r.hits : null; };
+const noLeak = (name, files, env, hidden) => {
+  const h = hitsFor(files, env);
+  const leaked = Array.isArray(h) && h.some((x) => hidden.some((v) => x.toLowerCase().includes(v.toLowerCase())));
+  check(name, Array.isArray(h) && h.length > 0 && !leaked && h.every((x) => x.includes("***")),
+    h === null ? "no result" : h.length === 0 ? "nothing reported" : leaked ? "a report holds the banned value" : "a report has no *** mask");
+};
+const envWL = { NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W), NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(L), NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) };
+noLeak("scan report: a banned word in a directory name is masked when the content also hits", [{ name: `docs/${W}/notes.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: a banned word in a file name is masked when the content also hits", [{ name: `docs/notes-${W}.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: a banned word in capitals in a path is masked", [{ name: `docs/${W.toUpperCase()}/notes.txt`, text: `the ${W} case\n` }], envWL, [W]);
+noLeak("scan report: home/<login> in a path is masked when the content also hits", [{ name: `home/${L}/x.txt`, text: `under /home/${L}/work\n` }], envWL, [L]);
+noLeak("scan report: a private address in a file name is masked when the content also hits", [{ name: `docs/host-${addr7}.txt`, text: `host ${addr7}\n` }], {}, [addr7]);
+noLeak("scan report: a private address in a directory name is masked when the content also hits", [{ name: `docs/${addr7}/notes.txt`, text: `host ${addr7}\n` }], {}, [addr7]);
+noLeak("scan report: a banned email in a file name is masked when the content also hits", [{ name: `docs/${E}.txt`, text: `write to ${E}\n` }], envWL, [E]);
+{
+  const h = hitsFor([{ name: `docs/${W}/notes.txt`, text: `fine\nthe ${W} case\nfine\nthe ${W}s again\n` }], envWL);
+  check("scan report: each hit in a masked path still ends with its own line number", Array.isArray(h) && h.length === 2 && /:2$/u.test(h[0]) && /:4$/u.test(h[1]) && h.every((x) => !x.toLowerCase().includes(W)), JSON.stringify(h && h.map((x) => x.replace(W, "?"))));
+}
+check("scan report: a clean path keeps its name in full", same(hitsFor([{ name: "docs/notes.txt", text: `the ${W} case\n` }], envWL), ["docs/notes.txt:1"]), "name changed");
+
+// Item 2: email matching is linear. One 200,000-letter line with no @ must be scanned in under 2 s. The text is built
+// inside the child process (an environment variable cannot carry 200,000 characters), which times scan itself.
+const SPEED_CHILD = `
+const g = await import(process.env.PROBE_URL);
+const text = process.env.PROBE_SHAPE === "letters" ? "a".repeat(200000) + "\\n" : "ab.".repeat(33333) + "\\n" + "x-".repeat(50000) + "\\n";
+const t0 = Date.now();
+const hits = g.scan([{ name: "f.txt", text }]);
+console.log(JSON.stringify({ ms: Date.now() - t0, hits }));
+`;
+const speedProbe = (shape) => {
+  try {
+    const t0 = Date.now();
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", SPEED_CHILD], {
+      env: { ...cleanEnv(), PROBE_URL: guardUrl, PROBE_SHAPE: shape, ...envWL },
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000,
+    });
+    return { ...JSON.parse(stdout.trim().split("\n").pop()), wall: Date.now() - t0 };
+  } catch (e) { return { error: String(e.message).split("\n")[0], ms: 99999 }; }
+};
+for (const [label, shape] of [["a 200,000-letter line with no @", "letters"], ["200,000 characters of letters and separators with no @", "mixed"]]) {
+  const r = speedProbe(shape);
+  check(`scan speed: ${label} is clean and takes under 2 s`, r.error === undefined && same(r.hits, []) && r.ms < 2000, r.error ?? `${r.ms} ms, result ${JSON.stringify(r.hits)}`);
+}
+
+// Item 3: a banned address is found however it is glued into text, in any letter case.
+const [eLocal, eDomain] = E.split("@");
+const glued = [
+  ["after a path and a dash", `docs/notes-${E}`],
+  ["after a dash", `-${E}`],
+  ["after a letter run and an underscore", `abc_${E}`],
+  ["after a digit run and a dot", `123.${E}`],
+  ["after a letter run and a plus", `abc+${E}`],
+  ["after a letter run and a percent sign", `abc%${E}`],
+  ["after a percent sign", `%${E}`],
+  ["between underscores", `_${E}_`],
+  ["as a file name with an extension", `docs/${E}.txt`],
+  ["before a sentence word joined by a dot", `${E}.Thanks`],
+  ["before a dash and letters", `${E}-abc`],
+  ["before an underscore and a digit", `${E}_2`],
+  ["before a plus and a tag", `${E}+tag`],
+  ["percent-encoded @", `${eLocal}%40${eDomain}`],
+  ["percent-encoded @ in a mailto link", `mailto:${eLocal}%40${eDomain}?subject=x`],
+  ["percent-encoded angle brackets", `%3C${E}%3E`],
+  ["percent-encoded angle brackets in lower case", `%3c${E}%3e`],
+  ["percent-encoded angle brackets and @", `%3C${eLocal}%40${eDomain}%3E`],
+  ["in capitals after a dash", `docs/notes-${E.toUpperCase()}`],
+  ["in capitals between underscores", `_${E.toUpperCase()}_`],
+  ["in capitals and percent-encoded", `${eLocal.toUpperCase()}%40${eDomain.toUpperCase()}`],
+  ["in mixed case before a dot word", `${E[0].toUpperCase()}${E.slice(1)}.Thanks`],
+];
+for (const [label, text] of glued) hitsAre(`email glue: ${label}`, `fine\n${text}\n`, ["f.txt:2"]);
+hitsAre("email glue: an unrelated address glued the same ways is clean", `docs/notes-other.person@${eDomain}\n_other.person@${eDomain}_\nother.person%40${eDomain}\n%3Cother.person@${eDomain}%3E\n`, []);
+hitsAre("email glue: the glued forms are clean when the digest is not set", `docs/notes-${E}\n_${E}_\n${eLocal}%40${eDomain}\n${E}.Thanks\n`, [], {});
+hitsAre("email glue: a longer local part is not the banned one", `zz${eLocal}@${eDomain} and ${eLocal}z@${eDomain}\n`, []);
+// in paths (reports mask the path, never print the address)
+const pathReports = (names, env) => pathProbe(names, env);
+for (const [label, name] of [["a file name", `docs/${E}.txt`], ["after a dash", `docs/notes-${E}`], ["in capitals", `docs/${E.toUpperCase()}.txt`]]) {
+  const r = pathReports([name], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
+  check(`email glue in a path: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && !r[0].toLowerCase().includes(E), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+{
+  const r = pathReports([`docs/${E}.txt`], {});
+  check("email glue in a path: not reported without the digest", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+
+// Item 4: a private IPv6 address followed by a colon is found.
+const ula6 = v6("fd7a", "115c", "", "1");
+hitsAre("ipv6: a unique-local address followed by a colon", `fine\nat ${ula6}: refused\n`, ["f.txt:2"], {});
+hitsAre("ipv6: a link-local address followed by a colon", `at ${v6("fe80", "", "1")}: refused\n`, ["f.txt:1"], {});
+hitsAre("ipv6: a full-form unique-local address followed by a colon", `${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}: refused\n`, ["f.txt:1"], {});
+hitsAre("ipv6: a documentation address followed by a colon is clean", `at ${v6("2001", "db8", "", "1")}: refused\n`, [], {});
+
+// Item 9 (owner decision 4c): the exact, standard names of the private ranges are public knowledge and are not
+// reported. Anything narrower, a real address, or a range prefix without its exact /N still is. Built from parts.
+const rangeNames = [
+  ["unique-local /7", v6("fc00", "", "") + "/7"],
+  ["unique-local /8", v6("fd00", "", "") + "/8"],
+  ["link-local /10", v6("fe80", "", "") + "/10"],
+  ["class-A private /8", quad(10, 0, 0, 0) + "/8"],
+  ["class-B private /12", quad(172, 16, 0, 0) + "/12"],
+  ["class-C private /16", quad(192, 168, 0, 0) + "/16"],
+  ["link-local IPv4 /16", quad(169, 254, 0, 0) + "/16"],
+];
+for (const [label, n] of rangeNames) {
+  hitsAre(`range names: ${label} alone is not reported`, `${n}\n`, [], {});
+  hitsAre(`range names: ${label} in a sentence is not reported`, `fine\nThe ${n} range is private.\n`, [], {});
+  hitsAre(`range names: ${label} in capitals is not reported`, `${n.toUpperCase()}\n`, [], {});
+  hitsAre(`range names: ${label} with surrounding punctuation is not reported`, `(${n}), \`${n}\`, <${n}>, "${n}"; ${n}.\n${n}:\n`, [], {});
+}
+hitsAre("range names: all seven on one line are not reported", `${rangeNames.map(([, n]) => n).join(", ")}\n`, [], {});
+hitsAre("range names: mixed-case hex names are not reported", `${v6("Fc00", "", "")}/7 ${v6("FD00", "", "")}/8 ${v6("Fe80", "", "")}/10\n`, [], {});
+hitsAre("range names: only the lines with a narrower range or a real address are reported", `${rangeNames[0][1]}\nuse ${v6("fd7a", "115c", "", "") + "/48"}\n${rangeNames[3][1]}\nhost ${quad(10, 0, 0, 7)}\n`, ["f.txt:2", "f.txt:4"], {});
+const narrower = [
+  ["a /48 inside unique-local", v6("fd7a", "115c", "", "") + "/48"],
+  ["unique-local base with /8", v6("fc00", "", "") + "/8"],
+  ["unique-local /8 base with /16", v6("fd00", "", "") + "/16"],
+  ["unique-local /8 base with /7", v6("fd00", "", "") + "/7"],
+  ["link-local with /64", v6("fe80", "", "") + "/64"],
+  ["link-local /10 followed by more digits", v6("fe80", "", "") + "/100"],
+  ["unique-local /7 followed by more digits", v6("fc00", "", "") + "/70"],
+  ["a /24 inside the class-C range", quad(192, 168, 7, 0) + "/24"],
+  ["class-C base with /24", quad(192, 168, 0, 0) + "/24"],
+  ["a /16 inside the class-A range", quad(10, 1, 0, 0) + "/16"],
+  ["class-A base with /16", quad(10, 0, 0, 0) + "/16"],
+  ["class-A /8 followed by more digits", quad(10, 0, 0, 0) + "/80"],
+  ["class-B base with /16", quad(172, 16, 0, 0) + "/16"],
+  ["class-B base with /13", quad(172, 16, 0, 0) + "/13"],
+  ["link-local IPv4 base with /24", quad(169, 254, 0, 0) + "/24"],
+  ["a class-A address with /8", quad(10, 0, 0, 7) + "/8"],
+  ["a link-local address with /10", v6("fe80", "", "1") + "/10"],
+];
+for (const [label, n] of narrower) hitsAre(`range names: ${label} is reported`, `fine\nthe range ${n} here\n`, ["f.txt:2"], {});
+const prefixes = [
+  ["unique-local base without /N", v6("fc00", "", "")],
+  ["second unique-local base without /N", v6("fd00", "", "")],
+  ["link-local base without /N", v6("fe80", "", "")],
+  ["a link-local address", v6("fe80", "", "1")],
+  ["unique-local base followed by a slash and no number", v6("fc00", "", "") + "/"],
+  ["class-A base without /N", quad(10, 0, 0, 0)],
+  ["class-B base without /N", quad(172, 16, 0, 0)],
+  ["class-C base without /N", quad(192, 168, 0, 0)],
+  ["link-local IPv4 base without /N", quad(169, 254, 0, 0)],
+];
+for (const [label, n] of prefixes) hitsAre(`range names: ${label} is reported`, `fine\nthe prefix ${n} here\n`, ["f.txt:2"], {});
+hitsAre("range names: an exact name and a real address on one line is reported", `${rangeNames[3][1]} holds ${quad(10, 0, 0, 7)}\n${rangeNames[2][1]} holds ${v6("fe80", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("range names: a documentation range name is still clean", `${quad(192, 0, 2, 0)}/24 ${v6("2001", "db8", "")}/32\n`, [], {});
+// in paths: a directory named for the exact range is not reported; a narrower one is, masked
+{
+  const exactPaths = ["docs/" + quad(10, 0, 0, 0) + "/8/notes.txt", "docs/" + quad(192, 168, 0, 0) + "/16/notes.txt", "docs/" + v6("fc00", "", "") + "/7/notes.txt", "docs/" + v6("fe80", "", "") + "/10/notes.txt"];
+  const r = pathProbe(exactPaths, {});
+  check("range names in paths: the exact names are not reported", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+for (const [label, name, hidden] of [
+  ["a narrower IPv4 range", "docs/" + quad(192, 168, 7, 0) + "/24/notes.txt", quad(192, 168, 7, 0)],
+  ["a real IPv4 address", "docs/host-" + quad(10, 1, 0, 0) + ".txt", quad(10, 1, 0, 0)],
+  ["a narrower IPv6 range", "docs/" + v6("fd7a", "115c", "", "") + "/48/notes.txt", v6("fd7a", "115c", "", "")],
+]) {
+  const r = pathProbe([name], {});
+  check(`range names in paths: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && r[0].includes("private address") && !r[0].toLowerCase().includes(hidden.toLowerCase()), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
 }
 
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it

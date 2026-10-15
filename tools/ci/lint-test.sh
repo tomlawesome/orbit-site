@@ -1726,7 +1726,8 @@ The $nw remark, late in the body." "message" "author|committer" "$nw_d" "" "" "$
 hist_case "a banned login in the commit body" t t "message probe" "Kept under /home/$nl/work." "message" "author|committer" "" "$nl_d" "" "$nl"
 hist_case "a banned email in the commit body" t t "message probe" "Write to $ne about it." "message" "author|committer" "" "" "$ne_d" "$ne"
 hist_case "a banned email in a Co-authored-by trailer" t t "message probe" "Co-authored-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
-hist_case "a banned word in a Signed-off-by trailer" t t "message probe" "Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
+# The name part of a Signed-off-by, Reviewed-by or Co-authored-by trailer may carry the banned word (r3 item 8); see the
+# controls after case n54.
 hist_case "a banned email in a Signed-off-by trailer" t t "message probe" "Signed-off-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
 
 # Cases n40-n52: AI attribution in a commit message is refused with no planted digest (item 7); the names are built from
@@ -1778,6 +1779,134 @@ n_commit "documentation addresses only"
 names_run "" "" ""
 n_clean "the documentation ranges (IPv4 and IPv6) are not reported"
 n_back
+
+# ---- Round 3 (#60 re-review, specs/names-r3.md). Invented values only, built from parts.
+
+# Item 1: no report prints a raw path that holds a banned value, whatever the file holds. n_leak KIND HIDDEN, after the
+# files are committed: the guard fails, prints no HIDDEN value anywhere (the path included), shows *** for the masked
+# part, and (for a word or login) passes again without the digest.
+n_leak() {
+  case "$2" in w) names_run "$nw_d" "" "" ;; l) names_run "" "$nl_d" "" ;; n) names_run "" "" "" ;; esac
+  n_hit "$1 fails, printing no banned value anywhere" "" "$3"
+  grep -q '\*\*\*' "$names_out" || n_fail "$1 (want the path shown with the value masked as ***)"
+  if [ "$2" != n ]; then names_run "" "" ""; n_clean "$1: without the digest it is not reported"; fi
+  n_back
+}
+bin_file() { # bin_file PATH TEXT: NUL bytes around the text
+  mkdir -p "$(dirname "$1")"
+  node -e 'require("fs").writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(process.argv[2]), Buffer.from([0, 3])]))' "$1" "$2"
+}
+mkdir -p "docs/$nw"; printf 'the %s case\n' "$nw" > "docs/$nw/notes.txt"
+n_commit "a word in a folder name and in the content"
+n_leak "a banned word in a folder name whose file also holds it" w "$nw"
+bin_file "docs/$nw/data.bin" "the $nw case"
+n_commit "a binary file under a banned folder"
+n_leak "a binary file holding a banned word under a folder named after it" w "$nw"
+mkdir -p "docs/$nw"
+node -e 'const fs = require("fs"); fs.writeFileSync(process.argv[1], Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("the " + process.argv[2] + " case\n", "utf16le")]))' "docs/$nw/u16.txt" "$nw"
+n_commit "a UTF-16 file under a banned folder"
+n_leak "a UTF-16 file holding a banned word under a folder named after it" w "$nw"
+mkdir -p "docs/notes-$nw"; printf 'the %s case\n' "$nw" > "docs/notes-$nw/x.txt"; bin_file "docs/notes-$nw/y.bin" "the $nw case"
+n_commit "a banned word inside a longer folder name"
+n_leak "a banned word inside a longer folder name, in a text and a binary file" w "$nw"
+mkdir -p "home/$nl"; printf 'under /home/%s/work\n' "$nl" > "home/$nl/x.txt"; bin_file "home/$nl/y.bin" "under /home/$nl/work"
+n_commit "a banned login folder with hits inside"
+n_leak "a text and a binary file under home/<login> holding the login" l "$nl"
+a=10; mkdir -p docs; printf 'host %s.0.0.7\n' "$a" > "docs/host-$a.0.0.7.txt"
+n_commit "a private address in a file name and in the content"
+n_leak "a private address in a file name whose content also holds it" n "$a.0.0.7"
+bin_file "docs/host-$a.0.0.7.bin" "host $a.0.0.7"
+n_commit "a binary file named after a private address"
+n_leak "a binary file named after a private address and holding it" n "$a.0.0.7"
+mkdir -p "docs/$a.0.0.7"; printf 'host %s.0.0.7\n' "$a" > "docs/$a.0.0.7/notes.txt"; bin_file "docs/$a.0.0.7/data.bin" "host $a.0.0.7"
+n_commit "a private address as a folder name, with hits inside"
+n_leak "a text and a binary file under a folder named after a private address" n "$a.0.0.7"
+
+# Item 5: a banned login as the local part of an author or committer email (git's automatic <login>@<host>.local).
+login_email() { # login_email LABEL AUTHOR_EMAIL COMMITTER_EMAIL PART NOTPART
+  GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="$2" GIT_COMMITTER_EMAIL="$3" git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
+  sid=$(git rev-parse --short HEAD)
+  names_run "" "$nl_d" ""
+  n_hist "$1 fails, naming $sid and its $4, not printing the login" "$sid" "$4" "$5" "$nl"
+  names_run "" "" ""
+  n_clean "$1: without the digest it is not reported"
+  n_back
+}
+login_email "a banned login as the local part of the author email" "$nl@anyhost.local" t@t author committer
+login_email "a banned login as the local part of the committer email" t@t "$nl@anyhost.local" committer author
+login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr 'a-z' 'A-Z')@Anyhost.Local" t@t author committer
+GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="${nl}xyz@anyhost.local" GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
+names_run "" "$nl_d" ""
+n_clean "a longer login as the local part of the author email is not the banned one"
+n_back
+
+# Item 6: private addresses in a commit message are refused, in the subject, the body and a trailer. Documentation ranges
+# stay allowed.
+msg_addr() { # msg_addr LABEL SUBJECT BODY HIDDEN
+  if [ -n "$3" ]; then git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$2" -m "$3"; else git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$2"; fi
+  sid=$(git rev-parse --short HEAD)
+  names_run "" "" ""
+  n_hist "$1 fails, naming $sid and its message, not printing the address" "$sid" "message" "author|committer" "$4"
+  n_back
+}
+pa="10"; pa="$pa.0.0.7"; pl="169.254"; pl="$pl.7.7"
+msg_addr "a private IPv4 address in a commit subject" "move to $pa today" "" "$pa"
+msg_addr "a private IPv4 address in a commit body" "address probe" "The service answers on $pa now." "$pa"
+msg_addr "a link-local IPv4 address in a commit body" "address probe" "Seen at $pl once." "$pl"
+msg_addr "a unique-local IPv6 address in a commit body" "address probe" "Listening on $ula now." "$ula"
+msg_addr "a unique-local IPv6 address followed by a colon in a commit body" "address probe" "Refused at $ula: no route." "$ula"
+msg_addr "a link-local IPv6 address in a commit body" "address probe" "Seen at $ll6 once." "$ll6"
+msg_addr "a private address inside a trailer" "address probe" "Signed-off-by: Pat Example <t@t>
+Note: reached $pa" "$pa"
+git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "documentation addresses" -m "Seen at $doc4 and $doc6 only."
+names_run "" "" ""
+n_clean "documentation addresses (IPv4 and IPv6) in a commit message are not reported"
+n_back
+
+# Item 9: the exact names of the private ranges are not reported in a commit message; a narrower range is. Built from parts.
+r6="fc00:"; r6="$r6:/7"; r4="10.0.0"; r4="$r4.0/8"; r4b="192.168"; r4b="$r4b.0.0/16"
+git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "private range names" -m "The ranges $r6, $r4 and $r4b are public names."
+names_run "" "" ""
+n_clean "the exact private range names in a commit message are not reported"
+n_back
+nr4="192.168"; nr4="$nr4.7.0/24"; nr6="fd7a:115c"; nr6="$nr6::/48"
+msg_addr "a narrower private IPv4 range in a commit body" "address probe" "Use the range $nr4 for it." "${nr4%/*}"
+msg_addr "a narrower private IPv6 range in a commit body" "address probe" "Use the range $nr6 for it." "${nr6%/*}"
+
+# Item 7: AI attribution in a Co-authored-by trailer also covers model and assistant names, and openai.com addresses,
+# in any letter case. Names are built from parts. A person's name there, and prose that only mentions a model, pass.
+ml="Fa""ble Op""us Son""net Hai""ku G""PT Chat""GPT Open""AI Cod""ex Gem""ini Copi""lot"
+for m in $ml; do
+  attr_hit "a Co-authored-by trailer naming $m" "Co-authored-by: $m 4 <noreply@example.invalid>"
+  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr 'a-z' 'A-Z') <noreply@example.invalid>"
+  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr 'A-Z' 'a-z') Bot <bot@example.invalid>"
+done
+attr_hit "a Co-authored-by trailer with only an open""ai.com address" "Co-authored-by: Helper <helper@open""ai.com>"
+attr_hit "a Co-authored-by trailer with only an OPEN""AI.COM address" "Co-Authored-By: Helper <helper@OPEN""AI.COM>"
+attr_clean "a Co-authored-by trailer naming a person, with the other models' words absent" "Co-authored-by: Pat Example <pat@example.invalid>"
+attr_clean "a commit message that only mentions Cod""ex in prose" "Port the Cod""ex loader to the new layout."
+attr_clean "a commit message that only mentions Gem""ini and Open""AI in prose" "Compare Gem""ini and Open""AI pricing."
+
+# Item 8: the banned WORD in the name part of a Signed-off-by, Reviewed-by or Co-authored-by trailer is allowed (an
+# owner signs under their own name); a banned email or login in those trailers is refused.
+trailer_clean() { # trailer_clean LABEL TRAILER
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "trailer probe" -m "$2"
+  names_run "$nw_d" "" ""
+  n_clean "$1 is not reported, even with the word planted"
+  n_back
+}
+trailer_clean "a banned word in the name of a Signed-off-by trailer" "Signed-off-by: $nwc Tester <t@t>"
+trailer_clean "a banned word in the name of a lower-case signed-off-by trailer" "signed-off-by: $nwc Tester <t@t>"
+trailer_clean "a banned word in the name of a Reviewed-by trailer" "Reviewed-by: $nwc Tester <t@t>"
+trailer_clean "a banned word in the name of a Co-authored-by trailer" "Co-authored-by: $nwc Tester <t@example.invalid>"
+trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr 'a-z' 'A-Z') <t@example.invalid>"
+hist_case "a banned word in the body next to a trailer holding the word in a name" t t "message probe" "The $nw remark.
+
+Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
+hist_case "a banned email in a Reviewed-by trailer" t t "message probe" "Reviewed-by: Pat Example <$ne>" "message" "author|committer" "" "" "$ne_d" "$ne"
+hist_case "a banned login as the local part of a Signed-off-by email" t t "message probe" "Signed-off-by: Pat Example <$nl@anyhost.local>" "message" "author|committer" "" "$nl_d" "" "$nl"
+hist_case "a banned login as the local part of a Co-authored-by email" t t "message probe" "Co-authored-by: Pat Example <$nl@anyhost.local>" "message" "author|committer" "" "$nl_d" "" "$nl"
+hist_case "a banned login as the name in a Reviewed-by trailer" t t "message probe" "Reviewed-by: $nl <t@t>" "message" "author|committer" "" "$nl_d" "" "$nl"
 rm -f "$names_out"
 
 rm -f "$cspjs"

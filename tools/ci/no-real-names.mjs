@@ -28,7 +28,12 @@ const cached = (sets) => {
   const seen = new Map();
   return (value) => {
     let hit = seen.get(value);
-    if (hit === undefined) { const d = sha(value); hit = sets.some((s) => s.has(d)); seen.set(value, hit); }
+    if (hit === undefined) {
+      const d = sha(value);
+      hit = sets.some((s) => s.has(d));
+      if (seen.size >= 50000) seen.clear(); // bounded: a large file's email candidates are mostly seen once
+      seen.set(value, hit);
+    }
     return hit;
   };
 };
@@ -91,8 +96,71 @@ export const BANNED_EMAILS = new Set([
 const emailDigest = cached([BANNED_EMAILS, extra("EMAIL")]);
 export const bannedEmail = (address) => emailDigest(String(address).toLowerCase());
 
-/** An email-shaped token; the domain does not take a sentence-ending dot. */
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/gu;
+/*
+ * Email candidates, found in time linear in the text (#60 r3 item 2): no regular expression that can backtrack over
+ * a long run. Each `@` (or percent-encoded `%40`) is a centre; a candidate local part ends there and starts at the
+ * start of the run of address characters or just after a separator (`_ - . % +`, or a `%XX` escape such as `%3C`),
+ * at most 64 characters back; a candidate domain starts just after it and ends at the end of its run or just before a
+ * separator, at most 255 characters on, and holds a dot. So an address glued into text by separators is found
+ * (`notes-<address>.txt`, `_<address>_`, `%3C<address>%3E`), while a letter or digit glued on directly makes another
+ * address. The work per `@` is bounded by those caps.
+ */
+const LOCAL_MAX = 64;
+const DOMAIN_MAX = 255;
+const isAlnum = (c) => (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9");
+const isSeparator = (c) => c === "_" || c === "-" || c === "." || c === "%" || c === "+";
+const isLocalChar = (c) => c !== undefined && (isAlnum(c) || isSeparator(c));
+const isDomainChar = (c) => c !== undefined && (isAlnum(c) || c === "." || c === "-");
+const isHex = (c) => c !== undefined && /^[0-9A-Fa-f]$/u.test(c);
+
+/** Every `@` or `%40` in TEXT with its candidate local-part starts, domain ends and the start of the whole local run. */
+function* emailCentres(text) {
+  for (const m of text.matchAll(/@|%40/gu)) {
+    const at = m.index;
+    const from = at + m[0].length;
+    const starts = [];
+    let runStart = -1;
+    for (let s = at - 1; s >= 0 && at - s <= LOCAL_MAX && isLocalChar(text[s]); s--) {
+      const prev = text[s - 1];
+      if (!isLocalChar(prev)) runStart = s;
+      if (isSeparator(text[s])) continue;
+      if (!isLocalChar(prev) || isSeparator(prev) || (text[s - 3] === "%" && isHex(text[s - 2]) && isHex(prev))) starts.push(s);
+    }
+    const ends = [];
+    let e = from;
+    if (isAlnum(text[from])) {
+      let dotted = false; // a domain holds a dot
+      for (; e < text.length && e - from < DOMAIN_MAX && isDomainChar(text[e]); e++) {
+        if ((text[e] === "." || text[e] === "-") && isAlnum(text[e - 1]) && dotted) ends.push(e);
+        if (text[e] === ".") dotted = true;
+      }
+      if (!isDomainChar(text[e]) && isAlnum(text[e - 1]) && dotted) ends.push(e);
+    }
+    yield { at, from, starts, runStart, ends };
+  }
+}
+
+/** The spans of TEXT that are a banned address, however it is glued in (any case). */
+function bannedEmailSpans(text) {
+  const spans = [];
+  for (const { at, from, starts, ends } of emailCentres(text)) {
+    if (!starts.length || !ends.length) continue;
+    const domains = ends.map((end) => [end, text.slice(from, end).toLowerCase()]);
+    for (const start of starts) {
+      const local = text.slice(start, at).toLowerCase();
+      for (const [end, domain] of domains) if (emailDigest(`${local}@${domain}`)) spans.push({ start, end });
+    }
+  }
+  return spans;
+}
+
+/** True when the whole local part of an address in TEXT (`<login>@host`) is a banned login (#60 r3 items 5 and 8). */
+function loginAsLocalPart(text) {
+  for (const { at, runStart } of emailCentres(text)) {
+    if (runStart >= 0 && bannedLogin(text.slice(runStart, at).toLowerCase())) return true;
+  }
+  return false;
+}
 
 /** `/home/<login>` (any case), `/Users/<login>`, `C:\Users\<login>` (any slash, escaped or not, either case), `~<login>/`. */
 const HOME_DIRECTORY = /(?:\/[Hh][Oo][Mm][Ee]\/|[/\\]+[Uu][Ss][Ee][Rr][Ss][/\\]+|(?<![\w/])~)([A-Za-z0-9._-]+)/gu;
@@ -126,8 +194,11 @@ export function isPrivateOrShared(address) {
     || (a === 169 && b === 254);
 }
 
-/** Colon-separated hex groups, not part of a longer word or colon run (times of day fail the shape check below). */
-const IPV6 = /(?<![\w:])[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![\w:])/gu;
+/**
+ * Colon-separated hex groups, not part of a longer word or colon run (times of day fail the shape check below). A
+ * colon may follow when it does not lead on to more groups (`<address>: refused`).
+ */
+const IPV6 = /(?<![\w:])[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?!\w|:[0-9A-Fa-f:])/gu;
 
 /** A well-formed IPv6 address in the unique-local range (first group fc00 to fdff) or link-local range (fe80 to febf); the documentation range is neither. */
 export function isPrivateIPv6(address) {
@@ -140,10 +211,22 @@ export function isPrivateIPv6(address) {
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
 }
 
+/*
+ * The exact, standard names of the private ranges are public knowledge, not a machine's address, and are not
+ * reported (owner decision 4c, #60 r3 item 9). Only the whole name: a narrower range, an address or a prefix without
+ * its exact /N still is.
+ */
+const RANGE_NAMES = new Set(["fc00::/7", "fd00::/8", "fe80::/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]);
+/** True when ADDRESS, ending at END in TEXT, is followed by the `/N` that makes it a range name, as a whole token. */
+function isRangeName(text, address, end) {
+  const m = /^\/(\d{1,3})(?!\w|\.\d)/u.exec(text.slice(end, end + 6));
+  return m !== null && RANGE_NAMES.has(`${address.toLowerCase()}/${m[1]}`);
+}
+
 /**
  * Every banned or private thing in a piece of text, as { category, start, end }
  * (the span in the text). OPTIONS.addresses off skips private addresses
- * (commit history checks words, logins and emails only).
+ * (author and committer names are checked for logins and emails only).
  */
 export function findings(text, { addresses = true } = {}) {
   const out = [];
@@ -153,12 +236,14 @@ export function findings(text, { addresses = true } = {}) {
   for (const m of text.matchAll(HOME_DIRECTORY)) {
     if (loginCandidates(m[1]).some(bannedLogin)) { const start = m.index + m[0].length - m[1].length; out.push({ category: "login", start, end: start + m[1].length }); }
   }
-  for (const m of text.matchAll(EMAIL)) {
-    if (bannedEmail(m[0])) out.push({ category: "email", start: m.index, end: m.index + m[0].length });
-  }
+  for (const span of bannedEmailSpans(text)) out.push({ category: "email", ...span });
   if (addresses) {
-    for (const m of text.matchAll(IPV4)) if (isPrivateOrShared(m[0])) out.push({ category: "private address", start: m.index, end: m.index + m[0].length });
-    for (const m of text.matchAll(IPV6)) if (isPrivateIPv6(m[0])) out.push({ category: "private address", start: m.index, end: m.index + m[0].length });
+    for (const m of text.matchAll(IPV4)) if (isPrivateOrShared(m[0]) && !isRangeName(text, m[0], m.index + m[0].length)) out.push({ category: "private address", start: m.index, end: m.index + m[0].length });
+    for (const m of text.matchAll(IPV6)) {
+      // a single trailing colon is punctuation (`at <address>: refused`), not part of the address
+      const address = /[^:]:$/u.test(m[0]) ? m[0].slice(0, -1) : m[0];
+      if (isPrivateIPv6(address) && !isRangeName(text, address, m.index + address.length)) out.push({ category: "private address", start: m.index, end: m.index + address.length });
+    }
   }
   return out;
 }
@@ -183,14 +268,23 @@ function mask(text, found) {
  * or email, or a private address: the path with each offending part masked as
  * `***`, and the categories. Never the raw path.
  */
+function pathFindings(name) {
+  // a leading slash so that home/<login>/... at the top reads as a home directory
+  return findings(`/${name}`).map((f) => ({ ...f, start: Math.max(0, f.start - 1), end: f.end - 1 }));
+}
 export function scanPaths(names) {
   const reports = [];
   for (const name of names) {
-    // a leading slash so that home/<login>/... at the top reads as a home directory
-    const found = findings(`/${name}`).map((f) => ({ ...f, start: Math.max(0, f.start - 1), end: f.end - 1 }));
+    const found = pathFindings(name);
     if (found.length) reports.push(`${mask(name, found)} (path: ${categories(found)})`);
   }
   return reports;
+}
+
+/** NAME as any report may print it: each banned or private part masked as `***` (#60 r3 item 1). */
+export function shownPath(name) {
+  const found = pathFindings(name);
+  return found.length ? mask(name, found) : name;
 }
 
 /**
@@ -220,6 +314,7 @@ function trackedFiles() {
 function scanDetailed(files) {
   const hits = [];
   for (const { name, text, lines: numbered = true } of files) {
+    const shown = shownPath(name);
     const lines = text.split("\n");
     const kept = KEPT.get(name);
     const all = [];
@@ -228,10 +323,10 @@ function scanDetailed(files) {
       if (kept !== undefined && sha(line) === kept) continue;
       const found = findings(line);
       if (!found.length) continue;
-      if (numbered) hits.push({ ref: `${name}:${i + 1}`, found });
+      if (numbered) hits.push({ ref: `${shown}:${i + 1}`, found });
       else all.push(...found);
     }
-    if (all.length) hits.push({ ref: name, found: all });
+    if (all.length) hits.push({ ref: shown, found: all });
   }
   return hits;
 }
@@ -241,8 +336,11 @@ export function scan(files) {
   return scanDetailed(files).map((h) => h.ref);
 }
 
-/** AI attribution in a commit message (#60 item 7): a co-author trailer naming an AI, a line starting "Generated with" that names an AI, a session line. */
-const AI_NAME = /\b(?:claude|anthropic|openai|chatgpt|gpt-?\d\w*|copilot|gemini|llm|ai)\b/iu;
+/**
+ * AI attribution in a commit message (#60 item 7, r3 item 7): a co-author trailer naming an AI model or assistant (an
+ * anthropic.com or openai.com address included), a line starting "Generated with" that names an AI, a session line.
+ */
+const AI_NAME = /\b(?:claude|fable|opus|sonnet|haiku|anthropic|openai|chatgpt|gpt(?:-?\d\w*)?|codex|copilot|gemini|llm|ai)\b/iu;
 export function aiAttribution(message) {
   return message.split("\n").some((line) =>
     (/^\s*co-authored-by\s*:/iu.test(line) && AI_NAME.test(line))
@@ -261,13 +359,38 @@ function personFindings(name, email) {
   const found = findings(name, { addresses: false }).map((f) => f.category).filter((c) => c !== "word");
   if (bannedLogin(name.trim().toLowerCase())) found.push("login");
   if (bannedEmail(email)) found.push("email");
+  // git's automatic identity is <login>@<host> (#60 r3 item 5)
+  const at = email.lastIndexOf("@");
+  if (at > 0 && bannedLogin(email.slice(0, at).trim().toLowerCase())) found.push("login");
   return [...new Set(found)];
+}
+
+/** A person trailer: `Signed-off-by:`, `Reviewed-by:`, `Co-authored-by:` and the other `<Something>-by:` lines. */
+const PERSON_TRAILER = /^(\s*[A-Za-z][A-Za-z-]*-by\s*:)([^<]*)/iu;
+
+/**
+ * Everything banned or private in one line of a commit message (#60 r3 items 6 and 8). The name part of a person
+ * trailer may carry the banned word, as an author name may (owner decision 4b); a login as that whole name, a login
+ * as an address's local part, and a banned email or private address anywhere are refused.
+ */
+export function messageFindings(line) {
+  let found = findings(line);
+  const trailer = PERSON_TRAILER.exec(line);
+  if (trailer) {
+    const nameStart = trailer[1].length;
+    const nameEnd = nameStart + trailer[2].length;
+    found = found.filter((f) => f.category !== "word" || f.start < nameStart || f.end > nameEnd);
+    if (bannedLogin(trailer[2].trim().toLowerCase())) found.push({ category: "login", start: nameStart, end: nameEnd });
+  }
+  if (loginAsLocalPart(line)) found.push({ category: "login", start: 0, end: 0 });
+  return found;
 }
 
 /* `<short id> author|committer|message (<categories>)` for every commit reachable
    from HEAD with a banned login or email in the author or committer name or
-   email, a banned word, login or email in the full message (trailers included),
-   or AI attribution. Never the value. A
+   email (a login also as the email's local part), a banned word, login, email or
+   private address in the full message (trailers included; the banned word is
+   allowed in a person trailer's name), or AI attribution. Never the value. A
    shallow clone cannot see the whole history, so it is refused rather than passed. */
 function commitHits() {
   const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 });
@@ -280,7 +403,7 @@ function commitHits() {
     if (author.length) hits.push(`${id} author (${author.join(", ")})`);
     const committer = personFindings(cn, ce);
     if (committer.length) hits.push(`${id} committer (${committer.join(", ")})`);
-    const found = message.split("\n").flatMap((line) => findings(line, { addresses: false }));
+    const found = message.split("\n").flatMap(messageFindings);
     if (found.length) hits.push(`${id} message (${categories(found)})`);
     if (aiAttribution(message)) hits.push(`${id} message (AI attribution)`);
   }
@@ -297,7 +420,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   if (paths.length) console.log(`no-real-names: ${paths.length} tracked path(s) hold a real name, host login, banned email or private address (#60), shown masked as ***: rename them`);
   const commits = commitHits() ?? (console.log("no-real-names: the clone is shallow, so the history cannot all be checked: fetch the whole history (GIT_DEPTH: 0)"), [""]);
   for (const h of commits.filter(Boolean)) console.log(`   ${h}`);
-  if (commits.some(Boolean)) console.log(`no-real-names: ${commits.length} commit part(s) carry a banned word, login or email, or AI attribution (#56, #60): a branch cut before the history rewrite of 2026-10-14 is rebased onto the current dev; otherwise reword the commit`);
+  if (commits.some(Boolean)) console.log(`no-real-names: ${commits.length} commit part(s) carry a banned word, login or email, a private address, or AI attribution (#56, #60): a branch cut before the history rewrite of 2026-10-14 is rebased onto the current dev; otherwise reword the commit`);
   if (hits.length || paths.length || commits.length) process.exit(1);
   console.log("no-real-names: ok");
 }
