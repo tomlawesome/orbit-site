@@ -1475,6 +1475,16 @@ names_run "" "" ""
 n_clean "documentation addresses (IPv4 and IPv6) in a commit message are not reported"
 n_back
 
+# Item 9: the exact names of the private ranges are not reported in a commit message; a narrower range is. Built from parts.
+r6="fc00:"; r6="$r6:/7"; r4="10.0.0"; r4="$r4.0/8"; r4b="192.168"; r4b="$r4b.0.0/16"
+git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "private range names" -m "The ranges $r6, $r4 and $r4b are public names."
+names_run "" "" ""
+n_clean "the exact private range names in a commit message are not reported"
+n_back
+nr4="192.168"; nr4="$nr4.7.0/24"; nr6="fd7a:115c"; nr6="$nr6::/48"
+msg_addr "a narrower private IPv4 range in a commit body" "address probe" "Use the range $nr4 for it." "${nr4%/*}"
+msg_addr "a narrower private IPv6 range in a commit body" "address probe" "Use the range $nr6 for it." "${nr6%/*}"
+
 # Item 7: AI attribution in a Co-authored-by trailer also covers model and assistant names, and openai.com addresses,
 # in any letter case. Names are built from parts. A person's name there, and prose that only mentions a model, pass.
 ml="Fa""ble Op""us Son""net Hai""ku G""PT Chat""GPT Open""AI Cod""ex Gem""ini Copi""lot"

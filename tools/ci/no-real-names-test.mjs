@@ -339,6 +339,75 @@ hitsAre("ipv6: a link-local address followed by a colon", `at ${v6("fe80", "", "
 hitsAre("ipv6: a full-form unique-local address followed by a colon", `${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}: refused\n`, ["f.txt:1"], {});
 hitsAre("ipv6: a documentation address followed by a colon is clean", `at ${v6("2001", "db8", "", "1")}: refused\n`, [], {});
 
+// Item 9 (owner decision 4c): the exact, standard names of the private ranges are public knowledge and are not
+// reported. Anything narrower, a real address, or a range prefix without its exact /N still is. Built from parts.
+const rangeNames = [
+  ["unique-local /7", v6("fc00", "", "") + "/7"],
+  ["unique-local /8", v6("fd00", "", "") + "/8"],
+  ["link-local /10", v6("fe80", "", "") + "/10"],
+  ["class-A private /8", quad(10, 0, 0, 0) + "/8"],
+  ["class-B private /12", quad(172, 16, 0, 0) + "/12"],
+  ["class-C private /16", quad(192, 168, 0, 0) + "/16"],
+  ["link-local IPv4 /16", quad(169, 254, 0, 0) + "/16"],
+];
+for (const [label, n] of rangeNames) {
+  hitsAre(`range names: ${label} alone is not reported`, `${n}\n`, [], {});
+  hitsAre(`range names: ${label} in a sentence is not reported`, `fine\nThe ${n} range is private.\n`, [], {});
+  hitsAre(`range names: ${label} in capitals is not reported`, `${n.toUpperCase()}\n`, [], {});
+  hitsAre(`range names: ${label} with surrounding punctuation is not reported`, `(${n}), \`${n}\`, <${n}>, "${n}"; ${n}.\n${n}:\n`, [], {});
+}
+hitsAre("range names: all seven on one line are not reported", `${rangeNames.map(([, n]) => n).join(", ")}\n`, [], {});
+hitsAre("range names: mixed-case hex names are not reported", `${v6("Fc00", "", "")}/7 ${v6("FD00", "", "")}/8 ${v6("Fe80", "", "")}/10\n`, [], {});
+hitsAre("range names: only the lines with a narrower range or a real address are reported", `${rangeNames[0][1]}\nuse ${v6("fd7a", "115c", "", "") + "/48"}\n${rangeNames[3][1]}\nhost ${quad(10, 0, 0, 7)}\n`, ["f.txt:2", "f.txt:4"], {});
+const narrower = [
+  ["a /48 inside unique-local", v6("fd7a", "115c", "", "") + "/48"],
+  ["unique-local base with /8", v6("fc00", "", "") + "/8"],
+  ["unique-local /8 base with /16", v6("fd00", "", "") + "/16"],
+  ["unique-local /8 base with /7", v6("fd00", "", "") + "/7"],
+  ["link-local with /64", v6("fe80", "", "") + "/64"],
+  ["link-local /10 followed by more digits", v6("fe80", "", "") + "/100"],
+  ["unique-local /7 followed by more digits", v6("fc00", "", "") + "/70"],
+  ["a /24 inside the class-C range", quad(192, 168, 7, 0) + "/24"],
+  ["class-C base with /24", quad(192, 168, 0, 0) + "/24"],
+  ["a /16 inside the class-A range", quad(10, 1, 0, 0) + "/16"],
+  ["class-A base with /16", quad(10, 0, 0, 0) + "/16"],
+  ["class-A /8 followed by more digits", quad(10, 0, 0, 0) + "/80"],
+  ["class-B base with /16", quad(172, 16, 0, 0) + "/16"],
+  ["class-B base with /13", quad(172, 16, 0, 0) + "/13"],
+  ["link-local IPv4 base with /24", quad(169, 254, 0, 0) + "/24"],
+  ["a class-A address with /8", quad(10, 0, 0, 7) + "/8"],
+  ["a link-local address with /10", v6("fe80", "", "1") + "/10"],
+];
+for (const [label, n] of narrower) hitsAre(`range names: ${label} is reported`, `fine\nthe range ${n} here\n`, ["f.txt:2"], {});
+const prefixes = [
+  ["unique-local base without /N", v6("fc00", "", "")],
+  ["second unique-local base without /N", v6("fd00", "", "")],
+  ["link-local base without /N", v6("fe80", "", "")],
+  ["a link-local address", v6("fe80", "", "1")],
+  ["unique-local base followed by a slash and no number", v6("fc00", "", "") + "/"],
+  ["class-A base without /N", quad(10, 0, 0, 0)],
+  ["class-B base without /N", quad(172, 16, 0, 0)],
+  ["class-C base without /N", quad(192, 168, 0, 0)],
+  ["link-local IPv4 base without /N", quad(169, 254, 0, 0)],
+];
+for (const [label, n] of prefixes) hitsAre(`range names: ${label} is reported`, `fine\nthe prefix ${n} here\n`, ["f.txt:2"], {});
+hitsAre("range names: an exact name and a real address on one line is reported", `${rangeNames[3][1]} holds ${quad(10, 0, 0, 7)}\n${rangeNames[2][1]} holds ${v6("fe80", "", "1")}\n`, ["f.txt:1", "f.txt:2"], {});
+hitsAre("range names: a documentation range name is still clean", `${quad(192, 0, 2, 0)}/24 ${v6("2001", "db8", "")}/32\n`, [], {});
+// in paths: a directory named for the exact range is not reported; a narrower one is, masked
+{
+  const exactPaths = ["docs/" + quad(10, 0, 0, 0) + "/8/notes.txt", "docs/" + quad(192, 168, 0, 0) + "/16/notes.txt", "docs/" + v6("fc00", "", "") + "/7/notes.txt", "docs/" + v6("fe80", "", "") + "/10/notes.txt"];
+  const r = pathProbe(exactPaths, {});
+  check("range names in paths: the exact names are not reported", Array.isArray(r) && r.length === 0, Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+for (const [label, name, hidden] of [
+  ["a narrower IPv4 range", "docs/" + quad(192, 168, 7, 0) + "/24/notes.txt", quad(192, 168, 7, 0)],
+  ["a real IPv4 address", "docs/host-" + quad(10, 1, 0, 0) + ".txt", quad(10, 1, 0, 0)],
+  ["a narrower IPv6 range", "docs/" + v6("fd7a", "115c", "", "") + "/48/notes.txt", v6("fd7a", "115c", "", "")],
+]) {
+  const r = pathProbe([name], {});
+  check(`range names in paths: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && r[0].includes("private address") && !r[0].toLowerCase().includes(hidden.toLowerCase()), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
 check("real tree and history: the guard exits 0", real.status === 0, `exit ${real.status}: ${String(real.stdout).split("\n").slice(0, 3).join(" | ")}`);
