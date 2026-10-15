@@ -7,6 +7,9 @@
  */
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { IPV4, isPrivateOrShared, loginsOf, scan, wordsOf } from "./no-real-names.mjs";
 import * as guard from "./no-real-names.mjs";
@@ -406,6 +409,110 @@ for (const [label, name, hidden] of [
 ]) {
   const r = pathProbe([name], {});
   check(`range names in paths: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && r[0].includes("private address") && !r[0].toLowerCase().includes(hidden.toLowerCase()), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+
+// ---- Round 4 (#60 final review, specs/names-r4.md). Invented values only, built from parts.
+
+// Item 1: a private IPv6 address is found when joined to text by "_", another letter-free separator, or at a token
+// edge. (IPv4 already behaves this way.)
+const ula = v6("fd7a", "115c", "", "1");
+const lla = v6("fe80", "", "1");
+const glue6 = [
+  ["after a word and an underscore", `host_${ula}`],
+  ["before an underscore and a word", `${ula}_old`],
+  ["between underscores", `host_${ula}_old`],
+  ["before an underscore, after a space", `at ${ula}_x`],
+  ["after an underscore at the start of the line", `_${ula}`],
+  ["in capitals after an underscore", `host_${ula.toUpperCase()}`],
+  ["after a dash", `host-${ula}`],
+  ["before a dash and a word", `${ula}-old`],
+  ["link-local after an underscore", `host_${lla}`],
+  ["link-local before an underscore", `${lla}_old`],
+  ["full form after an underscore", `host_${v6("fd7a", "115c", "a1e0", "0", "0", "0", "0", "1")}_old`],
+];
+for (const [label, text] of glue6) hitsAre(`ipv6 glue: ${label}`, `fine\n${text}\n`, ["f.txt:2"], {});
+hitsAre("ipv6 glue: the IPv4 form joined by underscores is found (already holds)", `fine\nhost_${quad(10, 0, 0, 7)}_old\n`, ["f.txt:2"], {});
+hitsAre("ipv6 glue: a documentation address joined by underscores is clean", `host_${v6("2001", "db8", "", "1")}_old\n`, [], {});
+hitsAre("ipv6 glue: a time of day joined by underscores is clean", "log_12:34:56_old\n", [], {});
+for (const [label, name] of [
+  ["an underscore before it in a directory name", `docs/host_${ula}/notes.txt`],
+  ["an underscore after it in a file name", `docs/${ula}_old/notes.txt`],
+  ["underscores around it in a file name", `docs/host_${ula}_old.txt`],
+]) {
+  const r = pathProbe([name], {});
+  check(`ipv6 glue in a path: ${label} is reported and masked`, Array.isArray(r) && r.length === 1 && r[0].includes("***") && r[0].includes("private address") && !r[0].toLowerCase().includes(ula.toLowerCase()), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
+}
+noLeak("ipv6 glue: a path holding the address is masked when the content also hits", [{ name: `docs/host_${ula}/notes.txt`, text: `see host_${ula}_old\n` }], {}, [ula]);
+noLeak("ipv6 glue: a file name holding the address is masked when the content also hits", [{ name: `docs/${ula}_old.txt`, text: `at ${ula}_x\n` }], {}, [ula]);
+{
+  const h = hitsFor([{ name: `docs/host_${ula}/notes.txt`, text: `see host_${ula}_old\nfine\n` }], {});
+  check("ipv6 glue: no report line holds the address, in any case", Array.isArray(h) && h.length > 0 && h.every((x) => !x.toLowerCase().includes(ula.toLowerCase()) && !x.toLowerCase().includes("115c")), h === null ? "no result" : "a report holds the address");
+}
+
+// Item 2: when a git command the guard runs fails, it prints a fixed message naming the command and its exit status
+// only, never the command's output or the error object, and exits non-zero. A fake `git` goes first on PATH: it
+// prints an invented address line to stdout and another to stderr, then exits 3. MODE picks which subcommand fails;
+// every other call goes to the real git.
+const scratchRoot = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "names-r4-"));
+const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+const leakAddr = quad(10, 9, 8, 7);
+const outMark = "zyx" + "stdoutmark";
+const errMark = "zyx" + "stderrmark";
+const fakeBin = join(scratchRoot, "bin");
+mkdirSync(fakeBin);
+writeFileSync(join(fakeBin, "git"), [
+  "#!/bin/sh",
+  'fail=0',
+  'if [ "$FAKE_GIT_MODE" = all ]; then fail=1; fi',
+  'for a in "$@"; do if [ "$a" = "$FAKE_GIT_MODE" ]; then fail=1; fi; done',
+  'if [ "$fail" = 1 ]; then',
+  `  echo "host ${leakAddr} ${outMark}"`,
+  `  echo "host ${leakAddr} ${errMark}" >&2`,
+  "  exit 3",
+  "fi",
+  `exec "${realGit}" "$@"`,
+  "",
+].join("\n"));
+chmodSync(join(fakeBin, "git"), 0o755);
+const failGit = (mode) => spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], {
+  cwd: repoRoot,
+  env: { ...cleanEnv(), PATH: `${fakeBin}:${process.env.PATH}`, FAKE_GIT_MODE: mode },
+  encoding: "utf8",
+  timeout: 60000,
+});
+for (const [label, mode, cmd] of [["git log", "log", "log"], ["git ls-files", "ls-files", "ls-files"], ["every git command", "all", "git"]]) {
+  const r = failGit(mode);
+  const text = `${r.stdout}\n${r.stderr}`;
+  check(`git failure (${label}): the guard exits non-zero`, typeof r.status === "number" && r.status !== 0, `exit ${r.status}${r.error ? ` (${r.error.code})` : ""}`);
+  check(`git failure (${label}): the output holds no part of the command's output`, !text.includes(leakAddr) && !text.includes(outMark) && !text.includes(errMark) && !text.includes(`host ${leakAddr}`), "output holds part of the fake git line");
+  check(`git failure (${label}): the message names the command and the exit status`, text.includes("git") && text.includes(cmd) && /\b3\b/u.test(text), "message lacks the command or the status 3");
+  check(`git failure (${label}): the guard does not claim ok`, !/^no-real-names: ok/mu.test(String(r.stdout)), "printed the ok verdict");
+  check(`git failure (${label}): no stack trace or error object is printed`, !/\n\s+at .*\(|node:internal|ERR_|\bstatus:\s*3|\bstderr:|\bstdout:|\bSpawnSyncReturns|Error:/u.test(text), "output looks like a stack trace or error object");
+}
+rmSync(scratchRoot, { recursive: true, force: true });
+
+// Item 3: a letter or digit glued to the END of the banned address's domain makes it a different address (clean);
+// a separator keeps it the banned one (found).
+hitsAre("email domain end: a letter glued on is another address", `fine\n${E}x\n`, []);
+hitsAre("email domain end: a digit glued on is another address", `fine\n${E}2\n`, []);
+hitsAre("email domain end: a capital letter glued on is another address", `${E.toUpperCase()}X\n${E}X\n`, []);
+hitsAre("email domain end: letters and digits glued on are another address", `${E}abc123\n`, []);
+hitsAre("email domain end: a glued address in a sentence is clean", `write to ${E}x now\nor to ${E}2.\n`, []);
+hitsAre("email domain end: a dot and a letter keeps it found", `fine\n${E}.x\n`, ["f.txt:2"]);
+hitsAre("email domain end: a dash and a letter keeps it found", `fine\n${E}-x\n`, ["f.txt:2"]);
+hitsAre("email domain end: a dot, a dash and an underscore each keep it found", `${E}.x\n${E}-x\n${E}_x\n`, ["f.txt:1", "f.txt:2", "f.txt:3"]);
+hitsAre("email domain end: in capitals, with a separator, it is found", `${E.toUpperCase()}.X\n${E.toUpperCase()}-X\n`, ["f.txt:1", "f.txt:2"]);
+hitsAre("email domain end: a glued form and the real one on one line is found", `${E}x and ${E}\n`, ["f.txt:1"]);
+hitsAre("email domain end: percent-encoded @ with a letter glued on the domain is clean", `${eLocal}%40${eDomain}x\n`, []);
+hitsAre("email domain end: percent-encoded @ with a dot and a letter is found", `${eLocal}%40${eDomain}.x\n`, ["f.txt:1"]);
+for (const [label, name, want] of [
+  ["a letter glued on", `docs/${E}x.txt`, 0],
+  ["a digit glued on", `docs/${E}2`, 0],
+  ["a dot and a letter", `docs/${E}.x`, 1],
+  ["a dash and a letter", `docs/${E}-x`, 1],
+]) {
+  const r = pathReports([name], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
+  check(`email domain end in a path: ${label} gives ${want ? "a masked report" : "no report"}`, Array.isArray(r) && r.length === want && (!want || (r[0].includes("***") && !r[0].toLowerCase().includes(E))), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
 }
 
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
