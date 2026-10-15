@@ -194,6 +194,8 @@ const WS = [
   ["preview\u20283f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
   ["preview\u20293f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
   ["preview\u00a03f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\u00853f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["nightly a\u0085b", '<div class="release" data-channel="build">nightly <span class="build">a b</span></div>'],
   ["preview \t\n \u00a0  3f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
   ["nightly a\tb\n\nc\u00a0\u00a0d", '<div class="release" data-channel="build">nightly <span class="build">a b c d</span></div>'],
 ];
@@ -203,8 +205,8 @@ for (const [name, sf] of Object.entries(SURFACES)) {
     const ok = !a.error && a.inserted === `\n${a.lead}${html}`;
     check(`9. ${name}, tag ${JSON.stringify(tag)}: whitespace folded to one space`, ok, a.error || (ok ? "one space, one line" : `got ${JSON.stringify(a.inserted)}`));
   }
-  const a = added(sf, "alpha\n<b>\u2028x\u00a0y</b>");
-  check(`9. ${name}: a tag with line breaks writes no newline, U+2028 or non-breaking space of its own`, !a.error && a.inserted.split("\n").length === 2 && !/[\u2028\u2029\u00a0\r]/.test(a.inserted), a.error || `${a.inserted.split("\n").length - 1} newline(s) in what was added`);
+  const a = added(sf, "alpha\n<b>\u2028x\u00a0y\u0085z</b>");
+  check(`9. ${name}: a tag with line breaks writes no newline, U+2028 or non-breaking space of its own`, !a.error && a.inserted.split("\n").length === 2 && !/[\u0085\u2028\u2029\u00a0\r]/.test(a.inserted), a.error || `${a.inserted.split("\n").length - 1} newline(s) in what was added`);
 }
 
 /* ---- 10. the stylesheet: the long tag, the case, the line height (read as text) ---- */
