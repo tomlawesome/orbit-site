@@ -160,4 +160,70 @@ check("5. the stylesheet contract lists .release", /\.release\b/.test(sec("### S
 const r = spawnSync(process.execPath, [join(root, "tools", "door-markup.mjs"), "--check"], { encoding: "utf8", cwd: root });
 check("6. index.html is unchanged by the writer (--check exits 0)", r.status === 0, `exit ${r.status}: ${(r.stdout + r.stderr).trim().split("\n")[0]}`);
 check("6. index.html has no .release", !/class="release"/.test(readFileSync(join(root, "index.html"), "utf8")), "none in the page");
+/* ---- 7. review fixes: only a string is a tag ---- */
+for (const [name, sf] of Object.entries(SURFACES)) {
+  for (const [label, v] of [["false", false], ["0", 0], ["null", null], ["{}", {}], ["[]", []], ["true", true], ["1", 1]]) {
+    const got = sha(sf.fn({ ...sf.opts, tag: v }));
+    check(`7. ${name}, tag: ${label} (not a string): the same bytes as today`, got === sf.today, got === sf.today ? "sha256 matches" : "a tag was written");
+  }
+}
+
+/* ---- 8. the first word picks the channel in any case; the markup keeps the host's text ---- */
+const CASE_CASES = [
+  ["Alpha", '<div class="release" data-channel="alpha">Alpha</div>'],
+  ["ALPHA", '<div class="release" data-channel="alpha">ALPHA</div>'],
+  ["Beta", '<div class="release" data-channel="beta">Beta</div>'],
+  ["PREVIEW 3F2A9C1", '<div class="release" data-channel="preview">PREVIEW <span class="build">3F2A9C1</span></div>'],
+  ["Preview 3f2a9c1", '<div class="release" data-channel="preview">Preview <span class="build">3f2a9c1</span></div>'],
+  ["Alphabet", '<div class="release" data-channel="build">Alphabet</div>'],
+  ["BETAS 1", '<div class="release" data-channel="build">BETAS <span class="build">1</span></div>'],
+];
+for (const [name, sf] of Object.entries(SURFACES)) {
+  for (const [tag, html] of CASE_CASES) {
+    const a = added(sf, tag);
+    const ok = !a.error && a.inserted === `\n${a.lead}${html}`;
+    check(`8. ${name}, tag ${JSON.stringify(tag)}: ${html}`, ok, a.error || (ok ? "channel by any case, text as given" : `got ${JSON.stringify(a.inserted)}`));
+  }
+}
+
+/* ---- 9. any run of whitespace becomes one space; one element per line ---- */
+const WS = [
+  ["preview\t3f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\n3f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\r\n3f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\u20283f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\u20293f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview\u00a03f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["preview \t\n \u00a0  3f2a9c1", '<div class="release" data-channel="preview">preview <span class="build">3f2a9c1</span></div>'],
+  ["nightly a\tb\n\nc\u00a0\u00a0d", '<div class="release" data-channel="build">nightly <span class="build">a b c d</span></div>'],
+];
+for (const [name, sf] of Object.entries(SURFACES)) {
+  for (const [tag, html] of WS) {
+    const a = added(sf, tag);
+    const ok = !a.error && a.inserted === `\n${a.lead}${html}`;
+    check(`9. ${name}, tag ${JSON.stringify(tag)}: whitespace folded to one space`, ok, a.error || (ok ? "one space, one line" : `got ${JSON.stringify(a.inserted)}`));
+  }
+  const a = added(sf, "alpha\n<b>\u2028x\u00a0y</b>");
+  check(`9. ${name}: a tag with line breaks writes no newline, U+2028 or non-breaking space of its own`, !a.error && a.inserted.split("\n").length === 2 && !/[\u2028\u2029\u00a0\r]/.test(a.inserted), a.error || `${a.inserted.split("\n").length - 1} newline(s) in what was added`);
+}
+
+/* ---- 10. the stylesheet: the long tag, the case, the line height (read as text) ---- */
+const css = readFileSync(join(root, "assets", "door", "door.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
+const base = rules.find((r) => r.sel.split(",").map((x) => x.trim()).includes(".lockup .release"));
+const decl = (body, prop) => { const m = body.match(new RegExp(`(?:^|[;\\s])${prop}\\s*:\\s*([^;]+)`)); return m ? m[1].trim() : null; };
+check("10. door.css has a `.lockup .release` rule", !!base, base ? "found" : "none");
+if (base) {
+  check("10. .release: text-transform: lowercase", decl(base.body, "text-transform") === "lowercase", `text-transform: ${decl(base.body, "text-transform")}`);
+  check("10. .release: has a max-width (never wider than the ring's inside)", !!decl(base.body, "max-width"), `max-width: ${decl(base.body, "max-width")}`);
+  check("10. .release: text-overflow: ellipsis", decl(base.body, "text-overflow") === "ellipsis", `text-overflow: ${decl(base.body, "text-overflow")}`);
+  const ov = decl(base.body, "overflow") || decl(base.body, "overflow-x");
+  check("10. .release: overflow hidden (so the ellipsis takes effect)", ov === "hidden", `overflow: ${ov}`);
+  const fi = base.body.search(/(?:^|[;\s])font\s*:/), li = base.body.search(/(?:^|[;\s])line-height\s*:/);
+  check("10. .release: line-height is declared after the font shorthand (which would reset it)", fi >= 0 && li >= 0 && li > fi, `font at ${fi}, line-height at ${li}`);
+}
+
+/* ---- 11. the README no longer says Orbit passes it today ---- */
+check("11. the README does not say Orbit passes its channel (it does not yet)", !/Orbit\s+passes\b/i.test(readme), /Orbit\s+passes\b/i.test(readme) ? "still says Orbit passes it" : "no such claim");
+check("11. the README says Orbit will pass its channel or short commit", /Orbit\s+will\s+pass/i.test(readme), /Orbit\s+will\s+pass/i.test(readme) ? "found" : "no `Orbit will pass`");
 process.exit(failed ? 1 : 0);
