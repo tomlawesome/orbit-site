@@ -181,7 +181,7 @@ hitsAre("extra emails: an address in text is reported as file:line", `fine\nwrit
 hitsAre("extra emails: case-insensitive", `Write to ${E.toUpperCase()} now\n${E[0].toUpperCase()}${E.slice(1)}\n`, ["f.txt:1", "f.txt:2"]);
 hitsAre("extra emails: in angle brackets and after mailto:", `Pat <${E}>\nmailto:${E}?subject=x\n`, ["f.txt:1", "f.txt:2"]);
 hitsAre("extra emails: before a sentence-ending dot", `Write to ${E}.\n`, ["f.txt:1"]);
-hitsAre("extra emails: another address is clean", `other.person@example.invalid\n${E}.au\n`, []);
+hitsAre("extra emails: another address is clean", `other.person@example.invalid\n${E.replace("@", "x@")}\n`, []);
 hitsAre("extra emails: not set, the address is clean", `${E}\n`, [], {});
 hitsAre("extra emails: only the email variable set, words and logins stay clean", `${W}\n/home/${L}\n`, [], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
 
