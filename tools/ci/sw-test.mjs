@@ -246,4 +246,27 @@ for (const [path, mode] of [["/", "navigate"], ["/assets/js/main.js", "no-cors"]
   }
 }
 
+/* ---- a query string does not make a kept picture a different one (ignoreSearch) ---- */
+{
+  const w = boot();
+  const p = "/assets/earth.webp";
+  await w.ask(w.request(p));
+  const q = await w.ask(w.request(p + "?v=2"));
+  check("a picture asked for with a query string is answered from the kept copy, with no new fetch", q.handled && !q.error && w.calls.length === 1 && (await body(q.response)) === `net:${ORIGIN}${p}`,
+    `${w.calls.length} fetches (want 1), served ${JSON.stringify(await body(q.response))}`);
+  w.online = false;
+  w.now += 50 * HOUR;
+  const old = await w.ask(w.request(p + "?v=3"));
+  check("... and an old kept copy answers a query-string request when the network is gone", !old.error && (await body(old.response)) === `net:${ORIGIN}${p}`,
+    old.error ? `rejected: ${old.error.message}` : `served ${JSON.stringify(await body(old.response))}`);
+}
+{
+  const w = boot();
+  const p = "/assets/moon.webp";
+  await w.ask(w.request(p + "?v=1"));
+  const q = await w.ask(w.request(p + "?v=2"));
+  check("a picture kept under one query string answers another query string, with no new fetch", q.handled && !q.error && w.calls.length === 1,
+    `${w.calls.length} fetches (want 1)`);
+}
+
 process.exit(failed ? 1 : 0);
