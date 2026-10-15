@@ -90,7 +90,6 @@ lint:
   script:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - sh tools/ci/lint.sh
-    - sh tools/ci/lint-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
@@ -100,6 +99,21 @@ lint:
     - node tools/ci/import-docs-test.mjs
     - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs
+
+# The lint's own test: each case plants one fault in a scratch copy and runs
+# the whole lint, so it takes about 50 minutes alone. Its own job, beside
+# `lint`, so neither runs into the lane's one-hour limit (#62). The gate
+# still needs it: the pipeline fails if it does. `live:journey` does not
+# wait for it.
+lint:test:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - sh tools/ci/lint-test.sh
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in Firefox: the door, each
@@ -159,7 +173,7 @@ live:journey:
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
 # fetched and set as the site's own pages. What changed goes to `main` as a
-# merge request that merges itself once `lint` and `live:journey` pass, so
+# merge request that merges itself once `lint`, `lint:test` and `live:journey` pass, so
 # nobody pushes to `main` and every import is tested before Pages serves
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
