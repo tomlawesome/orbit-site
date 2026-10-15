@@ -141,6 +141,11 @@ while (ev < events.length) {
   ev++;
 }
 const imageVars = []; // [name, path, line] for every key naming a variable the image reads
+// The value nodes of GIT_DEPTH and GIT_STRATEGY written under publish_docs > variables
+// (#60 round 5): js-yaml reads 1.0, 1e0, 0o1, 0x1 and +1 all as 1, GitLab's reader
+// (Psych) does not, so they are judged on how they are written, not on the value read.
+const GIT_RAW = ["GIT_DEPTH", "GIT_STRATEGY"];
+const gitRaw = { GIT_DEPTH: [], GIT_STRATEGY: [] };
 const at_ = (path, e) => `line ${lineAt(startOf(e))}${path.length ? `, in ${path.join(" > ")}` : ""}`;
 const walk = (n, path) => {
   const e = n.e;
@@ -165,6 +170,7 @@ const walk = (n, path) => {
       else name = t;
     }
     if (name !== null && IMAGE_VARS.has(name)) imageVars.push([name, path, lineAt(ke.valueStart)]);
+    if (GIT_RAW.includes(name) && path.length === 2 && path[0] === "publish_docs" && path[1] === "variables") gitRaw[name].push(v.e);
     walk(v, [...path, name ?? "?"]);
   }
 };
@@ -444,7 +450,7 @@ if (pub !== null) {
   }
   // the image runs beside the token, so publish_docs names its own, and it is
   // PUBLISH_IMAGE; NODE_IMAGE itself is pinned to a digest by lint.sh
-  if (!Object.hasOwn(pub, "image") || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: publish_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
+  if (pub.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: publish_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: publish_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token");
   if (Object.hasOwn(ex, "services")) bad(".gitlab-ci.yml: publish_docs has services; a service container runs beside the token");
   // What runs beside the token is exactly what is written (#60 round 4): the
@@ -475,6 +481,32 @@ if (pub !== null) {
   const varsWhy = "a variable on the job holding the token can change what the runner or its programs do";
   if (!exact(pub.variables)) bad(`.gitlab-ci.yml: publish_docs variables must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(pub.variables ?? null)}; ${varsWhy}`);
   else if (!exact(ex.variables)) bad(`.gitlab-ci.yml: publish_docs variables, with what it extends, must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(ex.variables ?? null)}; ${varsWhy}`);
+  // ...and as written (#60 round 5): GIT_DEPTH the plain scalar 1 (not 1.0, 1e0,
+  // 0o1, 0x1 or +1, which GitLab's reader can take as a float or a string), and
+  // GIT_STRATEGY the plain or quoted text clone. Each is written out under
+  // publish_docs's own variables, not brought in by an alias or a merge key, and
+  // every time it is written (a repeated key included) it is written that way.
+  const RAW = {
+    GIT_DEPTH: ["the plain number 1", (e) => e.type === E.SCALAR && e.style === STYLE.PLAIN && yaml.getScalarValue(src, e) === "1"],
+    GIT_STRATEGY: ["the plain or quoted text clone", (e) => e.type === E.SCALAR && [STYLE.PLAIN, STYLE.SINGLE_QUOTED, STYLE.DOUBLE_QUOTED].includes(e.style) && yaml.getScalarValue(src, e) === "clone"],
+  };
+  for (const [v, [want, ok]] of Object.entries(RAW)) {
+    if (gitRaw[v].length === 0) bad(`.gitlab-ci.yml: publish_docs ${v} is not written out as ${want} in the job itself; GitLab's reader can read a value brought in another way differently from this check's`);
+    for (const e of gitRaw[v].filter((x) => !ok(x))) {
+      const quoted = e.style === STYLE.SINGLE_QUOTED || e.style === STYLE.DOUBLE_QUOTED;
+      const shown = e.type !== E.SCALAR ? "as an alias, a list or a mapping" : quoted ? src.slice(e.valueStart - 1, e.valueEnd + 1) : e.style === STYLE.PLAIN ? src.slice(e.valueStart, e.valueEnd) : "as a block scalar";
+      bad(`.gitlab-ci.yml: line ${lineAt(startOf(e))}: publish_docs ${v} is written ${shown}; write it as ${want}, since GitLab's reader can read another spelling as a float or a string where this check's reads ${v === "GIT_DEPTH" ? "1" : "clone"}`);
+    }
+  }
+  // Its own keys are an allowlist (#60 round 5): anything else (tags, retry,
+  // id_tokens, extends, a keyword GitLab adds later) is refused, naming only the
+  // key found. extends is refused too: the job is written out in full.
+  const OWN = new Set(["stage", "image", "interruptible", "needs", "environment", "rules", "variables", "script"]);
+  for (const k of Object.keys(pub)) if (!OWN.has(k)) bad(`.gitlab-ci.yml: publish_docs has ${k}, a key the job holding the token does not take; that job is written out in full and holds nothing else`);
+  // stage exactly publish, interruptible exactly false (a boolean), its own: a
+  // missing interruptible takes default:'s, which is true
+  if (pub.stage !== "publish") bad(`.gitlab-ci.yml: publish_docs stage must be publish, its own, found: ${Object.hasOwn(pub, "stage") ? JSON.stringify(pub.stage) : "none"}`);
+  if (pub.interruptible !== false) bad(`.gitlab-ci.yml: publish_docs interruptible must be false (a boolean), its own, found: ${Object.hasOwn(pub, "interruptible") ? JSON.stringify(pub.interruptible) : "none"}; a newer pipeline must not cancel the job holding the token midway`);
 }
 if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 
