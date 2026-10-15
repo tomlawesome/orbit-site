@@ -107,6 +107,7 @@ lint:
     - node tools/ci/fit-skip-test.mjs
     - node tools/ci/door-context-restore-test.mjs
     - node tools/ci/door-wordmark-test.mjs
+    - node tools/ci/release-tag-test.mjs
     - node tools/ci/door-shimmer-test.mjs
     - node tools/ci/door-probe-chores-test.mjs
     - node tools/ci/door-world-test.mjs
