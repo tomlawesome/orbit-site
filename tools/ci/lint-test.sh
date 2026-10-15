@@ -1071,7 +1071,7 @@ split_case "p129: the publish_docs script as a literal block of two lines" $ci "
 split_case "p130: the publish_docs script taken from a parent with another line" $ci "(publish_docs.*script|script.*publish_docs)" '
   y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  script: [ !reference [.s, script] ]\n");
   y = y + "\n.s:\n  script:\n    - echo hi\n    - sh tools/ci/nightly-publish.sh\n";'
-yaml_pass_case "p131: empty before_script and after_script on publish_docs pass" '
+split_case "p131: even an empty before_script on publish_docs is refused (round 5: its keys are an allowlist)" $ci "publish_docs has before_script\b" '
   y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n", "  before_script: []\n  script:\n    - sh tools/ci/nightly-publish.sh\n  after_script: []\n");'
 # Item 4: publish_docs's own variables are exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone.
 # (p71 above holds the unrelated-variable case.) p133 and p134 are already refused by the
