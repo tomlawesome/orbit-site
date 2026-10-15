@@ -202,10 +202,11 @@ wordmark. It is TEXT, one string, escaped like `farewell`: nothing of it is
 markup or an attribute. Its first word is the channel and anything after the
 first whitespace is the build: `"alpha"`, `"beta"`, `"preview 3f2a9c1"`. It is
 written right after `.name` as `<div class="release" data-channel="C">W</div>`,
-`W` the word and `C` that word if it is `alpha`, `beta` or `preview`, else
-`build`; a build follows as `<span class="build">…</span>`. Empty or left out,
-the markup is byte for byte what it was. Orbit passes its channel or short
-commit; the site passes none.
+`W` the word and `C` that word (in any case, shown in lowercase) if it is `alpha`, `beta`
+or `preview`, else `build`; whitespace runs fold to one space, a non-string is no tag, and a tag
+longer than the ring's inside is cut with an ellipsis; a build follows as `<span class="build">…</span>`. Empty or left out,
+the markup is byte for byte what it was. Orbit will pass its channel or short
+commit (a follow-up in `ai/orbit`); the site passes none.
 
 **Text and raw HTML.** `farewell.said`, `farewell.sub` and `tag` are text: they are
 escaped, so a person's name in them is never markup. `lockup`, `gate` and `foot`
