@@ -33,8 +33,8 @@
 #     the job token);
 #   - the environment is pinned (host, project, branch, no preload or
 #     interpreter overrides), and the checkout, a fresh clone (GIT_STRATEGY:
-#     clone in .gitlab-ci.yml), must be what git has, with only the git config
-#     the runner writes (check_git).
+#     clone in .gitlab-ci.yml, checked here too), must be what git has, with
+#     only the git config the runner writes (check_git).
 # The merge request's own pipeline (lint, with its no-script check, and the
 # live journey) then judges the content before it reaches main. Pushes read the
 # token from a mode-600 credential file and API calls from a header file, so it
@@ -86,6 +86,10 @@ done
 : "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
 DRY_RUN=${DRY_RUN:-}
 pin() { echo "refusing to run: $1"; exit 1; }
+# A fresh clone (#60): the CI file sets GIT_STRATEGY: clone, and this checks it
+# at the point of use, in case that setting were overridden (a parallel matrix,
+# a rule's variables, a project variable), since check_git trusts a fresh clone.
+[ "${GIT_STRATEGY:-}" = clone ] || pin "GIT_STRATEGY is not clone"
 [ "$CI_SERVER_HOST" = "$EXPECT_HOST" ] || pin "CI_SERVER_HOST is not $EXPECT_HOST"
 [ "$CI_API_V4_URL" = "https://$EXPECT_HOST/api/v4" ] || pin "CI_API_V4_URL is not https://$EXPECT_HOST/api/v4"
 [ "$CI_PROJECT_PATH" = "$EXPECT_PATH" ] || pin "CI_PROJECT_PATH is not $EXPECT_PATH"

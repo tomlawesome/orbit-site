@@ -447,6 +447,34 @@ if (pub !== null) {
   if (!Object.hasOwn(pub, "image") || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: publish_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: publish_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token");
   if (Object.hasOwn(ex, "services")) bad(".gitlab-ci.yml: publish_docs has services; a service container runs beside the token");
+  // What runs beside the token is exactly what is written (#60 round 4): the
+  // job's shape is allowlisted, judged as GitLab runs it (extends and
+  // !reference resolved, default:'s hooks where the job sets none), rather than
+  // the commands in it denylisted.
+  // No parallel, in any form: a matrix can override the job's variables, GIT_STRATEGY included.
+  if (Object.hasOwn(ex, "parallel")) bad(`.gitlab-ci.yml: publish_docs has parallel (${JSON.stringify(ex.parallel)}); a parallel matrix can override the job's variables, GIT_STRATEGY included, so the job holding the token runs once, as written`);
+  // No rule sets variables: a rule's variables override the job's own.
+  const rulesOf = Array.isArray(ex.rules) ? ex.rules.flat(Infinity) : ex.rules === undefined ? [] : [ex.rules];
+  if (rulesOf.some((r) => isObj(r) && Object.hasOwn(r, "variables"))) bad(".gitlab-ci.yml: publish_docs has rules that set variables; a rule's variables override the job's own, GIT_STRATEGY included, so no rule of the job holding the token sets any");
+  // The script is the one line that runs the publish script, nothing beside it.
+  const PUBLISH_LINE = "sh tools/ci/nightly-publish.sh";
+  const script = lines(ex.script);
+  if (!(script.length === 1 && script[0] === PUBLISH_LINE)) bad(`.gitlab-ci.yml: publish_docs script must be exactly one line, ${PUBLISH_LINE}, found: ${JSON.stringify(ex.script ?? null)}; nothing else runs beside the token`);
+  // No before_script or after_script: the job's own (extends and !reference
+  // included), or default:'s where the job sets none. An empty list is none.
+  const empty = (v) => v === undefined || v === null || (Array.isArray(v) && v.flat(Infinity).length === 0);
+  for (const h of ["before_script", "after_script"]) {
+    const own = Object.hasOwn(ex, h) && ex[h] !== null;
+    const v = own ? ex[h] : def[h];
+    if (!empty(v)) bad(`.gitlab-ci.yml: publish_docs ${own ? "has" : "takes"} ${h === "after_script" ? "an" : "a"} ${h}${own ? "" : " from default"} (${JSON.stringify(v)}); nothing runs beside the token but ${PUBLISH_LINE}`);
+  }
+  // Its own variables are exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, as
+  // written (GIT_DEPTH a number, not "1"), and so are they with what it extends.
+  const VARS = { GIT_DEPTH: 1, GIT_STRATEGY: "clone" };
+  const exact = (v) => isObj(v) && Object.keys(v).length === Object.keys(VARS).length && Object.entries(VARS).every(([k, x]) => Object.hasOwn(v, k) && v[k] === x);
+  const varsWhy = "a variable on the job holding the token can change what the runner or its programs do";
+  if (!exact(pub.variables)) bad(`.gitlab-ci.yml: publish_docs variables must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(pub.variables ?? null)}; ${varsWhy}`);
+  else if (!exact(ex.variables)) bad(`.gitlab-ci.yml: publish_docs variables, with what it extends, must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(ex.variables ?? null)}; ${varsWhy}`);
 }
 if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 
