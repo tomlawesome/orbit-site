@@ -13,6 +13,10 @@
  * tall: width / height from 0.90 to 1.00, at least 1000 px high (the wide one is 1080). Checked on the committed file
  * (T1-T4: exists, size, not black), and that tools/docsky.cjs draws it (T5: the tool names the file). The tool's own
  * command line for it is the builder's choice, so the test does not run it; the wide one is still rendered as before.
+ *
+ * Review fix (spec: the #51 review, item 3): the tall picture is set to the screen's height, so it must be at least as
+ * wide as the widest portrait screen: width / height >= 10/11 exactly (0.909..., e.g. 982x1080; 0.90 is not enough),
+ * T3 tightened to that. T6: the tool draws it with `node tools/docsky.cjs --tall` (its source names `--tall`).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -38,7 +42,9 @@ const tallPath = join(root, "assets", "img", "docs", "milkyway-sky-tall.webp");
 let tallBytes = null;
 try { tallBytes = readFileSync(tallPath); } catch { /* reported below */ }
 check("T1 the tall picture exists (assets/img/docs/milkyway-sky-tall.webp)", !!tallBytes, tallBytes ? `${Math.round(tallBytes.length / 1024)} KB` : "missing");
-check("T5 tools/docsky.cjs draws the tall picture (names milkyway-sky-tall.webp)", /milkyway-sky-tall\.webp/.test(readFileSync(join(root, "tools", "docsky.cjs"), "utf8")), "the tool's source");
+const toolSource = readFileSync(join(root, "tools", "docsky.cjs"), "utf8");
+check("T5 tools/docsky.cjs draws the tall picture (names milkyway-sky-tall.webp)", /milkyway-sky-tall\.webp/.test(toolSource), "the tool's source");
+check("T6 the tall picture is drawn by `node tools/docsky.cjs --tall` (the tool's source names --tall)", /--tall\b/.test(toolSource), "the tool's source");
 
 try {
   try {
@@ -99,7 +105,7 @@ try {
         check("T2 the tall picture decodes", !t.error, t.error || `${t.w}x${t.h}`);
         if (!t.error) {
           const r = t.w / t.h;
-          check("T3 the tall picture has portrait proportions (width / height 0.90 to 1.00) and is at least 1000 px high", r >= 0.9 && r <= 1 && t.h >= 1000, `${t.w}x${t.h} (ratio ${r.toFixed(3)})`);
+          check("T3 the tall picture is at least as wide as the widest portrait screen (width / height 10/11 to 1.00) and at least 1000 px high", r >= 10 / 11 && r <= 1 && t.h >= 1000, `${t.w}x${t.h} (ratio ${r.toFixed(4)}, want >= ${(10 / 11).toFixed(4)})`);
           check("T4 the tall picture shows the galaxy, not black (mean luminance > 12, at least 1% brighter than 60)", t.mean > 12 && t.brightPct >= 1, `mean ${t.mean.toFixed(2)}, ${t.brightPct.toFixed(2)}% brighter than 60`);
         }
       }
