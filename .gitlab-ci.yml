@@ -88,6 +88,7 @@ lint:
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
+    - node tools/ci/no-real-names-test.mjs
     - node tools/ci/fetch-once-test.mjs
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs

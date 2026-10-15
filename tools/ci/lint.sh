@@ -236,7 +236,6 @@ CSP_EOF
 echo "== no real names, host logins or private addresses (#56)"
 # only sha256 digests are stored; a hit is reported as file:line, never the value (CI logs are public)
 node tools/ci/no-real-names.mjs || fail=1
-node tools/ci/no-real-names-test.mjs || fail=1
 
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
