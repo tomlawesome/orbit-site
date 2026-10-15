@@ -149,64 +149,19 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # Both run from the schedule on main alone, never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
-node -e '
-  const fs = require("fs");
-  const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
-  const yml = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n").filter((l) => !/^\s*#/.test(l)).join("\n") + "\n";
-  const job = (n) => { const m = yml.match(new RegExp(`^${n}:\\n((?:[ \\t].*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
-  // the lines under a key of the job (two-space indent), up to the next such key
-  const section = (b, k) => { const m = b.match(new RegExp(`^  ${k}:[^\\n]*\\n((?:   .*\\n|\\n)*)`, "m")); return m ? m[1] : null; };
-  const RULE = `if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
-  const imp = job("import_docs"), pub = job("publish_docs");
-  if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
-  if (pub === null) bad(".gitlab-ci.yml: there is no publish_docs job");
-  for (const [name, b] of [["import_docs", imp], ["publish_docs", pub]]) {
-    if (b === null) continue;
-    const rules = (section(b, "rules") || "").split("\n").filter((l) => l.trim()).map((l) => l.trim().replace(/^- /, ""));
-    if (rules.length !== 1 || rules[0] !== RULE) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on main (${RULE}), found: ${rules.join(" | ") || "none"}`);
-  }
-  if (imp !== null) {
-    if (/^  environment:/m.test(imp)) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
-    if (/ORBIT_SITE_IMPORT_TOKEN/.test(imp)) bad(".gitlab-ci.yml: import_docs names ORBIT_SITE_IMPORT_TOKEN");
-    if (!/nightly-import\.sh/.test(section(imp, "script") || "")) bad(".gitlab-ci.yml: import_docs does not run tools/ci/nightly-import.sh");
-    const paths = ((section(imp, "artifacts") || "").match(/^    paths:\n((?:      - .*\n)*)/m) || [, ""])[1].split("\n").filter((l) => l.trim()).map((l) => l.replace(/^\s*- /, "").trim());
-    if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
-    if (!/^    expire_in: (\d+ (minutes?|hours?)|1 days?)$/m.test(section(imp, "artifacts") || "")) bad(".gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day)");
-  }
-  // each environment holds tokens scoped to it: no job but its own may name it
-  // (anywhere in the file, comments aside: a job, an extends template, defaults)
-  const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
-  for (const m of yml.matchAll(/^([^\s#][^\n]*):\n((?:[ \t].*\n|\n)*)/gm)) {
-    for (const [e, j] of Object.entries(envs)) {
-      if (m[1] !== j && m[2].includes(e)) bad(`.gitlab-ci.yml: ${m[1]} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`);
-    }
-  }
-  const ren = job("renovate");
-  if (ren !== null && !/^    name: renovate$/m.test(section(ren, "environment") || "")) bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
-  if (pub !== null) {
-    const env = section(pub, "environment") || "";
-    if (!/^    name: docs-import$/m.test(env)) bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
-    const needs = section(pub, "needs") || "";
-    if (!/- job: import_docs\n\s+artifacts: false/.test(needs)) bad(".gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false); a dotenv report in them would set this job\x27s variables");
-    if (!/^    GIT_STRATEGY: clone$/m.test(section(pub, "variables") || "")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
-    const script = section(pub, "script") || "";
-    if (!/nightly-publish\.sh/.test(script)) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
-    if (/\b(npm|npx|yarn|pnpm)\b/.test(script)) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
-  }
-  const imps = fs.existsSync("tools/ci/nightly-import.sh") ? fs.readFileSync("tools/ci/nightly-import.sh", "utf8") : null;
-  const pubs = fs.existsSync("tools/ci/nightly-publish.sh") ? fs.readFileSync("tools/ci/nightly-publish.sh", "utf8") : null;
-  if (imps === null) bad("tools/ci/nightly-import.sh: is missing");
-  else {
-    const code = imps.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
-    if (/ORBIT_SITE_IMPORT_TOKEN|PRIVATE-TOKEN/.test(imps)) bad("tools/ci/nightly-import.sh: names the token; it runs other people\x27s code and must not");
-    if (/\bcurl\b|\bgit\b[^\n]*\bpush\b/.test(code)) bad("tools/ci/nightly-import.sh: calls curl or git push; the import makes no API call and no push");
-  }
-  if (pubs === null) bad("tools/ci/nightly-publish.sh: is missing");
-  else {
-    const code = pubs.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
-    if (/\b(npm|npx|yarn|pnpm)\b/.test(code)) bad("tools/ci/nightly-publish.sh: runs npm or another package manager; it holds the token and runs no third-party code");
-  }
-' || fail=1
+# Joining counts whether by name or inherited by extends or !reference (#52).
+# Also refused (#52, #59): a << merge key after an explicit key, a child
+# pipeline, a package manager in publish_docs's script or hooks (extended,
+# referenced or from default:), services or a changed image beside the token,
+# and import_docs artifacts kept over a day. And (#60) anything GitLab's reader
+# (Ruby Psych) could read differently from js-yaml: a quoted "<<", a key led by a
+# colon or read as a boolean, null or number, a tag but !reference, a %VAR% in an
+# environment name; and on publish_docs, needs beyond import_docs without its
+# artifacts, hooks or a cache (its own, a parent's or default:'s), or NODE_IMAGE
+# set anywhere but once in the global variables.
+# Read as YAML with js-yaml from tools/node_modules (#52), so the lint job runs
+# npm ci --prefix tools first; without it, or if the file does not parse, this fails.
+node tools/ci/ci-split.mjs || fail=1
 
 echo "== the service worker's picture cache name follows the pictures"
 # sw.js keeps pictures in the visitor's browser under the name MEDIA; replacing
@@ -277,6 +232,10 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   }
 }
 CSP_EOF
+
+echo "== no real names, host logins or private addresses (#56)"
+# only sha256 digests are stored; a hit is reported as file:line, never the value (CI logs are public)
+node tools/ci/no-real-names.mjs || fail=1
 
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or

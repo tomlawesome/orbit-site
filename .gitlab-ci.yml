@@ -76,15 +76,19 @@ variables:
 lint:
   stage: lint
   image: $NODE_IMAGE
+  variables:
+    GIT_DEPTH: 0 # the names guard reads every commit's emails (#56)
   rules:
     - *not_scheduled
     - when: on_success
   script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
+    - node tools/ci/no-real-names-test.mjs
     - node tools/ci/fetch-once-test.mjs
     - node tools/ci/dates-test.mjs
     - node tools/ci/sanitise-html-test.mjs
@@ -117,7 +121,6 @@ lint:
     - node tools/ci/site-pads-sources-test.mjs
     - node tools/ci/docs-shape-test.mjs
     - node tools/ci/site-data-test.mjs
-    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/import-docs-test.mjs
     - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs
@@ -222,7 +225,11 @@ import_docs:
 # code in import_docs holds a job token that can upload one. The script fetches
 # the archive itself by job id and opens it entry by entry (tools/ci/
 # nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
-# a build folder an earlier job on this runner left things in.
+# a build folder an earlier job on this runner left things in. The clone does
+# not clear the runner's folder beside it, <checkout>.tmp/, which holds the
+# .gitlab-runner.ext.conf the checkout's git config includes: the Docker
+# executor's per-job build volume is what makes that folder clean. The script
+# takes that one include, by its exact path, and nothing else in the folder.
 # The job asks GitLab which job to fetch with the import token (a job token
 # cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:

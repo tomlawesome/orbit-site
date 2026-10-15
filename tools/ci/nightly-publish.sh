@@ -33,7 +33,8 @@
 #     the job token);
 #   - the environment is pinned (host, project, branch, no preload or
 #     interpreter overrides), and the checkout, a fresh clone (GIT_STRATEGY:
-#     clone in .gitlab-ci.yml), must be what git has.
+#     clone in .gitlab-ci.yml, checked here too), must be what git has, with
+#     only the git config the runner writes (check_git).
 # The merge request's own pipeline (lint, with its no-script check, and the
 # live journey) then judges the content before it reaches main. Pushes read the
 # token from a mode-600 credential file and API calls from a header file, so it
@@ -85,6 +86,10 @@ done
 : "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
 DRY_RUN=${DRY_RUN:-}
 pin() { echo "refusing to run: $1"; exit 1; }
+# A fresh clone (#60): the CI file sets GIT_STRATEGY: clone, and this checks it
+# at the point of use, in case that setting were overridden (a parallel matrix,
+# a rule's variables, a project variable), since check_git trusts a fresh clone.
+[ "${GIT_STRATEGY:-}" = clone ] || pin "GIT_STRATEGY is not clone"
 [ "$CI_SERVER_HOST" = "$EXPECT_HOST" ] || pin "CI_SERVER_HOST is not $EXPECT_HOST"
 [ "$CI_API_V4_URL" = "https://$EXPECT_HOST/api/v4" ] || pin "CI_API_V4_URL is not https://$EXPECT_HOST/api/v4"
 [ "$CI_PROJECT_PATH" = "$EXPECT_PATH" ] || pin "CI_PROJECT_PATH is not $EXPECT_PATH"
@@ -97,6 +102,8 @@ fi
 
 umask 077
 scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT
+# a job stopped by a signal leaves through the EXIT trap too
+trap 'exit 1' HUP INT TERM
 hdr=$scratch/hdr; cred=$scratch/cred   # written only while in use
 mkdir "$scratch/home"
 # curl -q: no ~/.curlrc, which curl would otherwise read while the header file
@@ -120,7 +127,11 @@ nogit() {
     -c commit.gpgSign=false -c gc.auto=0 -c maintenance.auto=false "$@"
 }
 top=$PWD
-gitdir=$(nogit rev-parse --absolute-git-dir)
+# git reads the checkout's config, includes and all, even to find the git
+# directory: a config it cannot list (an include cycle) stops the job here, with
+# the same refusal check_git gives.
+gitdir=$(nogit rev-parse --absolute-git-dir 2>/dev/null) \
+  || { echo "refusing to run: git could not list the checkout's config"; exit 1; }
 cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "$@"; }
 # The API answer is parsed only after the call has returned and the header file
 # is gone, so node never runs while a token is on disk.
@@ -130,36 +141,40 @@ json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const 
 refuse() { echo "refusing the artifact: $1"; exit 1; }
 
 # The checkout is a fresh clone, so its git directory holds what the runner
-# wrote and nothing else: the keys below are what GitLab Runner's clone sets
-# (git init and clone, the template config, the credential and url rewrites).
-# Anything else (a filter or diff driver, an include, a worktree config, a
-# command that git would run) stops the job, because the only switches on the
-# command line are the ones for hooks and fsmonitor. Checked in the local and
-# the worktree scope, which git reads after includes.
+# wrote and nothing else: GitLab Runner copies its template config into
+# .git/config (the keys git init and clone set, and its own) and adds one
+# include.path to the file it writes beside the checkout,
+# <checkout>.tmp/.gitlab-runner.ext.conf (its credential and url rewrites and
+# lfs.repositoryformatversion; #57). git reports that file's keys in the local
+# scope, so the allowlist below judges them too. Anything else (a filter or diff
+# driver, another include, a worktree config, a command that git would run)
+# stops the job, because the only switches on the command line are the ones for
+# hooks and fsmonitor. Checked in the local and the worktree scope, which git
+# reads after includes.
 check_git() {
   if [ -s "$gitdir/info/attributes" ] || [ -e "$gitdir/config.worktree" ]; then
     echo "refusing to run: the checkout's git has an info/attributes or config.worktree file"
     exit 1
   fi
-  # The runner's clone includes a config file of its own, kept in its folder
-  # beside the checkout (<checkout>.tmp/, #57). git reports that file's keys in
-  # the local scope, so the list below judges them too; the include itself is
-  # taken only as an absolute path to a regular file in that folder. The listing
-  # is read NUL-separated (-z), so no character in a path or value can split an
-  # entry, and a listing git could not make stops the job.
-  cfg=$(mktemp)
-  if ! cgit config --list --show-scope -z > "$cfg"; then
-    rm -f "$cfg"; echo "refusing to run: git could not list the checkout's config"; exit 1
+  # The one include taken is that file, named exactly: the value must be the
+  # absolute path <checkout>.tmp/.gitlab-runner.ext.conf as written (no `..`,
+  # no relative path, no other file in that folder, #60), a regular file, and
+  # its real path that same path, so no folder on the way is a symlink either.
+  # The listing is read NUL-separated (-z), so no character in a path or value
+  # can split an entry, and a listing git could not make stops the job. It is
+  # kept in the scratch folder, which the EXIT trap removes however the job ends.
+  cfg=$scratch/git-config-list
+  if ! cgit config --list --show-scope -z > "$cfg" 2>/dev/null; then
+    echo "refusing to run: git could not list the checkout's config"; exit 1
   fi
-  CFG=$cfg TOP=$top node -e '
-    const fs = require("fs"), path = require("path");
+  CFG=$cfg WANT="$top.tmp/.gitlab-runner.ext.conf" node -e '
+    const fs = require("fs");
     const allowed = /^(include\.path|lfs\.repositoryformatversion|core\.(repositoryformatversion|filemode|bare|logallrefupdates|symlinks|ignorecase|precomposeunicode)|extensions\.objectformat|remote\.origin\.(url|fetch|tagopt)|branch\..+\.(remote|merge)|init\.defaultbranch|fetch\.recursesubmodules|fetch\.uriprotocols|credential\.interactive|gc\.(auto|autodetach)|transfer\.bundleuri|http\.(useragent|extraheader)|http\..+\.(proactiveauth|extraheader)|url\..+\.insteadof|credential\..+\.helper)$/is;
     const parts = fs.readFileSync(process.env.CFG, "utf8").split("\0");
     if (parts[parts.length - 1] === "") parts.pop();
     if (parts.length % 2) { console.log("refusing to run: the checkout\x27s git config listing is malformed"); process.exit(1); }
-    /* the runner folder, resolved: <checkout>.tmp, beside the checkout */
-    const top = process.env.TOP, base = path.join(fs.realpathSync(path.dirname(top)), path.basename(top) + ".tmp");
-    const bad = [];
+    const want = process.env.WANT;
+    const bad = [], inc = [];
     for (let i = 0; i < parts.length; i += 2) {
       const scope = parts[i], nl = parts[i + 1].indexOf("\n");
       if (scope !== "local" && scope !== "worktree") continue;
@@ -167,21 +182,25 @@ check_git() {
       if (!allowed.test(key)) { bad.push(key); continue; }
       if (key.toLowerCase() !== "include.path") continue;
       let why = null;
-      if (!path.isAbsolute(val)) why = "not an absolute path";
+      if (val !== want) why = "not " + JSON.stringify(want);
       else {
-        let st = null; try { st = fs.lstatSync(val); } catch {}
+        let st = null, real = null;
+        try { st = fs.lstatSync(val); } catch {}
+        try { real = fs.realpathSync(val); } catch {}
         if (!st || !st.isFile()) why = "not a regular file";
-        else if (!fs.realpathSync(val).startsWith(base + path.sep)) why = "outside the runner\x27s folder " + base;
+        else if (real !== want) why = "its real path is " + JSON.stringify(real) + ", a symlink on the way";
       }
-      if (why) { console.log(`refusing to run: the checkout\x27s git config has include.path ${JSON.stringify(val)}, ${why}`); process.exit(1); }
+      if (why) inc.push(`refusing to run: the checkout\x27s git config has include.path ${JSON.stringify(val)}, ${why}`);
     }
+    /* every include refused and every key outside the list is named, so a
+       nested include is reported with what the file it names holds */
+    for (const m of inc.slice(0, 5)) console.log(m);
     if (bad.length) {
       console.log("refusing to run: the checkout\x27s git config has settings the runner\x27s clone does not write; stopping:");
       for (const k of bad.slice(0, 5)) console.log("   " + k.slice(0, 97));
-      process.exit(1);
     }
-  ' || { rm -f "$cfg"; exit 1; }
-  rm -f "$cfg"
+    if (inc.length || bad.length) process.exit(1);
+  ' || exit 1
 }
 
 # The rest of the checkout is what git has at HEAD (a fresh clone, so it is; this

@@ -4,7 +4,7 @@
  * network or the disk, so tools/ci/import-docs-test.mjs can import it.
  */
 import { posix } from "node:path";
-import { htmlTokens } from "./sanitise-html.mjs";
+import { htmlTokens, readText } from "./sanitise-html.mjs";
 
 /* the words of some markdown tokens, as the search and the summaries read them.
    Words in one run of inline marks join with nothing between them (`2 \* 3`
@@ -82,20 +82,19 @@ export function resolveLink(href, src, bySourcePath, isImage) {
     : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
 }
 
-const NAMED = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-const entities = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);?/gi, (m, e) => {
-  if (e[0] !== "#") return NAMED[e.toLowerCase()];
-  const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-  return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "�";
-});
-
 /* the text a reader would see in some html: read as a browser reads it, by
    the sanitiser's own reader (htmlTokens in sanitise-html.mjs), so tags,
    comments and bogus comments are hidden by the same rules there and here;
-   entities read in each run of text, spaces folded */
+   character references read in each run of text on its own, as the browser
+   does (readText); the inside of a textarea, title, xmp, plaintext, noscript,
+   iframe, noembed or noframes, and CDATA in svg or math, counted as shown;
+   spaces folded */
 export function visibleText(html) {
   let out = "";
-  for (const t of htmlTokens(html)) if (typeof t === "string") out += entities(t);
+  for (const t of htmlTokens(html)) {
+    if (typeof t === "string") out += readText(t);
+    else if (t.text !== undefined) out += t.refs ? readText(t.text) : t.text;
+  }
   return out.replace(/\s+/g, " ").trim();
 }
 
