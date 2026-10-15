@@ -7,7 +7,7 @@
  *
  * No dependencies and no browser.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync, readdirSync, symlinkSync, lstatSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -131,7 +131,8 @@ try {
     writeFileSync(floorsFile, JSON.stringify(floors));
     r = spawnSync(process.execPath, [join(root, "tools/ci/coverage.mjs"), "--raise", "--floors", floorsFile, dir], { encoding: "utf8" });
     const after = JSON.parse(readFileSync(floorsFile, "utf8")).floors;
-    check("--raise lifts floors, adds new files and drops gone ones, and never lowers", after["assets/js/lock.js"] === 100 && !("assets/js/not-there.js" in after) && Object.keys(after).length === Object.keys(floors.floors).length - 1, `lock.js ${after["assets/js/lock.js"]}, ${Object.keys(after).length} floors`);
+    check("--raise lifts floors and never lowers or removes one (a gone file's floor stays, for a person to move or remove)", after["assets/js/lock.js"] === 100 && after["assets/js/not-there.js"] === 10 && Object.keys(after).length === Object.keys(floors.floors).length, `lock.js ${after["assets/js/lock.js"]}, not-there.js ${after["assets/js/not-there.js"]}, ${Object.keys(after).length} floors (want ${Object.keys(floors.floors).length})`);
+    delete after["assets/js/not-there.js"];
     writeFileSync(floorsFile, JSON.stringify({ floors: { ...after, "assets/js/main.js": 90 }, reasons: {} }));
     spawnSync(process.execPath, [join(root, "tools/ci/coverage.mjs"), "--raise", "--floors", floorsFile, dir], { encoding: "utf8" });
     check("--raise leaves a floor above the measurement where it is", JSON.parse(readFileSync(floorsFile, "utf8")).floors["assets/js/main.js"] === 90, "main.js stays 90");
@@ -209,63 +210,81 @@ const floorsOf = (file) => JSON.parse(readFileSync(file, "utf8")).floors;
   check("coverage-floors.json's about says to pass three runs to --raise", /--raise[^.]*\b(three|3)\b[^.]*runs|\b(three|3)\b runs[^.]*--raise/i.test(about), JSON.stringify(about.slice(about.indexOf("A change"), about.indexOf("A change") + 160)));
 }
 
-/* 2. --raise prints each floor it adds or removes: the file and the value, and a removed floor's reason */
+/* 2. --raise prints each floor it adds or raises, with its value */
 {
   const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
   try {
     const run = makeRun(join(dir, "run"), [[LOCK, lockSrc, [[0, lockSrc.length]]], [DATA, dataSrc, [[0, dataSrc.length]]]]);
     const floorsFile = join(dir, "floors.json");
-    const GONE = "assets/js/not-there.js";
-    const reason = "needs a real GPU to run at all";
-    writeFileSync(floorsFile, JSON.stringify({ floors: { [LOCK]: 60, [GONE]: 37 }, reasons: { [GONE]: reason } }));
+    writeFileSync(floorsFile, JSON.stringify({ floors: { [LOCK]: 60 }, reasons: {} }));
     const r = raise(floorsFile, [run]);
     const after = floorsOf(floorsFile);
     const added = siteFiles(root).filter((f) => f !== LOCK);
-    check("(setup) --raise added floors and removed the gone one", added.every((f) => f in after) && !(GONE in after) && r.status === 0, `exit ${r.status}, ${Object.keys(after).length} floors`);
+    check("(setup) --raise raised lock.js and added the others", r.status === 0 && after[LOCK] === 100 && added.every((f) => f in after), `exit ${r.status}, lock.js ${after[LOCK]}, ${Object.keys(after).length} floors`);
     const missing = added.filter((f) => !linesOf(r).some((l) => l.includes(f) && l.includes(String(after[f]))));
     check("--raise prints a line with the file and the floor value for every floor it adds", missing.length === 0, missing.length ? `no line for ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? " ..." : ""}` : `${added.length} added, each named`);
     check("... the value printed for data.js is the one written (100)", after[DATA] === 100 && linesOf(r).some((l) => l.includes(DATA) && /\b100\b/.test(l)), JSON.stringify(linesOf(r).filter((l) => l.includes(DATA))));
-    const goneLine = linesOf(r).find((l) => l.includes(GONE));
-    check("--raise prints the file and the value of a floor it removes", !!goneLine && /\b37\b/.test(goneLine), JSON.stringify(goneLine));
-    check("... and the removed floor's reason", out(r).includes(reason), out(r).includes(reason) ? "reason printed" : "the reason is not in the output");
+    check("--raise prints a line with the file and the new value for a floor it raises (lock.js 60 -> 100)", linesOf(r).some((l) => l.includes(LOCK) && /\b100\b/.test(l) && !/^\S+\s+\d+\s+\d+\s+\d+%/.test(l.trim())), JSON.stringify(linesOf(r).filter((l) => l.includes(LOCK))));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-/* 2. a rename keeps its floor: a floor added for a file is never lower than the floor removed for a file of identical content.
-   A scratch repo holds the tool; the old file is committed, then renamed in the working tree (git mv, not committed). */
+/* 2. --raise never removes a floor: a floor whose file is gone fails the check, with or without --raise, naming the file and
+   saying to move or remove it by hand. No rename detection: the old name's floor is not carried to the new one. */
 {
   const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
-  const git = (...a) => spawnSync("/usr/bin/git", a, { cwd: dir, encoding: "utf8" });
+  try {
+    const run = makeRun(join(dir, "run"), [[LOCK, lockSrc, [[0, lockSrc.length]]]]);
+    const floorsFile = join(dir, "floors.json");
+    const GONE = "assets/js/not-there.js";
+    const reason = "needs a real GPU to run at all";
+    const all = Object.fromEntries(siteFiles(root).map((f) => [f, 0]));
+    const original = JSON.stringify({ floors: { ...all, [LOCK]: 60, [GONE]: 37 }, reasons: { [GONE]: reason } });
+    const said = (r) => out(r).split("\n").some((l) => l.includes(GONE) && /by hand/i.test(l)) || (out(r).includes(GONE) && /by hand/i.test(out(r)));
+    writeFileSync(floorsFile, original);
+    let r = raise(floorsFile, [run]);
+    let after = JSON.parse(readFileSync(floorsFile, "utf8"));
+    check("--raise keeps the floor of a file that is gone, and its reason", after.floors[GONE] === 37 && after.reasons[GONE] === reason, `floor ${after.floors[GONE]}, reason ${JSON.stringify(after.reasons[GONE])}`);
+    check("--raise with a gone file fails and names it", r.status !== 0 && out(r).includes(GONE), `exit ${r.status}`);
+    check("... and says to move its floor to the new name or remove it by hand", said(r) && /move/i.test(out(r)) && /remove/i.test(out(r)), JSON.stringify(out(r).split("\n").filter((l) => /GONE|gone|by hand/i.test(l))));
+    writeFileSync(floorsFile, original);
+    r = spawnSync(process.execPath, [coverageMjs, "--floors", floorsFile, run], { encoding: "utf8", cwd: root });
+    check("the check without --raise fails on it too, saying to move or remove it by hand", r.status === 1 && said(r) && /move/i.test(out(r)) && /remove/i.test(out(r)), `exit ${r.status}: ${JSON.stringify(out(r).split("\n").filter((l) => l.includes(GONE) || /by hand/i.test(l)))}`);
+    check("... and the check does not change the floors file", readFileSync(floorsFile, "utf8") === original, "file compared");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+/* 2. a committed rename: the old name's floor is not moved by --raise, and the check fails on it until it is moved by hand.
+   A scratch repo holds the tool; the old file is committed, then renamed and the rename committed. */
+{
+  const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
+  const git = (...a) => spawnSync("/usr/bin/git", ["-c", "user.name=t", "-c", "user.email=t@example.test", ...a], { cwd: dir, encoding: "utf8" });
   try {
     mkdirSync(join(dir, "tools/ci"), { recursive: true });
     mkdirSync(join(dir, "assets/js"), { recursive: true });
     mkdirSync(join(dir, "assets/door"), { recursive: true });
     for (const f of ["coverage.mjs", "coverage-lib.mjs"]) copyFileSync(join(root, "tools/ci", f), join(dir, "tools/ci", f));
     const body = "const a = 1;\nfunction f() {\n  return 2;\n}\nfunction g() {\n  return 3;\n}\nf();\ng();\n";
-    const other = body + "const extra = 4;\n";
     writeFileSync(join(dir, "sw.js"), "self.x = 1;\n");
     writeFileSync(join(dir, "assets/js/old.js"), body);
-    writeFileSync(join(dir, "assets/js/old2.js"), body.replace("return 2", "return 22"));
-    git("init", "-q"); git("add", "-A");
-    git("-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "-q", "-m", "x");
-    git("mv", "assets/js/old.js", "assets/js/new.js");
-    git("mv", "assets/js/old2.js", "assets/js/new2.js");
-    writeFileSync(join(dir, "assets/js/new2.js"), other); /* renamed AND changed: not identical */
+    git("init", "-q"); git("add", "-A"); git("commit", "-q", "-m", "x");
+    git("mv", "assets/js/old.js", "assets/js/new.js"); git("commit", "-q", "-m", "rename");
     const tool = join(dir, "tools/ci/coverage.mjs");
-    const half = body.indexOf("function g");
     const run = join(dir, "run");
     mkdirSync(run);
-    writeFileSync(join(run, "browser-t-1.json"), JSON.stringify({ scripts: {
-      "assets/js/new.js": { length: body.length, ran: [[0, half]] },
-      "assets/js/new2.js": { length: other.length, ran: [[0, half]] },
-    } }));
+    writeFileSync(join(run, "browser-t-1.json"), JSON.stringify({ scripts: { "assets/js/new.js": { length: body.length, ran: [[0, body.indexOf("function g")]] } } }));
     const floorsFile = join(dir, "floors.json");
-    writeFileSync(floorsFile, JSON.stringify({ floors: { "assets/js/old.js": 95, "assets/js/old2.js": 95, "sw.js": 0 }, reasons: {} }));
-    const r = raise(floorsFile, [run], dir, tool);
-    const after = floorsOf(floorsFile);
-    check("(setup) the scratch run measures the renamed files below the old floor, and the old paths are removed", r.status === 0 && !("assets/js/old.js" in after) && "assets/js/new.js" in after && after["assets/js/new.js"] !== undefined, `exit ${r.status}, floors ${JSON.stringify(after)}; ${out(r).split("\n").slice(0, 3).join(" | ")}`);
-    check("a floor added for a renamed file (identical content) is not lower than the floor removed for the old name", after["assets/js/new.js"] >= 95, `new.js floor ${after["assets/js/new.js"]} (want at least 95)`);
-    check("a renamed file whose content changed gets no carried-over floor (it is added at what was measured)", after["assets/js/new2.js"] < 95, `new2.js floor ${after["assets/js/new2.js"]} (want under 95)`);
+    const original = JSON.stringify({ floors: { "assets/js/old.js": 95, "sw.js": 0 }, reasons: {} });
+    writeFileSync(floorsFile, original);
+    let r = raise(floorsFile, [run], dir, tool);
+    let after = floorsOf(floorsFile);
+    check("after a committed rename, --raise leaves the old name's floor where it is and fails naming it", after["assets/js/old.js"] === 95 && r.status !== 0 && out(r).includes("assets/js/old.js"), `exit ${r.status}, old.js floor ${after["assets/js/old.js"]}`);
+    check("... and does not give the new name a floor above what it measured (no carry-over)", !(after["assets/js/new.js"] >= 95), `new.js floor ${after["assets/js/new.js"]}`);
+    writeFileSync(floorsFile, original);
+    r = spawnSync(process.execPath, [tool, "--floors", floorsFile, run], { encoding: "utf8", cwd: dir });
+    check("the check fails on the old name and tells how to fix it by hand", r.status === 1 && /old\.js/.test(out(r)) && /by hand/i.test(out(r)), `exit ${r.status}`);
+    writeFileSync(floorsFile, JSON.stringify({ floors: { "assets/js/new.js": 40, "sw.js": 0 }, reasons: {} }));
+    r = spawnSync(process.execPath, [tool, "--floors", floorsFile, run], { encoding: "utf8", cwd: dir });
+    check("(control) with the floor moved to the new name by hand, the check passes", r.status === 0 && /coverage: ok/.test(out(r)), `exit ${r.status}: ${out(r).split("\n").filter(Boolean).slice(-2).join(" | ")}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
@@ -365,6 +384,18 @@ await b.close();
     runSh("browser", stale);
     check("coverage-run.sh browser removes the earlier browser records before its runs", !existsSync(join(stale, "browser-old-1.json")) && !existsSync(join(stale, "browser-journey-99.json")), `left: ${JSON.stringify(readdirSync(stale))}`);
     check("... and keeps Node's records", existsSync(join(stale, "node", "coverage-1.json")), `left: ${JSON.stringify(readdirSync(join(stale, "node")))}`);
+
+    /* $COVERAGE_DIR may be a symbolic link to a directory (CI artifacts, a shared scratch): the records behind it go too */
+    const target = join(dir, "target");
+    mkdirSync(join(target, "node"), { recursive: true });
+    writeFileSync(join(target, "browser-old-1.json"), "{}");
+    writeFileSync(join(target, "browser-journey-99.json"), "{}");
+    writeFileSync(join(target, "node", "coverage-1.json"), "{}");
+    const link = join(dir, "link");
+    symlinkSync(target, link);
+    runSh("browser", link);
+    check("coverage-run.sh browser removes the earlier browser records when $COVERAGE_DIR is a symbolic link to a directory", !existsSync(join(target, "browser-old-1.json")) && !existsSync(join(target, "browser-journey-99.json")), `left in the target: ${JSON.stringify(readdirSync(target))}`);
+    check("... keeps Node's records behind the link, and the link itself", existsSync(join(target, "node", "coverage-1.json")) && lstatSync(link).isSymbolicLink(), `node records ${existsSync(join(target, "node", "coverage-1.json")) ? "kept" : "gone"}`);
 
     for (const mode of ["browser", "check"]) {
       const nonode = join(dir, "nonode-" + mode);
