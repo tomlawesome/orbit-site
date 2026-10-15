@@ -17,6 +17,8 @@
  *   farewell      the dusk's words: { said, sub }, TEXT: escaped, so a person's name in them is never markup. (lockup,
  *                 gate and foot are RAW HTML, put in as given: the host's own markup, never a person's words)
  *   asDawn        the dusk dressed as the sign-in (Orbit's goodbye): see duskMarkup. Off by default (the site's own)
+ *   tag           the release tag under the wordmark, TEXT: escaped, one string, the channel word first and the build
+ *                 after the first whitespace ("alpha", "beta", "preview 3f2a9c1"). Nothing by default: no tag, no change
  *   heading       whether the wordmark is the page's <h1> (the default) or a plain <div class="name"> as the dusk's is,
  *                 for a page that has an h1 of its own (a docs page); styled the same either way (dawnMarkup only)
  *   indent        the whitespace before each line (the page's own), "" for none
@@ -57,6 +59,17 @@ const layer = (cls, inner) => `<svg class="wl ${cls}" ${SLICE}>${inner}</svg>`;
 const text = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const attr = (s) => text(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
+/* the release tag under the wordmark (#63): one string of TEXT, the channel word first and, after the first
+   whitespace, the build ("alpha", "beta", "preview 3f2a9c1"). The element is [] when there is no tag, so the markup
+   is byte for byte what it was. The channel is the word if it is alpha, beta or preview, else "build"; both the word
+   and the build go through text(), so nothing of the tag is markup, and the attribute only ever holds a fixed word */
+const releaseTag = (tag) => {
+  const m = String(tag ?? "").trim().match(/^(\S+)(?:\s+([\s\S]*))?$/);
+  if (!m) return [];
+  const channel = ["alpha", "beta", "preview"].includes(m[1]) ? m[1] : "build";
+  return [`<div class="release" data-channel="${channel}">${text(m[1])}${m[2] ? ` <span class="build">${text(m[2])}</span>` : ""}</div>`];
+};
+
 /* lines joined with the page's indent: a nested array is one level deeper; a slot (raw) is kept as it came */
 const raw = (s) => ({ raw: s });
 function lines(indent, items, depth = 0) {
@@ -71,7 +84,7 @@ function lines(indent, items, depth = 0) {
 }
 
 /** the dawn: `<div id="door">…</div>` */
-export function dawnMarkup({ image: resolve = (p) => p, lockup = "", gate = "", foot = "", heading = true, indent = "" } = {}) {
+export function dawnMarkup({ image: resolve = (p) => p, lockup = "", gate = "", foot = "", heading = true, tag = "", indent = "" } = {}) {
   const image = (p) => attr(resolve(p));
   return lines(indent, [
     '<div id="door">',
@@ -139,6 +152,7 @@ export function dawnMarkup({ image: resolve = (p) => p, lockup = "", gate = "", 
           '</svg><i class="runner" aria-hidden="true"></i></div>',
           raw(lockup),
           heading ? '<h1 class="name">orbit</h1>' : '<div class="name">orbit</div>',
+          ...releaseTag(tag),
           `<div class="gate-wrap">${gate}</div>`,
         ],
         "</div>",
@@ -160,7 +174,7 @@ export function dawnMarkup({ image: resolve = (p) => p, lockup = "", gate = "", 
  * rim (loaded as the dawn's are: dawn.js), and the farewell hangs off the way back in, the last child of `.gate-wrap`.
  * Without it the markup is byte for byte what it always was.
  */
-export function duskMarkup({ image: resolve = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, asDawn = false, indent = "" } = {}) {
+export function duskMarkup({ image: resolve = (p) => p, gate = "", foot = "", farewell = { said: "You are signed out.", sub: "the sky keeps turning · your systems keep their orbits" }, asDawn = false, tag = "", indent = "" } = {}) {
   const image = (p) => attr(resolve(p));
   /* the farewell's lines: a block of its own beside the lockup, or (asDawn) nested in the way back in's box */
   const words = [
@@ -222,6 +236,7 @@ export function duskMarkup({ image: resolve = (p) => p, gate = "", foot = "", fa
             '<g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g></svg></div>',
           ],
           '<div class="name">orbit</div>',
+          ...releaseTag(tag),
           ...(asDawn ? [`<div class="gate-wrap">${gate}`, words, "</div>"] : [`<div class="gate-wrap">${gate}</div>`]),
         ],
         "</div>",
