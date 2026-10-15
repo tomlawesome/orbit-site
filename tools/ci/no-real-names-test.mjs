@@ -468,15 +468,16 @@ writeFileSync(join(fakeBin, "git"), [
   'if [ "$fail" = 1 ]; then',
   `  echo "host ${leakAddr} ${outMark}"`,
   `  echo "host ${leakAddr} ${errMark}" >&2`,
-  "  exit 3",
+  '  if [ -n "$FAKE_GIT_SIGNAL" ]; then kill -9 $$; fi',
+  '  exit "${FAKE_GIT_EXIT:-3}"',
   "fi",
   `exec "${realGit}" "$@"`,
   "",
 ].join("\n"));
 chmodSync(join(fakeBin, "git"), 0o755);
-const failGit = (mode) => spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], {
+const failGit = (mode, extra = {}, pathValue = `${fakeBin}:${process.env.PATH}`) => spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], {
   cwd: repoRoot,
-  env: { ...cleanEnv(), PATH: `${fakeBin}:${process.env.PATH}`, FAKE_GIT_MODE: mode },
+  env: { ...cleanEnv(), PATH: pathValue, FAKE_GIT_MODE: mode, ...extra },
   encoding: "utf8",
   timeout: 60000,
 });
@@ -488,6 +489,46 @@ for (const [label, mode, cmd] of [["git log", "log", "log"], ["git ls-files", "l
   check(`git failure (${label}): the message names the command and the exit status`, text.includes("git") && text.includes(cmd) && /\b3\b/u.test(text), "message lacks the command or the status 3");
   check(`git failure (${label}): the guard does not claim ok`, !/^no-real-names: ok/mu.test(String(r.stdout)), "printed the ok verdict");
   check(`git failure (${label}): no stack trace or error object is printed`, !/\n\s+at .*\(|node:internal|ERR_|\bstatus:\s*3|\bstderr:|\bstdout:|\bSpawnSyncReturns|Error:/u.test(text), "output looks like a stack trace or error object");
+}
+
+// Round 4b (#60, specs/names-r4b.md): git fails in other ways. The message is fixed, names the subcommand and how it
+// failed, and never holds git's output or an error object.
+const noObject = (text) => !/\n\s+at .*\(|node:internal|ERR_|\bSpawnSyncReturns|\bError\b|\bspawn\b|ENOENT|EACCES|\n {4}at /u.test(text);
+{
+  const r = failGit("rev-parse", { FAKE_GIT_EXIT: "1" });
+  const text = `${r.stdout}\n${r.stderr}`;
+  check("git failure (git rev-parse, exit 1): the guard exits non-zero", typeof r.status === "number" && r.status !== 0, `exit ${r.status}${r.error ? ` (${r.error.code})` : ""}`);
+  check("git failure (git rev-parse, exit 1): the output holds no part of the command's output", !text.includes(leakAddr) && !text.includes(outMark) && !text.includes(errMark), "output holds part of the fake git line");
+  check("git failure (git rev-parse, exit 1): the message names the command and the exit status", text.includes("git") && text.includes("rev-parse") && /\b1\b/u.test(text), "message lacks the command or the status 1");
+  check("git failure (git rev-parse, exit 1): the guard does not claim ok", !/^no-real-names: ok/mu.test(String(r.stdout)), "printed the ok verdict");
+  check("git failure (git rev-parse, exit 1): no stack trace or error object is printed", noObject(text), "output looks like a stack trace or error object");
+}
+for (const [label, mode, cmd] of [["git ls-files", "ls-files", "ls-files"], ["git log", "log", "log"], ["git rev-parse", "rev-parse", "rev-parse"]]) {
+  const r = failGit(mode, { FAKE_GIT_SIGNAL: "1" });
+  const text = `${r.stdout}\n${r.stderr}`;
+  check(`git killed by a signal (${label}): the guard exits non-zero`, typeof r.status === "number" && r.status !== 0, `exit ${r.status}${r.error ? ` (${r.error.code})` : ""}`);
+  check(`git killed by a signal (${label}): the output holds no part of the command's output`, !text.includes(leakAddr) && !text.includes(outMark) && !text.includes(errMark), "output holds part of the fake git line");
+  check(`git killed by a signal (${label}): the message names the command`, text.includes("git") && text.includes(cmd), "message lacks the command");
+  check(`git killed by a signal (${label}): the guard does not claim ok`, !/^no-real-names: ok/mu.test(String(r.stdout)), "printed the ok verdict");
+  check(`git killed by a signal (${label}): no stack trace or error object is printed`, noObject(text), "output looks like a stack trace or error object");
+}
+// git cannot be started: the only git on PATH is not executable, or PATH holds no git at all
+{
+  const noExecBin = join(scratchRoot, "noexec");
+  const emptyBin = join(scratchRoot, "empty");
+  mkdirSync(noExecBin);
+  mkdirSync(emptyBin);
+  writeFileSync(join(noExecBin, "git"), `#!/bin/sh\necho "host ${leakAddr} ${outMark}"\n`);
+  chmodSync(join(noExecBin, "git"), 0o644);
+  for (const [label, dir] of [["git is not executable", noExecBin], ["no git on PATH", emptyBin]]) {
+    const r = failGit("all", {}, dir);
+    const text = `${r.stdout}\n${r.stderr}`;
+    check(`git cannot start (${label}): the guard exits non-zero`, typeof r.status === "number" && r.status !== 0, `exit ${r.status}${r.error ? ` (${r.error.code})` : ""}`);
+    check(`git cannot start (${label}): the output holds no part of the command's output`, !text.includes(leakAddr) && !text.includes(outMark) && !text.includes(errMark), "output holds part of the fake git line");
+    check(`git cannot start (${label}): the guard does not claim ok`, !/^no-real-names: ok/mu.test(String(r.stdout)), "printed the ok verdict");
+    check(`git cannot start (${label}): no stack trace or error object is printed`, noObject(text), "output looks like a stack trace or error object");
+    check(`git cannot start (${label}): the guard says something`, text.trim().length > 0, "no output");
+  }
 }
 rmSync(scratchRoot, { recursive: true, force: true });
 
