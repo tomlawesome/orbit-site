@@ -25,9 +25,21 @@
  *       than 1100x1000 (landscape), and those two are today's 0.56.
  *   P5  the tall picture is tracked by git, so the lint's MEDIA name (sw.js) follows it, and README.md lists it (a row
  *       naming milkyway-sky-tall.webp, as it lists milkyway-sky.webp).
+ *
+ * Review fixes (spec: the #51 review), written from that spec alone:
+ *
+ *   P6  (item 2) the threshold is pinned in the door: 909x1000 and 10x11 (exactly 10/11) rest further out (portrait),
+ *       910x1000 rests at today's 0.56 (landscape). The page's side is the live test's S1.
+ *   N5  (item 5) the live test (docs-sky-portrait-live-test.mjs) never takes a screenshot straight after a fixed sleep:
+ *       no `await sleep(<number>)` is followed by a screenshot as its next statement.
+ *   N6  (item 6) the shared door is Orbit-neutral and current: in assets/door/ (*.js, door.css, README.md, all of which
+ *       Orbit copies), a citation of this site's issue reads "orbit-site #51", never a bare "#51"; nothing calls the
+ *       portrait threshold the site's ("the site's threshold", "site's portrait threshold", "threshold is the site's");
+ *       and the comment on voyage.js's `const REST` (the comment block just above it, or on its line) says it is the
+ *       landscape rest (names "landscape").
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,11 +84,41 @@ check("P4 the threshold is the site's (10/11): 900x1000 further out; 1000x1000 a
   Number.isFinite(portrait) && portrait > TODAY + 0.001 && near(square, TODAY) && near(wideish, TODAY),
   `900x1000 ${num(portrait)}, 1000x1000 ${num(square)}, 1100x1000 ${num(wideish)} (want first > ${TODAY}, others ${TODAY})${missing}`);
 
+const just = rest(909, 1000), justWide = rest(910, 1000), exact = rest(10, 11);
+check("P6 the threshold is pinned in the door: 909x1000 and 10x11 portrait (further out), 910x1000 landscape (as today)",
+  Number.isFinite(just) && just > TODAY + 0.001 && Number.isFinite(exact) && exact > TODAY + 0.001 && near(justWide, TODAY),
+  `909x1000 ${num(just)}, 10x11 ${num(exact)}, 910x1000 ${num(justWide)} (want the first two > ${TODAY}, the last ${TODAY})${missing}`);
+
 const pic = "assets/img/docs/milkyway-sky-tall.webp";
 let tracked = false;
 try { execFileSync("git", ["ls-files", "--error-unmatch", "--", pic], { cwd: root, stdio: "ignore" }); tracked = true; } catch { /* not tracked */ }
 const readme = readFileSync(resolve(root, "README.md"), "utf8");
 check("P5 the tall picture is tracked by git (so sw.js's MEDIA name follows it) and README.md lists it",
   tracked && readme.includes("milkyway-sky-tall.webp"), `tracked ${tracked}, README names it ${readme.includes("milkyway-sky-tall.webp")}`);
+
+/* N5: no fixed sleep straight before a screenshot in the live test */
+const live = readFileSync(resolve(root, "tools/ci/docs-sky-portrait-live-test.mjs"), "utf8");
+const sleptShots = [...live.matchAll(/await sleep\(\s*\d[\d_]*\s*\);\s*(?:(?:const|let|var)\s+[\w{}\s,]+=\s*)?await\s+[\w.]*screenshot\(/g)];
+check("N5 the live test takes no screenshot straight after a fixed sleep", sleptShots.length === 0,
+  sleptShots.length ? `found: ${sleptShots.map((m) => m[0].replace(/\s+/g, " ")).join(" | ")}` : "none");
+
+/* N6: the shared door's comments */
+const doorDir = resolve(root, "assets/door");
+const doorFiles = readdirSync(doorDir).filter((f) => /\.(js|css)$/.test(f) || f === "README.md");
+const bare = [], sites = [];
+for (const f of doorFiles) {
+  readFileSync(resolve(doorDir, f), "utf8").split("\n").forEach((line, i) => {
+    if (/(?<!orbit-site )#51\b/.test(line)) bare.push(`${f}:${i + 1}`);
+    if (/site's (portrait )?threshold|threshold is the site's/i.test(line)) sites.push(`${f}:${i + 1}`);
+  });
+}
+check("N6 the door cites this site's issue as \"orbit-site #51\", never a bare \"#51\"", bare.length === 0, bare.length ? `bare #51 at ${bare.join(", ")}` : "none");
+check("N6 the door calls the portrait threshold its own, not the site's", sites.length === 0, sites.length ? `"the site's" threshold at ${sites.join(", ")}` : "none");
+const voyage = readFileSync(resolve(doorDir, "voyage.js"), "utf8").split("\n");
+const at = voyage.findIndex((l) => /^\s*(export\s+)?const REST\b/.test(l));
+let said = at < 0 ? "" : voyage[at].includes("/*") || voyage[at].includes("//") ? voyage[at] : "";
+for (let i = at - 1; at >= 0 && i >= 0 && /^\s*(\/\*|\*|\/\/)|\*\/\s*$/.test(voyage[i]); i--) said = voyage[i] + "\n" + said;
+check("N6 voyage.js's REST comment says it is the landscape rest", at >= 0 && /landscape/i.test(said),
+  at < 0 ? "no `const REST` in voyage.js" : `line ${at + 1}, comment: ${said.trim().replace(/\s+/g, " ").slice(0, 160) || "(none)"}`);
 
 process.exit(failed ? 1 : 0);
