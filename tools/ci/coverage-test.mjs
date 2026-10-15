@@ -342,14 +342,16 @@ await b.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-/* 4. coverage-run.sh: no stale browser runs, and a clear stop when the Node coverage is missing. `node` is a stand-in that
-   fails at once (so no test or browser runs) and leaves a mark if anything calls it; PLAYWRIGHT_ROOT is a bare directory. */
+/* 4. coverage-run.sh: no stale browser runs, and a clear stop when the Node coverage is missing. `node` and `xvfb-run` are stand-ins that
+   fail at once (so no test or browser runs) and leave a mark if anything calls it; PLAYWRIGHT_ROOT is a bare directory. */
 {
   const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
   try {
     const bin = join(dir, "bin");
     mkdirSync(bin);
     writeFileSync(join(bin, "node"), '#!/bin/sh\necho called >> "$FAKE_NODE_MARK"\nexit 1\n', { mode: 0o755 });
+    /* the real xvfb-run starts an X server that outlives the stand-in node; this one starts nothing */
+    writeFileSync(join(bin, "xvfb-run"), '#!/bin/sh\necho called >> "$FAKE_NODE_MARK"\nexit 1\n', { mode: 0o755 });
     const pw = join(dir, "pw");
     mkdirSync(join(pw, "node_modules/playwright"), { recursive: true });
     writeFileSync(join(pw, "node_modules/playwright/package.json"), "{}");
