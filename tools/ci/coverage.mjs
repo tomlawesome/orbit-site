@@ -2,7 +2,8 @@
  * Line coverage per file of the site's JavaScript, and the ratchet on it (#14).
  *
  *   node tools/ci/coverage.mjs DIR...            report, and fail if any file is below its floor
- *   node tools/ci/coverage.mjs --raise DIR...    also raise tools/ci/coverage-floors.json to what was measured
+ *   node tools/ci/coverage.mjs --raise DIR DIR DIR  also raise tools/ci/coverage-floors.json: each DIR is one full run (pass
+ *                                                three), and a file is raised to the lowest percent it reached in any run
  *   node tools/ci/coverage.mjs --floors FILE ... a different floors file (the tests use it)
  *
  * Each DIR holds V8 coverage, found by looking for *.json under it: the files tools/ci/coverage-hook.mjs writes for a
@@ -13,8 +14,12 @@
  * set, rounded down. The check fails if a file is below its floor, if a file has no floor (a new one: run with
  * --raise and commit the result), or if a floor names a file that is gone. When a change lifts a file the check says
  * so; the same merge request raises that floor (--raise). A floor is never lowered to pass a change; a file that
- * cannot sensibly be covered says why in the file's "reasons".
+ * cannot sensibly be covered says why in the file's "reasons". Without --raise, several DIRs are one measurement (their
+ * ranges are merged); with --raise each is a separate run, because a floor must hold on a bad run, not only on the
+ * union of good ones. --raise prints every floor it adds or removes; a floor added for a file whose content is that of a
+ * file whose floor is removed (a rename; the old content is read from git HEAD) is never lower than the old floor.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,6 +104,25 @@ export function ratchet(files, floors) {
   return { below, unset, gone, raisable };
 }
 
+/* The measurement across separate runs: each file at the lowest percent it reached in any one of them (a file a run
+   never reached counts 0 there). Returns null if some run holds no coverage at all. */
+export function measureWorst(runs, base = root) {
+  const each = runs.map((d) => measure([d], base));
+  const empty = runs.filter((_, i) => !each[i].inputs);
+  if (empty.length) return { empty };
+  const files = {};
+  for (const f of Object.keys(each[0].files)) {
+    const worst = each.reduce((w, m) => (m.files[f].percent < w.files[f].percent ? m : w), each[0]);
+    files[f] = { ...worst.files[f] };
+  }
+  return { files, empty };
+}
+
+/* A file's content at git HEAD, or null (not in git, or no git). */
+const committed = (file, base = root) => {
+  try { return execFileSync("git", ["show", `HEAD:${file}`], { cwd: base, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return null; }
+};
+
 function main(argv) {
   let floorsFile = join(root, "tools/ci/coverage-floors.json");
   let raise = false;
@@ -108,9 +132,18 @@ function main(argv) {
     else if (argv[i] === "--floors") floorsFile = resolve(argv[++i]);
     else dirs.push(argv[i]);
   }
-  if (!dirs.length) { console.error("usage: node tools/ci/coverage.mjs [--raise] [--floors FILE] DIR..."); return 64; }
-  const { files, inputs } = measure(dirs);
-  if (!inputs) { console.error(`coverage: no coverage found under ${dirs.join(", ")}`); return 2; }
+  if (!dirs.length) { console.error("usage: node tools/ci/coverage.mjs [--raise] [--floors FILE] DIR...\n  --raise: pass three full runs, each its own DIR; a floor is raised to the lowest percent its file reached in any of them"); return 64; }
+  let files;
+  if (raise) {
+    const w = measureWorst(dirs);
+    if (w.empty.length) { console.error(`coverage: no coverage found under ${w.empty.join(", ")}`); return 2; }
+    files = w.files;
+    if (dirs.length < 3) console.log(`coverage: only ${dirs.length} run${dirs.length === 1 ? "" : "s"} given; pass three full runs so a floor holds on a bad run\n`);
+  } else {
+    const m = measure(dirs);
+    if (!m.inputs) { console.error(`coverage: no coverage found under ${dirs.join(", ")}`); return 2; }
+    files = m.files;
+  }
 
   const doc = existsSync(floorsFile) ? JSON.parse(readFileSync(floorsFile, "utf8")) : { floors: {}, reasons: {} };
   const { below, unset, gone, raisable } = ratchet(files, doc.floors);
@@ -125,13 +158,32 @@ function main(argv) {
   console.log(`${"all".padEnd(width)}  ${String(total).padStart(5)}  ${String(covered).padStart(3)}  ${String(wholePercent(covered, total)).padStart(6)}%`);
 
   if (raisable.length) {
-    console.log("\ncan be raised (the same merge request raises them: node tools/ci/coverage.mjs --raise DIR):");
+    console.log("\ncan be raised (the same merge request raises them: node tools/ci/coverage.mjs --raise DIR DIR DIR, three full runs):");
     for (const r of raisable) console.log(`  ${r.file}: ${r.floor}% -> ${r.percent}%`);
   }
   if (raise) {
-    for (const r of raisable) doc.floors[r.file] = r.percent;
-    for (const f of unset) doc.floors[f] = files[f].percent;
-    for (const f of gone) { delete doc.floors[f]; delete doc.reasons?.[f]; }
+    console.log("\nfloor changes:");
+    for (const r of raisable) { doc.floors[r.file] = r.percent; console.log(`  raised ${r.file}: ${r.floor}% -> ${r.percent}%`); }
+    const renamedFrom = new Map(); /* added file -> the removed file of identical content */
+    for (const f of unset) {
+      const now = readFileSync(join(root, f), "utf8");
+      const old = gone.find((g) => !renamedFrom.has(g) && committed(g) === now);
+      if (old) renamedFrom.set(f, old);
+    }
+    const taken = new Set(renamedFrom.values());
+    for (const f of unset) {
+      const old = renamedFrom.get(f);
+      const floor = old ? Math.max(files[f].percent, doc.floors[old]) : files[f].percent;
+      doc.floors[f] = floor;
+      if (old && doc.reasons?.[old]) { doc.reasons[f] = doc.reasons[old]; }
+      console.log(`  added ${f}: ${floor}%${old ? ` (renamed from ${old}: keeps its floor of ${doc.floors[old]}%; measured ${files[f].percent}%)` : ` (new file, measured ${files[f].percent}%)`}`);
+    }
+    for (const f of gone) {
+      const why = doc.reasons?.[f];
+      console.log(`  removed ${f}: ${doc.floors[f]}%${taken.has(f) ? " (renamed; its floor moved to the new name)" : ""}${why ? `; its reason: ${why}` : ""}`);
+      delete doc.floors[f]; delete doc.reasons?.[f];
+    }
+    if (!raisable.length && !unset.length && !gone.length) console.log("  none");
     doc.floors = Object.fromEntries(Object.entries(doc.floors).sort(([a], [b]) => (a < b ? -1 : 1)));
     writeFileSync(floorsFile, JSON.stringify(doc, null, 2) + "\n");
     console.log(`\nwrote ${relative(root, floorsFile)}`);
@@ -145,12 +197,12 @@ function main(argv) {
   }
   if (unset.length && !raise) {
     bad = true;
-    console.log("\nNO FLOOR (new file: node tools/ci/coverage.mjs --raise DIR, and commit the result):");
+    console.log("\nNO FLOOR (new file: node tools/ci/coverage.mjs --raise DIR DIR DIR, and commit the result):");
     for (const f of unset) console.log(`  ${f}: ${files[f].percent}%`);
   }
   if (gone.length && !raise) {
     bad = true;
-    console.log("\nFLOOR FOR A FILE THAT IS GONE (node tools/ci/coverage.mjs --raise DIR removes it):");
+    console.log("\nFLOOR FOR A FILE THAT IS GONE (node tools/ci/coverage.mjs --raise DIR DIR DIR removes it):");
     for (const f of gone) console.log(`  ${f}`);
   }
   console.log(bad ? "\ncoverage: failed" : "\ncoverage: ok");

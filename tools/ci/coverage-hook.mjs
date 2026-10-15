@@ -8,7 +8,8 @@
  * read when the page navigates or closes, and at exit the ranges that ran are written to
  * $COVERAGE_DIR/browser-<test>-<pid>.json. Firefox has no such thing, so only Chromium is recorded. Only the site's
  * own files are kept (sw.js, assets/js/*.js, assets/door/*.js, from the page's own origin, as they are on disk); tools/ci/coverage.mjs
- * reads the files and reports. Without COVERAGE_DIR the hook does nothing.
+ * reads the files and reports. A script it skips (the page ran another copy than the file on disk, or the page's source
+ * was not available to compare) is named on stderr, once per script per test run, with the reason. Without COVERAGE_DIR the hook does nothing.
  */
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,6 +24,12 @@ if (dir) {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const disk = (path) => { try { return readFileSync(join(root, path), "utf8"); } catch { return null; } };
   const seen = new Map(); /* site path -> { length, ran: Uint8Array } */
+  const told = new Set();
+  const skip = (path, why) => {
+    if (told.has(path)) return;
+    told.add(path);
+    console.error(`coverage-hook: skipped ${path}: ${why}`);
+  };
 
   const keep = (page, entries) => {
     let origin = "";
@@ -34,9 +41,13 @@ if (dir) {
       const path = u.pathname.slice(1);
       /* a test that serves its own copy of a file (door-lows adds a seam to main.js) ran something else: its
          offsets mean nothing in the file on disk, so it is not counted */
-      if (typeof e.source === "string" && e.source !== disk(path)) continue;
+      /* nor is a script whose source could not be compared with the disk: unproven offsets are not counted */
+      if (typeof e.source !== "string") { skip(path, "the page's source is not available to compare with the file on disk"); continue; }
+      const onDisk = disk(path);
+      if (onDisk === null) { skip(path, "the file on disk is not available to compare with"); continue; }
+      if (e.source !== onDisk) { skip(path, "the copy the page ran differs from the file on disk"); continue; }
       /* V8's offsets are UTF-16 units, as a string's length is */
-      const length = typeof e.source === "string" ? e.source.length : Math.max(0, ...e.functions.flatMap((f) => f.ranges.map((r) => r.endOffset)));
+      const length = e.source.length;
       const into = seen.get(path) || { length, ran: new Uint8Array(length) };
       if (length > into.ran.length) { const grown = new Uint8Array(length); grown.set(into.ran); into.ran = grown; into.length = length; }
       for (const [s, en] of coveredRanges(e.functions, length)) into.ran.fill(1, s, en);

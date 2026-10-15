@@ -7,12 +7,13 @@
 #
 #   sh tools/ci/coverage-run.sh           by hand: the Node tests, the Chromium runs, the check
 #   sh tools/ci/coverage-run.sh browser   the gate's: the Chromium runs and the check (the lint job's Node
-#                                         coverage is already in $COVERAGE_DIR/node)
-#   sh tools/ci/coverage-run.sh check     only the check, on what is in $COVERAGE_DIR
+#                                         coverage is already in $COVERAGE_DIR/node, which must exist; earlier
+#                                         browser records in $COVERAGE_DIR are removed first)
+#   sh tools/ci/coverage-run.sh check     only the check, on what is in $COVERAGE_DIR (which needs the same node/)
 #
 # COVERAGE_DIR defaults to ./coverage (ignored by git). Playwright is found as
 # journey-local.sh finds it. `node tools/ci/coverage.mjs --raise $COVERAGE_DIR`
-# raises the floors to what was measured.
+# raises the floors to what was measured; give it three full runs, each in its own directory.
 set -eu
 
 case "${1-all}" in all|browser|check) mode=${1-all} ;; *) echo "usage: sh tools/ci/coverage-run.sh [browser|check]" >&2; exit 64 ;; esac
@@ -26,6 +27,16 @@ export COVERAGE_DIR
 if [ "$mode" = all ]; then
   rm -rf "$COVERAGE_DIR"
   sh tools/ci/node-tests.sh
+fi
+
+if [ "$mode" != all ] && [ ! -d "$COVERAGE_DIR/node" ]; then
+  echo "coverage-run: no Node coverage in $COVERAGE_DIR: run the lint job again (its artifact lasts 24 hours)" >&2
+  exit 2
+fi
+
+if [ "$mode" = browser ]; then
+  # records of earlier runs would be counted as this run's; Node's stay
+  find "$COVERAGE_DIR" -maxdepth 1 -type f -name 'browser-*.json' -exec rm -f {} +
 fi
 
 if [ "$mode" != check ]; then

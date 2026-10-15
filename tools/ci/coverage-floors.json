@@ -1,5 +1,5 @@
 {
-  "about": "Line coverage floors (#14): the whole percent each file reached, rounded down, the lowest of three full runs. The check (tools/ci/coverage.mjs) fails if a file falls below its floor. A change that lifts a file raises its floor in the same merge request: node tools/ci/coverage.mjs --raise DIR (it only raises). A floor is never lowered to pass a change; a file that cannot sensibly be covered says why under reasons.",
+  "about": "Line coverage floors (#14): the whole percent each file reached, rounded down, the lowest of three full runs. The check (tools/ci/coverage.mjs) fails if a file falls below its floor. A change that lifts a file raises its floor in the same merge request: node tools/ci/coverage.mjs --raise DIR DIR DIR, passing three full runs each as its own DIR (it only raises, to the lowest percent a file reached in any run). A floor is never lowered to pass a change; a file that cannot sensibly be covered says why under reasons.",
   "floors": {
     "assets/door/capability.js": 95,
     "assets/door/chores.js": 100,
