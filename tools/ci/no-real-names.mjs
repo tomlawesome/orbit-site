@@ -13,7 +13,7 @@
  * The matchers are exported for tools/ci/no-real-names-test.mjs; the scan runs
  * only when this file is executed directly, not when it is imported.
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -195,10 +195,11 @@ export function isPrivateOrShared(address) {
 }
 
 /**
- * Colon-separated hex groups, not part of a longer word or colon run (times of day fail the shape check below). A
+ * Colon-separated hex groups, not part of a longer word or colon run (times of day fail the shape check below). An
+ * underscore is a separator, as in the IPv4 rule, not part of the address (`host_<address>_old`, #60 r4 item 1). A
  * colon may follow when it does not lead on to more groups (`<address>: refused`).
  */
-const IPV6 = /(?<![\w:])[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?!\w|:[0-9A-Fa-f:])/gu;
+const IPV6 = /(?<![A-Za-z0-9:])[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?![A-Za-z0-9]|:[0-9A-Fa-f:])/gu;
 
 /** A well-formed IPv6 address in the unique-local range (first group fc00 to fdff) or link-local range (fe80 to febf); the documentation range is neither. */
 export function isPrivateIPv6(address) {
@@ -299,8 +300,23 @@ export function textOf(data) {
   return { text: data.toString("latin1").match(/[\x20-\x7e\t]{4,}/gu)?.join("\n") ?? "", lines: false };
 }
 
+/**
+ * Run `git ARGS` (git looked up on PATH) and return its stdout. On failure print only the subcommand and the exit
+ * status and exit 2: never git's output or the error object, which can hold a banned value and CI logs are
+ * public (#60 r4 item 2).
+ */
+function git(...args) {
+  const r = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "pipe"] });
+  if (r.status !== 0) {
+    const status = r.status ?? (r.signal ? `signal ${r.signal}` : "none");
+    console.log(`no-real-names: git ${args[0]} failed (exit ${status})`);
+    process.exit(2); // 2, not 1: the check could not run, which is not a finding
+  }
+  return r.stdout;
+}
+
 function trackedFiles() {
-  const names = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 }).split("\0").filter(Boolean);
+  const names = git("ls-files", "-z").split("\0").filter(Boolean);
   const files = [];
   for (const name of names) {
     let data;
@@ -393,7 +409,6 @@ export function messageFindings(line) {
    allowed in a person trailer's name), or AI attribution. Never the value. A
    shallow clone cannot see the whole history, so it is refused rather than passed. */
 function commitHits() {
-  const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 });
   if (git("rev-parse", "--is-shallow-repository").trim() === "true") return null;
   const hits = [];
   const fields = git("log", "-z", "--format=%h%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
