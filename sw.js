@@ -12,7 +12,7 @@
  * MEDIA changes name when the pictures are replaced, which clears them: the
  * lint computes the name from the pictures and prints the new one.
  */
-const MEDIA = "orbit-media-928c533d95ab", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
+const MEDIA = "orbit-media-c4faff2aa6bf", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
 const isMedia = (u) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(u.pathname);
 
 self.addEventListener("install", () => self.skipWaiting());

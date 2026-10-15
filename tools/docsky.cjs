@@ -34,11 +34,13 @@ window.ready = true;
 localServer({ root, page, types }).then(async ({ server: srv, url: home }) => {
   const b = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   /* the flight's galaxy is scaled to the screen's height (its width shows more or less of the sky), so the picture is
-     made wide (3:1), and the page sets it to the screen's height: the same sky at any shape of window. The tall one is
-     drawn at the widest portrait shape (10:11, the site's threshold, where the flight takes its portrait rest), so every
-     portrait screen sees its middle at the screen's height */
+     made wide (3:1), and the page sets it to the screen's height: the same sky at any shape of window. The tall one
+     (--tall) is drawn at the widest portrait shape, 10:11 exactly (the door's threshold: engine.js tallScreen), so the
+     flight takes its portrait rest and the picture, set to the screen's height, is as wide as any portrait screen.
+     990x1089 is 10:11 exactly; 1080 high it could not be (982x1080 is a shade wider, so the flight would take the
+     landscape way, and 981x1080 a shade narrower than the widest portrait screen) */
   const tall = process.argv.includes("--tall");
-  const pg = await b.newPage({ viewport: tall ? { width: 980, height: 1080 } : { width: 3240, height: 1080 } });
+  const pg = await b.newPage({ viewport: tall ? { width: 990, height: 1089 } : { width: 3240, height: 1080 } });
   await pg.goto(home);
   await pg.waitForFunction(() => window.ready, null, { timeout: 120000 });
   await pg.evaluate(() => window.draw());

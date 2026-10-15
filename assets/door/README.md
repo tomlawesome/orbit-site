@@ -297,9 +297,10 @@ a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the 
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the
-screen's shape itself: on a landscape screen the camera rests inside the disc,
-0.56 from the core, the band across the sky; on a portrait one (width / height
-at most 10/11, the site's threshold) it stops short, 1.1 from the core and
+screen's shape itself, once, as it starts (turning the screen mid-flight does
+not switch it): on a landscape screen the camera rests inside the disc, 0.56
+from the core, the band across the sky; on a portrait one (width / height at
+most 10/11, the door's own threshold) it stops short, 1.1 from the core and
 above the disc, rolled a quarter turn more, so the whole spiral stands up the
 screen (`engine.js`: `PATH`, `PATH_TALL`). A host that draws the sky the flight
 ends in draws one picture for each (the site's `tools/docsky.cjs`).
