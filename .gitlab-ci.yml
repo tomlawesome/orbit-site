@@ -117,7 +117,8 @@ lint:
 # households met again on the way down (#25, #26). The freeze check runs
 # Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
 # the GPU once, refuses a software renderer, and then freezes nothing (#2).
-# The last step is the coverage ratchet (#14): the journey, the upload, pin and
+# The last step is the coverage ratchet (#14): the journey, upload, pin,
+# site-browser, phone-door, door-lows, csp, docs-planet, flight-context-loss and
 # freeze checks run again in Chromium, which records which of the site's
 # JavaScript ran, and with the lint job's Node coverage that is checked against
 # tools/ci/coverage-floors.json: a file below its floor fails the job. The

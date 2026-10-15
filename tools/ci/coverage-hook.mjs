@@ -7,18 +7,21 @@
  * tests find it): every page of every context then runs with V8's precise coverage (Playwright's page.coverage),
  * read when the page navigates or closes, and at exit the ranges that ran are written to
  * $COVERAGE_DIR/browser-<test>-<pid>.json. Firefox has no such thing, so only Chromium is recorded. Only the site's
- * own files are kept (sw.js, assets/js/*.js, assets/door/*.js, from the page's own origin); tools/ci/coverage.mjs
+ * own files are kept (sw.js, assets/js/*.js, assets/door/*.js, from the page's own origin, as they are on disk); tools/ci/coverage.mjs
  * reads the files and reports. Without COVERAGE_DIR the hook does nothing.
  */
 import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { coveredRanges, rangesOf } from "./coverage-lib.mjs";
 
 const dir = process.env.COVERAGE_DIR;
 if (dir) {
   const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
   const SITE_FILE = /^\/(sw\.js|assets\/(?:js|door)\/[^/]+\.js)$/;
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const disk = (path) => { try { return readFileSync(join(root, path), "utf8"); } catch { return null; } };
   const seen = new Map(); /* site path -> { length, ran: Uint8Array } */
 
   const keep = (page, entries) => {
@@ -29,6 +32,9 @@ if (dir) {
       try { u = new URL(e.url); } catch { continue; }
       if (u.origin !== origin || !SITE_FILE.test(u.pathname)) continue;
       const path = u.pathname.slice(1);
+      /* a test that serves its own copy of a file (door-lows adds a seam to main.js) ran something else: its
+         offsets mean nothing in the file on disk, so it is not counted */
+      if (typeof e.source === "string" && e.source !== disk(path)) continue;
       /* V8's offsets are UTF-16 units, as a string's length is */
       const length = typeof e.source === "string" ? e.source.length : Math.max(0, ...e.functions.flatMap((f) => f.ranges.map((r) => r.endOffset)));
       const into = seen.get(path) || { length, ran: new Uint8Array(length) };

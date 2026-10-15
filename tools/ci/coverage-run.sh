@@ -50,13 +50,20 @@ if [ "$mode" != check ]; then
   export PLAYWRIGHT_ROOT BROWSER HEADED WEBGL LIBGL_ALWAYS_SOFTWARE ENGINES
 
   # dawn and asdawn are left out: 100 s each for 6 and 23 lines more, and asdawn's 390x844 control does not pass
-  # in Chromium (it is Firefox's). journey, upload, pin and freeze are the ones that run the site's code.
+  # in Chromium (it is Firefox's). The rest are the gate's browser tests that run the site's own code, each at the
+  # screen size the gate gives it.
   failed=
-  for run in journey upload pin freeze; do
+  for run in journey upload pin site-browser phone-door door-lows csp docs-planet flight-context-loss freeze; do
     case $run in
       journey) test=tools/ci/journey.mjs; screen=1280x800x24 ;;
       upload) test=tools/ci/upload-test.mjs; screen=1280x720x24 ;;
       pin) test=tools/ci/pin-test.mjs; screen=1280x800x24 ;;
+      site-browser) test=tools/ci/site-browser-test.mjs; screen=1280x800x24 ;;
+      phone-door) test=tools/ci/phone-door-test.mjs; screen=1280x800x24 ;;
+      door-lows) test=tools/ci/door-lows-test.mjs; screen=1280x800x24 ;;
+      csp) test=tools/ci/csp-test.mjs; screen=1280x800x24 ;;
+      docs-planet) test=tools/ci/docs-planet-test.mjs; screen=1280x800x24 ;;
+      flight-context-loss) test=tools/ci/flight-context-loss-test.mjs; screen=1280x800x24 ;;
       freeze) test=tools/ci/freeze.mjs; screen=1280x800x24 ;;
     esac
     echo "== $run, in Chromium, recording coverage"
