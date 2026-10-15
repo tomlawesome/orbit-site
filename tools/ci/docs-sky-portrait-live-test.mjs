@@ -326,9 +326,19 @@ const steppedPage = async (viewport, errors) => {
   await page.waitForFunction(() => window.ready, null, { timeout: 120000 });
   return { ctx, page };
 };
+/* the flight stepped a few frames at a time, the page's own frames between: stepped all at once, a hundred and more
+   frames of drawing reach the GPU process as one task, and on software GL under load that task outlasts Chromium's GPU
+   watchdog, which ends the process and loses the world's context (a test that depends on drawing speed) */
+const STEP_CHUNK = 6;
+const stepFrames = async (page, n) => {
+  for (let left = n; left > 0; left -= STEP_CHUNK) {
+    await page.evaluate((k) => window.frames(k), Math.min(STEP_CHUNK, left));
+    await twoFrames(page);
+  }
+};
 const flyTo = async (page, n) => {
   if (!(await page.evaluate(() => window.fly()))) throw new Error("the engine never drew the flight's world (drawingWorld stayed false)");
-  await page.evaluate((n) => window.frames(n), n);
+  await stepFrames(page, n);
 };
 
 const resizeCase = async () => {
@@ -356,7 +366,7 @@ const resizeCase = async () => {
     const X1 = await drawnShot(a.page, "X1-turned", { redraw: true });
     await a.page.evaluate(() => window.frames(1));
     const X2 = await drawnShot(a.page, "X2-turned", { redraw: true });
-    await a.page.evaluate((n) => window.frames(n), END - MID - 2);
+    await stepFrames(a.page, END - MID - 2);
     const XEND = await drawnShot(a.page, "XEND-turned-rest", { redraw: true });
     /* the next flight, started after the turn */
     await flyTo(a.page, MID + 1);
