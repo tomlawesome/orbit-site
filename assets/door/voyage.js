@@ -982,7 +982,7 @@ void main(){ vec2 d=gl_PointCoord-0.5; float a=uPts>0.5?exp(-dot(d,d)*14.0):1.0;
 export const SOURCES = { scene: SCENE, galaxy: GAL };
 /* the galaxy's stars, made once: most in the disc and thickest along the arms, some in the bulge, and a cloud of
    them about the place the flight comes to rest, so there are stars close by to pass */
-const REST = [0.56, 0, 0];
+const REST = [0.56, 0, 0]; /* the landscape rest (engine.js: PATH); a portrait screen's is further out, above the disc */
 function galaxyStars(n) {
   let sd = 4242; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(6.2832 * rnd());

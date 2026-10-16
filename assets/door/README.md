@@ -185,8 +185,8 @@ host sets `ready-flight` (below).
 
 ### Markup (`markup.js`)
 
-`dawnMarkup({ image, lockup, gate, foot, heading, indent })` and
-`duskMarkup({ image, gate, foot, farewell, asDawn, indent })` are pure string
+`dawnMarkup({ image, lockup, gate, foot, heading, tag, indent })` and
+`duskMarkup({ image, gate, foot, farewell, asDawn, tag, indent })` are pure string
 functions: the door's markup with the host's parts in the slots (`lockup`,
 between the glyph and the name; `gate`, inside `.gate-wrap`; `foot`, at the
 surface's foot). `heading` (dawn only, default `true`): whether the wordmark is
@@ -197,7 +197,18 @@ does, for a page that has an h1 of its own (a docs page), styled the same
 renders them in its components. `image` is the same resolver as the setting; what it answers is escaped where it
 goes into an attribute, so it cannot add an attribute or an element.
 
-**Text and raw HTML.** `farewell.said` and `farewell.sub` are text: they are
+`tag` (both, default none; added 2026-10, #63): the release tag under the
+wordmark. It is TEXT, one string, escaped like `farewell`: nothing of it is
+markup or an attribute. Its first word is the channel and anything after the
+first whitespace is the build: `"alpha"`, `"beta"`, `"preview 3f2a9c1"`. It is
+written right after `.name` as `<div class="release" data-channel="C">W</div>`,
+`W` the word and `C` that word (in any case, shown in lowercase) if it is `alpha`, `beta`
+or `preview`, else `build`; whitespace runs fold to one space, a non-string is no tag, and a tag
+longer than the ring's inside is cut with an ellipsis; a build follows as `<span class="build">…</span>`. Empty or left out,
+the markup is byte for byte what it was. Orbit will pass its channel or short
+commit (a follow-up in `ai/orbit`); the site passes none.
+
+**Text and raw HTML.** `farewell.said`, `farewell.sub` and `tag` are text: they are
 escaped, so a person's name in them is never markup. `lockup`, `gate` and `foot`
 are raw HTML, put in as given (the host's own markup: never put a person's words
 in them). `indent` is whitespace.
@@ -219,6 +230,11 @@ Loaded before the host's own sheet. Its header lists what it asks of the
 host (`--star-far`, `--star-near`, `--display`, `--mono`, `html.rich`) and
 the keyframes it defines that a host may use (`driftf`, `driftn`,
 `spinback`). Every `url()` in it stays inside the folder.
+
+`.release` (the tag under the name, above): positioned from the name's measure
+(`--R` where the surface sets it), coloured and sized by the sheet, and shown
+with the name once `body.lit`. It asks nothing of the host; the host styles
+nothing of it. `#dusk.asdawn` hides it on a phone with the name.
 
 The host's own body class: `ready-flight`. The gate is hidden until
 `body.lit.ready-flight` (`door.css`), so the host adds `ready-flight` to the
@@ -293,7 +309,17 @@ a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the 
 `isSoftware`, `FIT_MS`, below), the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
-`homeProps(homes)`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+`homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+`docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
+the docs' flight comes to rest on a screen of that size (CSS px), in the
+galaxy's own units (its disc's radius is about 1). The flight reads the
+screen's shape itself, once, as it starts (turning the screen mid-flight does
+not switch it): on a landscape screen the camera rests inside the disc, 0.56
+from the core, the band across the sky; on a portrait one (width / height at
+most 10/11, the door's own threshold) it stops short, 1.1 from the core and
+above the disc, rolled a quarter turn more, so the whole spiral stands up the
+screen (`engine.js`: `PATH`, `PATH_TALL`). A host that draws the sky the flight
+ends in draws one picture for each (the site's `tools/docsky.cjs`).
 `homeProps(homes)` is the other households passing on a flight: one `"home"`
 prop each from `[{ name, bodies: [[x, y, colour, r]] }]`, a home's prop
 depending only on its place in the list (the site's `demoFlight` uses it).

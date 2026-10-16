@@ -22,7 +22,7 @@ export { gpu, isSoftware, FIT_MS } from "./fitness.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";
 /* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */
-export { createFlight, UP, PROPS_UP, UPDUR, DOWN, DOWNDUR, homeProps } from "./engine.js";
+export { createFlight, UP, PROPS_UP, UPDUR, DOWN, DOWNDUR, homeProps, docsRest } from "./engine.js";
 /* the glows' filter graphs, for the tool that draws them into pictures (tools/glows.cjs) */
 export { DAWN, DUSK } from "./glows.js";
 export { createJourney, descentProfile, DOWN_DAWN, mirrored } from "./journey.js";
