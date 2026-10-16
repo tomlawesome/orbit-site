@@ -1,10 +1,13 @@
 {
   "name": "orbit-site-import",
   "private": true,
-  "description": "the docs import's two packages; nothing here runs on the site",
+  "description": "the docs import's packages, and TypeScript for the lint's door type check (dev only: the import installs with --omit=dev); nothing here runs on the site",
   "dependencies": {
     "js-yaml": "5.4.3",
     "marked": "18.1.0",
     "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
   }
 }
