@@ -44,6 +44,13 @@ import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } fr
 import { gpu } from "./fitness.js";
 import { uploadBanded } from "./upload.js";
 
+/**
+ * @typedef {{ p: WebGLProgram, u: Record<string, WebGLUniformLocation | null> }} Prog a linked program and its uniforms
+ * @typedef {{ canvas: HTMLCanvasElement, gl: WebGL2RenderingContext | null, par: KHR_parallel_shader_compile | null, weights: Record<string, Promise<Prog> | undefined>, richFlight: ReturnType<typeof compileRich> | null }} DoorContext
+ * @typedef {{ spinM: number[], cloudOff: number, sun: number[] | null, air: number, rich: boolean }} DoorState the door's turn, for the flight (voyage.js: followDoor)
+ * @typedef {{ ready: Promise<unknown>, state: DoorState, wake: () => void, destroy: () => void }} LiveDoor
+ */
+
 /* when this was loaded: how long the first compile then waited its turn is said (note) */
 const LOADED = performance.now();
 const RICH = () => !!flag("rich"), LEAN = () => !!flag("lean");
@@ -74,6 +81,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   c=pow(c,vec3(1.0/2.2))+(hash13(vec3(gl_FragCoord.xy,uTime*60.0))-0.5)/255.0;
   o=vec4(c*a,a);
 }`;
+/** @param {boolean} slab */
 const FRAG = (slab) => sceneHead({ slab, door: true }) + MAIN;
 
 /* the ground turns once in this long (s: three hours and twenty minutes, all but still), the clouds drift a quarter of a degree a minute
@@ -85,7 +93,9 @@ const AIR = 1.4;
 
 /* the door's canvas and context, made once: at the page's start where compiles freeze the page (compileDoor, for its
    programs to be compiled under the first light's ring), else by liveDoor. Nothing is put on its GPU until liveDoor */
+/** @type {DoorContext | null} */
 let ctx = null;
+/** @returns {DoorContext} */
 function context() {
   if (ctx) return ctx;
   const canvas = document.createElement("canvas");
@@ -95,21 +105,25 @@ function context() {
   const gl = gpu() ? canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) : null;
   return (ctx = { canvas, gl, par: gl?.getExtension("KHR_parallel_shader_compile") || null, weights: {}, richFlight: null });
 }
-const shader = (gl, type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+/** @param {WebGL2RenderingContext} gl @param {number} type @param {string} src */
+const shader = (gl, type, src) => { const sh = /** @type {WebGLShader} */ (gl.createShader(type)); gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
+/** @param {WebGL2RenderingContext} gl @param {boolean} slab */
 const make = (gl, slab) => {
-  const p = gl.createProgram();
+  const p = /** @type {WebGLProgram} */ (gl.createProgram());
   gl.attachShader(p, shader(gl, gl.VERTEX_SHADER, VERT)); gl.attachShader(p, shader(gl, gl.FRAGMENT_SHADER, FRAG(slab)));
   gl.linkProgram(p); linked("door");
   return p;
 };
+/** @param {WebGL2RenderingContext} gl @param {WebGLProgram} p @returns {Prog} */
 const finish = (gl, p) => {
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "door3d: no program");
-  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS), u = {};
-  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS), u = /** @type {Prog["u"]} */ ({});
+  for (let i = 0; i < n; i++) { const a = /** @type {WebGLActiveInfo} */ (gl.getActiveUniform(p, i)); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
   return { p, u };
 };
 /* (a lost context never reports complete, nor may a stuck compiler: past COMPILE_WAIT, chores.js, stop waiting and
    fail, as for a failed compile) */
+/** @param {WebGL2RenderingContext} gl @param {KHR_parallel_shader_compile | null} par @param {WebGLProgram} p */
 const compiled = (gl, par, p) => compiledWithin(gl, par, [p]).then((done) => { if (!done) throw new Error("door3d: the compile did not finish"); });
 /* a weight made, once: its program asked for, waited for (in the background where the browser can), and finished.
    Said: how long the first waited its turn, and how long the making itself took (since: the clock the console's
@@ -117,20 +131,21 @@ const compiled = (gl, par, p) => compiledWithin(gl, par, [p]).then((done) => { i
 /* (where compiles freeze the page, the weights chosen are "compile" chores, first of all; the rich one asks for the
    flight's rich one in its turn, so that is queued with them. Elsewhere the first is a "door" chore, and the rich one
    tried after the lean ("both") a "rich" one, last of all) */
-let asked = 0, compiledFirst = null;
-const firstCompiled = new Promise((resolve) => { compiledFirst = resolve; });
+let asked = 0, /** @type {() => void} (set by the executor below, which runs at once) */ compiledFirst = /** @type {never} */ (null);
+const firstCompiled = /** @type {Promise<void>} */ (new Promise((resolve) => { compiledFirst = resolve; }));
 /** the weight drawn first, compiled (main.js says how many programs were compiled before the door) */
 export const doorFirstCompiled = () => firstCompiled;
 /** the door's first measure taken and its decision made (and so the door shown), or never to be: at once where the
     door is not live here (level 0, or no ?door3d), has no WebGL2, or fails. The world planets wait for it (install.js:
     doorPlanets), so the door's measure is not taken beside them */
-let measuredNow = null;
-export const doorMeasured = new Promise((resolve) => { measuredNow = resolve; });
+let /** @type {() => void} (set by the executor below, which runs at once) */ measuredNow = /** @type {never} */ (null);
+export const doorMeasured = /** @type {Promise<void>} */ (new Promise((resolve) => { measuredNow = resolve; }));
 probe().then(() => { if (!doorIsLiveHere()) measuredNow(); }, () => measuredNow());
+/** @param {boolean} slab @param {number} since @returns {Promise<Prog>} */
 function weight(slab, since) {
   /* (up: compiled under the ring, where compiles stall the page; not when the door comes late, capability.js: then a
      "door" chore after the journeys, a stall on the still door once the ways in are open) */
-  const c = context(), { gl, par } = c, name = slab ? "rich" : "lean", up = !compilesAside() && !lateDoor();
+  const c = context(), { gl, par } = /** @type {DoorContext & { gl: WebGL2RenderingContext }} */ (c), name = slab ? "rich" : "lean", up = !compilesAside() && !lateDoor();
   if (c.weights[name]) return c.weights[name];
   const first = !asked++;
   let took = 0;
@@ -152,18 +167,20 @@ function weight(slab, since) {
     (main.js): the weights chosen (capability.js: the rich alone, the lean alone, or both) queued as "compile" chores,
     and with the rich one the flight's rich one, done under the first light's ring; resolves once they are compiled,
     and main.js holds the door until then. Only the context and the programs: the maps, the canvas and the loop are
-    liveDoor's, after the reveal. Elsewhere, nothing */
+    liveDoor's, after the reveal. Elsewhere, nothing
+    @returns {Promise<unknown>} */
 export function compileDoor() {
   if (compilesAside() || !context().gl) return Promise.resolve();
   return probe().then(() => {
     if (lateDoor()) return;
     const w = theDoorWeight();
     return Promise.all(w === "lean" ? [weight(false, LOADED)] : w === "rich" ? [weight(true, LOADED)] : [weight(false, LOADED), weight(true, LOADED)]);
-  }).then(() => ctx.richFlight);
+  }).then(() => /** @type {DoorContext} */ (ctx).richFlight);
 }
 
+/** @param {HTMLElement} world @returns {LiveDoor | null} */
 export function liveDoor(world) {
-  const { canvas, gl } = context();
+  const { canvas, gl } = /** @type {DoorContext & { gl: WebGL2RenderingContext }} */ (context());  /* (non-null after the next line: the inner functions are hoisted, so the narrowing would not reach them) */
   if (!gl) { measuredNow(); return null; }
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
@@ -176,26 +193,28 @@ export function liveDoor(world) {
 
   /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept); mode: the weights chosen (the
      probe's: capability.js); rich: the rich program, once there is one (its passes draw the fields and the glow) */
-  let prog = null, sunTex = null, glowT = null, mode = "both", rich = null;
+  let /** @type {Prog | null} */ prog = null, /** @type {ReturnType<typeof sunTexture> | null} */ sunTex = null, /** @type {ReturnType<typeof cityGlow> | null} */ glowT = null, /** @type {string | null} */ mode = "both", /** @type {Prog | null} */ rich = null;
   /* taken down (destroy: the dawn's), or its context lost: it acts no more, and stays down until a remount makes another */
   let dead = false;
   /* mipped: the maps whose mipmaps are made too (a field is made from a map only then); failed: those that did not
      come, asked for once more (below) */
-  const maps = {}, dims = {}, fields = {}, mipped = new Set(), failed = new Set();
+  const maps = /** @type {Record<string, WebGLTexture | null>} */ ({}), dims = /** @type {Record<string, [number, number]>} */ ({}), fields = /** @type {Record<string, ReturnType<typeof cloudField>>} */ ({}), mipped = new Set(), failed = new Set();
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* a map not (yet) there is drawn without: black in its place, and its flag down (uHas, uHasN) */
-  const blank = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, blank);
+  const blank = /** @type {WebGLTexture} */ (gl.createTexture()); gl.bindTexture(gl.TEXTURE_2D, blank);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   /* a map's own parameters: its wrap, and (with its mipmaps) the anisotropy, as the ground is seen almost edge on:
      without it the cities blur into the coarsest maps */
+  /** @param {string} key @returns {(g: WebGL2RenderingContext) => void} */
   const wrapOf = (key) => (g) => {
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, BOXED.includes(key) ? g.CLAMP_TO_EDGE : g.REPEAT);
     g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
   };
-  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
+  const sharper = (/** @type {WebGL2RenderingContext} */ g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
   /* the sharper strip, put on the GPU whole (sharpStrip: in every context in the one chore, its fade started on the
      same clock; the last chore of all) */
+  /** @param {string} key @param {ImageBitmap} bm */
   const upload = (key, bm) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
@@ -208,6 +227,7 @@ export function liveDoor(world) {
   };
   /* the rich weight's fields, one a clouds map (voyage.js: cloudField), drawn by the rich program: made as soon as the
      map and the program are both there; and the cities' glow (cityGlow), once every map has come */
+  /** @param {string} key */
   const fieldOf = (key) => {
     if (!rich || !maps[key] || !mipped.has(key) || fields[key]) return;
     try { fields[key] = cloudField(gl, rich, maps[key], ...dims[key], key === "cloudsN"); } catch (e) { console.warn("orbit: no cloud field", e); }
@@ -218,11 +238,12 @@ export function liveDoor(world) {
   };
   /* each map put on the GPU a band at a time (upload.js: soft chores), its mipmaps after; drawable from its last band
      (its first level alone, LINEAR: the canvas is not on the page until every map is in, mipmaps and all) */
+  /** @param {string} key */
   const load = (key) => fetchOnce(pictures()[key])
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((bm) => {
       if (dead) { bm.close?.(); return; }
-      const wh = [bm.width, bm.height];
+      const wh = /** @type {[number, number]} */ ([bm.width, bm.height]);
       return uploadBanded(gl, bm, { tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
     })
     .then(() => {
@@ -250,15 +271,17 @@ export function liveDoor(world) {
   }
   let dirty = true;
   /* the frame's y (laid bottom-up, xMidYMax, as every door layer is) in the band's own css pixels */
-  const ly = (y) => H - (1000 - y) * s - top;
+  const ly = (/** @type {number} */ y) => H - (1000 - y) * s - top;
 
   /* the door's turn, kept so the flight takes it up where it is (voyage.js: followDoor) */
   /* (rich: the door has kept its rich weight, so the flight draws the same once it has made it: voyage.js, wantRich) */
+  /** @type {DoorState} */
   const state = { spinM: [1, 0, 0, 0, 1, 0, 0, 0, 1], cloudOff: 0, sun: null, air: AIR, rich: false };
   /* the door's own clock (s): it runs only while the door is shown, so a journey away and back finds the Earth
      just as it was left, and the flight's last frame and the door's first are the same */
   let clock = 0;
   /* a target of the canvas's size, for a measure taken while the canvas is seen (tryRich): drawn into, never shown */
+  /** @type {{ t: WebGLTexture | null, f: WebGLFramebuffer | null, w: number, h: number } | null} */
   let off = null;
   const unseen = () => {
     if (off && off.w === canvas.width && off.h === canvas.height) return off.f;
@@ -271,6 +294,7 @@ export function liveDoor(world) {
     return f;
   };
   /* into: a framebuffer to draw into instead of the canvas (a measure of a weight not yet kept, while the canvas is seen) */
+  /** @param {WebGLFramebuffer | null} [into] */
   function draw(into = null) {
     if (!prog || dead) return;
     /* the sun table, put on the GPU with the first frame (not with the compile, which may come before the reveal) */
@@ -305,7 +329,7 @@ export function liveDoor(world) {
     gl.uniform1f(u.uStripMix, mixS);
     gl.uniform2f(u.uSunPt, W / 2, ly(920)); gl.uniform2f(u.uFade, ly(640), 60 * s);
     gl.uniform1f(u.uFirst, reduced ? 0.5 : 0.5 + 0.25 * Math.sin((t / 110) * 6.2832 + 3.1416));
-    const bind = (unit, tx, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
+    const bind = (/** @type {number} */ unit, /** @type {WebGLTexture | null} */ tx, /** @type {WebGLUniformLocation | null} */ loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniform1i(loc, unit); };
     bind(0, maps.lights || blank, u.uLights); bind(1, maps.day || blank, u.uDay); bind(2, maps.clouds || blank, u.uClouds);
     bind(3, maps.euro || blank, u.uEuro); bind(4, maps.lightsN || blank, u.uLightsN); bind(5, maps.cloudsN || blank, u.uCloudsN);
     bind(6, maps.dayN || blank, u.uDayN); bind(7, sunTex, u.uSunT); bind(8, maps.lightsS || blank, u.uLightsS); bind(12, maps.lightsS2 || blank, u.uLightsS2);
@@ -316,11 +340,12 @@ export function liveDoor(world) {
 
   /* the clock: twenty frames a second while the door is shown and the page is seen; nothing otherwise */
   let raf = 0, last = 0, prev = 0;
-  const door = world.closest("#door");
+  const door = /** @type {HTMLElement | null} */ (world.closest("#door"));
   /* and not from the moment a journey begins (the flight draws its own Earth from this one's state; a dive blurs the
      door): the last frame stays as a still, so nothing of the door's costs while the journey comes up */
   const away = () => /\b(launching|departing|showwarp)\b/.test(document.body.className);
   const shown = () => !document.hidden && door && !door.hidden && !away() && getComputedStyle(door).opacity !== "0";
+  /** @param {number} now */
   function tick(now) {
     raf = 0;
     if (dead) return;
@@ -338,6 +363,7 @@ export function liveDoor(world) {
   /* (the budget, 40 ms, is capability.js's, which predicts against it) */
   const ROOM = 16;
   /* (hidden: drawn into the unseen target, so a weight tried while the door is shown is never seen before it is kept) */
+  /** @param {boolean} [hidden] */
   function measure(hidden = false) {
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     const into = hidden ? unseen() : null, ms = [];
@@ -346,10 +372,10 @@ export function liveDoor(world) {
     return (ms[1] + ms[2]) / 2;
   }
   /* over budget, drawn coarser, once */
-  const coarser = (mean) => { if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); } };
+  const coarser = (/** @type {number} */ mean) => { if (mean > BUDGET) { scale = Math.max(0.5, Math.sqrt(BUDGET / mean)); resize(); wake(); } };
   const at = () => Math.round(px * 100) / 100;
   /* a weight: made (weight, above), or already made under the first light's ring (compileDoor) */
-  const compile = (slab) => weight(slab, since);
+  const compile = (/** @type {boolean} */ slab) => weight(slab, since);
   /* the first measure, of the first frame, unseen, and the decision, before anything is shown. The rich alone: measured;
      kept, coarser if it must be (&rich: kept whatever); only if even at the coarsest it is over the budget, the lean
      one made and drawn instead (fell). The lean alone: measured, coarser if it must be. Both: the lean measured; with
@@ -447,7 +473,7 @@ export function liveDoor(world) {
     /* the sharper strip, once the small one is in (sharpStrip): put on the GPU beside it, and drawn from then on */
     .then(() => { if (maps.lightsS) stripS.ready((bm) => { if (dead) return; maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
     /* the rich weight's fields (those not made with their maps) and the cities' glow, before its first frame */
-    .then(() => mode === "rich" && chore(() => (dead ? undefined : richMaps()), 60, "door"))
+    .then(() => /** @type {void | Promise<void>} */ (mode === "rich" && chore(() => (dead ? undefined : richMaps()), 60, "door")))
     /* the first frame, on the page but unseen (site.css: canvas.live, until .world.live) */
     .then(() => chore(() => {
       if (dead) return;
@@ -466,6 +492,7 @@ export function liveDoor(world) {
   document.addEventListener("visibilitychange", wake);
   canvas.addEventListener("webglcontextlost", onLost);
   /* the door coming back (its class or its hidden flag changing) starts the clock again */
+  /** @type {MutationObserver[]} */
   const watchers = [];
   if (door) watchers.push(new MutationObserver(wake));
   watchers.push(new MutationObserver(wake));
