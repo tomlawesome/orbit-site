@@ -113,8 +113,9 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 - NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
   credited in the layout table above and in `LICENSE`.
 - `marked` (MIT), `sharp` (Apache-2.0; the glow tool and its test only), `js-yaml`
-  (MIT; the lint reads `.gitlab-ci.yml` with it) and `playwright` (Apache-2.0; CI only).
-  None ships to a visitor. `marked`, `sharp` and `js-yaml` are pinned in
+  (MIT; the lint reads `.gitlab-ci.yml` with it), `typescript` (Apache-2.0; the lint's door
+  type check only, #30) and `playwright` (Apache-2.0; CI only).
+  None ships to a visitor. `marked`, `sharp`, `js-yaml` and `typescript` are pinned in
   `tools/package.json` and nowhere else; `playwright` by `PLAYWRIGHT_VERSION`
   and `PLAYWRIGHT_IMAGE` in `.gitlab-ci.yml`.
 
