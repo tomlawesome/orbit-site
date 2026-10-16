@@ -12,7 +12,7 @@
  * doorWeight(): from that, the live door's weight (door3d.js): the rich Earth alone, the lean one alone, or both (the
  * lean first, the rich tried by the ladder), so only what will be drawn is compiled.
  */
-import { note } from "./chores.js";
+import { note, compiledWithin } from "./chores.js";
 import { settings, flag } from "./settings.js";
 import { gpu } from "./fitness.js";
 
@@ -78,11 +78,9 @@ async function measure(gl) {
       const sh = (type, src) => { const s = keep("Shader", gl.createShader(type)); gl.shaderSource(s, src); gl.compileShader(s); return s; };
       const p = keep("Program", gl.createProgram());
       gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, salted(PROBE))); gl.linkProgram(p);
-      if (par) while (!gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR)) {
-        /* (a context lost mid-compile never reports complete: the probe fails, it does not poll for ever) */
-        if (gl.isContextLost()) throw new Error("probe: context lost");
-        await new Promise((r) => setTimeout(r, 4));
-      }
+      /* (a context lost mid-compile never reports complete, nor may a stuck compiler: past COMPILE_WAIT the probe
+         fails, so the door keeps its pictures, rather than polling for ever) */
+      if (!(await compiledWithin(gl, par, [p], 4))) throw new Error("probe: the compile did not finish");
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || "probe: no program");
       return { p, ms: performance.now() - t0 };
     };
@@ -184,7 +182,9 @@ const NAMES = ["still", "live lean", "live rich"];
    no WebGL2 or no probe (whatever ?level= says), reduced motion or save-data, compiles on the page's own thread (each one stalls the page:
    the live door's could go nowhere but under the ring, and its loops would then run beside a page that stalls on
    every later compile), or a lean frame predicted over 16 ms. Else 2, live rich, where the rich is predicted to fit
-   the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which, whatever the probe */
+   the budget (40 ms), and 1, live lean, where it is not. ?level=0|1|2 says which instead of that rule (reduced motion,
+   save-data, a slow lean frame, page-thread compiles), but only once the probe has worked: that is, under ?door3d with
+   the GPU accepted. Without a probe the level is 0 whatever ?level= says */
 let lvl = null;
 export function level() {
   if (lvl !== null) return lvl;
@@ -194,7 +194,8 @@ export function level() {
   const asked = /^[012]$/.test(String(flag("level"))) ? String(flag("level")) : null;
   const quiet = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
   const p = predicted(...band());
-  /* (no probe, no level: ?level= chooses among the live door's weights once the GPU is accepted, it never grants it) */
+  /* (no probe, no level: ?level= takes the place of the rule only once the probe has worked, under ?door3d with the GPU
+     accepted; it never grants the GPU) */
   if (!got.ok) { lvl = 0; why = navigator.connection?.saveData ? "save-data" : "no WebGL2, or no probe"; }
   else if (asked) { lvl = +asked; why = `?level=${asked}`; }
   else if (quiet) { lvl = 0; why = "reduced motion"; }

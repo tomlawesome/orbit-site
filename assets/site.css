@@ -92,6 +92,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--ui);min
 body.at-door{overflow:hidden}
 a{color:var(--accent-text);text-decoration:none}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+/* what the page focuses for the visitor (a landing's heading, so Tab goes on from there) is no control: no ring, though
+   iOS Safari counts that focus as visible (#48; Bootstrap's Reboot and GOV.UK do the same) */
+[tabindex="-1"]:focus{outline:none}
 ::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
 button{font-family:inherit}
 h1,h2,h3{font-family:var(--display);font-weight:600;line-height:1.1;margin:0}
@@ -100,8 +103,8 @@ p{margin:0}
 .mono{font-family:var(--mono)}
 .corner{font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-quiet);
   text-shadow:0 0 2px var(--bg),0 0 5px var(--bg),0 0 11px var(--bg)}
-noscript .corner{display:block;max-width:60ch;margin:0;padding:24px;line-height:1.8}
-noscript .corner a{color:var(--accent-text)}
+noscript .corner,.nojs .corner{display:block;max-width:60ch;margin:0;padding:24px;line-height:1.8}
+noscript .corner a,.nojs .corner a{color:var(--accent-text)}
 
 /* the sky: two tiled layers, drifting (POL-11), never sitting still */
 .sky{position:fixed;inset:-4%;z-index:0;pointer-events:none;opacity:var(--stars);transition:opacity .4s;overflow:hidden}
@@ -804,6 +807,9 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
    (3:1) for any window, so it meets the flight's last frame exactly (tools/docsky.cjs) */
 .pad.docs .milky{position:absolute;inset:0;z-index:0;pointer-events:none;background:url(img/docs/milkyway-sky.webp) center/auto 100% no-repeat #05070d;opacity:1;transition:opacity .8s ease}
 .pad.docs:has(.reader:not([hidden])) .milky{opacity:.3}
+/* a portrait screen: the flight rests further out there (engine.js: PATH_TALL), the whole spiral filling the height,
+   and the page wears that sky, drawn the same way (tools/docsky.cjs --tall) */
+@media (max-aspect-ratio:10/11){.pad.docs .milky{background-image:url(img/docs/milkyway-sky-tall.webp)}}
 /* the docs' chart: the sources as constellations across the sky */
 .pad.docs .skymap{margin:26px -40px 6px;position:relative}
 /* wide: the chart is the whole top of the page, ruled edge to edge, the

@@ -12,7 +12,7 @@
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
  */
-import { fetchOnce, linked, uploadBanded, gpu } from "../door/index.js";
+import { fetchOnce, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -565,9 +565,8 @@ export function createWorld(canvas, opts = {}) {
       } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
     };
     if (!par) { done(); return; }
-    /* a lost context never completes them: give up rather than poll for ever */
-    const poll = () => { if (gl.isContextLost()) { resolve(false); return; } if (all.every((pr) => gl.getProgramParameter(pr.p, par.COMPLETION_STATUS_KHR))) done(); else setTimeout(poll, 40); };
-    poll();
+    /* a lost context never completes them, nor may a stuck compiler: past COMPILE_WAIT, give up rather than poll for ever */
+    compiledWithin(gl, par, all.map((pr) => pr.p)).then((ok) => (ok ? done() : resolve(false)));
   });
 
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -640,11 +639,15 @@ export function createWorld(canvas, opts = {}) {
   /* the galaxy painted, a strip a frame */
   const jobs = [];
   const STRIPS = 4;
-  let skyProgram = null;
+  let skyProgram = null, skyAsked = 0;
   function paintSky() {
-    if (!skyProgram) skyProgram = program(SKY);
-    /* the link status is not read until the program is done (as made's poll does the others); called again next frame */
-    if (par && !gl.getProgramParameter(skyProgram.p, par.COMPLETION_STATUS_KHR)) return;
+    if (!skyProgram) { skyProgram = program(SKY); skyAsked = performance.now(); }
+    /* the link status is not read until the program is done (as made's poll does the others); called again next frame,
+       until COMPILE_WAIT (as made's): past it the galaxy is not painted, as when it would not link */
+    if (par && !gl.getProgramParameter(skyProgram.p, par.COMPLETION_STATUS_KHR)) {
+      if (performance.now() - skyAsked > COMPILE_WAIT) { console.warn("orbit: the world's galaxy did not compile in time"); skyDone = true; }
+      return;
+    }
     try { P.sky = ready(skyProgram); } catch (e) { console.warn(e); skyDone = true; return; }
     skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
     for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));

@@ -18,6 +18,25 @@
 #
 #   sh tools/ci/nightly-import-test.sh      run from anywhere inside the repository
 #
+# Part 2 also tries the git config the runner's own clone writes (#57, #60):
+# the runner copies its template config into .git/config and adds an
+# include.path to <checkout>.tmp/.gitlab-runner.ext.conf (holding its own keys
+# and lfs.repositoryformatversion: runnerinc). That is the only include
+# accepted: the value must be exactly that absolute path, a regular file, not a
+# symlink, with that real path. Anything else is refused naming include.path:
+# another file in <checkout>.tmp/ (incevil, incgtpl), a sibling folder with the
+# same prefix (incsib), a path with .. (incdots, incdotsame), <checkout>.tmp as
+# a symlink (incdirlink), the file as a symlink (inclink), a relative path that
+# means something else from .git/ (increlcwd, increl), one into the work tree
+# (incwork) or .git (incgit), a missing file (include), a file elsewhere
+# (incelse), a value with a tab in it (inctab); any includeIf is refused too
+# (includeif). Keys in the accepted file are judged by the allowlist (incssh
+# core.sshCommand, incfsmon core.fsmonitor, incfilter filter.x.clean); a nested
+# include is refused, naming its key (incnest, incnestmiss). An include cycle stops the job
+# with "could not list" (inccycle). A value with a newline in it is one value,
+# not two keys (nlval accepted, nlreal refused for its real core.sshCommand).
+# No file is left in TMPDIR after a refused run.
+#
 # Runs on a scratch copy of the current commit, so the checkout is untouched.
 # npm, node, git, curl and sleep are shims first on PATH that log what they were
 # called with; nothing touches the network.
@@ -26,7 +45,7 @@ set -eu
 root=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)
 aux=$(mktemp -d)          # shims, state and logs; outside the scratch repo
-trap 'rm -rf "$tmp" "$aux"' EXIT
+trap 'rm -rf "$tmp" "$tmp.tmp" "$tmp.tmpX" "$tmp.elsewhere" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
 # a second, untouched copy: the publish script pins its host, and the copy under
@@ -79,7 +98,8 @@ reset_tree() {
   done
   cp "$aux/config.orig" .git/config
   find .git/hooks -type f ! -name '*.sample' -delete
-  rm -f .git/fsm .git/info/attributes
+  rm -f .git/fsm .git/info/attributes .git/inc.cfg
+  rm -rf "$PWD.tmp" "$PWD.tmpX" "$PWD.elsewhere"   # the runner's folder beside the checkout, and look-alikes
 }
 
 # What the runner's artifact upload would hold, good and hostile. mkzip.py <out>
@@ -116,6 +136,14 @@ if sc == 'notobject': files['readme.json'] = b'[]'
 if sc == 'xss': edit('index.json', lambda j: j['sources'][0].update(c='#fff"><img src=x onerror=alert(1)>'))
 if sc == 'badid': edit('readme.json', lambda j: j['sections'][1].update(id='a"b'))
 if sc == 'extrakey': edit('readme.json', lambda j: j['sections'][0].update(onclick='x'))
+# a page whose section html carries script-capable markup (the lint refuses it, and so must the publish)
+def addhtml(extra): edit('readme.json', lambda j: j['sections'][1].update(html=j['sections'][1]['html'] + extra))
+if sc == 'scriptel': addhtml('<script>alert(1)</script>')
+if sc == 'handler': addhtml('<p><img src="x" onerror="alert(1)"></p>')
+if sc == 'jsurl': addhtml('<p><a href="jav&#x61;script:alert(1)">x</a></p>')
+if sc == 'svgel': addhtml('<svg onload="alert(1)"></svg>')
+# the control: harmless html that only looks like the above (entities, "on x=" and data: in prose)
+if sc == 'benign': addhtml('<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p>')
 if sc == 'notzip':
     open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
 def zi(name, mode):
@@ -362,7 +390,7 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ]; } && [ "$n" -ge 2 ]; then
+    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = benign ] || [ "$SCENARIO" = scriptel ] || [ "$SCENARIO" = handler ] || [ "$SCENARIO" = jsurl ] || [ "$SCENARIO" = svgel ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ] || [ "$SCENARIO" = runnerinc ] || [ "$SCENARIO" = nlval ]; } && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -436,6 +464,93 @@ prepare() {
     cfgonly) # the filter without the attributes file: still refused
       printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" >> .git/config ;;
     include) printf '[include]\n\tpath = /nonexistent\n' >> .git/config ;;
+    runnerinc) # the runner's own layout: .git/config includes <checkout>.tmp/.gitlab-runner.ext.conf (its keys + lfs)
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n[lfs]\n\trepositoryformatversion = 0\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incevil) # another file in <checkout>.tmp/, allowed keys
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/evil"
+      printf '[include]\n\tpath = %s.tmp/evil\n' "$PWD" >> .git/config ;;
+    incgtpl) # the runner's template folder file: not the one include accepted
+      mkdir -p "$PWD.tmp/git-template"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/git-template/config"
+      printf '[include]\n\tpath = %s.tmp/git-template/config\n' "$PWD" >> .git/config ;;
+    incsib) # a sibling folder with the same prefix, the right file name inside, allowed keys
+      mkdir -p "$PWD.tmpX"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmpX/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmpX/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incdots) # a path through <checkout>.tmp/.. that resolves to another folder holding the file
+      mkdir -p "$PWD.tmp" "$PWD.elsewhere"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.elsewhere/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/../%s.elsewhere/.gitlab-runner.ext.conf\n' "$PWD" "${PWD##*/}" >> .git/config ;;
+    incdotsame) # a path with .. that resolves to the right file: not the exact value, so refused
+      mkdir -p "$PWD.tmp/sub"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/sub/../.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incdirlink) # <checkout>.tmp is a symlink to another folder that holds the file
+      mkdir -p "$aux/runnerdir"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$aux/runnerdir/.gitlab-runner.ext.conf"
+      ln -s "$aux/runnerdir" "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    inclink) # the file itself is a symlink to a regular file with the right name
+      mkdir -p "$PWD.tmp/real"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/real/.gitlab-runner.ext.conf"
+      ln -s "$PWD.tmp/real/.gitlab-runner.ext.conf" "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    increlcwd) # relative: from the checkout it is the right file, from .git/ (where git resolves it) another one
+      mkdir -p "$PWD.tmp" "$PWD/${PWD##*/}.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD/${PWD##*/}.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = ../%s.tmp/.gitlab-runner.ext.conf\n' "${PWD##*/}" >> .git/config ;;
+    inccycle) # the accepted file includes itself: git cannot list the config
+      mkdir -p "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    nlval) # one value with a newline and key-shaped text in it, in an allowed key: one value, accepted
+      printf '[remote "origin"]\n\turl = "https://gitlab.invalid/ai/orbit-site.git\\ncore.sshCommand=evil"\n' >> .git/config ;;
+    nlreal) # the same value, and a real core.sshCommand after it: refused for the real one
+      printf '[remote "origin"]\n\turl = "https://gitlab.invalid/ai/orbit-site.git\\ncredential.helper=x"\n[core]\n\tsshCommand = evil\n' >> .git/config ;;
+    incelse) # an absolute include.path to a harmless file elsewhere (outside the checkout and <checkout>.tmp/)
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$aux/runner.cfg"
+      printf '[include]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
+    inctab) # a value with a tab: the part before it is the right file, the whole value is not a file
+      mkdir -p "$PWD.tmp"
+      printf '[credential "https://gitlab.invalid"]\n\thelper = !true\n' > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\tx\n' "$PWD" >> .git/config ;;
+    increl) # a relative include.path: git resolves it against .git/, so this reaches the work tree
+      printf '[credential]\n\tinteractive = never\n' > inc.cfg
+      printf '[include]\n\tpath = ../inc.cfg\n' >> .git/config ;;
+    incwork) # an absolute include.path to a file inside the work tree
+      printf '[credential]\n\tinteractive = never\n' > inc.cfg
+      printf '[include]\n\tpath = %s/inc.cfg\n' "$PWD" >> .git/config ;;
+    incgit) # an absolute include.path to a file under .git (inside the work tree)
+      printf '[credential]\n\tinteractive = never\n' > .git/inc.cfg
+      printf '[include]\n\tpath = %s/.git/inc.cfg\n' "$PWD" >> .git/config ;;
+    incssh) # the accepted include holding core.sshCommand
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incfsmon) # the accepted include naming an fsmonitor program
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tfsmonitor = %s/fsm\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incfilter) # the accepted include holding a clean filter
+      mkdir -p "$PWD.tmp"
+      printf '[filter "x"]\n\tclean = sh -c "echo ran >> %s/filter-ran; cat"\n' "$aux" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incnest) # the accepted include includes a second file in <checkout>.tmp/ holding core.sshCommand
+      mkdir -p "$PWD.tmp"
+      printf '[core]\n\tsshCommand = sh -c "echo ran >> %s/filter-ran"\n' "$aux" > "$PWD.tmp/second.cfg"
+      printf '[include]\n\tpath = %s.tmp/second.cfg\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    incnestmiss) # the accepted include includes a missing file
+      mkdir -p "$PWD.tmp"
+      printf '[include]\n\tpath = %s.tmp/no-such-file.cfg\n' "$PWD" > "$PWD.tmp/.gitlab-runner.ext.conf"
+      printf '[include]\n\tpath = %s.tmp/.gitlab-runner.ext.conf\n' "$PWD" >> .git/config ;;
+    includeif) # a conditional include, even to a harmless file
+      printf '[credential]\n\tinteractive = never\n' > "$aux/runner.cfg"
+      printf '[includeIf "gitdir:/x"]\n\tpath = %s/runner.cfg\n' "$aux" >> .git/config ;;
     worktreecfg) printf '[extensions]\n\tworktreeConfig = true\n' >> .git/config ;;
     runnerlike) # what a runner's clone writes besides git's own: all of it allowed
       printf '[remote "origin"]\n\turl = https://gitlab-ci-token:x@gitlab.invalid/ai/orbit-site.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[init]\n\tdefaultBranch = none\n[fetch]\n\trecurseSubmodules = false\n[credential]\n\tinteractive = never\n[gc]\n\tautoDetach = false\n[credential "https://gitlab.invalid"]\n\thelper = !true\n[url "https://gitlab.invalid/"]\n\tinsteadOf = ssh://git@gitlab.invalid/\n[http]\n\tuserAgent = x\n' >> .git/config ;;
@@ -463,7 +578,7 @@ run_push() { # run_push <outfile> <scenario>
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
     FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
-    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule \
+    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
@@ -495,8 +610,13 @@ pin_run() {
       FAKE="$fake" FAKE_JOB="$fakejob" \
       ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
-      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
+      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
 }
+# The job runs with GIT_STRATEGY=clone (the CI file sets it, #60 round 4), and the script
+# refuses to run without it. So every run here has it, as the runner gives it; pin_strategy
+# is that default, and a scenario for another value (or none) sets it first, or passes
+# GIT_STRATEGY=value among the changes, which comes later and wins.
+pin_strategy=clone
 pinned() { # pinned <label> <script dir> <text the refusal must carry> [VAR=value ...]
   label=$1; dir=$2; want=$3; shift 3
   pin_run "$dir" "$@"
@@ -522,6 +642,20 @@ done
 pin_run "$tmp" SSL_CERT_FILE=/ca.pem CI_SERVER_TLS_CA_FILE=/ca.pem NODE_VERSION=22.0.0 GIT_DEPTH=1 GIT_STRATEGY=clone
 rc=0; ! grep -q 'is set in the environment' "$out" || rc=1
 check "job 2: the runner's own CA file, NODE_VERSION, GIT_DEPTH and GIT_STRATEGY are not refused" "$rc"
+
+# The guard names a variable that exists (audit 4). A harmless variable whose
+# VALUE holds a newline and then text shaped like an assignment is one variable,
+# HARMLESS_NOTE; it must not be read as a second, GIT_FAKE, and being harmless it
+# must not be refused at all. Control: a real GIT_FAKE is refused, by name.
+multiline=$(printf 'line one\nGIT_FAKE=1')
+pin_run "$tmp" "HARMLESS_NOTE=$multiline"
+rc=0; ! grep -q 'GIT_FAKE' "$out" || rc=1
+check "job 2: a newline and GIT_FAKE=1 inside a harmless variable's value does not name GIT_FAKE" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; ! grep -q 'is set in the environment' "$out" && grep -q '^== the checkout' "$out" || rc=1
+check "job 2: a harmless variable whose value holds a newline is not refused" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+pinned "with a real GIT_FAKE set (control for the newline case)" "$tmp" "refusing to run: GIT_FAKE is set" GIT_FAKE=1
 
 # The pipeline's own variables are not refused (#18). GitLab puts every variable
 # of .gitlab-ci.yml's top-level `variables:` and of publish_docs's own into the
@@ -573,6 +707,22 @@ done
 set -f; set -- $realvars NODE_FUTURE=1; set +f
 pinned "with a new NODE_FUTURE beside the pipeline's real variables" "$tmp" "refusing to run: NODE_FUTURE is set" "$@"
 
+# Round 4 (#60) item 6: the script checks GIT_STRATEGY=clone itself, at the point of use, in
+# case the CI file's setting were overridden (a parallel matrix, a rule's variables, a project
+# variable). Anything but clone is refused, before any call to GitLab, with the one wording.
+# pin_strategy is cleared for the unset case so the harness does not supply the variable.
+pin_strategy=
+pinned "with GIT_STRATEGY unset" "$tmp" "refusing to run: GIT_STRATEGY is not clone"
+pin_strategy=clone
+pinned "with GIT_STRATEGY empty" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=
+pinned "with GIT_STRATEGY=fetch" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=fetch
+pinned "with GIT_STRATEGY=none" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=none
+pinned "with GIT_STRATEGY=Clone (not exactly clone)" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=Clone
+pinned "with GIT_STRATEGY=clone and a space after it" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "GIT_STRATEGY=clone "
+set -f; set -- $realvars GIT_STRATEGY=fetch; set +f
+pinned "with GIT_STRATEGY=fetch beside the pipeline's real variables" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "$@"
+passes_guard "GIT_STRATEGY=clone" GIT_STRATEGY=clone
+
 # Run 6: GitLab refuses every auto-merge request (405). The job must fail and
 # show why: the merge request, GitLab's status code and its message.
 run_push "$out" refused
@@ -608,8 +758,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
 rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
 check "job 2: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 6"
-rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
-check "job 2: no npm, node only for -e and the shape check, and never with a token file on disk" "$rc"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-noscript.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "job 2: no npm, node only for -e and the shape and no-script checks, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
@@ -698,6 +848,35 @@ for sc in cfgonly include worktreecfg fsmonitorcfg; do
   check "job 2: a checkout git config with $sc is refused before anything is sent (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 done
+run_push "$out" runnerinc
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" && ! grep -q "checkout's git" "$out" || rc=1
+check "job 2: runnerinc, the runner's layout (include.path to <checkout>.tmp/.gitlab-runner.ext.conf with its keys and lfs.repositoryformatversion), is accepted (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+# refused, and the refusal names the key: <scenario>:<key>
+for pair in increl:include.path incwork:include.path incgit:include.path include:include.path \
+  incelse:include.path inclink:include.path inctab:include.path \
+  incevil:include.path incgtpl:include.path incsib:include.path incdots:include.path incdotsame:include.path \
+  incdirlink:include.path increlcwd:include.path \
+  incssh:core.sshCommand incfsmon:core.fsmonitor incfilter:filter.x.clean incnest:core.sshCommand \
+  incnestmiss:include.path includeif:includeif.gitdir:/x.path nlreal:core.sshCommand inccycle:"could not list"; do
+  sc=${pair%%:*}; key=${pair#*:}
+  run_push "$out" "$sc"
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -qiF "$key" "$out" && [ ! -s "$aux/api.log" ] && [ ! -e "$aux/filter-ran" ] && [ ! -e "$aux/fsmonitor-ran" ] || rc=1
+  [ "$sc" = inccycle ] || grep -q "checkout's git" "$out" || rc=1
+  check "job 2: a checkout git config with $sc is refused, naming $key (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+  # the listing file lives in the script's own scratch folder: nothing is left in TMPDIR
+  rc=0; [ -z "$(ls -A scratch-tmp)" ] || rc=1
+  check "job 2: after refusing $sc, nothing is left in TMPDIR" "$rc"
+  [ "$rc" -eq 0 ] || ls -A scratch-tmp | sed 's/^/     left: /'
+done
+run_push "$out" nlval
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" && ! grep -q "checkout's git" "$out" || rc=1
+check "job 2: nlval, a remote.origin.url holding a newline and text shaped like core.sshCommand, is one value and is accepted (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 run_push "$out" runnerlike
 rcz=$rc
 rc=0; [ "$rcz" -eq 0 ] && grep -q 'set to merge' "$out" || rc=1
@@ -865,6 +1044,33 @@ refused failedjob "an import job that failed" "successful import_docs jobs"
 refused wrongsha "an import job at another commit" "successful import_docs jobs"
 refused wrongpipeline "an import job of another pipeline" "successful import_docs jobs"
 refused twojobs "two import jobs" "successful import_docs jobs"
+
+# The publish runs the lint's "the imported docs carry no script" check itself:
+# the artifact is untrusted, and the import merge request's lint is not the only
+# line of defence. A docs page whose section html carries script-capable markup
+# is refused with the lint's wording, before any write to GitLab, any push or any
+# branch. The same artifact without the script is published as usual.
+# script_refused <scenario> <what it is>
+script_refused() {
+  refused "$1" "$2" 'carries script\|carry no script'
+  rc=0; grep -q 'readme.json' "$out" || rc=1
+  check "job 2: the refusal of $2 names the page (readme.json)" "$rc"
+}
+script_refused scriptel "a script element in a docs page"
+script_refused handler "an onerror handler in a docs page"
+script_refused jsurl "an encoded javascript: link in a docs page"
+script_refused svgel "an svg element in a docs page"
+# control: harmless html in the same place is published as today
+run_push "$out" benign
+rcb=$rc
+rc=0; [ "$rcb" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || rc=1
+check "job 2: the same page with harmless html (entities, on x=, data: in prose) is published (exit $rcb)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -q '^POST /merge_requests' "$aux/api.log" && grep -q 'push' "$aux/shim.log" \
+  && printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}$' || rc=1
+check "job 2: the harmless page was pushed and a merge request opened" "$rc"
+rc=0; ! grep -q -e 'carries script' -e 'carry no script' "$out" || rc=1
+check "job 2: the harmless page is not reported as carrying script" "$rc"
 
 reset_tree
 rm -f "$out"

@@ -6,6 +6,17 @@
  *
  * Checks: 3240x1080; mean luminance > 12 (0-255); at least 1% of pixels
  * brighter than 60. A hand-run tool's test, so not part of CI.
+ *
+ * #51 (the docs' sky on a phone, option B, owner 2026-10-14): the page also wears a tall picture on portrait screens,
+ * assets/img/docs/milkyway-sky-tall.webp, drawn by this tool as the wide one is. It is set to the screen's height, so it
+ * must be at least as wide as the widest portrait screen (width / height 10/11, the site's threshold) and no wider than
+ * tall: width / height from 0.90 to 1.00, at least 1000 px high (the wide one is 1080). Checked on the committed file
+ * (T1-T4: exists, size, not black), and that tools/docsky.cjs draws it (T5: the tool names the file). The tool's own
+ * command line for it is the builder's choice, so the test does not run it; the wide one is still rendered as before.
+ *
+ * Review fix (spec: the #51 review, item 3): the tall picture is set to the screen's height, so it must be at least as
+ * wide as the widest portrait screen: width / height >= 10/11 exactly (0.909..., e.g. 982x1080; 0.90 is not enough),
+ * T3 tightened to that. T6: the tool draws it with `node tools/docsky.cjs --tall` (its source names `--tall`).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -25,6 +36,15 @@ const check = (name, ok, detail) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${detail}`);
   if (!ok) failed = true;
 };
+
+/* the tall picture (#51): the committed file */
+const tallPath = join(root, "assets", "img", "docs", "milkyway-sky-tall.webp");
+let tallBytes = null;
+try { tallBytes = readFileSync(tallPath); } catch { /* reported below */ }
+check("T1 the tall picture exists (assets/img/docs/milkyway-sky-tall.webp)", !!tallBytes, tallBytes ? `${Math.round(tallBytes.length / 1024)} KB` : "missing");
+const toolSource = readFileSync(join(root, "tools", "docsky.cjs"), "utf8");
+check("T5 tools/docsky.cjs draws the tall picture (names milkyway-sky-tall.webp)", /milkyway-sky-tall\.webp/.test(toolSource), "the tool's source");
+check("T6 the tall picture is drawn by `node tools/docsky.cjs --tall` (the tool's source names --tall)", /--tall\b/.test(toolSource), "the tool's source");
 
 try {
   try {
@@ -64,6 +84,31 @@ try {
       check("size", m.w === 3240 && m.h === 1080, `${m.w}x${m.h} (want 3240x1080)`);
       check("mean luminance", m.mean > 12, `${m.mean.toFixed(2)} (want > 12)`);
       check("bright pixels", m.brightPct >= 1, `${m.brightPct.toFixed(2)}% brighter than 60 (want >= 1%)`);
+      if (tallBytes) {
+        const t = await page.evaluate(async (b64) => {
+          const img = new Image();
+          await new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error("image did not decode")); img.src = "data:image/webp;base64," + b64; });
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          const g = c.getContext("2d");
+          g.drawImage(img, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          let sum = 0, bright = 0;
+          const n = d.length / 4;
+          for (let i = 0; i < d.length; i += 4) {
+            const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+            sum += l;
+            if (l > 60) bright++;
+          }
+          return { w: img.naturalWidth, h: img.naturalHeight, mean: sum / n, brightPct: (100 * bright) / n };
+        }, tallBytes.toString("base64")).catch((e) => ({ error: e.message }));
+        check("T2 the tall picture decodes", !t.error, t.error || `${t.w}x${t.h}`);
+        if (!t.error) {
+          const r = t.w / t.h;
+          check("T3 the tall picture is at least as wide as the widest portrait screen (width / height 10/11 to 1.00) and at least 1000 px high", r >= 10 / 11 && r <= 1 && t.h >= 1000, `${t.w}x${t.h} (ratio ${r.toFixed(4)}, want >= ${(10 / 11).toFixed(4)})`);
+          check("T4 the tall picture shows the galaxy, not black (mean luminance > 12, at least 1% brighter than 60)", t.mean > 12 && t.brightPct >= 1, `mean ${t.mean.toFixed(2)}, ${t.brightPct.toFixed(2)}% brighter than 60`);
+        }
+      }
     } finally {
       await browser.close();
     }

@@ -64,11 +64,11 @@ workflow:
 variables:
   # Docker Hub through the group dependency proxy, pinned by digest;
   # Renovate bumps them (renovate.json, the regex manager).
-  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:22-bookworm@sha256:87a4f951f28b85d189df365d24c479d3bdb70be77c1ff5c9029db2ef67e251ac
+  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:24-bookworm@sha256:9af606de2e947cfb3f276633b7c5130c4cd22365aa10f5a647b7675d5cfce0c0
   # Microsoft's own registry, not proxied. Its tag names the playwright
   # version the `live` job installs; the two must agree.
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
-  PLAYWRIGHT_VERSION: "1.63.0"
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+  PLAYWRIGHT_VERSION: "1.64.0"
 
 # ---------------------------------------------------------------- lint --
 # Every module parses, every file the pages name exists, the docs index
@@ -76,48 +76,46 @@ variables:
 lint:
   stage: lint
   image: $NODE_IMAGE
+  variables:
+    GIT_DEPTH: 0 # the names guard reads every commit's emails (#56)
+    # Node records which lines of the site its tests ran (tools/ci/node-tests.sh);
+    # `live:journey` adds Chromium's and checks them against the floors (#14).
+    COVERAGE_DIR: coverage
+  rules:
+    - *not_scheduled
+    - when: on_success
+  artifacts:
+    paths: [coverage/]
+    expire_in: 24 hours
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - sh tools/ci/lint.sh
+    - sh tools/ci/lint-sections-test.sh
+    - sh tools/ci/lint-parse-test.sh
+    - sh tools/ci/nightly-import-test.sh
+    - sh tools/ci/journey-local-test.sh
+    - sh tools/ci/door-timing-lookup-test.sh
+    - node tools/ci/no-real-names-test.mjs
+    - sh tools/ci/node-tests.sh
+    - node tools/ci/coverage-test.mjs
+    - node tools/ci/import-docs-test.mjs
+    - node tools/ci/raw-heading-test.mjs
+    - node tools/ci/glow-banding-test.mjs
+
+# The lint's own test: each case plants one fault in a scratch copy and runs
+# the whole lint, so it takes about 50 minutes alone. Its own job, beside
+# `lint`, so neither runs into the lane's one-hour limit (#62). The gate
+# still needs it: the pipeline fails if it does. `live:journey` does not
+# wait for it.
+lint:test:
+  stage: lint
+  image: $NODE_IMAGE
   rules:
     - *not_scheduled
     - when: on_success
   script:
-    - sh tools/ci/lint.sh
-    - sh tools/ci/lint-test.sh
-    - sh tools/ci/nightly-import-test.sh
-    - sh tools/ci/journey-local-test.sh
-    - node tools/ci/fetch-once-test.mjs
-    - node tools/ci/dates-test.mjs
-    - node tools/ci/sanitise-html-test.mjs
-    - node tools/ci/home-props-test.mjs
-    - node tools/ci/goodbye-markup-test.mjs
-    - node tools/ci/descent-homes-test.mjs
-    - node tools/ci/gpu-gate-test.mjs
-    - node tools/ci/hurry-test.mjs
-    - node tools/ci/dawn-destroyed-light-test.mjs
-    - node tools/ci/retire-after-destroy-test.mjs
-    - node tools/ci/destroyed-world-test.mjs
-    - node tools/ci/released-world-test.mjs
-    - node tools/ci/rich-remount-test.mjs
-    - node tools/ci/sharp-strip-remount-test.mjs
-    - node tools/ci/fit-skip-test.mjs
-    - node tools/ci/door-context-restore-test.mjs
-    - node tools/ci/door-wordmark-test.mjs
-    - node tools/ci/door-shimmer-test.mjs
-    - node tools/ci/door-probe-chores-test.mjs
-    - node tools/ci/door-world-test.mjs
-    - node tools/ci/door-banded-upload-test.mjs
-    - node tools/ci/door-sky-test.mjs
-    - node tools/ci/door-live-teardown-test.mjs
-    - node tools/ci/local-server-test.mjs
-    - node tools/ci/site-world-test.mjs
-    - node tools/ci/site-home-date-test.mjs
-    - node tools/ci/site-lock-test.mjs
-    - node tools/ci/site-pads-test.mjs
-    - node tools/ci/site-pads-sources-test.mjs
-    - node tools/ci/docs-shape-test.mjs
-    - node tools/ci/site-data-test.mjs
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
-    - node tools/ci/import-docs-test.mjs
-    - node tools/ci/glow-banding-test.mjs
+    - sh tools/ci/lint-test.sh
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in Firefox: the door, each
@@ -135,6 +133,13 @@ lint:
 # households met again on the way down (#25, #26). The freeze check runs
 # Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
 # the GPU once, refuses a software renderer, and then freezes nothing (#2).
+# The last step is the coverage ratchet (#14): the journey, upload, pin,
+# site-browser, phone-door, door-lows, csp, docs-planet, flight-context-loss and
+# freeze checks run again in Chromium, which records which of the site's
+# JavaScript ran, and with the lint job's Node coverage that is checked against
+# tools/ci/coverage-floors.json: a file below its floor fails the job. The
+# Chromium runs themselves are not the gate (Firefox's are): one that fails is
+# reported and its coverage still counted.
 live:journey:
   stage: live
   image:
@@ -155,14 +160,22 @@ live:journey:
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/phone-door-test.mjs
+    - node tools/ci/dropped-warning-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/door-lows-test.mjs
+    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-planet-test.mjs
+    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-sky-portrait-live-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/flight-context-loss-test.mjs
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/csp-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
+    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh browser
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
 # fetched and set as the site's own pages. What changed goes to `main` as a
-# merge request that merges itself once `lint` and `live:journey` pass, so
+# merge request that merges itself once `lint`, `lint:test` and `live:journey` pass, so
 # nobody pushes to `main` and every import is tested before Pages serves
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
@@ -213,7 +226,11 @@ import_docs:
 # code in import_docs holds a job token that can upload one. The script fetches
 # the archive itself by job id and opens it entry by entry (tools/ci/
 # nightly-publish.sh). GIT_STRATEGY: clone makes the checkout a fresh clone, not
-# a build folder an earlier job on this runner left things in.
+# a build folder an earlier job on this runner left things in. The clone does
+# not clear the runner's folder beside it, <checkout>.tmp/, which holds the
+# .gitlab-runner.ext.conf the checkout's git config includes: the Docker
+# executor's per-job build volume is what makes that folder clean. The script
+# takes that one include, by its exact path, and nothing else in the folder.
 # The job asks GitLab which job to fetch with the import token (a job token
 # cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:
@@ -242,7 +259,7 @@ publish_docs:
 renovate:
   stage: maintenance
   image:
-    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.83.2@sha256:c1cb952b2e14a112d0d0c61987a10f60a2626fe9b9c1504436be46a17bd123bc
+    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
     pull_policy: if-not-present
   timeout: 1h
   interruptible: false

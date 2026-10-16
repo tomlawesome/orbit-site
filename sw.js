@@ -9,9 +9,10 @@
  * modified" when nothing has changed — so a new version of the site is
  * seen at once; what was fetched last is used if the network is gone.
  *
- * MEDIA changes name when the pictures are replaced, which clears them.
+ * MEDIA changes name when the pictures are replaced, which clears them: the
+ * lint computes the name from the pictures and prints the new one.
  */
-const MEDIA = "orbit-media-2", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
+const MEDIA = "orbit-media-c4faff2aa6bf", CODE = "orbit-code-1", KEEP = 36 * 3600 * 1000;
 const isMedia = (u) => /\.(webp|png|jpe?g|gif|svg|exr|woff2?)$/i.test(u.pathname);
 
 self.addEventListener("install", () => self.skipWaiting());

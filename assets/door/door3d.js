@@ -37,7 +37,7 @@
  * it. The rich weight's two passes (the clouds' field, the cities' glow: voyage.js, cloudField, cityGlow) are drawn
  * by the rich program itself, so they are made once it is there, before its first measure.
  */
-import { chore, fetchOnce, note, quiet, linked, counted, compilesAside } from "./chores.js";
+import { chore, fetchOnce, note, quiet, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { flag } from "./settings.js";
 import { sceneHead, PASS_SWITCH, pictures, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
@@ -108,12 +108,9 @@ const finish = (gl, p) => {
   for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, "")] = gl.getUniformLocation(p, a.name); }
   return { p, u };
 };
-const compiled = (gl, par, p) => new Promise((resolve) => {
-  if (!par) { resolve(); return; }
-  /* (a lost context never reports complete: stop waiting; finish() then finds no link status and throws, as for a failed compile) */
-  const poll = () => (gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR) || gl.isContextLost() ? resolve() : setTimeout(poll, 40));
-  poll();
-});
+/* (a lost context never reports complete, nor may a stuck compiler: past COMPILE_WAIT, chores.js, stop waiting and
+   fail, as for a failed compile) */
+const compiled = (gl, par, p) => compiledWithin(gl, par, [p]).then((done) => { if (!done) throw new Error("door3d: the compile did not finish"); });
 /* a weight made, once: its program asked for, waited for (in the background where the browser can), and finished.
    Said: how long the first waited its turn, and how long the making itself took (since: the clock the console's
    lines are read against) */
@@ -182,8 +179,9 @@ export function liveDoor(world) {
   let prog = null, sunTex = null, glowT = null, mode = "both", rich = null;
   /* taken down (destroy: the dawn's), or its context lost: it acts no more, and stays down until a remount makes another */
   let dead = false;
-  /* mipped: the maps whose mipmaps are made too (a field is made from a map only then) */
-  const maps = {}, dims = {}, fields = {}, mipped = new Set();
+  /* mipped: the maps whose mipmaps are made too (a field is made from a map only then); failed: those that did not
+     come, asked for once more (below) */
+  const maps = {}, dims = {}, fields = {}, mipped = new Set(), failed = new Set();
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
   /* a map not (yet) there is drawn without: black in its place, and its flag down (uHas, uHasN) */
@@ -233,7 +231,7 @@ export function liveDoor(world) {
       /* a clouds map's slab field, made with it if the rich program is already there (else with it: richMaps) */
       if (key === "clouds" || key === "cloudsN") fieldOf(key);
     })
-    .catch(() => { /* drawn without it (upload.js has deleted the texture of an upload that failed) */ delete maps[key]; delete dims[key]; });
+    .catch(() => { /* drawn without it (upload.js has deleted the texture of an upload that failed) */ delete maps[key]; delete dims[key]; failed.add(key); });
   const vao = gl.createVertexArray();
 
   /* the band the Earth fills: the frame's y 640..1000 (as the picture is laid), at the door's own scale */
@@ -392,7 +390,7 @@ export function liveDoor(world) {
   function show() {
     if (dead) return;
     if (dirty) draw();
-    requestAnimationFrame(() => world.classList.add("live"));
+    requestAnimationFrame(() => { if (!dead) world.classList.add("live"); });
     if (mode === "rich") { state.rich = !fell; wantRich(); }
     followDoor(state);
     seen = true;
@@ -443,6 +441,9 @@ export function liveDoor(world) {
     })
     .then((p) => { prog = p; if (mode === "rich") rich = p; })
     .then(() => Promise.all(keys.map(load)))
+    /* a map that failed (a dropped download; fetchOnce forgets a failed fetch) asked for once more, once the first
+       round is in, as the flight does (voyage.js: warm), so the door and the flight draw the same Earth */
+    .then(() => Promise.all(keys.filter((k) => failed.has(k) && !dead).map(load)))
     /* the sharper strip, once the small one is in (sharpStrip): put on the GPU beside it, and drawn from then on */
     .then(() => { if (maps.lightsS) stripS.ready((bm) => { if (dead) return; maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
     /* the rich weight's fields (those not made with their maps) and the cities' glow, before its first frame */
@@ -458,8 +459,9 @@ export function liveDoor(world) {
     .then(tryRich)
     .catch((e) => { console.warn("orbit: the door stays a picture", e); canvas.remove(); stripS.fail(); measuredNow(); });
   const onResize = () => { if (prog && !dead) { resize(); wake(); } };
-  /* a lost context: no call on it, the loop stopped, and the door down until a remount (the page draws its pictures) */
-  const onLost = () => { dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; measuredNow(); };
+  /* a lost context: no call on it, the loop stopped, and the door down until a remount; the world no longer live, so
+     its canvas goes and the page shows its pictures again (door.css: .world.live) */
+  const onLost = () => { dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; world.classList.remove("live"); measuredNow(); };
   addEventListener("resize", onResize);
   document.addEventListener("visibilitychange", wake);
   canvas.addEventListener("webglcontextlost", onLost);

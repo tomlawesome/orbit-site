@@ -4,6 +4,7 @@
  * network or the disk, so tools/ci/import-docs-test.mjs can import it.
  */
 import { posix } from "node:path";
+import { htmlTokens, readText } from "./sanitise-html.mjs";
 
 /* the words of some markdown tokens, as the search and the summaries read them.
    Words in one run of inline marks join with nothing between them (`2 \* 3`
@@ -48,6 +49,15 @@ export function slugger() {
   };
 }
 
+/* a block of raw html that is one heading, h1 to h6, and nothing else: { depth, text } with
+   the heading's inner text, or null. Its attributes are not read: the import gives the
+   heading its own id, as for a markdown heading, and keeps nothing the source set on it. */
+const RAW_HEADING = /^\s*<h([1-6])(?:\s(?:"[^"]*"|'[^']*'|[^>"'])*)?>((?:(?!<\/?h[1-6][\s>\/])[\s\S])*)<\/h\1\s*>\s*$/i;
+export function rawHeading(html) {
+  const m = RAW_HEADING.exec(html);
+  return m ? { depth: Number(m[1]), text: m[2].trim() } : null;
+}
+
 /* an editor may write a fragment percent-encoded ("#caf%C3%A9"): decoded, it
    folds to the same id as the heading; a broken escape is folded as written */
 const unescapeFragment = (f) => { try { return decodeURIComponent(f); } catch { return f; } };
@@ -72,42 +82,20 @@ export function resolveLink(href, src, bySourcePath, isImage) {
     : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
 }
 
-const NAMED = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
-const entities = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);?/gi, (m, e) => {
-  if (e[0] !== "#") return NAMED[e.toLowerCase()];
-  const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-  return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "�";
-});
-
-/* the text a reader would see in some html: comments and tags removed, entities
-   read, spaces folded. One pass; a "<" that does not open a tag, or whose tag
-   or comment never closes, is text, as the sanitiser writes it out. */
+/* the text a reader would see in some html: read as a browser reads it, by
+   the sanitiser's own reader (htmlTokens in sanitise-html.mjs), so tags,
+   comments and bogus comments are hidden by the same rules there and here;
+   character references read in each run of text on its own, as the browser
+   does (readText); the inside of a textarea, title, xmp, plaintext, noscript,
+   iframe, noembed or noframes, and CDATA in svg or math, counted as shown;
+   spaces folded */
 export function visibleText(html) {
-  let out = "", i = 0;
-  const noClose = {}; /* a character with none after the place it was last looked for */
-  while (i < html.length) {
-    const lt = html.indexOf("<", i);
-    if (lt < 0) { out += html.slice(i); break; }
-    out += html.slice(i, lt);
-    let end = -1;
-    if (html.startsWith("<!--", lt)) {
-      end = noClose["-->"] <= lt ? -1 : html.indexOf("-->", lt + 4);
-      if (end < 0) noClose["-->"] = lt; else end += 3;
-    } else if (/^<\/?[a-z]/i.test(html.slice(lt, lt + 3))) {
-      let p = lt + 2;
-      for (;;) {
-        const c = /[>"']/g; c.lastIndex = p;
-        const m = c.exec(html);
-        if (!m) break;
-        if (m[0] === ">") { end = m.index + 1; break; }
-        const q = noClose[m[0]] <= m.index ? -1 : html.indexOf(m[0], m.index + 1);
-        if (q < 0) { noClose[m[0]] = m.index; break; }
-        p = q + 1;
-      }
-    }
-    if (end < 0) { out += "<"; i = lt + 1; } else i = end;
+  let out = "";
+  for (const t of htmlTokens(html)) {
+    if (typeof t === "string") out += readText(t);
+    else if (t.text !== undefined) out += t.refs ? readText(t.text) : t.text;
   }
-  return entities(out).replace(/\s+/g, " ").trim();
+  return out.replace(/\s+/g, " ").trim();
 }
 
 /* control characters in text fetched from another repository are not written

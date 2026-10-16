@@ -23,6 +23,9 @@ FLAGS.open = /[?&]open=late\b/.test(location.search) ? "late" : null;
 /* ?gpu=force takes the GPU although it is a software renderer (the door's GPU gate, assets/door/fitness.js, refuses one:
    the site's own live check is on such a machine); a debug switch, nothing else grants it */
 FLAGS.gpu = /[?&]gpu=force\b/.test(location.search) ? "force" : null;
+/* ?fit=skip: the flight world's speed test is not run and the world is taken as fit, so a test on a machine with no GPU
+   checks what the flight does, not how fast the machine draws (the owner judges that on real browsers); it grants no GPU */
+FLAGS.fit = /[?&]fit=skip\b/.test(location.search) ? "skip" : null;
 const door = createDoor({ image: (p) => `assets/door/img/${p}`, flags: FLAGS });
 /* (the GPU is asked once, by showDoor below, before anything else needs it: assets/door/fitness.js. The capability probe,
    and with it the level, is the live door's alone: only under ?door3d, when the GPU was accepted, on that one context) */

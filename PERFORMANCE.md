@@ -499,8 +499,10 @@ Tried, October 2026:
   loop, with its own `door planets … ms a frame` measure, starts only after it. The owner saw the door's rich measure
   read 37 ms beside the world planets and 16 alone. A dive chosen before then is not held: until their first frame,
   the dive goes on from the door's picture planet, swelled, as it did before the live door.
-- Flags: `?level=0|1|2` overrides the rule (the owner can see the live door on Firefox with `?level=2`). At level 2
-  `&rich` and `&lean` still force the weight; at level 1 the weight is lean whatever they say.
+- Flags: `?level=0|1|2` replaces the rule's choice of level, but only under `?door3d` with the GPU accepted and the
+  probe worked (else no probe, level 0, and it changes nothing); it never grants the GPU (the owner can see the live
+  door on Firefox with `?door3d&level=2`). At level 2 `&rich` and `&lean` still force the weight; at level 1 the
+  weight is lean whatever they say.
 - Checked in SwiftShader (1200×800, 1×; correctness only, its timings are not evidence). It has no
   `KHR_parallel_shader_compile`, so by the rule it is level 0.
   - `?preview&door3d` against HEAD's `?preview`, with reduced motion and the orbits' infinite animations paused at
@@ -564,7 +566,7 @@ open does the live door begin: its lean weight and the planets' programs as "doo
 on the still door, where yesterday's stalls lived), its maps in bands, its first frame proved unseen, then shown.
 Never the rich weight there (its own compile and the flight's rich Earth would be two more stalls). The level line
 reads `level 1: live lean (compiles stall the page; …: lean, after the ways in)`; `door: the journeys are ready, the
-live door may begin` marks the moment. `?level=0` keeps the still door, `?level=2` the rich one late, to compare.
+live door may begin` marks the moment. `?door3d&level=0` keeps the still door, `?door3d&level=2` the rich one late, to compare.
 
 ## The worker, measured (8 October 2026)
 

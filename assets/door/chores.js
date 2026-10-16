@@ -61,10 +61,11 @@ export function compilesAside() {
    and 1.3 s in Edge before the flight was ready. Now a chore starts a frame after the last, and no sooner) */
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
    freeze the page: compilesAside; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
-   (a visitor can do nothing until one is ready), then the live door (door3d.js: its picture is already on screen),
-   the measures, the docs' galaxy where it compiles in the background (voyage.js: after the door is live; the docs'
-   journey still hurries it), and last of all the rich clouds, which nothing waits for */
-const ORDER = ["compile", "install", "flight", "docs", "info", "", "door", "measure", "galaxy", "rich"];
+   (a visitor can do nothing until one is ready), the docs' galaxy where it compiles in the background (voyage.js:
+   one chore that only starts its compiles, so it costs the door nothing, and the docs' way in opens with the others',
+   #49; the docs' journey still hurries it), then the live door (door3d.js: its picture is already on screen), the
+   measures, and last of all the rich clouds, which nothing waits for */
+const ORDER = ["compile", "install", "flight", "docs", "info", "", "galaxy", "door", "measure", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 const tags = (tag) => [].concat(tag);
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
@@ -234,6 +235,25 @@ export function noteChores(when) {
 export function note(what, since = 0) {
   try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
 }
+/* the longest a compile in the background is waited for (KHR_parallel_shader_compile's COMPLETION_STATUS_KHR, polled):
+   past it, as on a lost context, the compile is taken as never coming and its part goes on without it (#49: a status
+   that never turned true left the docs, and with the probe the whole door, waiting for ever). Over twice the slowest
+   background compile measured (the laptop's flight, 1.8 s: CAPABILITIES.md) */
+export const COMPILE_WAIT = 5000;
+/** programs compiled in the background (par: the extension), waited for: true once every one says it is done, false
+    if the context is lost, the caller stops waiting (stop()) or COMPILE_WAIT passes first (the caller then goes on
+    without them); true at once where there is no extension (the browser compiles on the page's own thread) */
+export const compiledWithin = (gl, par, list, every = 40, stop = () => false) => new Promise((resolve) => {
+  if (!par) { resolve(true); return; }
+  const t0 = performance.now();
+  const poll = () => {
+    if (gl.isContextLost() || stop()) resolve(false);
+    else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) resolve(true);
+    else if (performance.now() - t0 > COMPILE_WAIT) resolve(false);
+    else setTimeout(poll, every);
+  };
+  poll();
+});
 /* how many programs each part has linked (?door3d only: said in its notes, " (3 programs)", and summed by main.js) */
 const counting = () => !!flag("door3d");
 const links = {};

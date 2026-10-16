@@ -33,7 +33,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--n", type=int, default=2048, help="cells round the equator; the grid is n by n/2")
 ap.add_argument("--time", type=float, default=0.45, help="how long the winds blow (model time)")
 ap.add_argument("--out", default="assets/img/install/planet.webp")
-ap.add_argument("--out2k", default=None, help="the 2048-wide map, resized from the finished (sharpened) big one; default: --out with -2k before .webp")
+ap.add_argument("--out2k", default=None, help="the 2048-wide map, written with --out; resized from the sharpened big map with --base, otherwise from the unsharpened simulation grid; default: --out with -2k before .webp")
 ap.add_argument("--size", type=int, default=4096, help="width of the written map")
 ap.add_argument("--preview", default=None)
 ap.add_argument("--seed", type=int, default=1729)
@@ -43,6 +43,8 @@ ap.add_argument("--ovals", type=int, default=22)
 ap.add_argument("--stir", type=float, default=1.0)
 ap.add_argument("--base", default=None, help="a real planet's map to start from (equirectangular); its bands set the jets")
 args = ap.parse_args()
+if args.out and not args.out.endswith(".webp"):
+    ap.error("--out must end in .webp (the 2048-wide map is written beside it, named from it)")
 
 W = 4
 NX, NY = args.n, args.n // 2
