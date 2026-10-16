@@ -94,7 +94,7 @@ echo '{}' > package.json
 git add -f package.json
 git -c user.name=t -c user.email=t@t commit -q -m "add package.json"
 rc=0
-sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+sh tools/ci/lint.sh stray > "$out" 2>&1 || rc=$?
 if [ "$rc" -ne 0 ] && grep -q "package.json must not be committed" "$out"; then
   echo "ok   tracked package.json fails"
 else
@@ -125,7 +125,7 @@ poison() {
 # Case (a): an onerror handler in an imported section -> fails, names file and section.
 sid=$(poison '<p><img src="x" onerror="alert(1)"></p>')
 rc=0
-sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
   echo "ok   an onerror handler in an imported section fails"
 else
@@ -138,7 +138,7 @@ git reset -q --hard HEAD~1
 # Case (b): a script element in an imported section -> fails.
 sid=$(poison '<script>1</script>')
 rc=0
-sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
   echo "ok   a script element in an imported section fails"
 else
@@ -156,7 +156,7 @@ git reset -q --hard HEAD~1
 poison_case() {
   sid=$(poison "$2")
   rc=0
-  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
   if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
     echo "ok   $1 fails"
   else
@@ -272,9 +272,13 @@ commit_all() {
   git add -A
   git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "$1"   # (a case may change nothing: m2 sets the name it already has)
 }
+# lint_to_out [SECTION...]: a case that expects a fault to be refused names the section that refuses it, so it
+# pays for that section alone (#65); a wrong section leaves the fault unrefused and the case fails. A case that
+# expects a pass, or that a section says nothing, runs the whole lint, where a wrong section would pass unseen.
+# The names cases (names_lint, names_run) run their section alone either way: they judge only its own output.
 lint_to_out() {
   rc=0
-  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  sh tools/ci/lint.sh "$@" > "$out" 2>&1 || rc=$?
 }
 
 # Case (a): a package version named in a script (an install line for marked
@@ -282,7 +286,7 @@ lint_to_out() {
 # (the line is built from parts: this file is itself a script the lint reads)
 printf '%s\n' "npm i $(printf '%s@%s' marked 18.0.0)" >> tools/ci/nightly-import.sh
 commit_all "pin in a script"
-lint_to_out
+lint_to_out npm-pins
 if [ "$rc" -eq 1 ] && grep -q "tools/ci/nightly-import.sh" "$out"; then
   echo "ok   a marked@ pin in a script fails"
 else
@@ -313,7 +317,7 @@ else
     failed=1
   else
     commit_all "lockfile entry without integrity"
-    lint_to_out
+    lint_to_out npm-pins
     if [ "$rc" -eq 1 ] && grep -q "tools/package-lock.json" "$out" && grep -q "$entry" "$out"; then
       echo "ok   a lockfile entry without integrity fails"
     else
@@ -340,7 +344,7 @@ else
     fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
   '
   commit_all "range for marked"
-  lint_to_out
+  lint_to_out npm-pins
   if [ "$rc" -eq 1 ] && grep -q "tools/package.json" "$out"; then
     echo "ok   a range for marked in tools/package.json fails"
   else
@@ -366,7 +370,7 @@ else
     fs.writeFileSync("renovate.json", JSON.stringify(j, null, 2) + "\n");
   '
   commit_all "renovate without npm"
-  lint_to_out
+  lint_to_out npm-pins
   if [ "$rc" -eq 1 ] && grep -q "renovate.json" "$out"; then
     echo "ok   removing npm from enabledManagers fails"
   else
@@ -391,7 +395,7 @@ LOOK="${la}!x" node -e '
   fs.writeFileSync("renovate.json", JSON.stringify(j, null, 2) + "\n");
 '
 commit_all "look-around in a matchString"
-lint_to_out
+lint_to_out npm-pins
 if [ "$rc" -eq 1 ] && grep -q "renovate.json" "$out"; then
   echo "ok   a look-around in a matchString fails"
 else
@@ -437,7 +441,7 @@ if ! grep -q 'docs/import-' .gitlab-ci.yml || ! grep -Eq "$proxy_line" .gitlab-c
 else
   sed -i -E "/$proxy_line/d" .gitlab-ci.yml
   commit_all "docs/import rule without the prefix override"
-  lint_to_out
+  lint_to_out proxy
   if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
     echo "ok   removing the docs/import prefix override fails"
   else
@@ -457,7 +461,7 @@ if ! grep -q 'CI_COMMIT_AUTHOR =~' .gitlab-ci.yml; then
 else
   sed -i '/CI_COMMIT_AUTHOR =~/d' .gitlab-ci.yml
   commit_all "bot-author rule removed"
-  lint_to_out
+  lint_to_out proxy
   if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
     echo "ok   removing the bot-author prefix override fails"
   else
@@ -481,7 +485,7 @@ rule_case() {
     require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
   ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
   commit_all "$1"
-  lint_to_out
+  lint_to_out proxy
   if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml: .*$2" "$out"; then
     echo "ok   $1 fails"
   else
@@ -528,7 +532,7 @@ fi
 door_case() {
   printf '%s\n' "$3" >> "$2"
   commit_all "$1"
-  lint_to_out
+  lint_to_out door
   if [ "$rc" -eq 1 ] && grep -q "$4" "$out"; then
     echo "ok   $1 fails"
   else
@@ -556,7 +560,7 @@ door_case "a door.css url outside the folder" assets/door/door.css '#door .x{bac
 # Case (o): the page's copy of the door edited by hand -> fails, names index.html.
 sed -i 's/<svg class="wl wash" /<svg class="wl washed" /' index.html
 commit_all "index.html door edited by hand"
-lint_to_out
+lint_to_out door
 if [ "$rc" -eq 1 ] && grep -q "index.html: the door's markup differs" "$out"; then
   echo "ok   a hand-edited door in index.html fails"
 else
@@ -590,7 +594,7 @@ split_case() {
     require("fs").writeFileSync(process.env.F, y + "\n");
   ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
   commit_all "$1"
-  lint_to_out
+  lint_to_out proxy ci-split
   if [ "$rc" -eq 1 ] && grep -Eq "$2: .*($3)" "$out"; then
     echo "ok   $1 fails"
   else
@@ -1177,7 +1181,7 @@ shape_case() {
     new Function("j", process.env.JS)(j); fs.writeFileSync(process.env.F, JSON.stringify(j));
   ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
   commit_all "$1"
-  lint_to_out
+  lint_to_out docs-shape
   if [ "$rc" -eq 1 ] && grep -i '^==' "$out" | grep -iq 'shape the import writes' && grep -q "$2" "$out"; then
     echo "ok   $1 fails"
   else
@@ -1192,7 +1196,7 @@ shape_case "an index slug carrying a quote" index.json 'j.sources[1].slug = "a\"
 shape_case "a page section id with a space" readme.json 'j.sections[0].id = "a b";'
 git rm -q assets/docs/security.json
 commit_all "a page missing"
-lint_to_out
+lint_to_out docs-index docs-shape
 if [ "$rc" -eq 1 ] && grep -q "security.json" "$out"; then
   echo "ok   a page missing from assets/docs fails"
 else
@@ -1235,7 +1239,7 @@ set_media() {
 # expect_media_fail <label>: lint exits 1, names sw.js and prints the expected name
 expect_media_fail() {
   want=$(media_name)
-  lint_to_out
+  lint_to_out media
   if [ "$rc" -eq 1 ] && grep -q "sw.js" "$out" && grep -qF "$want" "$out"; then
     echo "ok   $1 fails"
   else
@@ -1373,7 +1377,7 @@ csp_set() {
 csp_fail() {
   label=$1; page=$2; shift 2
   csp_set FAULT_PAGE="$page" "$@"
-  lint_to_out
+  lint_to_out csp
   if [ "$rc" -eq 1 ] && grep -q "$page" "$out"; then
     echo "ok   $label fails"
   else
@@ -1440,7 +1444,7 @@ csp_fail "an inline event handler attribute" install.html HANDLER=1
 names_out=$(mktemp)
 names_lint() {
   rc=0
-  sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+  sh tools/ci/lint.sh names > "$out" 2>&1 || rc=$?
   # Only what the names section printed: from its heading to the next one.
   awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
 }
@@ -1460,7 +1464,7 @@ names_run() {
   ( [ -z "$1" ] || export NO_REAL_NAMES_EXTRA_WORD_DIGESTS="$1"
     [ -z "$2" ] || export NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$2"
     [ -z "$3" ] || export NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS="$3"
-    exec sh tools/ci/lint.sh ) > "$out" 2>&1 || rc=$?
+    exec sh tools/ci/lint.sh names ) > "$out" 2>&1 || rc=$?
   awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
 }
 n_fail() { echo "FAIL $1"; sed 's/^/     /' "$out"; failed=1; }
