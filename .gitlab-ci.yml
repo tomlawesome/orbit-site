@@ -90,6 +90,7 @@ lint:
   script:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - sh tools/ci/lint.sh
+    - sh tools/ci/lint-sections-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
