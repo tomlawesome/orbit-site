@@ -483,8 +483,10 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   const bodyAt = (id) => { const b = $(`#dial .body-link[data-id="${id}"] circle`); return b ? [b.getAttribute("cx"), b.getAttribute("cy")] : null; };
   const wasAt = bodyAt("i-gutter");
   home.complete("i-gutter");
-  /* due 16 days ago, every year: next due a year after that */
-  const want = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate() - 16);
+  /* due 16 days ago, every year: next due a year after that date (16 days back first, then a year on,
+     so a 29 February between the two is counted as the code's calendar counts it) */
+  const back = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 16);
+  const want = new Date(back.getFullYear() + 1, back.getMonth(), back.getDate());
   check("completing a repeat moves it on by its period, past today", law.daysBetween(want, gutter.dueDate) === 0 && gutter.days > 0, `due ${data.ymd(gutter.dueDate)} (want ${data.ymd(want)}), days ${gutter.days}`);
   check("it is no longer overdue: the red zone is gone", !$("#corridor .redzone") && $$("#dial .pings .ping").length === 0, `red zones ${$$("#corridor .redzone").length}, pings ${$$("#dial .pings .ping").length}`);
   const view = $("#i-gutter-view");
