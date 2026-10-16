@@ -68,6 +68,8 @@ const WARP_BY = 600;
 const LOSS_AFTER = { early: 30, late: 90 };
 const SAMPLE_AT = [6, 12, 18, 24, 36, 48, 60, 90, 120, 180, 240, 300, 360];
 const STEP_CHUNK = 4;
+/* each loss case's frames of the flight: the loss's own, then its samples */
+const lossSamples = Object.values(LOSS_AFTER).map((l) => [l, ...SAMPLE_AT.map((k) => l + k)]);
 /* a port nobody holds: other live tests and other checkouts share this host */
 const PORT = await new Promise((ok, no) => {
   const probe = createServer();
@@ -228,7 +230,6 @@ const judge = (page, one, two = one) => page.evaluate(async ([x, y]) => {
   const n = a.length / 4;
   return { share: differ / n, moved: moved / n };
 }, [one, two]);
-const warpAlone = async (page) => (await judge(page, await grab(page, ["warp"]))).share;
 const canvases = (page) => page.evaluate(() => ["warp", "warpgl"].map((id) => { const e = document.getElementById(id); return e ? `${id} ${getComputedStyle(e).display}/opacity ${getComputedStyle(e).opacity}` : `${id} absent`; }).join(", "));
 const isDrawn = (look) => look.share > DRAWN && look.moved > MOVED;
 const show = (look) => `drawn ${look.share.toFixed(3)}, moving ${look.moved.toFixed(3)}`;
@@ -316,21 +317,30 @@ const controlSamples = async (page, what, start) => {
   const warp = await judge(page, await grab(page, ["warp"])), warpgl = await judge(page, await grab(page, ["warpgl"]));
   const parts = `warp alone: drawn ${warp.share.toFixed(3)}; warpgl alone: drawn ${warpgl.share.toFixed(3)}; ${await canvases(page)}`;
   /* keyed by the frame of the flight (since its frame 0) */
-  const frames = [...new Set([LOSS_AFTER.early + MOVE_FRAMES, ...Object.values(LOSS_AFTER).flatMap((l) => SAMPLE_AT.map((k) => l + k))])].sort((a, b) => a - b);
-  const warpAt = new Map();
+  const frames = [...new Set([LOSS_AFTER.early + MOVE_FRAMES, ...lossSamples.flat()])].sort((a, b) => a - b);
+  const warpAt = new Map(), pics = new Map();
   let look = null;
   for (const f of frames) {
     await stepTo(page, start + f);
     if (f === LOSS_AFTER.early + MOVE_FRAMES) look = await judge(page, one, await grab(page, ["warp", "warpgl"]));
     const c = await bodyClass(page);
-    warpAt.set(f, { share: await warpAlone(page), live: underWayNow(c) });
+    const pic = await grab(page, ["warp"]);
+    pics.set(f, pic);
+    warpAt.set(f, { share: (await judge(page, pic)).share, live: underWayNow(c) });
     if (look && !underWayNow(c)) break;
   }
-  return { ...look, warp, parts, warpAt };
+  /* #warp alone's movement between each loss case's samples, one to the next (the loss's own frame first) */
+  const movedAt = new Map();
+  for (const seq of lossSamples) {
+    for (let i = 1; i < seq.length; i++) {
+      if (pics.has(seq[i - 1]) && pics.has(seq[i])) movedAt.set(`${seq[i - 1]}>${seq[i]}`, (await judge(page, pics.get(seq[i - 1]), pics.get(seq[i]))).moved);
+    }
+  }
+  return { ...look, warp, parts, warpAt, movedAt };
 };
 
 /* ── the flight whose context is lost part way up ────────────────────────────────────────────────────────────────── */
-const lostMidFlight = async (notes, when, need) => {
+const lostMidFlight = async (notes, when, need, needMove) => {
   const { ctx, page } = await open();
   try {
     await atGate(page, `${when} loss flight`);
@@ -349,26 +359,33 @@ const lostMidFlight = async (notes, when, need) => {
     if (!lost.length) return result;
     await lossSaid(page, `${when} loss`);
     progress(`${when} loss: the flight's context lost at its frame ${loseAt} (${start + loseAt} after the click; body: ${cls}); stepping the flight on`);
-    const samples = [];
-    /* #warp alone at each sample frame after the loss, against the controls at that same frame */
-    let best = null, counted = 0;
+    /* #warp alone at the loss's frame and at each sample frame after it, against the controls at that same frame:
+       drawn, and moving since the sample before as the 2D control moved between the same two frames. Every frame the
+       controls can judge must pass, not the best of them: with the clock stepped no first frame is late, and a fallback
+       that draws once and stops, or only late, fails */
+    const samples = [], judged = [];
+    let prev = await grab(page, ["warp"]), prevF = loseAt;
     for (const k of SAMPLE_AT) {
       const f = loseAt + k;
       await stepTo(page, start + f);
       const c = await bodyClass(page);
-      const share = await warpAlone(page);
-      const want = need(f);
+      const pic = await grab(page, ["warp"]);
+      const { share } = await judge(page, pic);
+      const { moved } = await judge(page, prev, pic);
+      const pair = `${prevF}>${f}`;
+      prev = pic; prevF = f;
       const live = underWayNow(c);
-      samples.push(`+${k}: drawn ${share.toFixed(3)}${want === null ? " (the controls cannot tell 2D here)" : ` / ${want.toFixed(3)}`}${live ? "" : " (flight over, not counted)"}`);
-      if (!live) break;
-      if (want === null) continue;
-      counted++;
-      const r = { k, share, want };
-      if (!best || share / want > best.share / best.want) best = r;
-      if (share >= want) break;
+      const want = need(f), mwant = needMove(pair);
+      if (!live) { samples.push(`+${k}: flight over, not counted`); break; }
+      if (want === null) { samples.push(`+${k}: drawn ${share.toFixed(3)}, moved ${moved.toFixed(3)} (the controls cannot tell 2D here)`); continue; }
+      const ok = share >= want && (mwant === null || moved >= mwant);
+      judged.push({ k, share, want, moved, mwant, ok });
+      samples.push(`+${k}: drawn ${share.toFixed(3)} / ${want.toFixed(3)} (${share >= want ? "+" : ""}${(share - want).toFixed(3)}), moved ${moved.toFixed(3)} / ${mwant === null ? "not judged, the 2D control is still here" : `${mwant.toFixed(3)} (${moved >= mwant ? "+" : ""}${(moved - mwant).toFixed(3)})`}${ok ? "" : " FAILS"}`);
     }
-    Object.assign(result, { counted, best });
-    notes.push(`${when} loss at frame ${loseAt} of the flight, #warp alone at frames after it (drawn / needed): ${samples.join(", ")}; body then: ${await bodyClass(page)}; ${await canvases(page)}`);
+    const counted = judged.length, firstFail = judged.find((j) => !j.ok) ?? null;
+    result.margins = counted ? { drawn: Math.min(...judged.map((j) => j.share - j.want)), moved: Math.min(...judged.filter((j) => j.mwant !== null).map((j) => j.moved - j.mwant)) } : null;
+    Object.assign(result, { counted, firstFail });
+    notes.push(`${when} loss at frame ${loseAt} of the flight, #warp alone at frames after it (got / needed, margin): ${samples.join(", ")}; body then: ${await bodyClass(page)}; ${await canvases(page)}`);
     result.drawsAfter = await draws(page);
     result.errors = page.errors.slice();
     return result;
@@ -400,19 +417,27 @@ try {
     const d = two.warpAt.get(f), w = control.warpAt.get(f);
     return d?.live && w?.live && d.share > 2 * w.share ? Math.max(0.5 * d.share, 2 * w.share) : null;
   };
+  /* the movement a loss case's #warp must show between two of its samples: half what the 2D control's showed between
+     the same two frames, where that control moved at all (over MOVED) */
+  const needMove = (pair) => {
+    const m = two.movedAt.get(pair);
+    return m !== undefined && m > MOVED ? 0.5 * m : null;
+  };
   const table = (r) => [...r.warpAt].map(([f, v]) => `${f}: ${v.share.toFixed(3)}${v.live ? "" : " (over)"}`).join(", ");
   notes.push(`#warp alone by frame of the flight, F0w: ${table(control)}`);
   notes.push(`#warp alone by frame of the flight, F0d: ${table(two)}`);
   /* the loss part way up the climb: soon after the flight starts drawing (early), and later in the climb (late) */
   for (const when of ["early", "late"]) {
-    const r = await lostMidFlight(notes, when, need);
+    const r = await lostMidFlight(notes, when, need, needMove);
     want(r.drewInWebgl, `control (${when} loss): the flight drew nothing in WebGL on #warpgl by its frame ${r.loseAt}, so there was no WebGL flight to lose`);
     want(r.underWay, `control (${when} loss): the flight was not under way at its frame ${r.loseAt}, where the loss comes (body: ${r.cls}), so the loss was not mid-flight`);
     if (r.drewInWebgl && r.underWay) {
       want(Array.isArray(r.lost) && r.lost.length > 0 && r.lost.every((x) => x === true), `control (${when} loss): the loss did not take on the flight's context (${JSON.stringify(r.lost)})`);
       if (r.lost?.length) {
         want(r.counted > 0, `control (${when} loss): no sample of the sky after the loss was taken at a frame where the flight was under way and #warp alone tells the 2D control from the WebGL one, so the 2D takeover could not be judged`);
-        want(r.counted === 0 || r.best.share >= r.best.want, `the flight canvas area is still blank in the frames after the context was lost mid-flight (${when} in the climb, samples up to ${SAMPLE_AT.at(-1)} frames after it): #warp alone, best drawn ${r.best?.share.toFixed(3)} at ${r.best?.k} frames after the loss, where it needs ${r.best?.want.toFixed(3)} (half the 2D control's, and twice the WebGL control's, at that frame)`);
+        const b = r.firstFail;
+        want(r.counted === 0 || !b, `the flight canvas area is not drawn and moving in every frame after the context was lost mid-flight (${when} in the climb): #warp alone ${b?.k} frames after the loss drawn ${b?.share.toFixed(3)} where it needs ${b?.want.toFixed(3)} (half the 2D control's, and twice the WebGL control's, at that frame), moved ${b?.moved.toFixed(3)} since the sample before where it needs ${b?.mwant === null ? "(not judged)" : b?.mwant.toFixed(3)} (half the 2D control's between the same frames)`);
+        if (r.margins) notes.push(`${when} loss, smallest margin over the judged frames: drawn ${r.margins.drawn.toFixed(3)}, moved ${Number.isFinite(r.margins.moved) ? r.margins.moved.toFixed(3) : "not judged"}`);
         want(!r.errors.length, `page error (${when} loss): ${r.errors[0]}`);
       }
     }
