@@ -6,12 +6,27 @@ set -eu
 cd "$(dirname "$0")/../.."
 fail=0
 
+# Sections, in the order they run: `sh tools/ci/lint.sh` runs them all (CI does);
+# `sh tools/ci/lint.sh ci-split names` runs only those, in this order, so a test
+# that plants one fault pays for one section (#65); `--list` names them. An
+# unknown name runs nothing and exits 2, so a typo cannot pass.
+sections="parse refs door docs-index docs-shape docs-noscript milkyway proxy ci-split media csp names stray npm-pins"
+if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
+for s in "$@"; do
+  case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
+done
+chosen=" $* "
+on() { [ "$chosen" = "  " ] || case "$chosen" in *" $1 "*) ;; *) false ;; esac; }
+
+if on parse; then
 echo "== modules parse"
 for f in sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
   node --experimental-default-type=module --check "$f" 2>/dev/null \
     || node --check "$f" || { echo "   $f does not parse"; fail=1; }
 done
+fi
 
+if on refs; then
 echo "== every local src/href in the pages exists"
 for page in index.html install.html 404.html tests/index.html; do
   grep -o -E '(src|href)="[^"#?:]+"' "$page" | sed -E 's/^[a-z]+="//; s/"$//' | sort -u | while read -r ref; do
@@ -19,7 +34,9 @@ for page in index.html install.html 404.html tests/index.html; do
     [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
   done || fail=1
 done
+fi
 
+if on door; then
 echo "== the shared door is self-contained (assets/door, ADR-0001)"
 # the folder is copied into Orbit unchanged: nothing in it may reach outside it, read the address, or make a URL
 # from import.meta.url (a bundler leaks that into server-rendered pages); the site's own modules use only its entry
@@ -55,7 +72,9 @@ for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^ur
 done
 # and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
 node tools/door-markup.mjs --check || fail=1
+fi
 
+if on docs-index; then
 echo "== the docs index names pages that exist"
 if [ -f assets/docs/index.json ]; then
   node -e '
@@ -64,13 +83,17 @@ if [ -f assets/docs/index.json ]; then
     for (const s of slugs) if (!fs.existsSync(`assets/docs/${s}.json`)) { console.log(`   assets/docs/${s}.json is missing`); process.exitCode = 1; }
   ' || fail=1
 fi
+fi
 
+if on docs-shape; then
 echo "== the imported docs have the shape the import writes"
 # the pad draws the index's colour, slugs and ids into innerHTML: they must be
 # what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
 # (the publish job holds the artifact to the same check, #18)
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+fi
 
+if on docs-noscript; then
 echo "== the imported docs carry no script"
 # the stored pages are what Pages serves; a handler or script tag here would
 # run on every visitor, whatever the importer let through. A stored section
@@ -83,7 +106,9 @@ echo "== the imported docs carry no script"
 # that would put a browser into a comment or a raw-text element is refused
 # outright, since the import never writes one and the check cannot follow it.
 node tools/ci/docs-noscript.mjs assets/docs || fail=1
+fi
 
+if on milkyway; then
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
 for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
   [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
@@ -99,7 +124,9 @@ if grep -q 'svs\.gsfc\.nasa\.gov/4851' index.html; then
 fi
 grep -q 'svs\.gsfc\.nasa\.gov/4720' index.html \
   || { echo "   index.html has no link to svs.gsfc.nasa.gov/4720"; fail=1; }
+fi
 
+if on proxy; then
 echo "== docs-import merge requests pull without the dependency proxy"
 # the import's bot cannot use the group proxy: its merge requests must pull
 # from Docker Hub, and the node pin must keep the prefix that rule swaps
@@ -141,7 +168,9 @@ WF="$wf" node -e '
 ' || fail=1
 grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
+fi
 
+if on ci-split; then
 echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
 # worth stealing; the publish holds the token, runs no third-party code, and is
@@ -162,7 +191,9 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # Read as YAML with js-yaml from tools/node_modules (#52), so the lint job runs
 # npm ci --prefix tools first; without it, or if the file does not parse, this fails.
 node tools/ci/ci-split.mjs || fail=1
+fi
 
+if on media; then
 echo "== the service worker's picture cache name follows the pictures"
 # sw.js keeps pictures in the visitor's browser under the name MEDIA; replacing
 # a picture without a new name would leave the old one served for 36 hours. So
@@ -184,7 +215,9 @@ node -e '
   if (!m) { console.log("   sw.js: no const MEDIA = \"...\" found"); process.exitCode = 1; }
   else if (m[1] !== want) { console.log(`   sw.js: MEDIA is ${m[1]}, but the pictures hash to ${want}; set MEDIA to ${want}`); process.exitCode = 1; }
 ' || fail=1
+fi
 
+if on csp; then
 echo "== the pages carry a Content-Security-Policy that covers what they run"
 # GitHub Pages sends no headers, so index.html, 404.html and install.html each carry the policy as a
 # <meta http-equiv="Content-Security-Policy">. A meta covers only what follows it, so it comes first in <head>, before
@@ -232,18 +265,24 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   }
 }
 CSP_EOF
+fi
 
+if on names; then
 echo "== no real names, host logins or private addresses (#56)"
 # only sha256 digests are stored; a hit is reported as file:line, never the value (CI logs are public)
 node tools/ci/no-real-names.mjs || fail=1
+fi
 
+if on stray; then
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)
 for f in node_modules package.json package-lock.json .agents; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
+fi
 
+if on npm-pins; then
 echo "== the npm pins live in tools/package.json only"
 # the docs import installs marked and sharp with npm ci from tools/, so the
 # manifest names exact versions, the lockfile holds a hash for every package,
@@ -275,5 +314,6 @@ node -e '
     for (const s of m.matchStrings || []) if (/\(\?(=|!|<=|<!)/.test(s)) bad(`renovate.json: a matchString has a look-around, which Renovate cannot compile: ${s}`);
   }
 ' || fail=1
+fi
 
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }
