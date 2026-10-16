@@ -166,6 +166,7 @@ for (const [label, spec, want] of [
   ["upside down (angle 180)", { angle: 180 }, [-0.1, -0.2]],
   ["a full turn more (angle 450 is 90)", { angle: 450 }, [0.2, -0.1]],
   ["no screen.orientation, window.orientation 90", { noScreenOrientation: true, windowOrientation: 90 }, [0.2, -0.1]],
+  ["screen.orientation 90 over window.orientation 0", { angle: 90, windowOrientation: 0 }, [0.2, -0.1]],
   ["no orientation at all (upright)", { noScreenOrientation: true }, [0.1, 0.2]],
 ]) {
   const o = runCase({ ...android, ...spec, run: "orientation" });

@@ -15,6 +15,11 @@
  * Reduced motion is on, so a flight is two 50 ms steps.
  */
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+/* --motion: the same page without reduced motion, for the full-length timings (a second process: reduced is read once) */
+const MOTION = process.argv[2] === "--motion";
 
 let failed = false;
 const check = (name, ok, detail) => {
@@ -241,7 +246,7 @@ Object.assign(globalThis, {
   document, Event, MouseEvent,
   window: globalThis,
   innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1,
-  matchMedia: (q) => ({ matches: q.includes("reduced-motion"), addEventListener() {} }),
+  matchMedia: (q) => ({ matches: q.includes("reduced-motion") && !MOTION, addEventListener() {} }),
   localStorage: storage(), sessionStorage: storage(),
   location: { hash: "#home", reload: () => reloads.push(1) },
   scrollTo: (o) => scrolls.push(o),
@@ -295,6 +300,23 @@ home.onChange(() => changes.push(home.state.camera));
 
 home.mountHome(skyCams);
 
+if (MOTION) {
+  home.openRow("i-boiler", true);
+  const sc = $('.item[data-id="i-boiler"]').scrolled;
+  check("with motion, an opened row is scrolled to smoothly", sc.length === 1 && sc[0].behavior === "smooth", `scrolled ${show(sc)}`);
+  const hero = $("#hero");
+  home.flyTo("seaside");
+  advance(1249);
+  check("with motion, a flight has not landed at 1249 ms", home.state.camera === "willow" && hero.classList.contains("flying"), `camera ${home.state.camera}`);
+  advance(1);
+  check("with motion, it lands at 1250 ms", home.state.camera === "seaside" && hero.classList.contains("arriving"), `camera ${home.state.camera}, hero ${hero.className}`);
+  advance(899);
+  check("with motion, it is still arriving 899 ms after landing", hero.classList.contains("flying") && home.state.flying, `hero ${hero.className}`);
+  advance(1);
+  check("with motion, the flight ends 900 ms after landing", !hero.classList.contains("flying") && !home.state.flying, `hero ${hero.className}`);
+  process.exit(failed ? 1 : 0);
+}
+
 /* ── what mountHome draws ──────────────────────────────────────────────── */
 check("the camera starts on your household, the sky at its place", skyCams.far.style.transform === "translate(0px,0px)" && skyCams.near.style.transform === "translate(0px,0px)", `far ${skyCams.far.style.transform}, near ${skyCams.near.style.transform}`);
 check("the account orb, name and relay are the account's", $("#account-orb").textContent === account.initials && $("#who-name").textContent === account.name && $("#relay-addr").textContent === account.relay, `${show([$("#account-orb").textContent, $("#who-name").textContent, $("#relay-addr").textContent])}`);
@@ -337,6 +359,10 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   }
   monthsWant.delete(`${today.getFullYear()}-${today.getMonth()}`);
   const heads = $$("#corridor .month").map((m) => m.querySelector("small").textContent);
+  const NAMES = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const names = $$("#corridor .month").map((m) => m.querySelector("span").textContent);
+  const namesWant = [...monthsWant.keys()].map((k) => NAMES[Number(k.split("-")[1])]);
+  check("each month heading names its month", show(names) === show(namesWant), `got ${show(names)} (want ${show(namesWant)})`);
   check("a heading for each later month, counting what approaches in it", show(heads) === show([...monthsWant.values()].map((n) => `${n} approaching`)), `got ${show(heads)} (want ${show([...monthsWant.values()].map((n) => `${n} approaching`))})`);
   const lastDue = law.longDate(law.addDays(today, Math.max(...activeOf(willow).map((it) => it.days)))).split(" ")[1];
   check("the horizon names the last month scheduled", $("#horizon").textContent === `— beyond the horizon: nothing scheduled past ${lastDue} —`, `got ${show($("#horizon").textContent)}`);
@@ -409,7 +435,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   globalThis.innerWidth = 260;
   link._rect = { left: 120, top: 100, width: 20, height: 20 };
   fire(link, "pointerenter", { pointerType: "mouse" });
-  check("on a narrow screen the callout drops below the body", c.classList.contains("side-below") && c.style.top === `${120 + 30}px` && c.style.getPropertyValue("--tail") !== "", `classes ${c.className}, top ${c.style.top}, tail ${c.style.getPropertyValue("--tail")}`);
+  check("on a narrow screen the callout drops below the body", c.classList.contains("side-below") && c.style.top === "150px" && c.style.left === "30px" && c.style.getPropertyValue("--tail") === "100px", `classes ${c.className}, left ${c.style.left}, top ${c.style.top}, tail ${c.style.getPropertyValue("--tail")} (want 30px, 150px, 100px: centred under the body, the tail at its middle)`);
   link._rect = { left: 120, top: 700, width: 20, height: 20 };
   fire(link, "pointerenter", { pointerType: "mouse" });
   check("with no room below it rises above", c.classList.contains("side-above") && c.style.top === `${700 - 30 - 60}px`, `classes ${c.className}, top ${c.style.top}`);
@@ -454,15 +480,19 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
 {
   changes.length = 0;
   const gutter = willow.items.find((it) => it.id === "i-gutter");
-  const before = gutter.dueDate;
+  const bodyAt = (id) => { const b = $(`#dial .body-link[data-id="${id}"] circle`); return b ? [b.getAttribute("cx"), b.getAttribute("cy")] : null; };
+  const wasAt = bodyAt("i-gutter");
   home.complete("i-gutter");
-  let want = new Date(before); want.setMonth(want.getMonth() + 12);
-  while (law.daysBetween(today, want) < 1) want.setMonth(want.getMonth() + 12);
+  /* due 16 days ago, every year: next due a year after that */
+  const want = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate() - 16);
   check("completing a repeat moves it on by its period, past today", law.daysBetween(want, gutter.dueDate) === 0 && gutter.days > 0, `due ${data.ymd(gutter.dueDate)} (want ${data.ymd(want)}), days ${gutter.days}`);
   check("it is no longer overdue: the red zone is gone", !$("#corridor .redzone") && $$("#dial .pings .ping").length === 0, `red zones ${$$("#corridor .redzone").length}, pings ${$$("#dial .pings .ping").length}`);
   const view = $("#i-gutter-view");
   check("its row reopens: completed today, and complete is off", !!view && view.textContent.includes("completed today") && view.querySelector('[data-act="complete"]').disabled, `view ${show(view?.textContent.slice(0, 120))}`);
-  check("a comet flies from where it was to where it goes", $$("#dial line.comet").length === 1, `${$$("#dial line.comet").length} comet(s)`);
+  const comet = $("#dial line.comet"), nowAt = bodyAt("i-gutter");
+  const ends = comet ? ["x1", "y1", "x2", "y2"].map((k) => comet.getAttribute(k)) : null;
+  check("a comet flies from where it was to where it goes", $$("#dial line.comet").length === 1 && show(ends) === show([...wasAt, ...nowAt]), `ends ${show(ends)} (want from ${show(wasAt)} to ${show(nowAt)})`);
+  check("the row lists its reminders", view?.textContent.includes("reminders14d before · 3d before"), show(view?.textContent));
   advance(20);
   check("the comet takes flight on the next frame", $("#dial line.comet")?.classList.contains("fly"), `classes ${$("#dial line.comet")?.className}`);
   advance(1700);
@@ -490,9 +520,37 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   check("an added item lands on the dial", $(`#dial .body-link[data-id="${once.id}"]`)?.classList.contains("landing"), `link ${!!$(`#dial .body-link[data-id="${once.id}"]`)}`);
   home.openRow(once.id);
   check("a one-off says it does not come round", $(`#${once.id}-view`)?.textContent.includes("one-off — does not come round"), show($(`#${once.id}-view`)?.textContent.slice(-60)));
+  const onceAt = bodyAt(once.id);
   home.complete(once.id);
+  const onceComet = $("#dial line.comet");
+  check("a finished one-off's comet flies straight up to the top", !!onceComet && onceComet.getAttribute("x2") === onceAt[0] && onceComet.getAttribute("y2") === "20" && onceComet.getAttribute("x1") === onceAt[0] && onceComet.getAttribute("y1") === onceAt[1], `ends ${show(onceComet && ["x1", "y1", "x2", "y2"].map((k) => onceComet.getAttribute(k)))} (want from ${show(onceAt)} to x ${onceAt[0]}, y 20)`);
   check("completing a one-off ends it: off the dial and the manifest", once.status === "done" && !$(`#dial .body-link[data-id="${once.id}"]`) && !$(`.item[data-id="${once.id}"]`), `status ${once.status}`);
   advance(2000);
+
+  /* a snoozed repeat, completed, is not snoozed any more */
+  home.snooze("i-boiler");
+  home.complete("i-boiler");
+  const boiler = willow.items.find((it) => it.id === "i-boiler");
+  const bv = $("#i-boiler-view");
+  check("completing a snoozed repeat takes the snooze off", boiler.snoozed === false && !bv.querySelector('[data-act="snooze"]').disabled && bv.querySelector('[data-act="snooze"]').textContent === "snooze a week" && !bv.textContent.includes("a week, from the last reminder"), `snoozed ${boiler.snoozed}, button ${show(bv.querySelector('[data-act="snooze"]').textContent)}`);
+  advance(2000);
+
+  /* a repeat more than one period behind comes round as many times as it takes to be ahead of today */
+  const Y = today.getFullYear(), M = today.getMonth();
+  const late = home.addItem({ title: "Septic check", recurrenceMonths: 12, dueDate: new Date(Y, M - 25, 1) });
+  home.complete(late.id);
+  check("a repeat two periods behind is moved past today", data.ymd(late.dueDate) === data.ymd(new Date(Y, M + 11, 1)), `due ${data.ymd(late.dueDate)} (want ${data.ymd(new Date(Y, M + 11, 1))}: the first of the month 25 months back, plus three years)`);
+  advance(2000);
+
+  /* a completion on an earlier day reads as its date; restoreState saves what it restored */
+  const snap = data.serialise();
+  snap.households.willow.find((it) => it.id === "i-chimney").completedOn = "2026-01-15";
+  localStorage.removeItem("orbit-site-state");
+  home.restoreState(snap);
+  home.openRow("i-chimney");
+  check("an earlier completion is shown by its date", $("#i-chimney-view")?.textContent.includes("last completed15 January 2026") && !$('#i-chimney-view [data-act="complete"]').disabled, show($("#i-chimney-view")?.textContent));
+  check("restoreState saves what it restored", saved()?.households?.willow?.find((it) => it.id === "i-chimney")?.completedOn === "2026-01-15", `saved ${show(saved()?.households?.willow?.find((it) => it.id === "i-chimney"))}`);
+  home.closeRow();
 }
 
 /* ── a suggestion takes two taps ───────────────────────────────────────── */
@@ -504,12 +562,16 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   check("the first tap on add arms it and adds nothing", row()?.querySelector("button.yes").textContent === "tap again to add" && row()?.querySelector("button.yes").classList.contains("armed") && inbox.review.length === 1, `yes ${show(row()?.querySelector("button.yes").textContent)}`);
   row()?.querySelector("button.no").click();
   check("a tap on dismiss moves the arming to it", row()?.querySelector("button.no").textContent === "tap again to dismiss" && row()?.querySelector("button.yes").textContent === "Add to orbit", `yes ${show(row()?.querySelector("button.yes").textContent)}, no ${show(row()?.querySelector("button.no").textContent)}`);
-  advance(4000);
+  advance(3900);
+  check("3.9 seconds on, dismiss is still armed", row()?.querySelector("button.no").textContent === "tap again to dismiss", `no ${show(row()?.querySelector("button.no").textContent)}`);
+  advance(200);
   check("after four seconds the arming lapses", row()?.querySelector("button.no").textContent === "Dismiss" && !row()?.querySelector("button.no").classList.contains("armed"), `no ${show(row()?.querySelector("button.no").textContent)}`);
   const count = willow.items.length;
   row()?.querySelector("button.yes").click(); row()?.querySelector("button.yes").click();
   const added = willow.items[willow.items.length - 1];
   check("two taps add it to the household, with its provider and document", willow.items.length === count + 1 && added.title === "Home insurance renewal" && added.provider === "Harbour Mutual" && added.documents[0]?.name === "policy-schedule.pdf" && added.days === 51, show({ n: willow.items.length - count, title: added.title, provider: added.provider, doc: added.documents[0]?.name, days: added.days }));
+  const markOf = (id) => $$(`#dial .body-link[data-id="${id}"] circle`).filter((c) => c.getAttribute("fill") === "var(--panel-raised)").length;
+  check("a renewal's body carries the renewal mark, a service's does not", markOf(added.id) === 1 && markOf("i-boiler") === 0, `renewal ${markOf(added.id)}, service ${markOf("i-boiler")} (want 1, 0)`);
   check("it leaves the review: no suggestion row, the orb counts none", inbox.review.length === 0 && !row() && $("#inbox-orb .count").textContent === "0" && !$("#inbox-orb").classList.contains("waiting"), `review ${inbox.review.length}, count ${$("#inbox-orb .count").textContent}`);
   check("the review lane says nothing is there", $("#lanes .lane.review")?.textContent.includes("nothing here"), show($("#lanes .lane.review")?.textContent));
   check("accepting what is not waiting gives nothing", home.acceptSuggestion("r-insurance") === null, "null");
@@ -522,6 +584,25 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   home.restorePristine();
 }
 
+/* ── something that ends is never overdue; an empty household ──────────── */
+{
+  const ended = home.addItem({ title: "Passport", kind: "expiry", recurrenceMonths: 0, dueDate: law.addDays(today, -5) });
+  const red = $$("#corridor .redzone .item").map((r) => r.dataset.id);
+  const rows = $$(`#corridor .item[data-id="${ended.id}"]`);
+  const kids = $("#corridor").children;
+  check("an expiry past its date is not in the red zone", show(red) === show(["i-gutter"]), `red zone ${show(red)} (want only the gutters)`);
+  check("it is shown once, after today", rows.length === 1 && kids.indexOf(rows[0]) > kids.indexOf($("#today")), `${rows.length} row(s), at ${kids.indexOf(rows[0])}, today at ${kids.indexOf($("#today"))}`);
+  check("it gets no overdue ping", $$("#dial .pings .ping").length === 1, `${$$("#dial .pings .ping").length} pings (want 1: the gutters)`);
+  home.restorePristine();
+
+  const snap = data.serialise();
+  snap.households.grans = [];
+  home.restoreState({ ...snap, camera: "grans" });
+  check("a household with nothing in it says so at the horizon", $("#horizon").textContent === "— nothing in orbit yet —", `got ${show($("#horizon").textContent)}`);
+  home.restorePristine();
+  home.restoreState({ ...data.serialise(), camera: "willow" });
+}
+
 /* ── the create form ───────────────────────────────────────────────────── */
 {
   check("the form's date may not be before today", $("#f-date").min === data.ymd(today), `min ${$("#f-date").min}`);
@@ -530,6 +611,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   advance(400);
   check("the name field takes focus as it opens", document.activeElement === $("#f-name"), `focus on ${document.activeElement?.id}`);
   const count = willow.items.length;
+  $("#f-name").blur();
   fire($("#createform"), "submit");
   check("a form with no name adds nothing", willow.items.length === count && document.activeElement === $("#f-name"), `${willow.items.length - count} added`);
 
@@ -694,6 +776,13 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   localStorage.setItem("orbit-pack", "dawn"); localStorage.setItem("unrelated", "kept");
   $("#reset").click();
   check("reset forgets the visit and reloads the page from the top", localStorage.getItem("orbit-site-state") === null && localStorage.getItem("orbit-pack") === null && localStorage.getItem("unrelated") === "kept" && location.hash === "" && reloads.length === 1, `state ${localStorage.getItem("orbit-site-state") ? "kept" : "gone"}, hash ${show(location.hash)}, reloads ${reloads.length}`);
+}
+
+/* the full-length timings, in a page without reduced motion */
+{
+  const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--motion"], { encoding: "utf8", timeout: 60000 });
+  process.stdout.write(r.stdout || "");
+  if (r.status !== 0) check("the page without reduced motion", false, `exit ${r.status}: ${(r.stderr || "").trim().split("\n").slice(-3).join(" | ")}`);
 }
 
 process.exit(failed ? 1 : 0);
