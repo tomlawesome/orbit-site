@@ -20,10 +20,23 @@ on() { [ "$chosen" = "  " ] || case "$chosen" in *" $1 "*) ;; *) false ;; esac; 
 
 if on parse; then
 echo "== modules parse"
-for f in sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs; do
-  node --experimental-default-type=module --check "$f" 2>/dev/null \
-    || node --check "$f" || { echo "   $f does not parse"; fail=1; }
-done
+# one Node for every file, not one or two per file (#67): V8 parses each without
+# running it, as a module (compiled, never linked or evaluated) and, for a .js
+# that is not one, as a CommonJS script inside Node's own wrapper, as node --check does;
+# a file that is neither is reported with the module parse error
+node --experimental-vm-modules --no-warnings -e '
+  const vm = require("vm"), fs = require("fs");
+  for (const f of process.argv.slice(1)) {
+    const src = fs.readFileSync(f, "utf8");
+    let why;
+    try { new vm.SourceTextModule(src, { identifier: f }); continue; } catch (e) { why = e; }
+    if (!f.endsWith(".mjs")) {
+      try { vm.compileFunction(src, ["exports", "require", "module", "__filename", "__dirname"], { filename: f }); continue; } catch {}
+    }
+    console.log(`   ${f} does not parse: ${why.name}: ${why.message}`);
+    process.exitCode = 1;
+  }
+' sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
 fi
 
 if on refs; then
