@@ -164,6 +164,7 @@ WF="$wf" node -e '
   const first = (r) => r.split("\n")[0];
   const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
   const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
+  const botMr = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /GITLAB_USER_LOGIN =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
   const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
   const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
   if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
@@ -171,6 +172,12 @@ WF="$wf" node -e '
     if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
     if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
     else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
+  }
+  // a merge request whose pipeline the bot started, by moving its source branch (#70)
+  if (botMr < 0) bad("no workflow rule sends merge-request pipelines the import bot starts (GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/) to Docker Hub");
+  else {
+    if (!sets(rules[botMr])) bad("the bot merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
+    if (mr >= 0 && botMr > mr) bad("the bot merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
   }
   if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
   else {

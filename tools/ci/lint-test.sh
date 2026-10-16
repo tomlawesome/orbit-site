@@ -515,6 +515,55 @@ rule_case "the bot-author rule after the general branch rule" "bot-author rule c
   const c = "    - if: $CI_COMMIT_BRANCH\n";
   y = y.replace(b, "").replace(c, c + b);'
 
+# Cases B1-B4 (issue #70): a merge-request pipeline started by the import's
+# project bot (GITLAB_USER_LOGIN =~ /project_N_bot_/) pulls from Docker Hub too:
+# the bot cannot use the group dependency proxy. The rule comes before the
+# general merge-request rule (GitLab takes the first match) and sets the prefix
+# override. B5 (the committed tree, rule added, passes the whole lint) is case (h).
+bot_mr_if='    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/'
+
+# Case B1: the bot merge-request rule removed -> fails, names .gitlab-ci.yml and
+# the bot. Before the rule exists there is nothing to remove: FAIL with a clear
+# line instead of stopping the run.
+if ! grep -qxF "$bot_mr_if" .gitlab-ci.yml; then
+  echo "FAIL removing the bot merge-request rule fails (no bot merge-request rule to remove: .gitlab-ci.yml has no GITLAB_USER_LOGIN =~ /project_N_bot_/ merge-request rule)"
+  failed=1
+else
+  BOT_IF="$bot_mr_if" node -e '
+    const fs = require("fs");
+    const lines = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n");
+    const i = lines.indexOf(process.env.BOT_IF);
+    let n = 1;
+    while (i + n < lines.length && /^      /.test(lines[i + n])) n++;
+    lines.splice(i, n);
+    fs.writeFileSync(".gitlab-ci.yml", lines.join("\n"));
+  '
+  commit_all "bot merge-request rule removed"
+  lint_to_out proxy
+  if [ "$rc" -eq 1 ] && grep -q "^   \.gitlab-ci\.yml: .*merge-request pipelines the import bot starts" "$out"; then
+    echo "ok   removing the bot merge-request rule fails"
+  else
+    echo "FAIL removing the bot merge-request rule fails (exit $rc, want 1 naming .gitlab-ci.yml: bot)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+fi
+# B2 the rule's override removed
+rule_case "the bot merge-request rule without the prefix override" "the bot merge-request rule does not set" '
+  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
+  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  y = y.replace(b + o, b);'
+# B3 the rule turned off
+rule_case "the bot merge-request rule with when: never" "the bot merge-request rule does not set" '
+  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
+  y = y.replace(b + "      variables:", b + "      when: never\n      variables:");'
+# B4 the rule moved below the general merge-request rule
+rule_case "the bot merge-request rule after the general merge-request rule" "the bot merge-request rule comes after the general merge-request rule" '
+  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
+  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
+  y = y.replace(b, "").replace(g, g + b);'
+
 # Case (h): the committed tree as it is -> the lint passes and has a heading
 # for the section, a "==" line naming both "import" and "dependency proxy".
 lint_to_out
