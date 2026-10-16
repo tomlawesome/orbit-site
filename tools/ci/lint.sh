@@ -27,8 +27,8 @@ echo "== modules parse"
 node --experimental-vm-modules --no-warnings -e '
   const vm = require("vm"), fs = require("fs");
   for (const f of process.argv.slice(1)) {
-    const src = fs.readFileSync(f, "utf8");
-    let why;
+    let src, why;
+    try { src = fs.readFileSync(f, "utf8"); } catch (e) { console.log(`   ${f} does not parse: ${e.message}`); process.exitCode = 1; continue; }
     try { new vm.SourceTextModule(src, { identifier: f }); continue; } catch (e) { why = e; }
     if (!f.endsWith(".mjs")) {
       try { vm.compileFunction(src, ["exports", "require", "module", "__filename", "__dirname"], { filename: f }); continue; } catch {}
