@@ -67,6 +67,9 @@ const MOVE_FRAMES = 24;       /* 0.4 s of the flight's time */
 const WARP_BY = 600;
 const LOSS_AFTER = { early: 30, late: 90 };
 const SAMPLE_AT = [6, 12, 18, 24, 36, 48, 60, 90, 120, 180, 240, 300, 360];
+/* the fewest sample frames a loss case must be judged at, for drawn and for movement: a working fallback is judged at 7
+   (early) and 8 (late) of them today, all for both; one that draws once and stops or ends the flight is judged at 1 */
+const MIN_JUDGED = 6;
 const STEP_CHUNK = 4;
 /* each loss case's frames of the flight: the loss's own, then its samples */
 const lossSamples = Object.values(LOSS_AFTER).map((l) => [l, ...SAMPLE_AT.map((k) => l + k)]);
@@ -340,7 +343,7 @@ const controlSamples = async (page, what, start) => {
 };
 
 /* ── the flight whose context is lost part way up ────────────────────────────────────────────────────────────────── */
-const lostMidFlight = async (notes, when, need, needMove) => {
+const lostMidFlight = async (notes, when, need, needMove, controlsLive) => {
   const { ctx, page } = await open();
   try {
     await atGate(page, `${when} loss flight`);
@@ -376,7 +379,13 @@ const lostMidFlight = async (notes, when, need, needMove) => {
       prev = pic; prevF = f;
       const live = underWayNow(c);
       const want = need(f), mwant = needMove(pair);
-      if (!live) { samples.push(`+${k}: flight over, not counted`); break; }
+      if (!live) {
+        /* the loss flight may end only where the controls' flights have ended too */
+        const early = controlsLive(f);
+        samples.push(`+${k}: flight over${early ? " WHILE BOTH CONTROLS ARE STILL UNDER WAY" : ", not counted"}`);
+        if (early) result.endedEarly = { k, body: c };
+        break;
+      }
       if (want === null) { samples.push(`+${k}: drawn ${share.toFixed(3)}, moved ${moved.toFixed(3)} (the controls cannot tell 2D here)`); continue; }
       const ok = share >= want && (mwant === null || moved >= mwant);
       judged.push({ k, share, want, moved, mwant, ok });
@@ -384,7 +393,7 @@ const lostMidFlight = async (notes, when, need, needMove) => {
     }
     const counted = judged.length, firstFail = judged.find((j) => !j.ok) ?? null;
     result.margins = counted ? { drawn: Math.min(...judged.map((j) => j.share - j.want)), moved: Math.min(...judged.filter((j) => j.mwant !== null).map((j) => j.moved - j.mwant)) } : null;
-    Object.assign(result, { counted, firstFail });
+    Object.assign(result, { counted, movedCounted: judged.filter((j) => j.mwant !== null).length, firstFail });
     notes.push(`${when} loss at frame ${loseAt} of the flight, #warp alone at frames after it (got / needed, margin): ${samples.join(", ")}; body then: ${await bodyClass(page)}; ${await canvases(page)}`);
     result.drawsAfter = await draws(page);
     result.errors = page.errors.slice();
@@ -423,18 +432,22 @@ try {
     const m = two.movedAt.get(pair);
     return m !== undefined && m > MOVED ? 0.5 * m : null;
   };
+  const controlsLive = (f) => !!(two.warpAt.get(f)?.live && control.warpAt.get(f)?.live);
   const table = (r) => [...r.warpAt].map(([f, v]) => `${f}: ${v.share.toFixed(3)}${v.live ? "" : " (over)"}`).join(", ");
   notes.push(`#warp alone by frame of the flight, F0w: ${table(control)}`);
   notes.push(`#warp alone by frame of the flight, F0d: ${table(two)}`);
   /* the loss part way up the climb: soon after the flight starts drawing (early), and later in the climb (late) */
   for (const when of ["early", "late"]) {
-    const r = await lostMidFlight(notes, when, need, needMove);
+    const r = await lostMidFlight(notes, when, need, needMove, controlsLive);
     want(r.drewInWebgl, `control (${when} loss): the flight drew nothing in WebGL on #warpgl by its frame ${r.loseAt}, so there was no WebGL flight to lose`);
     want(r.underWay, `control (${when} loss): the flight was not under way at its frame ${r.loseAt}, where the loss comes (body: ${r.cls}), so the loss was not mid-flight`);
     if (r.drewInWebgl && r.underWay) {
       want(Array.isArray(r.lost) && r.lost.length > 0 && r.lost.every((x) => x === true), `control (${when} loss): the loss did not take on the flight's context (${JSON.stringify(r.lost)})`);
       if (r.lost?.length) {
-        want(r.counted > 0, `control (${when} loss): no sample of the sky after the loss was taken at a frame where the flight was under way and #warp alone tells the 2D control from the WebGL one, so the 2D takeover could not be judged`);
+        want(!r.endedEarly, `the flight whose context was lost mid-flight (${when} in the climb) was over ${r.endedEarly?.k} frames after the loss (body: ${r.endedEarly?.body}), while both control flights were still under way at that frame`);
+        want(r.counted >= MIN_JUDGED, `control (${when} loss): the sky after the loss was judged at ${r.counted} sample frame(s), want at least ${MIN_JUDGED} (frames where the flight was under way and #warp alone tells the 2D control from the WebGL one), so the 2D takeover was not judged through the flight`);
+        want(r.movedCounted >= MIN_JUDGED, `control (${when} loss): the sky's movement after the loss was judged at ${r.movedCounted} sample frame(s), want at least ${MIN_JUDGED} (frames where the 2D control moved over ${MOVED}), so a still picture could pass`);
+        notes.push(`${when} loss, judged at ${r.counted} sample frame(s) for drawn and ${r.movedCounted} for movement (at least ${MIN_JUDGED} each)`);
         const b = r.firstFail;
         want(r.counted === 0 || !b, `the flight canvas area is not drawn and moving in every frame after the context was lost mid-flight (${when} in the climb): #warp alone ${b?.k} frames after the loss drawn ${b?.share.toFixed(3)} where it needs ${b?.want.toFixed(3)} (half the 2D control's, and twice the WebGL control's, at that frame), moved ${b?.moved.toFixed(3)} since the sample before where it needs ${b?.mwant === null ? "(not judged)" : b?.mwant.toFixed(3)} (half the 2D control's between the same frames)`);
         if (r.margins) notes.push(`${when} loss, smallest margin over the judged frames: drawn ${r.margins.drawn.toFixed(3)}, moved ${Number.isFinite(r.margins.moved) ? r.margins.moved.toFixed(3) : "not judged"}`);
