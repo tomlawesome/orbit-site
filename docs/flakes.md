@@ -19,3 +19,8 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 ## Docker image pull from the dependency proxy: not found
 
 - 2026-10-12 · 0acc271 (and 3 other Renovate heads) · pipelines 2547-2550 lint · node:22-bookworm digest "not found" from the dependency proxy; 2547 passed on retry 2026-10-13
+
+## flight-context-loss F1: the flight canvas still blank 6 s after the context is lost
+
+- 2026-10-16 · a1a46b2 · pipeline 2661 live:journey (back-merge !60, beside the nightly 2660) · #warp alone best drawn 0.287 and 0.186, want 0.331; the same tree passed in 2653 and 2656; passed on retry
+- 2026-10-16 · d43f440 · pipeline 2662 live:journey (import !61, beside 2661) · F1 again; the diff touches only assets/docs/; passed on retry. The check counts what the 2D fallback draws in 6 s of wall clock, so it depends on drawing speed; being fixed on fix/live-flake-and-bot-proxy
