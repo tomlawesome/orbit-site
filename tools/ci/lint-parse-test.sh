@@ -155,6 +155,20 @@ else
 fi
 rm -f ran.txt ran2.txt assets/js/zz-side.js tools/ci/zz-side.mjs
 
+# P8 a path that cannot be read as a file is reported, and the section goes on
+d="a directory named assets/js/zz-dir.js and a later broken tools/ci/zz-after.mjs: exit 1, both named"
+mkdir assets/js/zz-dir.js
+printf 'x\n' >assets/js/zz-dir.js/keep.txt
+printf '%s\n' "$broken" >tools/ci/zz-after.mjs
+run_parse p8
+n=$(nbroken p8)
+if [ "$rc" -eq 1 ] && names p8 assets/js/zz-dir.js && names p8 tools/ci/zz-after.mjs && [ "$n" -eq 2 ]; then
+    pass P8 "$d"
+else
+    fail P8 "$d" "exit=$rc named=$n output='$(oneline p8)'"
+fi
+rm -rf assets/js/zz-dir.js tools/ci/zz-after.mjs
+
 if [ "$failed" -ne 0 ]; then
     exit 1
 fi
