@@ -620,7 +620,8 @@ fi
 git reset -q --hard HEAD~1
 # Case (m): the committed tree as it is -> the section runs and passes.
 lint_to_out
-if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -iq 'shared door'; then
+# (the exact heading: the types section's heading also names the shared door, #30)
+if [ "$rc" -eq 0 ] && grep -qxF '== the shared door is self-contained (assets/door, ADR-0001)' "$out"; then
   echo "ok   the committed door folder passes the self-contained section"
 else
   echo "FAIL the committed door folder passes the self-contained section (exit $rc, want 0 with a == heading naming the shared door)"
