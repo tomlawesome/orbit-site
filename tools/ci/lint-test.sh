@@ -107,29 +107,39 @@ fi
 git rm -q package.json
 git -c user.name=t -c user.email=t@t commit -q -m "drop package.json"
 
-# Put html into the first section of assets/docs/readme.json (kept valid JSON)
-# and commit it; prints the id of that section.
+# Put html into the first section of assets/docs/$ppage that shows no picture
+# (kept valid JSON) and commit it; prints the id of that section. $ppage is
+# readme.json, or the first page after it holding such a section (#77): html
+# put over a section that shows a picture would leave the picture used by no
+# section, which the docs-shape section refuses, so the case would test that.
+ppage=$(node -e '
+  const fs = require("fs"), shows = (s) => s.html.includes("assets/docs/img/");
+  const pages = fs.readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json").sort();
+  console.log(["readme.json", ...pages].find((f) => pages.includes(f) && !JSON.parse(fs.readFileSync("assets/docs/" + f, "utf8")).sections.every(shows)) ?? "");
+')
+[ -n "$ppage" ] || { echo "FAIL every section of every docs page shows a picture: no section to poison"; exit 1; }
 poison() {
-  SECTION_HTML="$1" node -e '
+  PAGE="$ppage" SECTION_HTML="$1" node -e '
     const fs = require("fs");
-    const f = "assets/docs/readme.json";
+    const f = "assets/docs/" + process.env.PAGE;
     const j = JSON.parse(fs.readFileSync(f, "utf8"));
-    j.sections[0].html = process.env.SECTION_HTML;
+    const s = j.sections.find((x) => !x.html.includes("assets/docs/img/"));
+    s.html = process.env.SECTION_HTML;
     fs.writeFileSync(f, JSON.stringify(j));
-    console.log(j.sections[0].id);
+    console.log(s.id);
   '
   git add -A
-  git -c user.name=t -c user.email=t@t commit -q -m "poison readme.json"
+  git -c user.name=t -c user.email=t@t commit -q -m "poison $ppage"
 }
 
 # Case (a): an onerror handler in an imported section -> fails, names file and section.
 sid=$(poison '<p><img src="x" onerror="alert(1)"></p>')
 rc=0
 sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
-if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+if [ "$rc" -eq 1 ] && grep -q "assets/docs/$ppage" "$out" && grep -q "$sid" "$out"; then
   echo "ok   an onerror handler in an imported section fails"
 else
-  echo "FAIL an onerror handler in an imported section fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+  echo "FAIL an onerror handler in an imported section fails (exit $rc, want 1 naming assets/docs/$ppage and $sid)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -139,10 +149,10 @@ git reset -q --hard HEAD~1
 sid=$(poison '<script>1</script>')
 rc=0
 sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
-if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+if [ "$rc" -eq 1 ] && grep -q "assets/docs/$ppage" "$out" && grep -q "$sid" "$out"; then
   echo "ok   a script element in an imported section fails"
 else
-  echo "FAIL a script element in an imported section fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+  echo "FAIL a script element in an imported section fails (exit $rc, want 1 naming assets/docs/$ppage and $sid)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -157,10 +167,10 @@ poison_case() {
   sid=$(poison "$2")
   rc=0
   sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
-  if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
+  if [ "$rc" -eq 1 ] && grep -q "assets/docs/$ppage" "$out" && grep -q "$sid" "$out"; then
     echo "ok   $1 fails"
   else
-    echo "FAIL $1 fails (exit $rc, want 1 naming assets/docs/readme.json and $sid)"
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/docs/$ppage and $sid)"
     sed 's/^/     /' "$out"
     failed=1
   fi
