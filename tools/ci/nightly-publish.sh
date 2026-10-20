@@ -36,7 +36,7 @@
 #     interpreter overrides), and the checkout, a fresh clone (GIT_STRATEGY:
 #     clone in .gitlab-ci.yml, checked here too), must be what git has, with
 #     only the git config the runner writes (check_git).
-# The merge request's own pipeline (lint, with its no-script check, and the
+# The merge request's own pipeline (lint, with its markup check, and the
 # live journey) then judges the content before it reaches main. Pushes read the
 # token from a mode-600 credential file and API calls from a header file, so it
 # is never in a URL, an argument list or the log; both files exist only for the
@@ -55,8 +55,9 @@ cd "$(dirname "$0")/../.."
 EXPECT_HOST=gitlab.tomlawson.io
 EXPECT_PATH=ai/orbit-site
 # What the import writes: a page per source and an index, about 330 KB in nine
-# files, and its pictures, at most 16 a source of 1 MiB each. Well above that,
-# but nowhere near "a disk". Entries: 3 folders, 8 pages, the index and 128
+# files, and its pictures, at most 16 a source of 1 MiB each and 6 MiB in all
+# (MAX_PICTURE_BYTES_TOTAL in tools/import-docs-lib.mjs; docs-shape.mjs holds
+# the artifact's img/ to that sum). Well above that, but nowhere near "a disk". Entries: 3 folders, 8 pages, the index and 128
 # pictures.
 MAX_ENTRIES=140
 MAX_PICTURE_BYTES=1048576
@@ -371,11 +372,12 @@ main() {
     printf '%s\n' "$shape"
     exit 1
   fi
-  # the lint's no-script check, here too: a bad artifact is refused in this job,
-  # not left as a failed merge request (#52)
+  # the lint's markup check, here too: a bad artifact is refused in this job,
+  # not left as a failed merge request (#52); an allow-list of what the import
+  # writes (audit 5, S1)
   if ! script=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
-      node tools/ci/docs-noscript.mjs "$art/assets/docs"); then
-    echo "refusing the artifact: the imported docs carry script:"
+      node tools/ci/docs-markup.mjs "$art/assets/docs"); then
+    echo "refusing the artifact: the imported docs must carry no script, only the markup the import writes:"
     printf '%s\n' "$script"
     exit 1
   fi

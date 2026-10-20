@@ -63,6 +63,11 @@ export function rawHeading(html) {
    folds to the same id as the heading; a broken escape is folded as written */
 const unescapeFragment = (f) => { try { return decodeURIComponent(f); } catch { return f; } };
 
+/* the most all the pictures one import copies may come to, every source together (audit 5, S2): the import links
+   any past it, and docs-shape.mjs holds assets/docs/img/ to the same sum. Each is a commit on main for good, and
+   the pages themselves are about 330 KB. */
+export const MAX_PICTURE_BYTES_TOTAL = 6 * 1048576;
+
 /* a picture's type by its own leading bytes, never its name: png, jpg, webp, gif, or null */
 export function pictureType(bytes) {
   const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);

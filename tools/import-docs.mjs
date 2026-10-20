@@ -23,12 +23,14 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
-import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName, picturesUsed } from "./import-docs-lib.mjs";
+import { offMarkup } from "./ci/docs-markup.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName, picturesUsed, MAX_PICTURE_BYTES_TOTAL } from "./import-docs-lib.mjs";
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > -1 ? process.argv[i + 1] : null; };
 const OUT = arg("--out") ?? join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
-/* a picture's size, as docs-shape.mjs and the publish job check it, and how many one source may copy */
-const MAX_PICTURE = 1048576, MAX_PICTURES = 16;
+/* a picture's size, as docs-shape.mjs and the publish job check it, how many one source may copy and how many it
+   may try to fetch, missing ones included (audit 5, S4); all pictures together are MAX_PICTURE_BYTES_TOTAL (S2) */
+const MAX_PICTURE = 1048576, MAX_PICTURES = 16, MAX_PICTURE_TRIES = 32;
 
 /* the sources: a slug for the route, the constellation's name and colour,
    where the file lives, and for the README, where the page should begin */
@@ -89,7 +91,8 @@ function render(md, src, bySourcePath, pics) {
     },
     code({ text, lang }) {
       if ((lang || "").trim() === "mermaid") return `<figure class="diagram" data-mermaid><pre hidden>${esc(text)}</pre><figcaption>a diagram, drawing…</figcaption></figure>\n`;
-      const l = (lang || "").trim().split(/\s+/)[0];
+      /* a language label only of the shape the publish check allows (tools/ci/docs-markup.mjs) */
+      const l = /^[\w+#.-]{1,20}$/.exec((lang || "").trim().split(/\s+/)[0])?.[0];
       return `<pre class="code"${l ? ` data-lang="${esc(l)}"` : ""}><code>${esc(text)}</code></pre>\n`;
     },
     blockquote({ tokens }) {
@@ -162,18 +165,25 @@ const index = { generated: new Date().toISOString(), sources: [] };
 let changed = false;
 /* the pictures copied, "<repo>:<path>" -> name, and each name's bytes; why one could not be */
 const map = new Map(), bytesOf = new Map(), why = new Map(), used = new Set();
+let total = 0; /* the bytes of every picture copied, all sources together */
 for (const src of SOURCES) {
   const md = await fetchSource(src);
   /* first pass: the sanitiser's hooks are synchronous, so the pictures are learnt by rendering once, then fetched */
   const files = new Map(), own = new Map(), past = new Map();
+  let tries = 0;
   render(md, src, bySourcePath, { seen: (href) => { const f = pictureFile(href, src, REPOS); if (f) files.set(`${f.repo}:${f.path}`, f); } });
   for (const [key, f] of files) {
     if (why.has(key)) continue;
     if (own.size >= MAX_PICTURES) { past.set(key, `is past the ${MAX_PICTURES} pictures one source may copy`); continue; }
     if (!map.has(key)) {
+      if (tries++ >= MAX_PICTURE_TRIES) { past.set(key, `is past the ${MAX_PICTURE_TRIES} pictures one source may fetch`); continue; }
       const got = await fetchFile(f.repo, f.path, MAX_PICTURE);
       const name = got.bytes && pictureName(got.bytes);
       if (!name) { why.set(key, got.why ?? "is not a PNG, JPEG, WebP or GIF picture"); continue; }
+      /* the same bytes at another address are one file, counted once */
+      const more = bytesOf.has(name) ? 0 : got.bytes.length;
+      if (total + more > MAX_PICTURE_BYTES_TOTAL) { past.set(key, `is past the ${MAX_PICTURE_BYTES_TOTAL / 1048576} MiB of pictures one import may copy`); continue; }
+      total += more;
       map.set(key, name); bytesOf.set(name, got.bytes);
     }
     own.set(key, map.get(key));
@@ -184,6 +194,9 @@ for (const src of SOURCES) {
     const reason = (f && (past.get(key) ?? why.get(key))) ?? "is not a file of the listed repositories";
     console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: picture ${logSafe(href)} ${reason}; not copied`);
   } });
+  /* what the publish job will refuse fails here, where it was written: a marked upgrade that writes something new
+     breaks the import, not the publish */
+  for (const s of page.sections) { const off = offMarkup(s.html); if (off) throw new Error(`${src.repo}/${src.path}: section ${s.id} carries ${off}`); }
   for (const s of page.sections) for (const n of picturesUsed(s.html)) used.add(n);
   const doc = { slug: src.slug, name: src.name, c: src.c, title: page.title, repo: src.repo, path: src.path, sections: page.sections };
   const file = join(OUT, `${src.slug}.json`), body = JSON.stringify(doc);

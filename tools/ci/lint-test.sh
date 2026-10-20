@@ -254,10 +254,11 @@ else
 fi
 git reset -q --hard HEAD~1
 
-# Case (b30): the forms the import does write -> passes: a non-ASCII id and
-# label, an apostrophe and entities in a value, an empty value, a bare
-# attribute, and a > in text.
-sid=$(poison '<h2 id="café"><a class="anchor" href="#docs/x/café" aria-label="Link to this heading">#</a>Café &gt; a > b</h2><p>it'"'"'s <a href="https://e.com/a?b=1&amp;c='"'"'d'"'"'" target="_blank" rel="noopener">x</a></p><td class=""></td><figure data-mermaid><pre hidden>graph TD</pre></figure><br>')
+# Case (b30): the forms the import does write -> passes: a heading folded to
+# ASCII (slugOf, 401a164) under a non-ASCII label, an apostrophe and entities
+# in a value, an empty value (a picture with no alt text), a bare attribute,
+# and a > in text.
+sid=$(poison '<h2 id="cafe"><a class="anchor" href="#docs/x/cafe" aria-label="Link to this heading">#</a>Café &gt; a > b</h2><p>it'"'"'s <a href="https://e.com/a?b=1&amp;c='"'"'d'"'"'" target="_blank" rel="noopener">x</a></p><p><img src="assets/img/mark.svg" alt="" loading="lazy" /></p><figure data-mermaid><pre hidden>graph TD</pre></figure><br>')
 rc=0
 sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then

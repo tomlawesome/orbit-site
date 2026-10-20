@@ -8,8 +8,9 @@
  *   the files are exactly <slug>.json for each source in tools/docs-sources.json,
  *   and index.json, and a folder img/ of the pictures the import copied: regular
  *   files <16 hex>.(png|jpg|webp|gif) of at most 1 MiB whose leading bytes are that
- *   type, each used by a section; every <img src> in a section is one of them or
- *   the mark, assets/img/mark.svg, so no picture loads from outside the site;
+ *   type, each used by a section, together at most the import's picture budget
+ *   (MAX_PICTURE_BYTES_TOTAL, 6 MiB, tools/import-docs-lib.mjs); every <img src>
+ *   in a section is one of them or the mark, assets/img/mark.svg, so no picture loads from outside the site;
  *   a page has the keys slug, name, c, title, repo, path and sections, at least
  *   one; slug, name, c, repo and path are the source's own, and c is "#" and six
  *   hex digits, either case;
@@ -21,13 +22,13 @@
  *
  *   node tools/ci/docs-shape.mjs <docs dir> <sources.json>   prints each problem, exits 1 if any
  *
- * What a section's html may contain is the lint's separate "no script" check.
+ * What a section's html may contain is the separate markup check (docs-markup.mjs).
  */
 import { readdirSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { htmlTokens } from "../sanitise-html.mjs";
-import { pictureType } from "../import-docs-lib.mjs";
+import { pictureType, MAX_PICTURE_BYTES_TOTAL } from "../import-docs-lib.mjs";
 
 const ID = /^[a-z0-9-]+$/;
 /* the same rule as the docs pad's SAFE_COLOUR (assets/js/pads.js): either case */
@@ -53,6 +54,7 @@ export function checkDocs(dir, sources) {
   for (const f of have) if (!want.has(f) && f !== "img") bad(`${f}: not a file the import writes`);
   /* the pictures: judged from lstat, so a link is never followed */
   const pictures = new Set(), used = new Set();
+  let total = 0;
   if (have.includes("img")) {
     let names = [];
     if (!lstatSync(join(dir, "img")).isDirectory()) bad("img: not a file the import writes (a folder of pictures)");
@@ -63,8 +65,9 @@ export function checkDocs(dir, sources) {
       else if (!st.isFile()) bad(`img/${f}: is not a regular file`);
       else if (st.size > MAX_PICTURE) bad(`img/${f}: is larger than ${MAX_PICTURE} bytes`);
       else if (pictureType(readFileSync(join(dir, "img", f))) !== m[1]) bad(`img/${f}: its leading bytes are not a ${m[1]} picture`);
-      else pictures.add(f);
+      else { pictures.add(f); total += st.size; }
     }
+    if (total > MAX_PICTURE_BYTES_TOTAL) bad(`img: its pictures come to ${total} bytes, more than the ${MAX_PICTURE_BYTES_TOTAL} one import may copy`);
   }
   /* each <img> of a section's html, read as a browser reads it: its src as written must be a picture above or the mark */
   const imgs = (f, where, html) => {

@@ -10,7 +10,7 @@ fail=0
 # `sh tools/ci/lint.sh ci-split names` runs only those, in this order, so a test
 # that plants one fault pays for one section (#65); `--list` names them. An
 # unknown name runs nothing and exits 2, so a typo cannot pass.
-sections="parse refs door types docs-index docs-shape docs-noscript milkyway proxy ci-split media csp names stray npm-pins"
+sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp names stray npm-pins"
 if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
 for s in "$@"; do
   case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
@@ -122,19 +122,17 @@ echo "== the imported docs have the shape the import writes"
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
 fi
 
-if on docs-noscript; then
-echo "== the imported docs carry no script"
-# the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through. A stored section
-# may hold only tags written the one way a browser and this check read alike:
-# an ascii name, html whitespace, name="value" with no quote or angle bracket
-# inside, and no attributes on an end tag. Anything else is refused outright:
-# the import never writes it, and the browser's tokeniser has states this check
-# does not follow. A URL attribute has its entities decoded and its whitespace
-# and control characters removed before the scheme is looked at. A construct
-# that would put a browser into a comment or a raw-text element is refused
-# outright, since the import never writes one and the check cannot follow it.
-node tools/ci/docs-noscript.mjs assets/docs || fail=1
+if on docs-markup; then
+echo "== the imported docs carry no script: only the markup the import writes"
+# the stored pages are what Pages serves, set with innerHTML; a handler, a
+# script or an invisible full-page link here would reach every visitor,
+# whatever the importer let through. A stored section may hold only tags
+# written the one way a browser and this check read alike (an ascii name, html
+# whitespace, name="value" with no quote or angle bracket inside, no attributes
+# on an end tag), and only the tags, attributes and values on the check's
+# allow-list, which is what the import writes (audit 5, S1). Anything else is
+# refused outright, however harmless it looks: the import never writes it.
+node tools/ci/docs-markup.mjs assets/docs || fail=1
 fi
 
 if on milkyway; then
