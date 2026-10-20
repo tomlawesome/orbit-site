@@ -37,6 +37,9 @@ process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const copy = join(scratch, "tools");
 mkdirSync(copy);
 for (const f of ["import-docs.mjs", "import-docs-lib.mjs", "sanitise-html.mjs"]) cpSync(join(tools, f), join(copy, f));
+/* the import checks its own output with the publish job's markup check */
+mkdirSync(join(copy, "ci"));
+cpSync(join(tools, "ci", "docs-markup.mjs"), join(copy, "ci", "docs-markup.mjs"));
 symlinkSync(join(tools, "node_modules"), join(copy, "node_modules"));
 const src = { slug: "readme", name: "README", c: "#d8b45a", repo: "tomlawesome/orbit", path: "README.md", title: "Orbit" };
 writeFileSync(join(copy, "docs-sources.json"), JSON.stringify([src]));
