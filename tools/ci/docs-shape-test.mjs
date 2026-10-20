@@ -10,7 +10,7 @@
  *
  *   node tools/ci/docs-shape-test.mjs
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync, unlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, symlinkSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
@@ -25,6 +25,16 @@ const tmp = mkdtempSync(join(tmpdir(), "docs-shape-"));
 let n = 0;
 const fresh = () => { const d = join(tmp, String(n++)); cpSync("assets/docs", d, { recursive: true }); return d; };
 const edit = (d, file, fn) => { const f = join(d, file), j = JSON.parse(readFileSync(f, "utf8")); fn(j); writeFileSync(f, JSON.stringify(j)); };
+/* (#77) The page whose sections 1 and 2 take planted html: readme.json, or, if an import wrote it with fewer, the first
+   page that has three. bare(d) takes the committed pictures out of a copy (img/, and each img of a section that shows
+   one), for the cases about img/ itself; docs without pictures it leaves as they are. */
+const pages = readdirSync("assets/docs").filter((f) => f.endsWith(".json") && f !== "index.json").sort();
+const PAGE = ["readme.json", ...pages].find((f) => pages.includes(f) && JSON.parse(readFileSync(join("assets/docs", f), "utf8")).sections.length >= 3);
+const bare = (d) => {
+  if (!existsSync(join(d, "img"))) return;
+  rmSync(join(d, "img"), { recursive: true });
+  for (const f of pages) edit(d, f, (j) => { for (const s of j.sections) s.html = s.html.replace(/<img [^>]*src="assets\/docs\/img\/[^"]*"[^>]*>/g, ""); });
+};
 const refuses = (name, mutate, want) => {
   const d = fresh(); mutate(d);
   const p = checkDocs(d, sources);
@@ -41,7 +51,7 @@ refuses("a name changed in the index", (d) => edit(d, "index.json", (j) => { j.s
 refuses("a repo changed in a page", (d) => edit(d, "security.json", (j) => { j.repo = "evil/repo"; }), "repo is");
 refuses("a path changed in a page", (d) => edit(d, "security.json", (j) => { j.path = "../x"; }), "path is");
 refuses("a section id with a quote", (d) => edit(d, "index.json", (j) => { j.sources[0].sections[0].id = 'a"b'; }), "sections[0].id");
-refuses("a section id in a page with a space", (d) => edit(d, "readme.json", (j) => { j.sections[1].id = "a b"; }), "sections[1].id");
+refuses("a section id in a page with a space", (d) => edit(d, PAGE, (j) => { j.sections[1].id = "a b"; }), "sections[1].id");
 refuses("a sub id with markup", (d) => edit(d, "index.json", (j) => { const s = j.sources[0].sections.find((x) => x.subs.length); s.subs[0].id = "<x>"; }), "subs[0].id");
 refuses("a section id with an accented letter (the importer once wrote these)", (d) => edit(d, "index.json", (j) => { j.sources[0].sections[0].id = "über-orbit"; }), "sections[0].id");
 refuses("an empty section id in a page", (d) => edit(d, "readme.json", (j) => { j.sections[0].id = ""; }), "sections[0].id");
@@ -115,7 +125,7 @@ const pic = (d, bytes, ext, o = {}) => {
   const name = o.name ?? `${hash16(bytes)}.${ext}`;
   mkdirSync(join(d, "img"), { recursive: true });
   writeFileSync(join(d, "img", name), bytes);
-  if (o.used !== false) appendHtml(d, o.page ?? "readme.json", tag(`${IMG}/${name}`));
+  if (o.used !== false) appendHtml(d, o.page ?? PAGE, tag(`${IMG}/${name}`));
   return name;
 };
 const accepts = (name, mutate) => {
@@ -124,8 +134,8 @@ const accepts = (name, mutate) => {
   check(name, p.length === 0, `want no problems, got ${JSON.stringify(p.slice(0, 3))}`);
 };
 
-check("P0 the committed assets/docs uses the orbit mark (control: an img with assets/img/mark.svg is the one allowed outside img/)",
-  JSON.parse(readFileSync("assets/docs/readme.json", "utf8")).sections.some((s) => s.html.includes('<img src="assets/img/mark.svg"')), "the committed page no longer holds the mark");
+accepts("P0 a section showing the orbit mark (control: an img with assets/img/mark.svg is the one allowed outside img/)",
+  (d) => appendHtml(d, PAGE, tag("assets/img/mark.svg")));
 
 // P1: each picture type, by its own leading bytes
 accepts("P1 a PNG picture used by a section", (d) => pic(d, png(1), "png"));
@@ -135,12 +145,12 @@ accepts("P1 a GIF87a picture used by a section", (d) => pic(d, gif(4, "GIF87a"),
 accepts("P1 a WebP picture used by a section", (d) => pic(d, webp(5), "webp"));
 accepts("P1 pictures of every type, one used by two sections of two pages", (d) => {
   const n = pic(d, png(10), "png"); pic(d, jpg(11), "jpg"); pic(d, gif(12), "gif"); pic(d, webp(13), "webp");
-  appendHtml(d, "readme.json", tag(`${IMG}/${n}`), 2); appendHtml(d, "security.json", tag(`${IMG}/${n}`), 0);
+  appendHtml(d, PAGE, tag(`${IMG}/${n}`), 2); appendHtml(d, "security.json", tag(`${IMG}/${n}`), 0);
 });
-accepts("P1 a picture used only by a page other than readme", (d) => pic(d, png(14), "png", { page: "security.json" }));
+accepts("P1 a picture used only by another page (security.json)", (d) => pic(d, png(14), "png", { page: "security.json" }));
 accepts("P1 the mark beside a picture", (d) => { pic(d, png(15), "png"); appendHtml(d, "security.json", tag("assets/img/mark.svg")); });
 accepts("P1 an img written as text in a code sample is not an img", (d) => {
-  appendHtml(d, "readme.json", '<pre class="code"><code>&lt;img src="https://raw.githubusercontent.com/x/y/main/a.png"&gt;</code></pre>');
+  appendHtml(d, PAGE, '<pre class="code"><code>&lt;img src="https://raw.githubusercontent.com/x/y/main/a.png"&gt;</code></pre>');
 });
 
 // P2: a picture is a regular file, named <16 hex>.<ext>, at most 1 MiB
@@ -158,12 +168,12 @@ accepts("P1 an img written as text in a code sample is not an img", (d) => {
   refuses("P2 a folder in img/", (d) => { mkdirSync(join(d, "img", "sub"), { recursive: true }); writeFileSync(join(d, "img", "sub", `${h}.png`), b); }, "sub");
   refuses("P2 a symlink in img/ to a real picture", (d) => {
     const real = join(tmp, `real-${n++}.png`); writeFileSync(real, b);
-    mkdirSync(join(d, "img")); symlinkSync(real, join(d, "img", `${h}.png`)); appendHtml(d, "readme.json", tag(`${IMG}/${h}.png`));
+    bare(d); mkdirSync(join(d, "img")); symlinkSync(real, join(d, "img", `${h}.png`)); appendHtml(d, PAGE, tag(`${IMG}/${h}.png`));
   }, `${h}.png`);
-  refuses("P2 img as a regular file", (d) => { writeFileSync(join(d, "img"), b); }, "img");
+  refuses("P2 img as a regular file", (d) => { bare(d); writeFileSync(join(d, "img"), b); }, "img");
   refuses("P2 img as a symlink to a folder", (d) => {
     const real = join(tmp, `dir-${n++}`); mkdirSync(real); writeFileSync(join(real, `${h}.png`), b);
-    symlinkSync(real, join(d, "img")); appendHtml(d, "readme.json", tag(`${IMG}/${h}.png`));
+    bare(d); symlinkSync(real, join(d, "img")); appendHtml(d, PAGE, tag(`${IMG}/${h}.png`));
   }, "img");
   refuses("P2 a picture directly in assets/docs", (d) => writeFileSync(join(d, `${h}.png`), b), `${h}.png`);
 }
@@ -190,17 +200,17 @@ refuses("P4 a picture no section uses", (d) => pic(d, png(40), "png", { used: fa
 accepts("P4 control: the same picture used by a section", (d) => pic(d, png(40), "png"));
 refuses("P4 two pictures, one unused", (d) => { pic(d, png(41), "png"); pic(d, png(42), "png", { used: false }); }, hash16(png(42)));
 refuses("P4 a picture named only in a section's text, not as an img", (d) => {
-  const n2 = pic(d, png(43), "png", { used: false }); appendHtml(d, "readme.json", `<p>see ${IMG}/${n2}</p>`);
+  const n2 = pic(d, png(43), "png", { used: false }); appendHtml(d, PAGE, `<p>see ${IMG}/${n2}</p>`);
 }, hash16(png(43)));
 refuses("P4 a picture named only in a link, not as an img", (d) => {
-  const n2 = pic(d, png(44), "png", { used: false }); appendHtml(d, "readme.json", `<p><a href="${IMG}/${n2}">x</a></p>`);
+  const n2 = pic(d, png(44), "png", { used: false }); appendHtml(d, PAGE, `<p><a href="${IMG}/${n2}">x</a></p>`);
 }, hash16(png(44)));
 
 // P5: every <img src> is a file in img/ or the mark
 {
   const n1 = `${hash16(png(50))}.png`;
-  const bad = (name, src, want = "readme.json") => refuses(name, (d) => { pic(d, png(50), "png"); appendHtml(d, "readme.json", tag(src)); }, want);
-  accepts("P5 control: two imgs, a picture in img/ and the mark", (d) => { pic(d, png(50), "png"); appendHtml(d, "readme.json", tag("assets/img/mark.svg")); });
+  const bad = (name, src, want = PAGE) => refuses(name, (d) => { pic(d, png(50), "png"); appendHtml(d, PAGE, tag(src)); }, want);
+  accepts("P5 control: two imgs, a picture in img/ and the mark", (d) => { pic(d, png(50), "png"); appendHtml(d, PAGE, tag("assets/img/mark.svg")); });
   bad("P5 a picture that is not in img/", `${IMG}/${hash16(png(51))}.png`);
   bad("P5 an https picture", "https://example.com/a.png");
   bad("P5 a raw.githubusercontent.com picture", "https://raw.githubusercontent.com/tomlawesome/orbit/main/docs/a.png");
@@ -216,12 +226,12 @@ refuses("P4 a picture named only in a link, not as an img", (d) => {
 }
 
 // P6: no img/ folder at all is fine when no section uses a picture, and a section that uses one needs the folder
-accepts("P6 no img/ folder and no picture in use (the committed shape)", () => {});
-refuses("P6 a section uses a picture and there is no img/ folder", (d) => appendHtml(d, "readme.json", tag(`${IMG}/${hash16(png(60))}.png`)), "readme.json");
+accepts("P6 no img/ folder and no picture in use (the committed shape before #72's first import)", (d) => bare(d));
+refuses("P6 a section uses a picture and there is no img/ folder", (d) => { bare(d); appendHtml(d, PAGE, tag(`${IMG}/${hash16(png(60))}.png`)); }, PAGE);
 
 // P7 (audit 5, S2): the pictures in img/ sum to at most the import's picture budget, 6 MiB across all sources. Each picture
 // is a distinct, used PNG of exactly 1 MiB (the most one picture may be), so the sum alone is what differs.
-const mibs = (d, k, base) => { for (let i = 0; i < k; i++) pic(d, padded(png(base + i), MIB), "png"); };
+const mibs = (d, k, base) => { bare(d); for (let i = 0; i < k; i++) pic(d, padded(png(base + i), MIB), "png"); };
 refuses("P7 img/ summing to 7 MiB (seven 1 MiB pictures, each used)", (d) => mibs(d, 7, 700), "img");
 accepts("P7 control: img/ summing to 5 MiB (five 1 MiB pictures, each used)", (d) => mibs(d, 5, 700));
 

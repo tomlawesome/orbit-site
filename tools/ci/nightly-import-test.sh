@@ -125,6 +125,13 @@ def webp(seed):
 def pad(head, size): return head + b'\0' * (size - len(head))
 MIB = 1048576
 def pname(b, ext): return hashlib.sha256(b).hexdigest()[:16] + '.' + ext
+# the page whose second section takes the added html: readme.json, or, if an import wrote it with
+# fewer than two sections, the first page that has two (--page <docs dir> prints it for the checks)
+def page_of(src):
+    pages = [n for n in sorted(os.listdir(src)) if n.endswith('.json') and n != 'index.json']
+    return next(n for n in ['readme.json'] + pages if n in pages and len(json.load(open(os.path.join(src, n)))['sections']) >= 2)
+if sys.argv[1] == '--page':
+    print(page_of(sys.argv[2])); sys.exit(0)
 # --head <repo dir> <scenario>: the pictures the checkout (main) already holds, before the import
 if sys.argv[1] == '--head':
     repo, sc = sys.argv[2:4]
@@ -134,7 +141,8 @@ if sys.argv[1] == '--head':
     sys.exit(0)
 out, src, sc = sys.argv[1:4]
 open(out + '.imgs', 'w').close()
-files = {n: open(os.path.join(src, n), 'rb').read() for n in sorted(os.listdir(src))}
+files = {n: open(os.path.join(src, n), 'rb').read() for n in sorted(os.listdir(src)) if n != 'img'}
+page = page_of(src)
 extra = []   # (name, data, unix mode)
 def edit(name, fn):
     j = json.loads(files[name]); fn(j); files[name] = json.dumps(j, separators=(',', ':')).encode()
@@ -159,10 +167,10 @@ if sc == 'toomuch':
 if sc == 'notjson': files['readme.json'] = b'{'
 if sc == 'notobject': files['readme.json'] = b'[]'
 if sc == 'xss': edit('index.json', lambda j: j['sources'][0].update(c='#fff"><img src=x onerror=alert(1)>'))
-if sc == 'badid': edit('readme.json', lambda j: j['sections'][1].update(id='a"b'))
+if sc == 'badid': edit(page, lambda j: j['sections'][1].update(id='a"b'))
 if sc == 'extrakey': edit('readme.json', lambda j: j['sections'][0].update(onclick='x'))
 # a page whose section html carries script-capable markup (the lint refuses it, and so must the publish)
-def addhtml(extra): edit('readme.json', lambda j: j['sections'][1].update(html=j['sections'][1]['html'] + extra))
+def addhtml(extra): edit(page, lambda j: j['sections'][1].update(html=j['sections'][1]['html'] + extra))
 if sc == 'scriptel': addhtml('<script>alert(1)</script>')
 # (#72: its src is the mark, a picture the shape check allows, so only the handler is wrong)
 if sc == 'handler': addhtml('<p><img src="assets/img/mark.svg" onerror="alert(1)"></p>')
@@ -170,8 +178,10 @@ if sc == 'jsurl': addhtml('<p><a href="jav&#x61;script:alert(1)">x</a></p>')
 if sc == 'svgel': addhtml('<svg onload="alert(1)"></svg>')
 # the control: harmless html that only looks like the above (entities, "on x=" and data: in prose)
 if sc == 'benign': addhtml('<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p>')
-# pictures (#72): (name, data, mode) entries under assets/docs/img/, and the page html that uses them
-pics = []
+# pictures (#72): (name, data, mode) entries under assets/docs/img/, and the page html that uses them;
+# first the pictures the commit already holds, laid out as the import's artifact holds them
+head = sorted(os.listdir(os.path.join(src, 'img'))) if os.path.isdir(os.path.join(src, 'img')) else []
+pics = [(n, open(os.path.join(src, 'img', n), 'rb').read(), REG) for n in head]
 def usepics(names):
     addhtml(''.join('<p><img src="assets/docs/img/%s" alt="" loading="lazy"></p>' % n for n in names))
 def addpic(data, ext, used=True, name=None, mode=REG):
@@ -182,10 +192,10 @@ imgdir = True
 if sc in ('pic', 'picnodir'): addpic(png(1), 'png'); imgdir = sc == 'pic'
 if sc == 'picall': addpic(png(2), 'png'); addpic(jpg(3), 'jpg'); addpic(gif(4), 'gif'); addpic(webp(5), 'webp')
 if sc == 'pic1mib': addpic(pad(b'\x89PNG\r\n\x1a\n', MIB), 'png')
-if sc == 'pics128':
-    for i in range(128): addpic(png(1000 + i), 'png')
+if sc == 'pics128':   # 128 in all, with the commit's own
+    for i in range(128 - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'pictoomany':
-    for i in range(129): addpic(png(1000 + i), 'png')
+    for i in range(129 - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'picswap': addpic(png(91), 'png'); addpic(png(92), 'png')
 # the same as `pic`, with one thing wrong each
 if sc == 'picsvg': addpic(b'<svg xmlns="http://www.w3.org/2000/svg"/>', 'svg', used=False)
@@ -198,7 +208,7 @@ if sc == 'picsymlink': addpic(b'/etc/hostname', 'png', name=pname(png(1), 'png')
 if sc == 'picsub': pics.append(('sub/' + pname(png(1), 'png'), png(1), REG)); usepics(['sub/' + pname(png(1), 'png')])
 if sc == 'picbadsrc': addpic(png(1), 'png'); usepics(['../../../index.html'])
 if sc == 'picraw': addpic(png(1), 'png'); addhtml('<p><img src="https://raw.githubusercontent.com/tomlawesome/orbit/main/docs/a.png" alt=""></p>')
-if sc == 'picasfile': extra.append(('assets/docs/img', b'x', REG)); imgdir = False
+if sc == 'picasfile': extra.append(('assets/docs/img', b'x', REG)); imgdir = False; pics.clear()   # no folder, so none of the commit's pictures
 if sc == 'notzip':
     open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
 def zi(name, mode):
@@ -212,6 +222,10 @@ with zipfile.ZipFile(out, 'w') as z:
 # the pictures a good archive carries, for the test to compare with the merge request's
 open(out + '.imgs', 'w').write(''.join(n + '\n' for n, d, m in sorted(pics)))
 PY
+# the page the scenarios add html to, and the pictures the commit already holds (none before #72's first import)
+page=$("$realpython" -W ignore "$aux/mkzip.py" --page "$aux/docs-head")
+headpics=$(ls "$aux/docs-head/img" 2>/dev/null | sort || true)
+nhead=$(printf '%s' "$headpics" | grep -c . || true)
 
 # ---------------------------------------------------------------- part 1 --
 # The import job. A fake token is in its environment, as if the variable had
@@ -1129,21 +1143,22 @@ check_pics() { # check_pics <label>: the pushed commit's assets/docs/img/ is exa
   done
   check "$1: every pushed picture is named by the first 16 hex of its own SHA-256" "$rc"
 }
-accepted() { # accepted <scenario> <what it is> <how many pictures reach the merge request>
+accepted() { # accepted <scenario> <what it is> <how many pictures it adds to the commit's own: all reach the merge request>
+  want_n=$(($3 + nhead))
   run_push "$out" "$1"
   rcx=$rc
   ok=0; [ "$rcx" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || ok=1
   check "job 2 accepts $2 (exit $rcx)" "$ok"
   [ "$ok" -eq 0 ] || sed 's/^/     /' "$out"
-  ok=0; [ "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img | grep -c . || true)" -eq "$3" ] || ok=1
-  check "job 2: after accepting $2, the pushed commit holds $3 pictures" "$ok"
+  ok=0; [ "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img | grep -c . || true)" -eq "$want_n" ] || ok=1
+  check "job 2: after accepting $2, the pushed commit holds $want_n pictures" "$ok"
   check_pics "job 2 ($1)"
 }
 accepted pic "an archive with one PNG picture that a page uses" 1
 accepted picnodir "the same archive without a directory entry for img/" 1
 accepted picall "a PNG, a JPEG, a GIF and a WebP picture, each named by its bytes" 4
 accepted pic1mib "a picture of exactly 1 MiB" 1
-accepted pics128 "128 pictures (the most the entry limit allows with 8 pages and the index)" 128
+accepted pics128 "128 pictures in all (the most the entry limit allows with 8 pages and the index)" $((128 - nhead))
 refused pictoomany "129 pictures (more entries than 8 pages, the index and 128 pictures)" "more than"
 refused picsvg "an SVG in img/" "picsvg\|\.svg\|is not a file the import writes"
 refused picupper "a picture whose name has upper-case hex" "is not a file the import writes"
@@ -1154,20 +1169,21 @@ refused pictoolarge "a picture of 1 MiB and one byte" "is larger than"
 refused picmismatch "JPEG bytes named .png" "\.png"
 refused picunused "a picture no page uses" "[0-9a-f]\{16\}\.png"
 refused picsymlink "a symlink under img/" "is not a regular file"
-refused picbadsrc "a page whose img climbs out of img/" "readme.json"
-refused picraw "a page whose img points at raw.githubusercontent.com" "readme.json"
+refused picbadsrc "a page whose img climbs out of img/" "$page"
+refused picraw "a page whose img points at raw.githubusercontent.com" "$page"
 
 # The merge request's assets/docs/img/ is exactly the archive's: main holds two pictures, 90
-# (which the import no longer writes) and 91. picgone: the archive has none, so both go.
+# (which the import no longer writes) and 91, besides the commit's own. picgone: the archive has
+# only the commit's own, so both go.
 # picswap: the archive has 91 and a new 92, so 90 goes, 91 is left alone and 92 is added.
 run_push "$out" picgone
 rcg=$rc
 rc=0; [ "$rcg" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || rc=1
-check "job 2: an archive without pictures, where main holds two, is published (exit $rcg)" "$rc"
+check "job 2: an archive without the two pictures main holds besides the commit's own is published (exit $rcg)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-rc=0; [ "$("$realgit" ls-tree -r --name-only "$headsha" -- assets/docs/img | grep -c . || true)" -eq 2 ] || rc=1
-check "job 2: control: main held two pictures" "$rc"
-rc=0; [ -z "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img)" ] || rc=1
+rc=0; [ "$("$realgit" ls-tree -r --name-only "$headsha" -- assets/docs/img | grep -c . || true)" -eq $((2 + nhead)) ] || rc=1
+check "job 2: control: main held two pictures besides the commit's own" "$rc"
+rc=0; [ "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img | sed 's#^assets/docs/img/##' | sort)" = "$headpics" ] || rc=1
 check "job 2: pictures the import no longer writes are deleted from the merge request" "$rc"
 rc=0; [ "$("$realgit" diff --name-status "$headsha" "$tip" -- assets/docs/img | grep -c '^D' || true)" -eq 2 ] || rc=1
 check "job 2: the merge request deletes both" "$rc"
@@ -1183,7 +1199,7 @@ rc=0; [ "$(printf '%s\n' "$d" | grep -c '^D' || true)" -eq 1 ] && [ "$(printf '%
   && [ "$(printf '%s\n' "$d" | grep -c . || true)" -eq 2 ] || rc=1
 check "job 2: it deletes the one picture dropped, adds the new one, and leaves the one kept alone" "$rc"
 [ "$rc" -eq 0 ] || printf '%s\n' "$d" | sed 's/^/     /'
-rc=0; changed=$("$realgit" diff --name-only "$headsha" "$tip" 2>/dev/null | grep -v '^assets/docs/img/' || true); [ "$changed" = "$appendfile" ] || [ "$(printf '%s\n' "$changed" | sort)" = "$(printf '%s\n' "$appendfile" assets/docs/readme.json | sort)" ] || rc=1
+rc=0; changed=$("$realgit" diff --name-only "$headsha" "$tip" 2>/dev/null | grep -v '^assets/docs/img/' || true); [ "$changed" = "$appendfile" ] || [ "$(printf '%s\n' "$changed" | sort)" = "$(printf '%s\n' "$appendfile" "assets/docs/$page" | sort)" ] || rc=1
 check "job 2: apart from pictures the commit changes only the pages that changed" "$rc"
 
 # The publish runs the lint's "the imported docs carry no script" check itself:
@@ -1194,8 +1210,8 @@ check "job 2: apart from pictures the commit changes only the pages that changed
 # script_refused <scenario> <what it is>
 script_refused() {
   refused "$1" "$2" 'carries script\|carry no script'
-  rc=0; grep -q 'readme.json' "$out" || rc=1
-  check "job 2: the refusal of $2 names the page (readme.json)" "$rc"
+  rc=0; grep -q "$page" "$out" || rc=1
+  check "job 2: the refusal of $2 names the page ($page)" "$rc"
 }
 script_refused scriptel "a script element in a docs page"
 script_refused handler "an onerror handler in a docs page"
