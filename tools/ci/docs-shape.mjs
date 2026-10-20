@@ -6,7 +6,11 @@
  * innerHTML (assets/js/pads.js), so they must be what the import writes:
  *
  *   the files are exactly <slug>.json for each source in tools/docs-sources.json,
- *   and index.json;
+ *   and index.json, and a folder img/ of the pictures the import copied: regular
+ *   files <16 hex>.(png|jpg|webp|gif) of at most 1 MiB whose leading bytes are that
+ *   type, each used by a section, together at most the import's picture budget
+ *   (MAX_PICTURE_BYTES_TOTAL, 6 MiB, tools/import-docs-lib.mjs); every <img src>
+ *   in a section is one of them or the mark, assets/img/mark.svg, so no picture loads from outside the site;
  *   a page has the keys slug, name, c, title, repo, path and sections, at least
  *   one; slug, name, c, repo and path are the source's own, and c is "#" and six
  *   hex digits, either case;
@@ -18,16 +22,19 @@
  *
  *   node tools/ci/docs-shape.mjs <docs dir> <sources.json>   prints each problem, exits 1 if any
  *
- * What a section's html may contain is the lint's separate "no script" check.
+ * What a section's html may contain is the separate markup check (docs-markup.mjs).
  */
 import { readdirSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { htmlTokens } from "../sanitise-html.mjs";
+import { pictureType, MAX_PICTURE_BYTES_TOTAL } from "../import-docs-lib.mjs";
 
 const ID = /^[a-z0-9-]+$/;
 /* the same rule as the docs pad's SAFE_COLOUR (assets/js/pads.js): either case */
 const COLOUR = /^#[0-9a-fA-F]{6}$/;
 const MAX_SECTIONS = 300, MAX_SUBS = 300, MAX_TEXT = 1_000_000;
+const PICTURE = /^[0-9a-f]{16}\.(png|jpg|webp|gif)$/, MAX_PICTURE = 1048576, MARK = "assets/img/mark.svg";
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const sameKeys = (o, want) => {
@@ -44,7 +51,34 @@ export function checkDocs(dir, sources) {
   const want = new Set([...sources.map((s) => `${s.slug}.json`), "index.json"]);
   let have;
   try { have = readdirSync(dir); } catch { return [`${dir} cannot be read`]; }
-  for (const f of have) if (!want.has(f)) bad(`${f}: not a file the import writes`);
+  for (const f of have) if (!want.has(f) && f !== "img") bad(`${f}: not a file the import writes`);
+  /* the pictures: judged from lstat, so a link is never followed */
+  const pictures = new Set(), used = new Set();
+  let total = 0;
+  if (have.includes("img")) {
+    let names = [];
+    if (!lstatSync(join(dir, "img")).isDirectory()) bad("img: not a file the import writes (a folder of pictures)");
+    else names = readdirSync(join(dir, "img"));
+    for (const f of names) {
+      const st = lstatSync(join(dir, "img", f)), m = PICTURE.exec(f);
+      if (!m || st.isDirectory()) bad(`img/${f}: not a file the import writes`);
+      else if (!st.isFile()) bad(`img/${f}: is not a regular file`);
+      else if (st.size > MAX_PICTURE) bad(`img/${f}: is larger than ${MAX_PICTURE} bytes`);
+      else if (pictureType(readFileSync(join(dir, "img", f))) !== m[1]) bad(`img/${f}: its leading bytes are not a ${m[1]} picture`);
+      else { pictures.add(f); total += st.size; }
+    }
+    if (total > MAX_PICTURE_BYTES_TOTAL) bad(`img: its pictures come to ${total} bytes, more than the ${MAX_PICTURE_BYTES_TOTAL} one import may copy`);
+  }
+  /* each <img> of a section's html, read as a browser reads it: its src as written must be a picture above or the mark */
+  const imgs = (f, where, html) => {
+    for (const t of htmlTokens(html)) {
+      if (typeof t === "string" || t.name !== "img" || t.closing || !t.at) continue;
+      const src = t.at.get("src"), name = src?.startsWith("assets/docs/img/") ? src.slice(16) : null;
+      if (pictures.has(name)) used.add(name);
+      else if (src !== undefined && src !== MARK) bad(`${f}: ${where} has a picture ${JSON.stringify(src).slice(0, 80)}, not one in img/ or the mark`);
+      if (t.at.has("srcset")) bad(`${f}: ${where} has a picture with a srcset`);
+    }
+  };
   for (const f of want) if (!have.includes(f)) bad(`${f}: missing`);
 
   const load = (f) => {
@@ -75,6 +109,7 @@ export function checkDocs(dir, sources) {
       if (!isObj(s) || !sameKeys(s, keys)) return bad(`${f}: ${where} does not have exactly ${keys.join(", ")}`);
       if (typeof s.id !== "string" || !ID.test(s.id)) bad(`${f}: ${where}.id is not lower-case letters, digits and dashes`);
       for (const key of ["title", "summary", "text", ...(withHtml ? ["html"] : [])]) str(f, `${where}.${key}`, s[key]);
+      if (withHtml && typeof s.html === "string") imgs(f, where, s.html);
       subs(f, where, s.subs);
     });
   };
@@ -93,6 +128,7 @@ export function checkDocs(dir, sources) {
     head(f, p, src);
     sections(f, p.sections, true);
   }
+  for (const p of pictures) if (!used.has(p)) bad(`img/${p}: no section uses it`);
   const idx = load("index.json");
   if (idx) {
     const f = "index.json";

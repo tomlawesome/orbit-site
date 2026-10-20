@@ -28,7 +28,7 @@ export const WARM_FRAMES = 2;
 export const TIMED_FRAMES = 5;
 
 /**
- * @param {{ readPixels: Function, RGBA: number, UNSIGNED_BYTE: number }} gl
+ * @param {{ readPixels(x: number, y: number, w: number, h: number, format: number, type: number, pixels: ArrayBufferView): void, RGBA: number, UNSIGNED_BYTE: number }} gl any WebGL context
  * @param {() => void} draw  draws the heaviest frame the caller will ask for
  * @param {{ now?: () => number, warm?: number, timed?: number }} [how]
  * @returns {{ fit: boolean, ms: number }}  ms: the median timed frame
@@ -74,7 +74,7 @@ let verdict;
  * masked "WebKit WebGL". So RENDERER first, and the extension only when that is masked or empty.
  */
 const MASKED = /^(webkit webgl|mozilla)?$/i;
-/** @param {any} gl */
+/** @param {WebGL2RenderingContext} gl */
 function rendererOf(gl) {
   const plain = String(gl.getParameter(gl.RENDERER) ?? "").trim();
   if (!MASKED.test(plain)) return plain;

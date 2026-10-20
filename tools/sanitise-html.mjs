@@ -6,7 +6,10 @@
  *   sanitiseHtml(text, { link, image, warn })
  *
  * `link(href)` and `image(src)` are the caller's resolvers: the source's
- * value, entity-decoded, in; the address to write out. A tag outside the list
+ * value, entity-decoded, in; the address to write out. A picture is kept only
+ * at an address under assets/ (the page's policy loads pictures from the site
+ * alone); at an https address it is written as a link to it, its alt text the
+ * link's; at any other, dropped. A tag outside the list
  * makes the whole call return "". `warn(message)` is optional: it hears of a
  * pre or details left open, which is closed at the end. Time is linear in the
  * length of the text, whatever is crafted into it.
@@ -106,6 +109,9 @@ export function readText(run) {
   });
 }
 
+/* a path in the site's assets/ folder: no scheme, query, fragment, empty or dot-only step */
+const UNDER_ASSETS = /^assets(\/(?!\.\.?(\/|$))[A-Za-z0-9._-]+)+$/;
+
 /* one opening tag written out, or "" when it is dropped */
 function open(name, at, { link, image }) {
   const out = new Map();
@@ -114,7 +120,8 @@ function open(name, at, { link, image }) {
   if (name === "img") {
     if (!at.has("src")) return "";
     const to = image(at.get("src"));
-    if (typeof to !== "string" || !/^(https:\/\/|assets\/)/.test(to)) return "";
+    if (typeof to === "string" && /^https:\/\//.test(to)) return `<a href="${esc(to)}" target="_blank" rel="noopener">${esc(at.get("alt") || "picture")}</a>`;
+    if (typeof to !== "string" || !UNDER_ASSETS.test(to)) return "";
     out.set("src", to).set("alt", at.get("alt") ?? "");
     if (at.has("title")) out.set("title", at.get("title"));
     for (const k of ["width", "height"]) if (/^\d+%?$/.test(at.get(k) ?? "") && at.get(k) !== "100%") out.set(k, at.get(k));

@@ -15,6 +15,17 @@
  *   settle         timeline.js: ms after the landing at which the instrument arrives (the site's own amendment)
  *   typingWait     chores.js: an unhurried chore waits while someone is typing, this long after the last key (0: never)
  */
+/**
+ * @typedef {Record<string, string | boolean | null | undefined>} Flags the debug switches by name
+ * @typedef {object} Settings
+ * @property {(path: string) => string} image
+ * @property {Flags} flags
+ * @property {string} storagePrefix
+ * @property {number} settle
+ * @property {number} typingWait
+ */
+
+/** @type {Settings} */
 export const settings = {
   image: (path) => path,
   flags: {},
@@ -23,14 +34,25 @@ export const settings = {
   typingWait: 600,
 };
 
-/** the host's settings, given once before anything of the door is asked for */
+/**
+ * the host's settings, given once before anything of the door is asked for
+ * @param {Partial<Settings>} [given]
+ * @returns {Settings}
+ */
 export function configure(given = {}) {
-  for (const [k, v] of Object.entries(given)) if (v !== undefined) settings[k] = v;
+  for (const [k, v] of Object.entries(given)) if (v !== undefined) /** @type {Record<string, unknown>} */ (settings)[k] = v;
   return settings;
 }
 
-/** a debug flag: false when the host set none */
+/**
+ * a debug flag: false when the host set none
+ * @param {string} name
+ * @returns {string | boolean}
+ */
 export const flag = (name) => settings.flags?.[name] ?? false;
 
-/** a picture's URL, as the host resolves it */
+/**
+ * a picture's URL, as the host resolves it
+ * @param {string} path
+ */
 export const image = (path) => settings.image(path);

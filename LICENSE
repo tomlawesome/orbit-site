@@ -50,8 +50,9 @@ licence does. Nothing here restricts any right you hold under them.
     Jupiter and Saturn, the LRO/LOLA Moon) is in the
     public domain, with credit to NASA, NASA/JPL/Space Science Institute
     and NASA's Scientific Visualization Studio as README.md gives it.
-  - The docs under assets/docs/ are imported from the Orbit repositories
-    and carry Orbit's licence (AGPL-3.0).
+  - The docs under assets/docs/, their pictures in assets/docs/img/
+    included, are imported from the Orbit repositories and carry Orbit's
+    licence (AGPL-3.0).
   - The shared door under assets/door/ (the Earth door, the flight,
     their engine, timeline, stylesheet, markup and imagery) is shared
     with Orbit, which pulls it from this site. It is licensed under the
