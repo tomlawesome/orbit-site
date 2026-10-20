@@ -97,6 +97,18 @@ export function pictureFile(href, src, repos) {
   return path ? { repo: src.repo, path } : null;
 }
 
+/* the copied pictures some html shows, read as docs-shape reads them: the set to
+   write is taken from the pages as written, since a block the sanitiser drops
+   after its pictures were seen shows none of them */
+export function picturesUsed(html) {
+  const out = new Set();
+  for (const t of htmlTokens(html)) {
+    const src = typeof t !== "string" && t.name === "img" && !t.closing && t.at?.get("src");
+    if (src && src.startsWith("assets/docs/img/")) out.add(src.slice(16));
+  }
+  return out;
+}
+
 /* a link inside a source: to a heading of its own, to another imported
    source, or out to the repository. A picture is the site's copy of it (its
    name in `pictures`, keyed "<repo>:<path>"), or else an address to link to:

@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
-import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName } from "./import-docs-lib.mjs";
+import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName, picturesUsed } from "./import-docs-lib.mjs";
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > -1 ? process.argv[i + 1] : null; };
 const OUT = arg("--out") ?? join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
@@ -161,7 +161,7 @@ await mkdir(OUT, { recursive: true });
 const index = { generated: new Date().toISOString(), sources: [] };
 let changed = false;
 /* the pictures copied, "<repo>:<path>" -> name, and each name's bytes; why one could not be */
-const map = new Map(), bytesOf = new Map(), why = new Map();
+const map = new Map(), bytesOf = new Map(), why = new Map(), used = new Set();
 for (const src of SOURCES) {
   const md = await fetchSource(src);
   /* first pass: the sanitiser's hooks are synchronous, so the pictures are learnt by rendering once, then fetched */
@@ -184,6 +184,7 @@ for (const src of SOURCES) {
     const reason = (f && (past.get(key) ?? why.get(key))) ?? "is not a file of the listed repositories";
     console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: picture ${logSafe(href)} ${reason}; not copied`);
   } });
+  for (const s of page.sections) for (const n of picturesUsed(s.html)) used.add(n);
   const doc = { slug: src.slug, name: src.name, c: src.c, title: page.title, repo: src.repo, path: src.path, sections: page.sections };
   const file = join(OUT, `${src.slug}.json`), body = JSON.stringify(doc);
   if (await readFile(file, "utf8").catch(() => "") !== body) changed = true;
@@ -200,6 +201,7 @@ if (!changed && before && JSON.stringify(before.sources) === JSON.stringify(inde
 await writeFile(join(OUT, "index.json"), JSON.stringify(index));
 /* img/ holds exactly the pictures the pages use: the same bytes keep their file, an unused one is removed */
 const IMG = join(OUT, "img");
+for (const n of bytesOf.keys()) if (!used.has(n)) bytesOf.delete(n);
 if (bytesOf.size) await mkdir(IMG, { recursive: true });
 for (const f of await readdir(IMG).catch(() => [])) if (!bytesOf.has(f)) await rm(join(IMG, f), { recursive: true, force: true });
 for (const [name, b] of bytesOf) if (!(await readFile(join(IMG, name)).catch(() => null))?.equals(b)) await writeFile(join(IMG, name), b);
