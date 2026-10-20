@@ -300,12 +300,13 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
   const from = join(tmp, "checkout"), fromL = `${from}-launcher`, out = join(tmp, "out");
   const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
 
-  const A = png(1000), Bj = jpg(7), C = gif(8), W = webp(9), EDGE = padded(PNG_SIG, MIB), HUGE = padded(PNG_SIG, MIB + 1);
-  const nA = `${sha16(A)}.png`, nB = `${sha16(Bj)}.jpg`, nC = `${sha16(C)}.gif`, nW = `${sha16(W)}.webp`, nE = `${sha16(EDGE)}.png`;
+  const A = png(1000), Bj = jpg(7), C = gif(8), W = webp(9), D = png(4000), EDGE = padded(PNG_SIG, MIB), HUGE = padded(PNG_SIG, MIB + 1);
+  const nA = `${sha16(A)}.png`, nB = `${sha16(Bj)}.jpg`, nC = `${sha16(C)}.gif`, nW = `${sha16(W)}.webp`, nD = `${sha16(D)}.png`, nE = `${sha16(EDGE)}.png`;
   put(from, "docs/img/a.png", A);
   put(from, "docs/img/a-copy.png", A);                  // the same bytes under another name
   put(from, "docs/img/b.png", Bj);                      // JPEG bytes in a file named .png: named by its bytes
   put(from, "docs/img/c.gif", C);
+  put(from, "docs/img/d.png", D);                      // used only inside a raw-html block the sanitiser drops whole
   put(from, "docs/img/w.webp", W);
   put(from, "docs/img/edge.png", EDGE);                 // exactly 1 MiB: kept
   put(from, "docs/img/huge.png", HUGE);                 // 1 MiB and a byte: a link
@@ -316,6 +317,8 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
       // the mark sits below Quick start, where the page begins (the source's "from"), as upstream's does
       "# Orbit", "",
       "## Quick start", "", "Intro text.", "", "<p align=\"center\"><img src=\"docs/orbit-mark.svg\" alt=\"Orbit\" width=\"52\"></p>", "",
+      // one tag outside the allow-list (<picture>) makes the sanitiser drop the whole block, its <img> too
+      "<p align=\"center\"><img src=\"docs/img/d.png\" alt=\"Dropped\"><picture><source srcset=\"docs/img/d.png\"></picture></p>", "",
       "![Relative shot](docs/img/a.png)", "",
       "![Same bytes](docs/img/a-copy.png)", "",
       `![Raw shot](https://raw.githubusercontent.com/${O}/main/docs/img/b.png)`, "",
@@ -430,6 +433,11 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     check("E5 raw.githubusercontent.com is nowhere in the output", all.length >= 9 && bad.length === 0, `${all.length} files read; found in ${JSON.stringify(bad)}`);
     const shape = (() => { try { return checkDocs(out, sources); } catch (e) { return [`threw: ${e.message}`]; } })();
     check("E5 the output passes the docs shape check", shape.length === 0, JSON.stringify(shape.slice(0, 3)));
+
+    // E7: a picture only a dropped raw-html block uses is not written, and the whole output is well formed
+    check("E7 a picture in a raw-html block the sanitiser refuses is not written to img/", !imgFiles().includes(nD), `img/ holds ${nD}`);
+    const cli = spawnSync(process.execPath, ["tools/ci/docs-shape.mjs", out, "tools/docs-sources.json"], { encoding: "utf8", timeout: 120000 });
+    check("E7 the import's output passes the shape check", cli.status === 0, `status ${cli.status}; ${(cli.stdout ?? "").slice(0, 400)} ${(cli.stderr ?? "").slice(0, 400)}`);
 
     // a second run after a picture is dropped from a source: the orphan goes, the shared picture stays
     writeSources(true);
