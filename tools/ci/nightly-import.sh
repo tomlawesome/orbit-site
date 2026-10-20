@@ -29,7 +29,7 @@ main() {
     cd "$scratch"
     echo "DRY_RUN: importing in a scratch copy of HEAD"
   fi
-  [ -d tools/node_modules/marked ] || npm ci --prefix tools --ignore-scripts --no-audit --no-fund >/dev/null
+  [ -d tools/node_modules/marked ] || npm ci --prefix tools --omit=dev --ignore-scripts --no-audit --no-fund >/dev/null
   node tools/import-docs.mjs
   n=$(find assets/docs -type f -name '*.json' | wc -l)
   [ "$n" -gt 0 ] || { echo "the import wrote no pages"; exit 1; }

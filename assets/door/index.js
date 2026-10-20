@@ -34,11 +34,12 @@ export { decodeAhead } from "./decode-ahead.js";
  * The door, made once for the page with the host's settings (settings.js says what each is). Called before anything
  * else of the door is asked for. Returns the door: dawn(host) and dusk(host) mount the surfaces on their markup
  * (markup.js), journey(options) makes the flight between them (journey.js); README.md has the whole interface.
+ * @param {Partial<import("./settings.js").Settings>} [given]
  */
 export function createDoor(given = {}) {
   configure(given);
   if (settings.typingWait > 0) watchTyping();
   /* for the live door's test (?door3d): the chores as they are now */
-  if (settings.flags?.door3d) { try { window.__chores = choresNow; } catch { /* not a page */ } }
+  if (settings.flags?.door3d) { try { /** @type {Window & { __chores?: typeof choresNow }} */ (window).__chores = choresNow; } catch { /* not a page */ } }
   return { settings, dawn: mountDawn, dusk: mountDusk, journey: createJourney };
 }

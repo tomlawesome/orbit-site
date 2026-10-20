@@ -41,6 +41,12 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\/import-/
       variables:
         CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
+    # The import bot also starts a merge request's pipeline when its own merge
+    # moves that request's source branch (a back-merge from main, open during a
+    # nightly): it cannot use the proxy either (#70).
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/
+      variables:
+        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -91,6 +97,7 @@ lint:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-sections-test.sh
+    - sh tools/ci/lint-types-test.sh
     - sh tools/ci/lint-parse-test.sh
     - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh

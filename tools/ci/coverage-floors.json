@@ -18,7 +18,7 @@
     "assets/door/upload.js": 100,
     "assets/door/voyage.js": 99,
     "assets/js/data.js": 100,
-    "assets/js/home.js": 67,
+    "assets/js/home.js": 100,
     "assets/js/install.js": 92,
     "assets/js/journeys.js": 100,
     "assets/js/law.js": 95,
@@ -27,7 +27,7 @@
     "assets/js/pads.js": 91,
     "assets/js/planets3d.js": 95,
     "assets/js/sky.js": 93,
-    "assets/js/tilt.js": 28,
+    "assets/js/tilt.js": 100,
     "assets/js/tour.js": 72,
     "assets/js/world.js": 100,
     "sw.js": 100

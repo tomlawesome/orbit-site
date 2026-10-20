@@ -37,6 +37,13 @@
 # not two keys (nlval accepted, nlreal refused for its real core.sshCommand).
 # No file is left in TMPDIR after a refused run.
 #
+# Pictures (#72): the import copies each upstream picture into assets/docs/img/,
+# so the archive may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of
+# at most 1 MiB, each a real picture of its extension and used by a page, and nothing else under
+# it (pic and the pic* scenarios below); the entry limit allows 8 pages, the index and 128
+# pictures (pics128 accepted, pictoomany refused); and the merge request's assets/docs/img/ is
+# exactly the archive's: a picture the import no longer writes is deleted (picgone, picswap).
+#
 # Runs on a scratch copy of the current commit, so the checkout is untouched.
 # npm, node, git, curl and sleep are shims first on PATH that log what they were
 # called with; nothing touches the network.
@@ -106,8 +113,27 @@ reset_tree() {
 # <docs dir> <scenario>: the pages of the commit, with one change (a summary) so
 # there is something new, and for a hostile scenario one thing wrong.
 cat > "$aux/mkzip.py" <<'PY'
-import json, os, sys, zipfile
+import hashlib, json, os, struct, sys, zipfile, zlib
+def png(seed):  # a real 1x1 PNG whose pixel colour is the seed
+    def ch(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    return b'\x89PNG\r\n\x1a\n' + ch(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) + ch(b'IDAT', zlib.compress(bytes([0, seed & 255, (seed >> 8) & 255, (seed >> 16) & 255]))) + ch(b'IEND', b'')
+def jpg(seed): return bytes([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, seed & 255, 0xff, 0xd9])
+def gif(seed): return b'GIF89a' + bytes([1, 0, 1, 0, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 1, seed & 255, 0, 0x3b])
+def webp(seed):
+    tail = b'WEBPVP8L' + bytes([5, 0, 0, 0, 0x2f, 0, 0, 0, seed & 255, 0])
+    return b'RIFF' + struct.pack('<I', len(tail)) + tail
+def pad(head, size): return head + b'\0' * (size - len(head))
+MIB = 1048576
+def pname(b, ext): return hashlib.sha256(b).hexdigest()[:16] + '.' + ext
+# --head <repo dir> <scenario>: the pictures the checkout (main) already holds, before the import
+if sys.argv[1] == '--head':
+    repo, sc = sys.argv[2:4]
+    os.makedirs(os.path.join(repo, 'assets/docs/img'), exist_ok=True)
+    for b in (png(90), png(91)):   # 90 will be dropped by the next import, 91 kept
+        open(os.path.join(repo, 'assets/docs/img', pname(b, 'png')), 'wb').write(b)
+    sys.exit(0)
 out, src, sc = sys.argv[1:4]
+open(out + '.imgs', 'w').close()
 files = {n: open(os.path.join(src, n), 'rb').read() for n in sorted(os.listdir(src))}
 extra = []   # (name, data, unix mode)
 def edit(name, fn):
@@ -127,7 +153,6 @@ if sc == 'badname': extra.append(('assets/docs/Evil.json', b'{}', REG))
 if sc == 'unknown': extra.append(('assets/docs/other.json', b'{}', REG))
 if sc == 'dup': extra.append(('assets/docs/readme.json', files['readme.json'], REG))
 if sc == 'missing': del files['security.json']
-if sc == 'toomany': extra += [('assets/docs/p%d.json' % i, b'{}', REG) for i in range(70)]
 if sc == 'toolarge': files['administration.json'] = b' ' * 3000000
 if sc == 'toomuch':
     for n in ['administration.json', 'architecture.json', 'launcher.json', 'readme.json', 'releases.json']: files[n] = b' ' * 1900000
@@ -139,20 +164,53 @@ if sc == 'extrakey': edit('readme.json', lambda j: j['sections'][0].update(oncli
 # a page whose section html carries script-capable markup (the lint refuses it, and so must the publish)
 def addhtml(extra): edit('readme.json', lambda j: j['sections'][1].update(html=j['sections'][1]['html'] + extra))
 if sc == 'scriptel': addhtml('<script>alert(1)</script>')
-if sc == 'handler': addhtml('<p><img src="x" onerror="alert(1)"></p>')
+# (#72: its src is the mark, a picture the shape check allows, so only the handler is wrong)
+if sc == 'handler': addhtml('<p><img src="assets/img/mark.svg" onerror="alert(1)"></p>')
 if sc == 'jsurl': addhtml('<p><a href="jav&#x61;script:alert(1)">x</a></p>')
 if sc == 'svgel': addhtml('<svg onload="alert(1)"></svg>')
 # the control: harmless html that only looks like the above (entities, "on x=" and data: in prose)
 if sc == 'benign': addhtml('<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p>')
+# pictures (#72): (name, data, mode) entries under assets/docs/img/, and the page html that uses them
+pics = []
+def usepics(names):
+    addhtml(''.join('<p><img src="assets/docs/img/%s" alt="" loading="lazy"></p>' % n for n in names))
+def addpic(data, ext, used=True, name=None, mode=REG):
+    n = name or pname(data, ext); pics.append((n, data, mode))
+    if used: usepics([n])
+    return n
+imgdir = True
+if sc in ('pic', 'picnodir'): addpic(png(1), 'png'); imgdir = sc == 'pic'
+if sc == 'picall': addpic(png(2), 'png'); addpic(jpg(3), 'jpg'); addpic(gif(4), 'gif'); addpic(webp(5), 'webp')
+if sc == 'pic1mib': addpic(pad(b'\x89PNG\r\n\x1a\n', MIB), 'png')
+if sc == 'pics128':
+    for i in range(128): addpic(png(1000 + i), 'png')
+if sc == 'pictoomany':
+    for i in range(129): addpic(png(1000 + i), 'png')
+if sc == 'picswap': addpic(png(91), 'png'); addpic(png(92), 'png')
+# the same as `pic`, with one thing wrong each
+if sc == 'picsvg': addpic(b'<svg xmlns="http://www.w3.org/2000/svg"/>', 'svg', used=False)
+if sc == 'picupper': addpic(png(1), 'png', name=pname(png(1), 'png').upper().replace('.PNG', '.png'))
+if sc == 'picjpeg': addpic(jpg(3), 'jpeg')
+if sc == 'pictoolarge': addpic(pad(b'\x89PNG\r\n\x1a\n', MIB + 1), 'png')
+if sc == 'picmismatch': addpic(jpg(3), 'png')
+if sc == 'picunused': addpic(png(1), 'png', used=False)
+if sc == 'picsymlink': addpic(b'/etc/hostname', 'png', name=pname(png(1), 'png'), mode=LNK)
+if sc == 'picsub': pics.append(('sub/' + pname(png(1), 'png'), png(1), REG)); usepics(['sub/' + pname(png(1), 'png')])
+if sc == 'picbadsrc': addpic(png(1), 'png'); usepics(['../../../index.html'])
+if sc == 'picraw': addpic(png(1), 'png'); addhtml('<p><img src="https://raw.githubusercontent.com/tomlawesome/orbit/main/docs/a.png" alt=""></p>')
+if sc == 'picasfile': extra.append(('assets/docs/img', b'x', REG)); imgdir = False
 if sc == 'notzip':
     open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
 def zi(name, mode):
     z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
 with zipfile.ZipFile(out, 'w') as z:
-    for d in ('assets/', 'assets/docs/'):    # the directory entries a runner's archive carries
+    for d in ('assets/', 'assets/docs/') + (('assets/docs/img/',) if pics and imgdir else ()):    # the directory entries a runner's archive carries
         z.writestr(zi(d, 0o040755), b'')
     for n, data in files.items(): z.writestr(zi('assets/docs/' + n, REG), data)
     for n, data, mode in extra: z.writestr(zi(n, mode), data)
+    for n, data, mode in pics: z.writestr(zi('assets/docs/img/' + n, mode), data)
+# the pictures a good archive carries, for the test to compare with the merge request's
+open(out + '.imgs', 'w').write(''.join(n + '\n' for n, d, m in sorted(pics)))
 PY
 
 # ---------------------------------------------------------------- part 1 --
@@ -390,7 +448,8 @@ case "$method $route" in
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    if { [ "$SCENARIO" = second ] || [ "$SCENARIO" = benign ] || [ "$SCENARIO" = scriptel ] || [ "$SCENARIO" = handler ] || [ "$SCENARIO" = jsurl ] || [ "$SCENARIO" = svgel ] || [ "$SCENARIO" = hook ] || [ "$SCENARIO" = pushfail ] || [ "$SCENARIO" = stage ] || [ "$SCENARIO" = runnerlike ] || [ "$SCENARIO" = runnerinc ] || [ "$SCENARIO" = nlval ]; } && [ "$n" -ge 2 ]; then
+    okmerge=; case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*) okmerge=1 ;; esac
+    if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
       # first attempt 405 with a body; every later one cannot connect at all
@@ -561,6 +620,10 @@ prepare() {
       rm evil.txt
       "$realgit" show HEAD:index.html > index.html ;;
     tampered) echo "<!-- planted -->" >> index.html ;;
+    picgone|picswap) # main already holds two pictures (#72); the commit is what the clone has as HEAD
+      "$realpython" -W ignore "$aux/mkzip.py" --head "$PWD" "$1"
+      "$realgit" add assets/docs/img
+      "$realgit" -c user.name=t -c user.email=t@t commit -q -m "two pictures" ;;
   esac
 }
 run_push() { # run_push <outfile> <scenario>
@@ -574,10 +637,12 @@ run_push() { # run_push <outfile> <scenario>
   : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
   prepare "$2"
+  headsha=$basecommit     # unless the scenario's main already holds pictures
+  case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
   "$realpython" -W ignore "$aux/mkzip.py" "$aux/artifact.zip" "$aux/docs-head" "$2"
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
-    FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
+    FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$headsha" ZIP="$aux/artifact.zip" \
     CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
@@ -758,8 +823,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
 rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
 check "job 2: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 6"
-rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-noscript.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
-check "job 2: no npm, node only for -e and the shape and no-script checks, and never with a token file on disk" "$rc"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-markup.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "job 2: no npm, node only for -e and the shape and markup checks, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
@@ -1028,7 +1093,7 @@ refused badname "a name with capitals" "is not a file the import writes"
 refused unknown "a page for a source that is not listed" "is not a file the import writes"
 refused dup "the same name twice" "in the archive twice"
 refused missing "an archive without one of the pages" "missing:"
-refused toomany "too many entries" "more than 64"
+refused pictoomany "too many entries (8 pages, the index and 129 pictures; the old limit was 64 and a test of it is gone, see pics128)" "more than"
 refused toolarge "a file over the size cap" "is larger than"
 refused toomuch "too many bytes in all" "bytes in all"
 refused notzip "a file that is not a zip" "not a zip archive"
@@ -1044,6 +1109,82 @@ refused failedjob "an import job that failed" "successful import_docs jobs"
 refused wrongsha "an import job at another commit" "successful import_docs jobs"
 refused wrongpipeline "an import job of another pipeline" "successful import_docs jobs"
 refused twojobs "two import jobs" "successful import_docs jobs"
+
+# Pictures (#72). The import copies each upstream picture into assets/docs/img/, so the archive
+# may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of at most 1 MiB,
+# each a real picture of its extension and used by a page, and nothing else under it. Every
+# refusal below is paired with an accepted archive that differs in the thing refused (pic,
+# picnodir, picall, pic1mib, pics128), and each accepted archive's pictures must reach the
+# merge request exactly (check_pics).
+check_pics() { # check_pics <label>: the pushed commit's assets/docs/img/ is exactly the archive's, each file named by its bytes
+  want=$(cat "$aux/artifact.zip.imgs")
+  have=$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img | sed 's#^assets/docs/img/##' | sort)
+  rc=0; [ "$have" = "$want" ] || rc=1
+  check "$1: the merge request's assets/docs/img/ is exactly the archive's ($(printf '%s' "$want" | grep -c . || true) pictures)" "$rc"
+  [ "$rc" -eq 0 ] || { printf '%s\n' "$want" | sed 's/^/     archive: /'; printf '%s\n' "$have" | sed 's/^/     pushed:  /'; }
+  rc=0
+  for f in $have; do
+    h=$("$realgit" show "$tip:assets/docs/img/$f" | sha256sum | cut -c1-16)
+    [ "${f%.*}" = "$h" ] || rc=1
+  done
+  check "$1: every pushed picture is named by the first 16 hex of its own SHA-256" "$rc"
+}
+accepted() { # accepted <scenario> <what it is> <how many pictures reach the merge request>
+  run_push "$out" "$1"
+  rcx=$rc
+  ok=0; [ "$rcx" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || ok=1
+  check "job 2 accepts $2 (exit $rcx)" "$ok"
+  [ "$ok" -eq 0 ] || sed 's/^/     /' "$out"
+  ok=0; [ "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img | grep -c . || true)" -eq "$3" ] || ok=1
+  check "job 2: after accepting $2, the pushed commit holds $3 pictures" "$ok"
+  check_pics "job 2 ($1)"
+}
+accepted pic "an archive with one PNG picture that a page uses" 1
+accepted picnodir "the same archive without a directory entry for img/" 1
+accepted picall "a PNG, a JPEG, a GIF and a WebP picture, each named by its bytes" 4
+accepted pic1mib "a picture of exactly 1 MiB" 1
+accepted pics128 "128 pictures (the most the entry limit allows with 8 pages and the index)" 128
+refused pictoomany "129 pictures (more entries than 8 pages, the index and 128 pictures)" "more than"
+refused picsvg "an SVG in img/" "picsvg\|\.svg\|is not a file the import writes"
+refused picupper "a picture whose name has upper-case hex" "is not a file the import writes"
+refused picjpeg "a picture with the extension .jpeg" "is not a file the import writes"
+refused picsub "a picture in a folder below img/" "is not a file the import writes"
+refused picasfile "img as a file and not a folder" "is not a file the import writes\|not a directory"
+refused pictoolarge "a picture of 1 MiB and one byte" "is larger than"
+refused picmismatch "JPEG bytes named .png" "\.png"
+refused picunused "a picture no page uses" "[0-9a-f]\{16\}\.png"
+refused picsymlink "a symlink under img/" "is not a regular file"
+refused picbadsrc "a page whose img climbs out of img/" "readme.json"
+refused picraw "a page whose img points at raw.githubusercontent.com" "readme.json"
+
+# The merge request's assets/docs/img/ is exactly the archive's: main holds two pictures, 90
+# (which the import no longer writes) and 91. picgone: the archive has none, so both go.
+# picswap: the archive has 91 and a new 92, so 90 goes, 91 is left alone and 92 is added.
+run_push "$out" picgone
+rcg=$rc
+rc=0; [ "$rcg" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || rc=1
+check "job 2: an archive without pictures, where main holds two, is published (exit $rcg)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; [ "$("$realgit" ls-tree -r --name-only "$headsha" -- assets/docs/img | grep -c . || true)" -eq 2 ] || rc=1
+check "job 2: control: main held two pictures" "$rc"
+rc=0; [ -z "$("$realgit" ls-tree -r --name-only "$tip" -- assets/docs/img)" ] || rc=1
+check "job 2: pictures the import no longer writes are deleted from the merge request" "$rc"
+rc=0; [ "$("$realgit" diff --name-status "$headsha" "$tip" -- assets/docs/img | grep -c '^D' || true)" -eq 2 ] || rc=1
+check "job 2: the merge request deletes both" "$rc"
+check_pics "job 2 (picgone)"
+run_push "$out" picswap
+rcw=$rc
+rc=0; [ "$rcw" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || rc=1
+check "job 2: an archive that drops one picture, keeps one and adds one is published (exit $rcw)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+check_pics "job 2 (picswap)"
+d=$("$realgit" diff --name-status "$headsha" "$tip" -- assets/docs/img 2>/dev/null || true)
+rc=0; [ "$(printf '%s\n' "$d" | grep -c '^D' || true)" -eq 1 ] && [ "$(printf '%s\n' "$d" | grep -c '^A' || true)" -eq 1 ] \
+  && [ "$(printf '%s\n' "$d" | grep -c . || true)" -eq 2 ] || rc=1
+check "job 2: it deletes the one picture dropped, adds the new one, and leaves the one kept alone" "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$d" | sed 's/^/     /'
+rc=0; changed=$("$realgit" diff --name-only "$headsha" "$tip" 2>/dev/null | grep -v '^assets/docs/img/' || true); [ "$changed" = "$appendfile" ] || [ "$(printf '%s\n' "$changed" | sort)" = "$(printf '%s\n' "$appendfile" assets/docs/readme.json | sort)" ] || rc=1
+check "job 2: apart from pictures the commit changes only the pages that changed" "$rc"
 
 # The publish runs the lint's "the imported docs carry no script" check itself:
 # the artifact is untrusted, and the import merge request's lint is not the only

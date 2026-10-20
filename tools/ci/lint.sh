@@ -10,7 +10,7 @@ fail=0
 # `sh tools/ci/lint.sh ci-split names` runs only those, in this order, so a test
 # that plants one fault pays for one section (#65); `--list` names them. An
 # unknown name runs nothing and exits 2, so a typo cannot pass.
-sections="parse refs door docs-index docs-shape docs-noscript milkyway proxy ci-split media csp names stray npm-pins"
+sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp names stray npm-pins"
 if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
 for s in "$@"; do
   case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
@@ -73,6 +73,14 @@ node -e '
     if (/\blocation\s*(\.\s*search\b|\[\s*[\"\x27]search[\"\x27]\s*\])/.test(src)) bad(`${f}: reads the address (a flag is a setting: settings.js)`);
     if (/\bimport\s*\.\s*meta\s*\.\s*url\b/.test(src)) bad(`${f}: uses import.meta.url (a picture\x27s place is a setting: settings.js)`);
   }
+  // nothing the Orbit app uses may load from an outside source (owner, 2026-10-20): no http, https or
+  // protocol-relative address anywhere in the folder, comments too, but the SVG namespace, which loads nothing
+  for (const f of [...js("assets/door"), "assets/door/door.css"]) {
+    const src = fs.readFileSync(f, "utf8");
+    const out = [...src.matchAll(/https?:\\?\/\\?\/[^\s"\x27`)]*|["\x27`]\/\/[^\s\/"\x27`]+|url\(\s*["\x27]?\/\/[^\s\/"\x27)]+/gi)]
+      .map((m) => m[0].replace(/^(["\x27`]|url\(\s*["\x27]?)/i, "")).filter((a) => a !== "http://www.w3.org/2000/svg");
+    if (out.length) bad(`${f}: names an outside address, ${out[0].slice(0, 80)} (the folder loads only from the site)`);
+  }
   for (const f of ["sw.js", ...js("assets/js")]) {
     const src = strip(fs.readFileSync(f, "utf8"));
     for (const sp of specifiers(src)) if (/(^|\/)door\//.test(sp) && sp !== "../door/index.js") bad(`${f}: imports ${sp}; a site module imports assets/door/index.js alone`);
@@ -85,6 +93,14 @@ for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^ur
 done
 # and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
 node tools/door-markup.mjs --check || fail=1
+fi
+
+if on types; then
+echo "== the shared door type-checks strictly (assets/door, #30)"
+# TypeScript's checkJs in strict mode over every module in the folder, settings in
+# tools/ci/tsconfig.door.json; TypeScript is pinned in tools/package.json, so the lint
+# job runs npm ci --prefix tools first. tools/ci/door-types.mjs says more.
+node tools/ci/door-types.mjs || fail=1
 fi
 
 if on docs-index; then
@@ -106,19 +122,17 @@ echo "== the imported docs have the shape the import writes"
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
 fi
 
-if on docs-noscript; then
-echo "== the imported docs carry no script"
-# the stored pages are what Pages serves; a handler or script tag here would
-# run on every visitor, whatever the importer let through. A stored section
-# may hold only tags written the one way a browser and this check read alike:
-# an ascii name, html whitespace, name="value" with no quote or angle bracket
-# inside, and no attributes on an end tag. Anything else is refused outright:
-# the import never writes it, and the browser's tokeniser has states this check
-# does not follow. A URL attribute has its entities decoded and its whitespace
-# and control characters removed before the scheme is looked at. A construct
-# that would put a browser into a comment or a raw-text element is refused
-# outright, since the import never writes one and the check cannot follow it.
-node tools/ci/docs-noscript.mjs assets/docs || fail=1
+if on docs-markup; then
+echo "== the imported docs carry no script: only the markup the import writes"
+# the stored pages are what Pages serves, set with innerHTML; a handler, a
+# script or an invisible full-page link here would reach every visitor,
+# whatever the importer let through. A stored section may hold only tags
+# written the one way a browser and this check read alike (an ascii name, html
+# whitespace, name="value" with no quote or angle bracket inside, no attributes
+# on an end tag), and only the tags, attributes and values on the check's
+# allow-list, which is what the import writes (audit 5, S1). Anything else is
+# refused outright, however harmless it looks: the import never writes it.
+node tools/ci/docs-markup.mjs assets/docs || fail=1
 fi
 
 if on milkyway; then
@@ -164,6 +178,7 @@ WF="$wf" node -e '
   const first = (r) => r.split("\n")[0];
   const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
   const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
+  const botMr = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /GITLAB_USER_LOGIN =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
   const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
   const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
   if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
@@ -171,6 +186,12 @@ WF="$wf" node -e '
     if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
     if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
     else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
+  }
+  // a merge request whose pipeline the bot started, by moving its source branch (#70)
+  if (botMr < 0) bad("no workflow rule sends merge-request pipelines the import bot starts (GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/) to Docker Hub");
+  else {
+    if (!sets(rules[botMr])) bad("the bot merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
+    if (mr >= 0 && botMr > mr) bad("the bot merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
   }
   if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
   else {
@@ -213,7 +234,9 @@ echo "== the service worker's picture cache name follows the pictures"
 # the name is computed: orbit-media- and the first 12 hex characters of the
 # SHA-256 over one line "<path> <git blob sha>" for each tracked file the
 # worker caches as media (its isMedia extensions), outside assets/docs/ (the
-# nightly import owns that), sorted by path in byte order. A changed, added or
+# nightly import owns that, and its pictures in assets/docs/img/ are named by
+# their content hash, so a changed one is a new file the cache has never seen),
+# sorted by path in byte order. A changed, added or
 # removed picture changes the name; paste the one printed here into sw.js.
 node -e '
   const fs = require("fs");
@@ -301,8 +324,8 @@ echo "== the npm pins live in tools/package.json only"
 # manifest names exact versions, the lockfile holds a hash for every package,
 # and Renovate's npm manager bumps both; a version named anywhere else
 # escapes all three
-for f in $(grep -l -E '(marked|sharp)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs AGENTS.md 2>/dev/null || true); do
-  echo "   $f names a marked/sharp version; the pins live in tools/package.json"; fail=1
+for f in $(grep -l -E '(marked|sharp|typescript)@[0-9]' .gitlab-ci.yml tools/ci/*.sh tools/*.mjs AGENTS.md 2>/dev/null || true); do
+  echo "   $f names a marked/sharp/typescript version; the pins live in tools/package.json"; fail=1
 done
 node -e '
   const fs = require("fs");
@@ -319,6 +342,9 @@ node -e '
   for (const n of ["marked", "sharp"]) {
     if (!/^\d+\.\d+\.\d+$/.test(deps[n] || "")) bad(`${man}: ${n} is ${JSON.stringify(deps[n])}, want an exact x.y.z`);
   }
+  // TypeScript, for the door type check (#30), is dev-only: the docs import (npm ci --omit=dev) never installs it
+  const dev = fs.existsSync(man) ? JSON.parse(fs.readFileSync(man, "utf8")).devDependencies || {} : {};
+  if (!/^\d+\.\d+\.\d+$/.test(dev.typescript || "")) bad(`${man}: devDependencies.typescript is ${JSON.stringify(dev.typescript)}, want an exact x.y.z`);
   const r = require("./renovate.json");
   if (!(r.enabledManagers || []).includes("npm")) bad("renovate.json: enabledManagers lacks npm");
   for (const m of r.customManagers || []) {

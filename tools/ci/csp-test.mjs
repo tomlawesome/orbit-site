@@ -14,6 +14,11 @@
  *   W5  the home / galaxy (/?preview#home): #galaxy has drawn something
  *   W6  an unknown path (served 404.html with status 404)
  *   W7  install.html (it redirects to /#install; violations on either document count)
+ *   W8  every docs page (one per source in tools/docs-sources.json, #docs/<slug>; issue #72): every picture in the
+ *       page's docs body has loaded (complete, naturalWidth > 0) with no policy violation, and at least one picture
+ *       was seen across all pages (the readme carries assets/img/mark.svg), so the check cannot pass on pages with
+ *       none. Each picture that failed is reported by page and src. (The docs import once wrote pictures as
+ *       raw.githubusercontent.com addresses, which img-src 'self' data: blob: blocks.)
  *       Pass: no `securitypolicyviolation` event and no console message about a content security policy.
  *   P0  control: with the policy in force, an inline <script> that page.evaluate appends to the document must NOT run
  *       (its global stays unset) and a violation must be recorded. This proves the policy is active; with no policy
@@ -35,6 +40,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 
@@ -159,6 +165,39 @@ const walkAll = async () => {
   });
   await walk("W6", "an unknown path (404.html): no policy violation", "no-such-page-csp-test", async () => {});
   await walk("W7", "install.html: no policy violation", "install.html", async (page) => { await sleep(3000); });
+  await docsPictures();
+};
+
+/* W8: each docs page on its own fresh context; a picture is judged by what the browser did with it. Lazy pictures
+   are scrolled into view so they are asked for. */
+const docsPictures = async () => {
+  if (!wanted("W8")) return;
+  const slugs = JSON.parse(readFileSync(join(here, "..", "docs-sources.json"), "utf8")).map((d) => d.slug);
+  await judge("W8", `every picture on the ${slugs.length} docs pages loads, with no policy violation`, async (want) => {
+    want(slugs.length > 0, "control: tools/docs-sources.json names no docs page");
+    let seen = 0;
+    for (const slug of slugs) {
+      progress(`W8: docs/${slug}`);
+      const o = await open();
+      try {
+        await o.page.goto(`${SITE}?preview#docs/${slug}`, { waitUntil: "load" });
+        const there = await o.page.locator("#docspad .body .sec").first().waitFor({ state: "attached", timeout: 60000 }).then(() => true, () => false);
+        want(there, `docs/${slug}: no docs body appeared within 60 s, so its pictures cannot be judged`);
+        if (!there) continue;
+        const urls = await o.page.evaluate(() => [...document.querySelectorAll("#docspad .body img")].map((im) => im.getAttribute("src")));
+        seen += urls.length;
+        for (let i = 0; i < urls.length; i++) await o.page.evaluate((k) => document.querySelectorAll("#docspad .body img")[k]?.scrollIntoView({ block: "center" }), i);
+        const state = () => o.page.evaluate(() => [...document.querySelectorAll("#docspad .body img")].map((im) => ({ src: im.getAttribute("src"), ok: im.complete && im.naturalWidth > 0 })));
+        const got = await until(state, (l) => l.every((x) => x.ok), 20000, 250);
+        await sleep(1000);
+        for (const x of got) want(x.ok, `docs/${slug}: picture did not load: ${x.src}`);
+        const lines = say(o);
+        want(!lines.length, `docs/${slug}: ${lines.length} policy complaint(s), first: ${lines[0]}; others: ${lines.slice(1, 4).join(" | ") || "none"}`);
+      } finally { await o.ctx.close(); }
+    }
+    want(seen > 0, "control: no picture was found on any docs page, so the check cannot show a picture loads");
+    want.note(`${seen} picture(s) seen on ${slugs.length} pages`);
+  });
 };
 
 const p0 = async () => {
