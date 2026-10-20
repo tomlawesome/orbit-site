@@ -19,12 +19,14 @@
  * Also expected: resolveLink(href, src, bySourcePath, isImage, pictures), pictureFile(href, src, repos) and
  * pictureName(bytes) (see the cases below), and `node tools/import-docs.mjs --from DIR --out OUT`, run here
  * end to end on a scratch checkout, from a scratch copy of tools/ so that the real assets/docs is never touched.
+ * Audit 5: the output passes tools/ci/docs-markup.mjs (S1); one import copies at most 6 MiB of pictures (S2) and one
+ * source tries at most 32 pictures (S4), the rest becoming links warned "past".
  */
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { deflateSync } from "node:zlib";
 import { checkDocs } from "./docs-shape.mjs";
 
@@ -438,6 +440,9 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     check("E7 a picture in a raw-html block the sanitiser refuses is not written to img/", !imgFiles().includes(nD), `img/ holds ${nD}`);
     const cli = spawnSync(process.execPath, ["tools/ci/docs-shape.mjs", out, "tools/docs-sources.json"], { encoding: "utf8", timeout: 120000 });
     check("E7 the import's output passes the shape check", cli.status === 0, `status ${cli.status}; ${(cli.stdout ?? "").slice(0, 400)} ${(cli.stderr ?? "").slice(0, 400)}`);
+    // E8 (audit 5, S1): what the import writes passes the publish job's allow-list of tags, attributes and values
+    const mk = spawnSync(process.execPath, ["tools/ci/docs-markup.mjs", out], { encoding: "utf8", timeout: 120000 });
+    check("E8 the import's output passes the markup check (node tools/ci/docs-markup.mjs <out>)", mk.status === 0, `status ${mk.status}; ${(mk.stdout ?? "").slice(0, 400)} ${(mk.stderr ?? "").slice(0, 400)}`);
 
     // a second run after a picture is dropped from a source: the orphan goes, the shared picture stays
     writeSources(true);
@@ -452,6 +457,102 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     const r3 = run();
     check("E6 a third import of the same sources leaves the same files (control: the same bytes give the same file)",
       r3.status === 0 && JSON.stringify(imgFiles()) === JSON.stringify(have2), `status ${r3.status}; ${imgFiles().length} files vs ${have2.length}`);
+  }
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+
+// ------------------------------------------------- picture budget and fetch cap (audit 5, S2 and S4) --
+// S2: one import copies at most 6 MiB of pictures across all its sources; a picture past that becomes a link to its
+// file in the repo, warned about on stderr with "past". S4: one source may try at most 32 pictures, missing ones
+// included; past that, a real picture becomes a link too. The budget is shared by every source of one run, so each
+// scenario is its own import, from its own --from into its own --out, with only one source holding pictures.
+{
+  const sources = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
+  const tmp = mkdtempSync(join(tmpdir(), "import-budget-"));
+  const repoCopy = join(tmp, "repo");
+  cpSync("tools", join(repoCopy, "tools"), { recursive: true, filter: (p) => !/node_modules/.test(p) });
+  symlinkSync(join(process.cwd(), "tools", "node_modules"), join(repoCopy, "tools", "node_modules"));
+  mkdirSync(join(repoCopy, "assets", "docs"), { recursive: true });
+  const O = "tomlawesome/orbit", base = "assets/docs/img/";
+  const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
+  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Quick start\n\nText for ${s2.name}.\n\n## Details\n\nMore text.\n`;
+  const srcs = (h) => [...h.matchAll(/<img\b[^>]*?\bsrc="([^"]*)"/g)].map((m) => m[1]).sort();
+  const link = (h, href, text) => new RegExp(`<a href="${href.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&")}"[^>]*>${text}</a>`).test(h);
+  // a decodable 512 x 680 PNG of seeded random pixels, stored uncompressed: about 1,045,000 bytes, under the 1 MiB a
+  // picture may be, so six fit in 6 MiB and seven do not
+  const bigPng = (seed) => {
+    const w = 512, hgt = 680, row = 1 + w * 3, raw = Buffer.alloc(row * hgt);
+    let x = (Math.imul(seed + 1, 2654435761) >>> 0) || 1;
+    for (let i = 0; i < raw.length; i++) {
+      if (i % row === 0) continue; // filter byte 0 (none) at the start of each row
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
+      raw[i] = x & 255;
+    }
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(hgt, 4); ihdr[8] = 8; ihdr[9] = 2;
+    return Buffer.concat([PNG_SIG, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw, { level: 0 })), chunk("IEND", Buffer.alloc(0))]);
+  };
+  const big = Array.from({ length: 9 }, (_, i) => bigPng(8000 + i));
+  check("B0 control: each ~1 MiB picture is distinct and under 1 MiB, six sum under 6 MiB and seven over",
+    new Set(big.map(sha16)).size === 9 && big.every((b) => b.length < MIB) && big.slice(0, 6).reduce((a, b) => a + b.length, 0) <= 6 * MIB
+      && big.slice(0, 7).reduce((a, b) => a + b.length, 0) > 6 * MIB, `sizes ${big.map((b) => b.length).join(",")}`);
+
+  let k = 0;
+  // scenario(slug, md, pictures): the source <slug> gets md appended and the pictures [path, bytes] beside it
+  // (paths relative to its file); every other source is a stub. Returns the run, the page's html and the link base.
+  const scenario = (label, slug, md, pictures) => {
+    const from = join(tmp, `checkout${k}`), fromL = `${from}-launcher`, out = join(tmp, `out${k}`); k++;
+    const target = sources.find((s2) => s2.slug === slug);
+    const rel = posix.dirname(target.path);
+    for (const s2 of sources) put(s2.repo === O ? from : fromL, s2.path, stub(s2) + (s2 === target ? `\n${md}\n` : ""));
+    for (const [p, b] of pictures) put(target.repo === O ? from : fromL, posix.join(rel, p), b);
+    const r = spawnSync(process.execPath, ["tools/import-docs.mjs", "--from", from, "--out", out], { cwd: repoCopy, encoding: "utf8", timeout: 120000, env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    const stderr = r.stderr ?? "";
+    const ok = r.status === 0 && existsSync(join(out, `${slug}.json`));
+    check(`${label}: the import exits 0 and writes the page`, ok, `status ${r.status}; stderr: ${stderr.slice(0, 300)}`);
+    const h = ok ? JSON.parse(readFileSync(join(out, `${slug}.json`), "utf8")).sections.map((x) => x.html).join("\n") : "";
+    const imgDir = join(out, "img");
+    const files = existsSync(imgDir) ? readdirSync(imgDir) : [];
+    const bytes = files.reduce((a, f) => a + statSync(join(imgDir, f)).size, 0);
+    const pastWarned = (p) => stderr.split("\n").some((l) => l.includes(posix.join(rel, p)) && l.includes("past"));
+    return { ok, h, files, bytes, pastWarned, gh: (p) => `https://github.com/${target.repo}/blob/main/${posix.join(rel, p)}` };
+  };
+  const bigMd = (n) => Array.from({ length: n }, (_, i) => `![Big ${i}](big/q${i}.png)`).join("\n\n");
+  const bigPics = (n) => big.slice(0, n).map((b, i) => [`big/q${i}.png`, b]);
+  const names = (n) => big.slice(0, n).map((b) => `${base}${sha16(b)}.png`).sort();
+
+  // B1 (S2): nine ~1 MiB pictures in one source -> the first six are copied, the 7th to 9th are links, warned "past"
+  {
+    const s = scenario("B1 nine ~1 MiB pictures", "security", bigMd(9), bigPics(9));
+    check("B1 nine ~1 MiB pictures in one source: the first six are copied as img and no more",
+      JSON.stringify(srcs(s.h)) === JSON.stringify(names(6)), `${srcs(s.h).length} img srcs (want the first 6): ${JSON.stringify(srcs(s.h).slice(0, 9))}`);
+    for (const i of [6, 7, 8]) {
+      check(`B1 the picture past the 6 MiB budget (Big ${i}) becomes a link to its file in the repo`, link(s.h, s.gh(`big/q${i}.png`), `Big ${i}`), `no <a href="${s.gh(`big/q${i}.png`)}"> reading Big ${i}`);
+      check(`B1 the picture past the budget (Big ${i}) is warned about on stderr with "past"`, s.pastWarned(`big/q${i}.png`), `no stderr line holds both big/q${i}.png and "past"`);
+    }
+    check("B1 img/ holds six files summing to at most 6 MiB", s.files.length === 6 && s.bytes <= 6 * MIB, `${s.files.length} files, ${s.bytes} bytes`);
+  }
+  // B2 (S2 control): five ~1 MiB pictures in one source -> all copied, none warned "past"
+  {
+    const s = scenario("B2 five ~1 MiB pictures", "security", bigMd(5), bigPics(5));
+    check("B2 five ~1 MiB pictures in one source are all copied (control: under the budget)",
+      JSON.stringify(srcs(s.h)) === JSON.stringify(names(5)), `${srcs(s.h).length} img srcs (want 5): ${JSON.stringify(srcs(s.h))}`);
+    check("B2 none of the five is warned about with \"past\"", [0, 1, 2, 3, 4].every((i) => !s.pastWarned(`big/q${i}.png`)), `warned past: ${JSON.stringify([0, 1, 2, 3, 4].filter((i) => s.pastWarned(`big/q${i}.png`)))}`);
+  }
+  // B3 (S4): 40 missing pictures, then one real one -> the real one is past the 32 tries a source may make: a link
+  const missMd = (n) => [...Array.from({ length: n }, (_, i) => `![Miss ${i}](miss/m${i}.png)`), "![Real](miss/real.png)"].join("\n\n");
+  const real = png(5000), realName = `${base}${sha16(real)}.png`;
+  {
+    const s = scenario("B3 forty missing then one real", "security", missMd(40), [["miss/real.png", real]]);
+    check("B3 after 40 missing pictures the real one becomes a link to its file in the repo", link(s.h, s.gh("miss/real.png"), "Real"), `no <a href="${s.gh("miss/real.png")}"> reading Real`);
+    check("B3 after 40 missing pictures the real one is not an img", !srcs(s.h).includes(realName) && !s.files.includes(`${sha16(real)}.png`), `img srcs ${JSON.stringify(srcs(s.h))}`);
+    check("B3 the real picture past the fetch cap is warned about on stderr with \"past\"", s.pastWarned("miss/real.png"), "no stderr line holds both miss/real.png and \"past\"");
+  }
+  // B4 (S4 control): 10 missing pictures, then one real one -> copied
+  {
+    const s = scenario("B4 ten missing then one real", "security", missMd(10), [["miss/real.png", real]]);
+    check("B4 after 10 missing pictures the real one is copied (control: under the fetch cap)", srcs(s.h).includes(realName) && s.files.includes(`${sha16(real)}.png`), `img srcs ${JSON.stringify(srcs(s.h))}; files ${JSON.stringify(s.files)}`);
+    check("B4 the real picture is not warned about with \"past\"", !s.pastWarned("miss/real.png"), `warned past: ${s.pastWarned("miss/real.png")}`);
   }
   rmSync(tmp, { recursive: true, force: true });
 }

@@ -5,7 +5,8 @@
  * Pictures (#72): assets/docs/ may hold a folder img/ of regular files named
  * <16 hex>.(png|jpg|webp|gif), at most 1 MiB, whose leading bytes match the
  * extension, each used by a section; every <img src> in a section is one of
- * those files or assets/img/mark.svg.
+ * those files or assets/img/mark.svg. All of img/ sums to at most 6 MiB, the
+ * import's picture budget (audit 5, S2).
  *
  *   node tools/ci/docs-shape-test.mjs
  */
@@ -217,6 +218,12 @@ refuses("P4 a picture named only in a link, not as an img", (d) => {
 // P6: no img/ folder at all is fine when no section uses a picture, and a section that uses one needs the folder
 accepts("P6 no img/ folder and no picture in use (the committed shape)", () => {});
 refuses("P6 a section uses a picture and there is no img/ folder", (d) => appendHtml(d, "readme.json", tag(`${IMG}/${hash16(png(60))}.png`)), "readme.json");
+
+// P7 (audit 5, S2): the pictures in img/ sum to at most the import's picture budget, 6 MiB across all sources. Each picture
+// is a distinct, used PNG of exactly 1 MiB (the most one picture may be), so the sum alone is what differs.
+const mibs = (d, k, base) => { for (let i = 0; i < k; i++) pic(d, padded(png(base + i), MIB), "png"); };
+refuses("P7 img/ summing to 7 MiB (seven 1 MiB pictures, each used)", (d) => mibs(d, 7, 700), "img");
+accepts("P7 control: img/ summing to 5 MiB (five 1 MiB pictures, each used)", (d) => mibs(d, 5, 700));
 
 rmSync(tmp, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

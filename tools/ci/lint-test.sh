@@ -125,7 +125,7 @@ poison() {
 # Case (a): an onerror handler in an imported section -> fails, names file and section.
 sid=$(poison '<p><img src="x" onerror="alert(1)"></p>')
 rc=0
-sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
+sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
   echo "ok   an onerror handler in an imported section fails"
 else
@@ -138,7 +138,7 @@ git reset -q --hard HEAD~1
 # Case (b): a script element in an imported section -> fails.
 sid=$(poison '<script>1</script>')
 rc=0
-sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
+sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
   echo "ok   a script element in an imported section fails"
 else
@@ -156,7 +156,7 @@ git reset -q --hard HEAD~1
 poison_case() {
   sid=$(poison "$2")
   rc=0
-  sh tools/ci/lint.sh docs-noscript > "$out" 2>&1 || rc=$?
+  sh tools/ci/lint.sh docs-markup > "$out" 2>&1 || rc=$?
   if [ "$rc" -eq 1 ] && grep -q "assets/docs/readme.json" "$out" && grep -q "$sid" "$out"; then
     echo "ok   $1 fails"
   else
@@ -225,6 +225,21 @@ poison_case "(b27) an upper-case javascript: scheme" '<a href="JAVASCRIPT:alert(
 poison_case "(b28) a < inside a quoted value" '<a title="<b>">x</a>'
 poison_case "(b29) a bare < in text" '<p>a < b</p>'
 
+# Cases (b31)-(b38) (audit 5, S1): the publish check is an allow-list of tags, each with its attributes and each
+# attribute with the values it may hold, not a list of dangers. A double-quoted, well-formed tag is still refused
+# when its tag, an attribute on it, or a value is off that table: an invisible full-page link, a fake heading, a
+# player, a class the page styles for something else, a link that replaces the whole window. Cases (b36)-(b38) are
+# what only an allow-list catches: a tag no danger list names, an address with no scheme, an attribute on the
+# wrong tag. Case (b39) below is their pair: the whole grammar the import writes passes.
+poison_case "(b31) a link carrying a style (a full-page invisible overlay)" '<a href="https://phish.example/" style="position:fixed;inset:0;opacity:0">x</a>'
+poison_case "(b32) an id on a paragraph (ids are for headings)" '<p id="x">x</p>'
+poison_case "(b33) a video element" '<video src="assets/docs/img/a.png"></video>'
+poison_case "(b34) a link with a class off the list" '<a class="key" href="#docs/readme">x</a>'
+poison_case "(b35) a link that targets the top window" '<a href="#docs/readme" target="_top">x</a>'
+poison_case "(b36) a tag no danger list names (marquee)" '<marquee>x</marquee>'
+poison_case "(b37) a protocol-relative link" '<a href="//evil.example/">x</a>'
+poison_case "(b38) an attribute off its tag (data-lang on a paragraph)" '<p data-lang="sh">x</p>'
+
 # Case (b20): what the import writes when a document mentions these words
 # (escaped, in a code block; a diagram; a note) -> passes.
 sid=$(poison '<pre class="code" data-lang="html"><code>&lt;!-- a --&gt; &lt;textarea&gt; &lt;?x&gt;</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram, drawing…</figcaption></figure><aside class="alert note"><b>note</b><p>titled</p></aside>')
@@ -249,6 +264,35 @@ if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
   echo "ok   the forms the import writes (non-ASCII, entities, empty and bare attributes) pass"
 else
   echo "FAIL the forms the import writes (non-ASCII, entities, empty and bare attributes) pass (exit $rc, section $sid)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
+# Case (b39) (audit 5, S1): a section carrying the whole grammar the import writes -> the full lint passes:
+# headings with ids and anchor links, a link to another page, an outside link opening a new tab, a mailto link,
+# bold and struck text, a code block with its language, a diagram with its caption, a note, task-list checkboxes,
+# aligned table cells, and a picture copied into assets/docs/img/ (a real PNG named by its bytes, so the
+# docs-shape section passes too) beside the mark.
+pic=$(node -e '
+  const fs = require("fs"), zlib = require("zlib"), crypto = require("crypto");
+  const t = Array.from({ length: 256 }, (_, i) => { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = t[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const l = Buffer.alloc(4); l.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type, "latin1"), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(body)); return Buffer.concat([l, body, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(1, 0); ihdr.writeUInt32BE(1, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const b = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(Buffer.from([0, 10, 20, 30]))), chunk("IEND", Buffer.alloc(0))]);
+  const name = crypto.createHash("sha256").update(b).digest("hex").slice(0, 16) + ".png";
+  fs.mkdirSync("assets/docs/img", { recursive: true });
+  fs.writeFileSync("assets/docs/img/" + name, b);
+  console.log(name);
+')
+sid=$(poison '<h2 id="setup-guide"><a class="anchor" aria-label="Link to this heading" href="#docs/readme/setup-guide">#</a>Setup guide</h2><h3 id="steps"><a class="anchor" aria-label="Link to this heading" href="#docs/readme/steps">#</a>Steps</h3><p>Run <b>this</b>, not <del>that</del>, as <a href="https://example.com/guide?a=1&amp;b=2" target="_blank" rel="noopener">the guide</a> says; see <a href="#docs/readme">the readme</a> or write to <a href="mailto:a@example.com">us</a>.</p><pre class="code" data-lang="sh"><code>npm ci --prefix tools</code></pre><figure class="diagram" data-mermaid><pre hidden>graph TD</pre><figcaption>a diagram</figcaption></figure><aside class="alert note"><b>Note</b><p>titled</p></aside><ul><li><input type="checkbox" checked disabled> done</li><li><input type="checkbox" disabled> to do</li></ul><table><thead><tr><th align="left">Name</th><th align="center">Role</th><th align="right">Count</th></tr></thead><tbody><tr><td align="left">Ann</td><td align="center">Lead</td><td align="right">3</td></tr></tbody></table><p><img src="assets/docs/img/'"$pic"'" alt="A shot"> <img src="assets/img/mark.svg" alt="Orbit"></p>')
+rc=0
+sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ] && [ -n "$pic" ]; then
+  echo "ok   (b39) a section carrying the whole grammar the import writes passes"
+else
+  echo "FAIL (b39) a section carrying the whole grammar the import writes passes (exit $rc, section $sid, picture ${pic:-none})"
   sed 's/^/     /' "$out"
   failed=1
 fi

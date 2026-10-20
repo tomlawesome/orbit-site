@@ -823,8 +823,8 @@ check_merge_calls() { # check_merge_calls <label>: checks A, E and F on the run 
 rc=0; [ "$sleeps" -gt 0 ] && ! grep '^sleep ' "$aux/shim.log" | grep -vq 'hdr=absent' || rc=1
 check "job 2: the header file is not on disk while the job waits between attempts" "$rc"
 check_merge_calls "run 6"
-rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-noscript.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
-check "job 2: no npm, node only for -e and the shape and no-script checks, and never with a token file on disk" "$rc"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-markup.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "job 2: no npm, node only for -e and the shape and markup checks, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 

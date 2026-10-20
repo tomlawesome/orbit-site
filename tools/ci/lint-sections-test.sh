@@ -19,7 +19,7 @@ git init -q
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
 
-ids="parse refs door types docs-index docs-shape docs-noscript milkyway proxy ci-split media csp names stray npm-pins"
+ids="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp names stray npm-pins"
 failed=0
 
 pass() { printf 'ok   %s %s\n' "$1" "$2"; }
