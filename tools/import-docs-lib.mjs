@@ -4,6 +4,7 @@
  * network or the disk, so tools/ci/import-docs-test.mjs can import it.
  */
 import { posix } from "node:path";
+import { createHash } from "node:crypto";
 import { htmlTokens, readText } from "./sanitise-html.mjs";
 
 /* the words of some markdown tokens, as the search and the summaries read them.
@@ -62,13 +63,54 @@ export function rawHeading(html) {
    folds to the same id as the heading; a broken escape is folded as written */
 const unescapeFragment = (f) => { try { return decodeURIComponent(f); } catch { return f; } };
 
+/* a picture's type by its own leading bytes, never its name: png, jpg, webp, gif, or null */
+export function pictureType(bytes) {
+  const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const at = (i, s) => b.length >= i + s.length && b.subarray(i, i + s.length).equals(Buffer.from(s, "latin1"));
+  if (at(0, "\x89PNG\r\n\x1a\n")) return "png";
+  if (at(0, "\xff\xd8\xff")) return "jpg";
+  if (at(0, "GIF87a") || at(0, "GIF89a")) return "gif";
+  if (at(0, "RIFF") && at(8, "WEBP")) return "webp";
+  return null;
+}
+/* the name the site keeps a picture under: its content hash, so the same bytes are one file and a changed
+   picture is a new name (build-time asset localisation, as Hugo's resources.GetRemote does) */
+export function pictureName(bytes) {
+  const type = pictureType(bytes);
+  return type && `${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}.${type}`;
+}
+
+/* a raw.githubusercontent.com address: owner/repo, branch, path */
+const RAW = /^https:\/\/raw\.githubusercontent\.com\/([^/?#]+\/[^/?#]+)\/([^/?#]+)\/([^?#]+)$/;
+/* a path in a repository, from its folder `dir`, or null if it climbs out */
+const repoPath = (file, dir = ".") => {
+  const target = posix.normalize(posix.join(dir, file)).replace(/^\.\//, "");
+  return target === ".." || target.startsWith("../") ? null : target;
+};
+/* the file of a listed repository a picture address names, { repo, path }, or null: a relative address, or the
+   raw host's copy of one on main; the import copies only these */
+export function pictureFile(href, src, repos) {
+  const raw = RAW.exec(href);
+  if (raw) { const path = repoPath(raw[3]); return raw[2] === "main" && repos.includes(raw[1]) && path ? { repo: raw[1], path } : null; }
+  if (/^([a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return null;
+  const path = repoPath(href.split("#")[0], posix.dirname(src.path));
+  return path ? { repo: src.repo, path } : null;
+}
+
 /* a link inside a source: to a heading of its own, to another imported
-   source, or out to the repository; an image stays on GitHub's raw host.
+   source, or out to the repository. A picture is the site's copy of it (its
+   name in `pictures`, keyed "<repo>:<path>"), or else an address to link to:
+   its file on github.com, never the raw host, or another host's as written.
    A data: address is not passed on: it is read as the path it looks like,
    so it ends on GitHub and never runs on the page. */
-export function resolveLink(href, src, bySourcePath, isImage) {
+export function resolveLink(href, src, bySourcePath, isImage, pictures) {
   // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
   if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
+  const raw = isImage && RAW.exec(href);
+  if (raw) {
+    const name = raw[2] === "main" && pictures?.get(`${raw[1]}:${repoPath(raw[3])}`);
+    return name ? `assets/docs/img/${name}` : `https://github.com/${raw[1]}/blob/${raw[2]}/${raw[3]}`;
+  }
   if (/^(https?:|mailto:)/i.test(href)) return href;
   // a fragment that folds to nothing points at the page itself
   if (href.startsWith("#")) { const a = slugOf(unescapeFragment(href.slice(1))); return `#docs/${src.slug}${a ? `/${a}` : ""}`; }
@@ -77,9 +119,9 @@ export function resolveLink(href, src, bySourcePath, isImage) {
   const target = posix.normalize(posix.join(base, file)).replace(/^\.\//, "");
   const hit = bySourcePath.get(`${src.repo}:${target}`);
   if (hit && !isImage) { const a = slugOf(unescapeFragment(anchor ?? "")); return `#docs/${hit.slug}${a ? `/${a}` : ""}`; }
-  return isImage
-    ? `https://raw.githubusercontent.com/${src.repo}/main/${target}`
-    : `https://github.com/${src.repo}/blob/main/${target}${anchor ? `#${anchor}` : ""}`;
+  const name = isImage && pictures?.get(`${src.repo}:${target}`);
+  if (name) return `assets/docs/img/${name}`;
+  return `https://github.com/${src.repo}/blob/main/${target}${anchor && !isImage ? `#${anchor}` : ""}`;
 }
 
 /* the text a reader would see in some html: read as a browser reads it, by

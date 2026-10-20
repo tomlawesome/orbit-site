@@ -21,8 +21,9 @@
 #     this job's own YAML, and could rewrite CI_API_V4_URL or LD_PRELOAD); it
 #     fetches the archive itself, by job id, with its own job token, into a
 #     scratch directory, and opens it with python's zipfile: only the entries
-#     assets/docs/<slug>.json for each source in tools/docs-sources.json and
-#     assets/docs/index.json, regular files, under the size caps, are read, and
+#     assets/docs/<slug>.json for each source in tools/docs-sources.json,
+#     assets/docs/index.json and the pictures assets/docs/img/<16 hex>.(png|jpg|
+#     webp|gif), regular files, under the size caps, are read, and
 #     each is written by this script, never unpacked by a tool that follows
 #     names or links;
 #   - what is written is held to the shape the import writes
@@ -54,8 +55,11 @@ cd "$(dirname "$0")/../.."
 EXPECT_HOST=gitlab.tomlawson.io
 EXPECT_PATH=ai/orbit-site
 # What the import writes: a page per source and an index, about 330 KB in nine
-# files. Well above that, but nowhere near "a disk".
-MAX_ENTRIES=64
+# files, and its pictures, at most 16 a source of 1 MiB each. Well above that,
+# but nowhere near "a disk". Entries: 3 folders, 8 pages, the index and 128
+# pictures.
+MAX_ENTRIES=140
+MAX_PICTURE_BYTES=1048576
 MAX_FILE_BYTES=2097152
 MAX_TOTAL_BYTES=8388608
 MAX_ZIP_BYTES=16777216
@@ -238,11 +242,12 @@ download() { # download <job id> <file>
 # program, from the bytes, to names it chose.
 unpack() {
   env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
-    python3 -I - "$1" "$2" "$3" "$MAX_ENTRIES" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" <<'PY'
-import json, os, stat, sys, zipfile
+    python3 -I - "$1" "$2" "$3" "$MAX_ENTRIES" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" "$MAX_PICTURE_BYTES" <<'PY'
+import json, os, re, stat, sys, zipfile
 
 zpath, out, srcs = sys.argv[1], sys.argv[2], sys.argv[3]
-max_entries, max_file, max_total = int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6])
+max_entries, max_file, max_total, max_picture = int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
+picture = re.compile(r"assets/docs/img/[0-9a-f]{16}\.(png|jpg|webp|gif)\Z")
 
 def refuse(msg):
     print("refusing the artifact: " + msg)
@@ -260,28 +265,29 @@ files, seen, total = [], set(), 0
 for i in infos:
     mode = (i.external_attr >> 16) & 0xFFFF
     printable = i.filename.encode("ascii", "replace").decode()[:80]
-    if i.filename in ("assets/", "assets/docs/"):
+    if i.filename in ("assets/", "assets/docs/", "assets/docs/img/"):
         if mode and not stat.S_ISDIR(mode):
             refuse("%s is not a directory" % printable)
         continue
-    if i.filename not in allowed:
-        refuse("%s is not a file the import writes (only assets/docs/<slug>.json and index.json)" % printable)
+    pic = picture.match(i.filename)
+    if i.filename not in allowed and not pic:
+        refuse("%s is not a file the import writes (only assets/docs/<slug>.json, index.json and img/<16 hex>.<png|jpg|webp|gif>)" % printable)
     if mode and not stat.S_ISREG(mode):
         refuse("%s is not a regular file (a link or a device)" % printable)
     if i.filename in seen:
         refuse("%s is in the archive twice" % printable)
     if i.flag_bits & 0x1:
         refuse("%s is encrypted" % printable)
-    if i.file_size > max_file:
-        refuse("%s is larger than %d bytes" % (printable, max_file))
+    if i.file_size > (max_picture if pic else max_file):
+        refuse("%s is larger than %d bytes" % (printable, max_picture if pic else max_file))
     seen.add(i.filename)
     total += i.file_size
     files.append(i)
 if total > max_total:
     refuse("%d bytes in all, more than %d" % (total, max_total))
-if seen != allowed:
+if not allowed <= seen:
     refuse("missing: %s" % ", ".join(sorted(allowed - seen)))
-os.makedirs(os.path.join(out, "assets", "docs"))
+os.makedirs(os.path.join(out, "assets", "docs", "img"))
 try:
     for i in files:
         with z.open(i) as f:
@@ -392,14 +398,17 @@ main() {
 
   echo "== compare with main"
   base=$(cgit rev-parse HEAD)
-  # The index is built afresh: the base commit's tree plus the checked pages as
-  # blobs, nothing else, and not through the work tree at all. A path outside
-  # assets/docs in the result stops the job.
+  # The index is built afresh: the base commit's tree, its pictures taken out,
+  # plus the checked pages and pictures as blobs, nothing else, and not through
+  # the work tree at all, so the merge request's assets/docs/img/ is exactly the
+  # archive's. A path outside assets/docs in the result stops the job.
   export GIT_INDEX_FILE="$scratch/index"
   cgit read-tree "$base"
-  for f in "$art"/assets/docs/*.json; do
+  cgit rm -r -q --cached --ignore-unmatch -- assets/docs/img
+  for f in "$art"/assets/docs/*.json "$art"/assets/docs/img/*; do
+    [ -f "$f" ] || continue   # an empty img/ leaves its pattern unexpanded
     blob=$(cgit hash-object -w --no-filters -- "$f")
-    cgit update-index --add --cacheinfo "100644,$blob,assets/docs/$(basename "$f")"
+    cgit update-index --add --cacheinfo "100644,$blob,${f#"$art"/}"
   done
   outside=$(cgit diff --cached --name-only "$base" | grep -v -e '^assets/docs/' || true)
   if [ -n "$outside" ]; then

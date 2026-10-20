@@ -73,6 +73,14 @@ node -e '
     if (/\blocation\s*(\.\s*search\b|\[\s*[\"\x27]search[\"\x27]\s*\])/.test(src)) bad(`${f}: reads the address (a flag is a setting: settings.js)`);
     if (/\bimport\s*\.\s*meta\s*\.\s*url\b/.test(src)) bad(`${f}: uses import.meta.url (a picture\x27s place is a setting: settings.js)`);
   }
+  // nothing the Orbit app uses may load from an outside source (owner, 2026-10-20): no http, https or
+  // protocol-relative address anywhere in the folder, comments too, but the SVG namespace, which loads nothing
+  for (const f of [...js("assets/door"), "assets/door/door.css"]) {
+    const src = fs.readFileSync(f, "utf8");
+    const out = [...src.matchAll(/https?:\\?\/\\?\/[^\s"\x27`)]*|["\x27`]\/\/[^\s\/"\x27`]+|url\(\s*["\x27]?\/\/[^\s\/"\x27)]+/gi)]
+      .map((m) => m[0].replace(/^(["\x27`]|url\(\s*["\x27]?)/i, "")).filter((a) => a !== "http://www.w3.org/2000/svg");
+    if (out.length) bad(`${f}: names an outside address, ${out[0].slice(0, 80)} (the folder loads only from the site)`);
+  }
   for (const f of ["sw.js", ...js("assets/js")]) {
     const src = strip(fs.readFileSync(f, "utf8"));
     for (const sp of specifiers(src)) if (/(^|\/)door\//.test(sp) && sp !== "../door/index.js") bad(`${f}: imports ${sp}; a site module imports assets/door/index.js alone`);
@@ -228,7 +236,9 @@ echo "== the service worker's picture cache name follows the pictures"
 # the name is computed: orbit-media- and the first 12 hex characters of the
 # SHA-256 over one line "<path> <git blob sha>" for each tracked file the
 # worker caches as media (its isMedia extensions), outside assets/docs/ (the
-# nightly import owns that), sorted by path in byte order. A changed, added or
+# nightly import owns that, and its pictures in assets/docs/img/ are named by
+# their content hash, so a changed one is a new file the cache has never seen),
+# sorted by path in byte order. A changed, added or
 # removed picture changes the name; paste the one printed here into sw.js.
 node -e '
   const fs = require("fs");

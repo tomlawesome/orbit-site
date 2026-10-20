@@ -313,8 +313,9 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
   put(from, "docs/img/notes.png", "this is text, not a picture");
   const bodies = {
     readme: [
-      "# Orbit", "", "<p align=\"center\"><img src=\"docs/orbit-mark.svg\" alt=\"Orbit\" width=\"52\"></p>", "",
-      "## Quick start", "", "Intro text.", "",
+      // the mark sits below Quick start, where the page begins (the source's "from"), as upstream's does
+      "# Orbit", "",
+      "## Quick start", "", "Intro text.", "", "<p align=\"center\"><img src=\"docs/orbit-mark.svg\" alt=\"Orbit\" width=\"52\"></p>", "",
       "![Relative shot](docs/img/a.png)", "",
       "![Same bytes](docs/img/a-copy.png)", "",
       `![Raw shot](https://raw.githubusercontent.com/${O}/main/docs/img/b.png)`, "",

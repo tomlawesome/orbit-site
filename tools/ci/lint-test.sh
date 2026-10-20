@@ -183,7 +183,8 @@ poison_case "an upper-case unquoted handler" '<IMG SRC=x ONERROR=alert(1)>'
 
 # Case (b14): ordinary html that only looks like the above -> passes: an
 # entity in a URL, "on x=" in text and in an attribute value, data: in prose.
-sid=$(poison '<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p><img alt="a onfoo=b" src="x.png">')
+# (#72: the img is the mark, a picture the docs-shape section allows.)
+sid=$(poison '<p>Use <a href="https://example.com/a?b=1&amp;c=2">link</a> and <code>one = 1</code> on a=b, data: x</p><img alt="a onfoo=b" src="assets/img/mark.svg">')
 rc=0
 sh tools/ci/lint.sh > "$out" 2>&1 || rc=$?
 if [ "$rc" -eq 0 ] && ! grep -q "carries script" "$out"; then
