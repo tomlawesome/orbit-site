@@ -606,6 +606,35 @@ door_case "a door module using import.meta.url" assets/door/stars.js 'export con
 door_case "a site module importing inside the folder" assets/js/sky.js 'import { DAWN_FAR as Z } from "../door/stars.js";' "assets/js/sky.js:.*index.js"
 # Case (n): a url() in door.css reaching outside the folder -> fails, names door.css.
 door_case "a door.css url outside the folder" assets/door/door.css '#door .x{background:url(../img/mark.svg)}' "assets/door/door.css -> ../img/mark.svg"
+# Cases (n2)-(n9) judge the outside-address rule of the same section (issue #72, owner rule 2026-10-20: nothing the
+# Orbit app uses may load from an outside source, and Orbit copies assets/door/ unchanged): an http://, https:// or
+# protocol-relative //host address in a door .js or in door.css fails and names the file, except the SVG namespace.
+# door_ok <label> <file> <line>: the line appended to the file must leave the section passing (the pair of a
+# refusal, so a rule that refuses every address fails).
+door_ok() {
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out door
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+door_case "an https address in a door module string" assets/door/stars.js 'export const OUT1 = "https://cdn.example.invalid/x.png";' "assets/door/stars.js"
+door_case "an http address in a door module string" assets/door/stars.js "export const OUT2 = 'http://cdn.example.invalid/x.png';" "assets/door/stars.js"
+door_case "a protocol-relative address in a door module import" assets/door/stars.js 'import "//cdn.example.invalid/x.js";' "assets/door/stars.js"
+door_case "a protocol-relative address in a door module string" assets/door/stars.js 'export const OUT3 = "//cdn.example.invalid/x.js";' "assets/door/stars.js"
+door_case "an https address in a door module template string" assets/door/stars.js 'export const OUT4 = `https://cdn.example.invalid/${1}.png`;' "assets/door/stars.js"
+door_case "a door.css url() with an https address" assets/door/door.css '#door .x{background:url(https://cdn.example.invalid/x.png)}' "assets/door/door.css"
+door_case "a door.css url() with a quoted protocol-relative address" assets/door/door.css '#door .x{background:url("//cdn.example.invalid/x.png")}' "assets/door/door.css"
+door_case "a door.css @import with an https address" assets/door/door.css '@import "https://fonts.example.invalid/f.css";' "assets/door/door.css"
+door_ok "the SVG namespace string in a door module" assets/door/stars.js 'export const SVGNS = "http://www.w3.org/2000/svg";'
+door_ok "a same-origin relative path in a door module" assets/door/stars.js 'export const REL = new URL("./img/dawn/dawn.webp", document.baseURI).pathname + "/img/x.png";'
+door_ok "a same-origin relative url() in door.css" assets/door/door.css '#door .y{background:url(img/dawn/dawn.webp)}'
 # Case (o): the page's copy of the door edited by hand -> fails, names index.html.
 sed -i 's/<svg class="wl wash" /<svg class="wl washed" /' index.html
 commit_all "index.html door edited by hand"

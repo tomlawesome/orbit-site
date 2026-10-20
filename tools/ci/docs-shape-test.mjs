@@ -2,10 +2,16 @@
  * Test for tools/ci/docs-shape.mjs (#18): the committed assets/docs/ passes,
  * and each way a page or the index could carry something the import does not
  * write is refused and named. Works on copies in a scratch directory.
+ * Pictures (#72): assets/docs/ may hold a folder img/ of regular files named
+ * <16 hex>.(png|jpg|webp|gif), at most 1 MiB, whose leading bytes match the
+ * extension, each used by a section; every <img src> in a section is one of
+ * those files or assets/img/mark.svg.
  *
  *   node tools/ci/docs-shape-test.mjs
  */
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync, unlinkSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkDocs } from "./docs-shape.mjs";
@@ -78,6 +84,139 @@ for (const c of ["#a1b2c3", "#A1B2C3", "#a1B2c3"]) {
 for (const c of ["#abc", "#abcdeg", "abcdef", "#abcdef0", ""]) {
   refuses(`the colour ${JSON.stringify(c)} is refused (control: refused today)`, (d) => edit(d, "index.json", (j) => { j.sources[0].c = c; }), "index.json sources[0]: c is");
 }
+
+/* Pictures (#72). Real bytes, named by the first 16 hex digits of their SHA-256. Every refusal below is paired with an
+   accepted case that differs only in the thing refused. */
+const crcTable = Array.from({ length: 256 }, (_, i) => { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+const chunk = (type, data) => {
+  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+};
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const png = (seed) => { // a real 1x1 PNG whose pixel colour is the seed, so each seed is a different file
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(1, 0); ihdr.writeUInt32BE(1, 4); ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([PNG_SIG, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(Buffer.from([0, seed & 255, (seed >> 8) & 255, (seed >> 16) & 255]))), chunk("IEND", Buffer.alloc(0))]);
+};
+const jpg = (seed) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, seed & 255, 0xff, 0xd9]);
+const gif = (seed, v = "GIF89a") => Buffer.concat([Buffer.from(v, "latin1"), Buffer.from([1, 0, 1, 0, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 1, seed & 255, 0, 0x3b])]);
+const webp = (seed) => { const tail = Buffer.concat([Buffer.from("WEBPVP8L", "latin1"), Buffer.from([5, 0, 0, 0, 0x2f, 0, 0, 0, seed & 255, 0])]); const n = Buffer.alloc(4); n.writeUInt32LE(tail.length); return Buffer.concat([Buffer.from("RIFF", "latin1"), n, tail]); };
+const MIB = 1048576;
+const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.length)]);
+const hash16 = (b) => createHash("sha256").update(b).digest("hex").slice(0, 16);
+const IMG = "assets/docs/img";
+const tag = (src) => `<p><img src="${src}" alt="" loading="lazy"></p>`;
+const appendHtml = (d, file, html, k = 1) => edit(d, file, (j) => { j.sections[k].html += html; });
+/* put a picture in a copy of assets/docs and have a section use it: pic(d, bytes, ext) -> its name */
+const pic = (d, bytes, ext, o = {}) => {
+  const name = o.name ?? `${hash16(bytes)}.${ext}`;
+  mkdirSync(join(d, "img"), { recursive: true });
+  writeFileSync(join(d, "img", name), bytes);
+  if (o.used !== false) appendHtml(d, o.page ?? "readme.json", tag(`${IMG}/${name}`));
+  return name;
+};
+const accepts = (name, mutate) => {
+  const d = fresh(); mutate(d);
+  const p = checkDocs(d, sources);
+  check(name, p.length === 0, `want no problems, got ${JSON.stringify(p.slice(0, 3))}`);
+};
+
+check("P0 the committed assets/docs uses the orbit mark (control: an img with assets/img/mark.svg is the one allowed outside img/)",
+  JSON.parse(readFileSync("assets/docs/readme.json", "utf8")).sections.some((s) => s.html.includes('<img src="assets/img/mark.svg"')), "the committed page no longer holds the mark");
+
+// P1: each picture type, by its own leading bytes
+accepts("P1 a PNG picture used by a section", (d) => pic(d, png(1), "png"));
+accepts("P1 a JPEG picture used by a section", (d) => pic(d, jpg(2), "jpg"));
+accepts("P1 a GIF89a picture used by a section", (d) => pic(d, gif(3), "gif"));
+accepts("P1 a GIF87a picture used by a section", (d) => pic(d, gif(4, "GIF87a"), "gif"));
+accepts("P1 a WebP picture used by a section", (d) => pic(d, webp(5), "webp"));
+accepts("P1 pictures of every type, one used by two sections of two pages", (d) => {
+  const n = pic(d, png(10), "png"); pic(d, jpg(11), "jpg"); pic(d, gif(12), "gif"); pic(d, webp(13), "webp");
+  appendHtml(d, "readme.json", tag(`${IMG}/${n}`), 2); appendHtml(d, "security.json", tag(`${IMG}/${n}`), 0);
+});
+accepts("P1 a picture used only by a page other than readme", (d) => pic(d, png(14), "png", { page: "security.json" }));
+accepts("P1 the mark beside a picture", (d) => { pic(d, png(15), "png"); appendHtml(d, "security.json", tag("assets/img/mark.svg")); });
+accepts("P1 an img written as text in a code sample is not an img", (d) => {
+  appendHtml(d, "readme.json", '<pre class="code"><code>&lt;img src="https://raw.githubusercontent.com/x/y/main/a.png"&gt;</code></pre>');
+});
+
+// P2: a picture is a regular file, named <16 hex>.<ext>, at most 1 MiB
+{
+  const b = png(20), h = hash16(b);
+  refuses("P2 a name with upper-case hex", (d) => pic(d, b, "png", { name: `${h.toUpperCase()}.png` }), h.toUpperCase());
+  refuses("P2 a name with 15 hex digits", (d) => pic(d, b, "png", { name: `${h.slice(0, 15)}.png` }), h.slice(0, 15));
+  refuses("P2 a name with 17 hex digits", (d) => pic(d, b, "png", { name: `${h}0.png` }), `${h}0.png`);
+  refuses("P2 a name that is not hex", (d) => pic(d, b, "png", { name: `${h.slice(0, 15)}g.png` }), `${h.slice(0, 15)}g.png`);
+  refuses("P2 the extension jpeg", (d) => pic(d, jpg(21), "jpeg"), "jpeg");
+  refuses("P2 an upper-case extension", (d) => pic(d, b, "PNG"), `${h}.PNG`);
+  refuses("P2 an SVG picture", (d) => pic(d, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), "svg"), ".svg");
+  refuses("P2 a second extension", (d) => pic(d, b, "png.png"), `${h}.png.png`);
+  refuses("P2 a text file in img/", (d) => pic(d, Buffer.from("notes"), "txt", { used: false }), ".txt");
+  refuses("P2 a folder in img/", (d) => { mkdirSync(join(d, "img", "sub"), { recursive: true }); writeFileSync(join(d, "img", "sub", `${h}.png`), b); }, "sub");
+  refuses("P2 a symlink in img/ to a real picture", (d) => {
+    const real = join(tmp, `real-${n++}.png`); writeFileSync(real, b);
+    mkdirSync(join(d, "img")); symlinkSync(real, join(d, "img", `${h}.png`)); appendHtml(d, "readme.json", tag(`${IMG}/${h}.png`));
+  }, `${h}.png`);
+  refuses("P2 img as a regular file", (d) => { writeFileSync(join(d, "img"), b); }, "img");
+  refuses("P2 img as a symlink to a folder", (d) => {
+    const real = join(tmp, `dir-${n++}`); mkdirSync(real); writeFileSync(join(real, `${h}.png`), b);
+    symlinkSync(real, join(d, "img")); appendHtml(d, "readme.json", tag(`${IMG}/${h}.png`));
+  }, "img");
+  refuses("P2 a picture directly in assets/docs", (d) => writeFileSync(join(d, `${h}.png`), b), `${h}.png`);
+}
+accepts("P2 control: the same picture as a lower-case name in img/", (d) => pic(d, png(20), "png"));
+accepts("P2 control: a PNG of exactly 1 MiB", (d) => pic(d, padded(PNG_SIG, MIB), "png"));
+refuses("P2 a PNG of 1 MiB and one byte", (d) => pic(d, padded(PNG_SIG, MIB + 1), "png"), hash16(padded(PNG_SIG, MIB + 1)));
+accepts("P2 control: a JPEG of exactly 1 MiB", (d) => pic(d, padded(Buffer.from([0xff, 0xd8, 0xff]), MIB), "jpg"));
+refuses("P2 a JPEG of 1 MiB and one byte", (d) => pic(d, padded(Buffer.from([0xff, 0xd8, 0xff]), MIB + 1), "jpg"), hash16(padded(Buffer.from([0xff, 0xd8, 0xff]), MIB + 1)));
+
+// P3: the leading bytes must match the extension (control for each: the same bytes under their own extension are accepted above)
+refuses("P3 JPEG bytes named .png", (d) => pic(d, jpg(30), "png"), ".png");
+refuses("P3 PNG bytes named .jpg", (d) => pic(d, png(31), "jpg"), ".jpg");
+refuses("P3 GIF bytes named .webp", (d) => pic(d, gif(32), "webp"), ".webp");
+refuses("P3 WebP bytes named .gif", (d) => pic(d, webp(33), "gif"), ".gif");
+refuses("P3 text named .png", (d) => pic(d, Buffer.from("not a picture at all"), "png"), ".png");
+refuses("P3 an empty file named .png", (d) => pic(d, Buffer.alloc(0), "png"), ".png");
+refuses("P3 an SVG named .png", (d) => pic(d, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), "png"), ".png");
+refuses("P3 RIFF without WEBP named .webp", (d) => pic(d, Buffer.concat([Buffer.from("RIFF", "latin1"), Buffer.alloc(4), Buffer.from("WAVEfmt ", "latin1")]), "webp"), ".webp");
+refuses("P3 GIF88a named .gif", (d) => pic(d, gif(34, "GIF88a"), "gif"), ".gif");
+refuses("P3 a PNG signature cut short named .png", (d) => pic(d, PNG_SIG.subarray(0, 7), "png"), ".png");
+
+// P4: each picture is used by at least one section's html
+refuses("P4 a picture no section uses", (d) => pic(d, png(40), "png", { used: false }), hash16(png(40)));
+accepts("P4 control: the same picture used by a section", (d) => pic(d, png(40), "png"));
+refuses("P4 two pictures, one unused", (d) => { pic(d, png(41), "png"); pic(d, png(42), "png", { used: false }); }, hash16(png(42)));
+refuses("P4 a picture named only in a section's text, not as an img", (d) => {
+  const n2 = pic(d, png(43), "png", { used: false }); appendHtml(d, "readme.json", `<p>see ${IMG}/${n2}</p>`);
+}, hash16(png(43)));
+refuses("P4 a picture named only in a link, not as an img", (d) => {
+  const n2 = pic(d, png(44), "png", { used: false }); appendHtml(d, "readme.json", `<p><a href="${IMG}/${n2}">x</a></p>`);
+}, hash16(png(44)));
+
+// P5: every <img src> is a file in img/ or the mark
+{
+  const n1 = `${hash16(png(50))}.png`;
+  const bad = (name, src, want = "readme.json") => refuses(name, (d) => { pic(d, png(50), "png"); appendHtml(d, "readme.json", tag(src)); }, want);
+  accepts("P5 control: two imgs, a picture in img/ and the mark", (d) => { pic(d, png(50), "png"); appendHtml(d, "readme.json", tag("assets/img/mark.svg")); });
+  bad("P5 a picture that is not in img/", `${IMG}/${hash16(png(51))}.png`);
+  bad("P5 an https picture", "https://example.com/a.png");
+  bad("P5 a raw.githubusercontent.com picture", "https://raw.githubusercontent.com/tomlawesome/orbit/main/docs/a.png");
+  bad("P5 another file under assets/", "assets/img/other.svg");
+  bad("P5 the mark's folder with another name", "assets/img/mark.png");
+  bad("P5 a picture in img/ with a query", `${IMG}/${n1}?x=1`);
+  bad("P5 a picture in img/ with a fragment", `${IMG}/${n1}#x`);
+  bad("P5 a path that climbs out of img/", `${IMG}/../../index.html`);
+  bad("P5 an absolute path to the picture", `/${IMG}/${n1}`);
+  bad("P5 a data: picture", "data:image/png;base64,AAAA");
+  bad("P5 a relative picture as written upstream", "docs/a.png");
+  refuses("P5 a bad src beside good ones in a second page", (d) => { pic(d, png(50), "png"); appendHtml(d, "security.json", tag("https://example.com/a.png"), 0); }, "security.json");
+}
+
+// P6: no img/ folder at all is fine when no section uses a picture, and a section that uses one needs the folder
+accepts("P6 no img/ folder and no picture in use (the committed shape)", () => {});
+refuses("P6 a section uses a picture and there is no img/ folder", (d) => appendHtml(d, "readme.json", tag(`${IMG}/${hash16(png(60))}.png`)), "readme.json");
 
 rmSync(tmp, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

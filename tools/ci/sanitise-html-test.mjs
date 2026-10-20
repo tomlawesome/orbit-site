@@ -45,10 +45,11 @@ const eq = (name, input, opts, want) => {
     `calls: ${JSON.stringify(seen)} (want ["docs/orbit-mark.svg"])`);
 }
 
-// 2. event handlers are dropped.
+// 2. event handlers are dropped. (Rewritten for #72: an img is kept only for an address under assets/, so the resolver
+// gives the site's own copy of the picture and not an https address, which now becomes a link, see 21.)
 eq("2 onerror is dropped from an img", '<img src=x onerror="alert(1)">',
-  { link: id, image: () => "https://h/x" },
-  '<img src="https://h/x" alt="" loading="lazy">');
+  { link: id, image: () => "assets/docs/img/0123456789abcdef.png" },
+  '<img src="assets/docs/img/0123456789abcdef.png" alt="" loading="lazy">');
 
 // 3. details keeps open, drops ontoggle.
 eq("3 details keeps open and drops ontoggle",
@@ -81,10 +82,11 @@ eq("6 script returns an empty string", "<p>x</p><script>1</script>", std, "");
 eq("6 iframe in upper case returns an empty string", "<P><IFRAME src=x></P>", std, "");
 eq("6 form returns an empty string", "<form action=x><p>x</p></form>", std, "");
 
-// 7. upper-case names, a quoted > in a value, 100% width dropped.
+// 7. upper-case names, a quoted > in a value, 100% width dropped. (Rewritten for #72: the picture is the site's own copy.)
 eq("7 upper-case tag, odd attributes, > in a value",
-  '<IMG SRC="https://h/a.png" ONERROR=x STYLE="x" alt="a > b" width="100%">', std,
-  '<img src="https://h/a.png" alt="a &gt; b" loading="lazy">');
+  '<IMG SRC="https://h/a.png" ONERROR=x STYLE="x" alt="a > b" width="100%">',
+  { link: id, image: () => "assets/docs/img/0123456789abcdef.png" },
+  '<img src="assets/docs/img/0123456789abcdef.png" alt="a &gt; b" loading="lazy">');
 
 // 8. a data: image is dropped, nothing else was there.
 eq("8 a data: image source drops the img", '<img src="data:image/png;base64,AAAA" alt="x">', std, "");
@@ -103,11 +105,11 @@ eq("10 id, style and onclick are dropped", '<p id="x" style="color:red" onclick=
 eq("11 the first href wins", '<a href="https://h/" href="javascript:1">t</a>', std,
   '<a href="https://h/" target="_blank" rel="noopener">t</a>');
 
-// 12. percentage widths other than 100% stay; the resolver result is used.
+// 12. percentage widths other than 100% stay; the resolver result is used. (Rewritten for #72: the result is under assets/.)
 eq("12 a 92% width and a numeric height stay",
   '<img src="docs/a.png" width="92%" height="10">',
-  { link: id, image: (h) => "https://raw/" + h },
-  '<img src="https://raw/docs/a.png" alt="" width="92%" height="10" loading="lazy">');
+  { link: id, image: (h) => "assets/" + h },
+  '<img src="assets/docs/a.png" alt="" width="92%" height="10" loading="lazy">');
 
 // 13. the heading block from orbit-launcher's README keeps its structure, text and entities.
 {
@@ -205,6 +207,43 @@ for (const input of [
   has("20 a name made of = and a quoted word", `<a ="y" href="${U}" title="t">x</a>`, [`href="${U}"`, `title="t"`]);
   eq("20 a tag name with : is not <a>", "<a:b>x</a:b>", std, "");
   eq("20 a tag name with : beside an allowed tag is not <a>", `<p>k</p><a:b href="${U}">x</a:b>`, std, "");
+}
+
+// 21. (#72) the page's policy is img-src 'self' data: blob:, so an <img> is kept only when its address resolves under
+// assets/. When the resolver gives an https:// address, a link to it is written instead, with the alt text as its text
+// ("picture" if there is none); any other address drops the img.
+{
+  const asLink = (name, input, url, text) => {
+    let got;
+    try { got = sanitiseHtml(input, { link: () => "SHOULD-NOT-BE-USED", image: () => url }); } catch (e) { got = `threw: ${e.message}`; }
+    const re = new RegExp(`^<a href="${url.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&")}"[^>]*>${text}</a>$`);
+    check(name, re.test(got) && !got.includes("<img"), `${JSON.stringify(input)} gave ${JSON.stringify(got)} (want only a link to ${url} reading ${JSON.stringify(text)})`);
+  };
+  const U = "https://github.com/tomlawesome/orbit/blob/main/docs/shot.png";
+  asLink("21 an https picture address becomes a link with the alt text", '<img src="docs/shot.png" alt="The shot">', U, "The shot");
+  asLink("21 a link with no alt text reads picture", '<img src="docs/shot.png">', U, "picture");
+  asLink("21 a link with an empty alt reads picture", '<img src="docs/shot.png" alt="">', U, "picture");
+  asLink("21 the alt text is decoded then escaped in the link", '<img src="docs/shot.png" alt="a &amp; b &lt;i&gt;">', U, "a &amp; b &lt;i&gt;");
+  {
+    let got;
+    try { got = sanitiseHtml('<img src="x" alt="s">', { link: id, image: () => 'https://h/a"b.png' }); } catch (e) { got = `threw: ${e.message}`; }
+    check("21 an https address with a quote cannot break out of the href", typeof got === "string" && !got.includes('a"b') && !got.includes("<img"),
+      `gave ${JSON.stringify(got)} (want no raw quote from the address and no img)`);
+  }
+  // the control for the above: the same markup, resolved under assets/, stays a picture
+  for (const ok of ["assets/docs/img/0123456789abcdef.png", "assets/img/mark.svg", "assets/img/docs/x.webp"]) {
+    eq(`21 control: the address ${JSON.stringify(ok)} keeps the img`, '<img src="docs/shot.png" alt="The shot">',
+      { link: id, image: () => ok }, `<img src="${ok}" alt="The shot" loading="lazy">`);
+  }
+  // anything else is dropped: not under assets/, not https
+  for (const bad of ["http://h/a.png", "//h/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA", "/assets/docs/img/a.png",
+    "docs/a.png", "../assets/a.png", "assets/../index.html", "assets/docs/../../index.html", "assetsx/a.png", "assets", "", "file:///etc/passwd"]) {
+    eq(`21 the address ${JSON.stringify(bad)} drops the img`, '<img src="docs/shot.png" alt="The shot">', { link: id, image: () => bad }, "");
+  }
+  eq("21 a dropped picture leaves the rest of the paragraph", '<p>before <img src="x" alt="s"> after</p>',
+    { link: id, image: () => "ftp://h/a.png" }, "<p>before  after</p>");
+  eq("21 a picture link sits inside its paragraph", '<p>see <img src="x" alt="s"> now</p>',
+    { link: id, image: () => "https://h/a.png" }, '<p>see <a href="https://h/a.png" target="_blank" rel="noopener">s</a> now</p>');
 }
 
 process.exit(failed ? 1 : 0);
