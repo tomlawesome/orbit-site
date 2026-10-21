@@ -462,6 +462,61 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
 }
 
 
+// ---------------------------------------------------------------- a missing start heading (#78) --
+// A source's `from` names the heading its page begins at. When the source's markdown has no such heading the import
+// stops: it exits non-zero and says on stderr which source (repo and path) and which heading, instead of keeping the
+// whole file. The scratch copy's tools/docs-sources.json is the real list with the readme given its own `from`, so the
+// case does not depend on what the committed list says; the control is the same source with the heading present.
+{
+  const real = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
+  const HEAD = "Start here";
+  const sources = real.map(({ skip, from: f, ...s2 }) => (s2.slug === "readme" ? { ...s2, from: HEAD } : s2));
+  const tmp = mkdtempSync(join(tmpdir(), "import-from-"));
+  const repoCopy = join(tmp, "repo");
+  cpSync("tools", join(repoCopy, "tools"), { recursive: true, filter: (p) => !/node_modules/.test(p) });
+  symlinkSync(join(process.cwd(), "tools", "node_modules"), join(repoCopy, "tools", "node_modules"));
+  writeFileSync(join(repoCopy, "tools", "docs-sources.json"), JSON.stringify(sources, null, 1) + "\n");
+  mkdirSync(join(repoCopy, "assets", "docs"), { recursive: true });
+  const O = "tomlawesome/orbit";
+  const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
+  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Details\n\nText for ${s2.name}.\n`;
+  const readme = (withHead) => ["# Orbit", "", "Landing words.", "", "## Before the start", "", "Not on the page.", "",
+    withHead ? `## ${HEAD}` : "## Somewhere else", "", "The page begins here.", "", "## After", "", "More text.", ""].join("\n");
+  let k = 0;
+  const scenario = (withHead) => {
+    const from = join(tmp, `checkout${k}`), fromL = `${from}-launcher`, out = join(tmp, `out${k}`); k++;
+    for (const s2 of sources) put(s2.repo === O ? from : fromL, s2.path, s2.slug === "readme" ? readme(withHead) : stub(s2));
+    const r = spawnSync(process.execPath, ["tools/import-docs.mjs", "--from", from, "--out", out], { cwd: repoCopy, encoding: "utf8", timeout: 120000, env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    return { status: r.status, stderr: r.stderr ?? "", err: r.error ? String(r.error.message) : "", out };
+  };
+
+  // M1: the heading is missing -> the import stops, naming the source and the heading
+  {
+    const r = scenario(false);
+    check("M1 a source whose `from` heading is missing stops the import (exit non-zero)", r.status !== 0 && r.status !== null,
+      `status ${r.status}${r.err ? " " + r.err : ""}; stderr: ${r.stderr.slice(0, 300)}`);
+    // one line names the repo (not the launcher's), the path and the heading
+    const named = r.stderr.split("\n").some((l) => /tomlawesome\/orbit(?!-launcher)/.test(l) && l.includes("README.md") && l.includes(HEAD));
+    check("M1 stderr names the source (tomlawesome/orbit and README.md) and the missing heading on one line", named,
+      `stderr: ${JSON.stringify(r.stderr.slice(0, 400))}`);
+  }
+  // M2 (control): the same source with the heading present -> exit 0, and the page begins at that heading
+  {
+    const r = scenario(true);
+    check("M2 the same source with its `from` heading present imports (exit 0; control)", r.status === 0,
+      `status ${r.status}${r.err ? " " + r.err : ""}; stderr: ${r.stderr.slice(0, 300)}`);
+    const file = join(r.out, "readme.json");
+    const page = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+    const secs = page?.sections ?? [];
+    const html = secs.map((x) => x.html).join("\n");
+    check("M2 the page begins at the `from` heading (its first section is it; nothing above it is kept; control)",
+      secs.length > 0 && secs[0].title === HEAD && secs[0].id === "start-here" && html.includes("The page begins here.") && html.includes("More text.")
+        && !html.includes("Not on the page.") && !html.includes("Landing words."),
+      page ? `sections ${JSON.stringify(secs.map((x) => [x.id, x.title]))}` : `no ${file}`);
+  }
+  rmSync(tmp, { recursive: true, force: true });
+}
+
 // ------------------------------------------------- picture budget and fetch cap (audit 5, S2 and S4) --
 // S2: one import copies at most 6 MiB of pictures across all its sources; a picture past that becomes a link to its
 // file in the repo, warned about on stderr with "past". S4: one source may try at most 32 pictures, missing ones

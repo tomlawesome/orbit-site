@@ -128,7 +128,8 @@ function render(md, src, bySourcePath, pics) {
   /* the page begins at the named heading; what comes before is the repository's own banner */
   if (src.from) {
     const at = tokens.findIndex((t) => t.type === "heading" && t.text.trim() === src.from);
-    if (at > -1) tokens = tokens.slice(at);
+    if (at < 0) { console.error(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: the start heading "${logSafe(src.from)}" is not in the file`); process.exit(1); }
+    tokens = tokens.slice(at);
   }
   const h1 = tokens.find((t) => t.type === "heading" && t.depth === 1);
   const title = src.title || (h1 ? h1.text.trim() : src.name);
