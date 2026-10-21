@@ -16,7 +16,7 @@ if [ -n "${COVERAGE_DIR-}" ]; then
 fi
 
 for t in fetch-once dates sanitise-html comment-rules home-props goodbye-markup descent-homes \
-  gpu-gate hurry dawn-destroyed-light retire-after-destroy destroyed-world released-world \
+  gpu-gate hurry dawn-destroyed-light dawn-let-go retire-after-destroy destroyed-world released-world \
   rich-remount sharp-strip-remount fit-skip door-context-restore door-wordmark release-tag door-shimmer \
   door-probe-chores door-world door-banded-upload door-sky door-live-teardown local-server \
   site-world site-home-date site-home site-tilt site-lock site-pads site-pads-sources docs-shape docs-sky-portrait site-data sw; do
