@@ -8,8 +8,8 @@
  *       long, and still when onLit is called (body.lit set, nothing drawn yet). Passes already; the pair to L2.
  *   L2  once the reveal has drawn them, the dawn holds none of them: dawn.held holds no picture, and every picture the
  *       dawn decoded can be collected by the garbage collector.
- *   L3  a picture whose painted version replaces it is let go at that moment: the sun glow (glow-sunpt.webp), once the
- *       painted sun is on its layer (image[data-raster="sun"] carries a blob: picture), before any light.
+ *   L3  the painted sun does not replace the sun glow (both are drawn, side by side in one layer), so before the light
+ *       the sun glow is held with the rest: nothing is let go early.
  *   L4  destroy() lets go of everything (existing behaviour): dawn.held is [] and every decoded picture can be collected;
  *       and destroy() after the drawn-in point throws nothing.
  *
@@ -36,9 +36,9 @@ const KEPT_FOR = 30000;
 const DRAWN_WITHIN = 10000;
 const SUN_GLOW = /glow-sunpt\.webp$/;
 const PAINTED = /^(blob|data):/;
-/* the pictures #32 holds until the reveal: everything decoded but the sun glow (L3 lets that go sooner) */
-const KEPT = [/glow-sway1\.webp$/, /glow-sway2\.webp$/, /glow-zod\.webp$/, /dawn-pre\.webp$/, /\/dawn\.webp$/, PAINTED];
-const KEPT_NAMES = ["glow-sway1", "glow-sway2", "glow-zod", "dawn-pre", "dawn", "the painted sun"];
+/* the pictures #32 holds until the reveal: everything decoded */
+const KEPT = [/glow-sway1\.webp$/, /glow-sway2\.webp$/, /glow-zod\.webp$/, SUN_GLOW, /dawn-pre\.webp$/, /\/dawn\.webp$/, PAINTED];
+const KEPT_NAMES = ["glow-sway1", "glow-sway2", "glow-zod", "glow-sunpt", "dawn-pre", "dawn", "the painted sun"];
 
 /* a glow layer as the markup writes it: an SVG <image data-raster=name href=...>, its href readable and settable */
 function layer(name, href) {
@@ -193,11 +193,7 @@ const errs = (r) => `${errOf(r)}${r.errors && r.errors.length ? `; uncaught: ${r
   check("L3 (precondition): at \"ready\" the painted sun is on its layer, the sun glow was decoded, and the door is not lit",
     ok && PAINTED.test(r.sunHref || "") && (r.decoded || []).some((s) => SUN_GLOW.test(s)) && !r.lit,
     `sun layer href ${JSON.stringify(r.sunHref)}; sun glow decoded ${(r.decoded || []).some((s) => SUN_GLOW.test(s))}; lit ${r.lit}${errs(r)}`);
-  check("L3: once the painted sun replaces it, dawn.held no longer holds the sun glow (glow-sunpt.webp)",
-    ok && !(r.held || []).some((s) => SUN_GLOW.test(s)), `held ${brief(r.held || [])}${errs(r)}`);
-  check("L3: ... and the sun glow's decoded picture can be collected",
-    ok && !(r.alive || []).some((s) => SUN_GLOW.test(s)), `alive ${brief(r.alive || [])}${errs(r)}`);
-  check("L3 (pair): the painted sun itself and the other pictures are still held before the light",
+  check("L3: the painted sun, the sun glow beside it and the other pictures are all still held before the light",
     ok && keptMissing(r.held || []).length === 0, `missing ${JSON.stringify(keptMissing(r.held || []))}${errs(r)}`);
 }
 {
