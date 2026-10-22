@@ -2,7 +2,8 @@
 
 Only what the global instructions and shared skills do not already cover.
 
-The Orbit family is one project: act across Orbit, its base image, the launcher and this site without asking (Orbit ADR-0036, `ai/orbit`, `docs/adr/0036-the-orbit-family-is-one-project.md`).
+- The Orbit family (`ai/orbit`, `ai/orbit-launcher`, `ai/orbit-site`, `ai/orbit-base-image`) is one project (Orbit ADR-0036, `ai/orbit`, `docs/adr/0036-the-orbit-family-is-one-project.md`): each repo's files, layout and scripts are the whole project's own, never designed around as an outside system. The launcher owns install, update, repair and removal; removal work belongs in the launcher, not a separate tool in Orbit.
+- When work here needs a change in another of the four, do not make it from here: file an issue there with the design fully worked out, labelled `cross-repo`, in that repo's nearest open milestone, and link it from this repo's issue, parked as blocked. That repo's session builds and closes it; on resuming, check blocked issues, and bump any pin once the other repo has released. A `cross-repo` issue is ordinary work in its milestone. ADR-0036 still covers reading sibling repos and one-line pin or doc fixes (owner, 2026-10-22: avoids two sessions editing one repo at once).
 
 ## Rules and traps
 
