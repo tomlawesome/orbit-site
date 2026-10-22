@@ -1026,10 +1026,10 @@ void main(){ vec2 d=gl_PointCoord-0.5; float a=uPts>0.5?exp(-dot(d,d)*14.0):1.0;
 /* the rush's program and the galaxy's, as sources, for the tests (tests/t-compile.js) */
 export const SOURCES = { scene: SCENE, galaxy: GAL };
 /* the galaxy's stars, made once: most in the disc and thickest along the arms, some in the bulge, and a cloud of
-   them about the place the flight comes to rest, so there are stars close by to pass */
-const REST = [0.56, 0, 0]; /* the landscape rest (engine.js: PATH); a portrait screen's is further out, above the disc */
-/** @param {number} n */
-function galaxyStars(n) {
+   them about the place the flight comes to rest, so there are stars close by to pass. The rest is the engine's, for the
+   screen's shape (createVoyage's restFor): this file holds no copy of it. Pure: the same arguments, the same stars */
+/** @param {number} n @param {number[]} rest where the flight comes to rest */
+export function galaxyStars(n, rest) {
   let sd = 4242; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(6.2832 * rnd());
   const P = new Float32Array(n * 2 * 4), C = new Float32Array(n * 2 * 3);
@@ -1052,7 +1052,7 @@ function galaxyStars(n) {
       /* the neighbourhood the flight comes to */
       const rr = Math.pow(rnd(), 0.5) * 0.22;
       const u = rnd() * 2 - 1, ph = rnd() * 6.2832, sq = Math.sqrt(1 - u * u);
-      x = REST[0] + rr * sq * Math.cos(ph); z = REST[2] + rr * sq * Math.sin(ph); y = REST[1] + rr * u * 0.35;
+      x = rest[0] + rr * sq * Math.cos(ph); z = rest[2] + rr * sq * Math.sin(ph); y = rest[1] + rr * u * 0.35;
       const yb = rnd(); col = yb < 0.25 ? [0.72, 0.8, 1] : yb < 0.7 ? [1, 0.97, 0.93] : yb < 0.92 ? [1, 0.86, 0.68] : [1, 0.62, 0.45];
       w = 0.04 + Math.pow(rnd(), 9) * 0.6;
     }
@@ -1090,8 +1090,10 @@ export function doorCamera(sunUnder = SUN_UNDER) {
 /* The flight's world, built on the page's one context (fitness.js: gpu(), the GPU gate), never a second one made here;
    null where the page may not use the GPU, or the context has no float colour buffers. Its canvas (#warpgl) is the
    gate's own, put under the flight's. The one world a page has: a second call would build on the same canvas */
-/** @param {HTMLElement | null} under the flight's canvas, which the world's canvas goes beneath @returns {Voyage | null} */
-export function createVoyage(under) {
+/** @param {HTMLElement | null} under the flight's canvas, which the world's canvas goes beneath
+    @param {{ restFor: (w: number, h: number) => number[] }} where restFor: where the flight comes to rest on a screen of this size (the engine's, for its shape)
+    @returns {Voyage | null} */
+export function createVoyage(under, { restFor }) {
   if (typeof document === "undefined" || !under?.parentNode) return null;
   const g = gpu();
   if (!g || g.gl.isContextLost()) return null;
@@ -1384,7 +1386,7 @@ export function createVoyage(under) {
       loading = Promise.all([made, loaded])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
         .then(() => richOnly && chore(richMaps, 60, "flight"))
-        .then(() => chore(() => { if (gone) return; try { makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
+        .then(() => chore(() => { if (gone) return; try { remakeStars(); makeStars(); } catch { /* drawn without them */ } }, 60, "flight"))
         .then(() => {});
     }
     if (!prove) return loading;
@@ -1495,9 +1497,14 @@ export function createVoyage(under) {
   let W = 1, H = 1, part = 0.75, hdr = /** @type {Target | null} */ (null), chain = /** @type {Target[]} */ ([]), frames = /** @type {number[]} */ ([]), CW = 0, CH = 0, lastDraw = 0, galT = /** @type {Target | null} */ (null), gq = 0.45;
   /* the galaxy's stars, put on the GPU once (warm) */
   let starVao = /** @type {WebGLVertexArrayObject | null} */ (null), starN = 0, starBufs = /** @type {WebGLBuffer[]} */ ([]);
+  /* the point they were made for, and whether the screen has since turned to another (resize): stale stars are remade
+     only where nothing is flying, in the warm chore or at a flight's start (reset), never in draw */
+  let starRest = /** @type {number[] | null} */ (null), starsStale = false;
   function makeStars() {
     if (starVao) return;
-    const { P: pos, C: col } = galaxyStars(48000);
+    const rest = restFor(W, H);
+    const { P: pos, C: col } = galaxyStars(48000, rest);
+    starRest = rest;
     starVao = gl.createVertexArray(); gl.bindVertexArray(starVao);
     const b1 = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b1); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
@@ -1505,12 +1512,20 @@ export function createVoyage(under) {
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null); starN = pos.length / 4; starBufs = [b1, b2];
   }
+  /* stale stars given back, so makeStars makes them anew for the screen's point */
+  function remakeStars() {
+    if (!starsStale) return;
+    starsStale = false;
+    giveBack("VertexArray", starVao); for (const b of starBufs) giveBack("Buffer", b);
+    starVao = null; starBufs = []; starN = 0;
+  }
   /* the streaks' travel, per depth: log radius, integrated from the flight's own speed */
   const off = [0, 0.3, 0.7, 0.15];
 
   /** @param {number} w @param {number} h */
   function resize(w, h) {
     W = w; H = h;
+    if (starVao && starRest) { const r = restFor(W, H); starsStale = r[0] !== starRest[0] || r[1] !== starRest[1] || r[2] !== starRest[2]; }
     if (dead) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     /* the whole frame is moving: drawn at a part of the screen's density, no more than about 1.6 million pixels */
@@ -1695,5 +1710,9 @@ export function createVoyage(under) {
     for (const o of [maps, fields]) for (const k of Object.keys(o)) delete o[k];
     glowT = null; sunTex = null;
   }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() { off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = []; } };
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() {
+    off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = [];
+    /* the start of a flight, before its first frame: the one place besides the warm chore where stale stars are remade */
+    if (starsStale && !gone) { try { remakeStars(); makeStars(); } catch { /* drawn without them */ } }
+  } };
 }

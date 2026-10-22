@@ -1242,7 +1242,7 @@ export function createFlight(canvas, options = {}) {
         if (!options.plain) fetchVoyage();
         const make = () => {
           if (destroyed) return undefined;
-          try { world3d = createVoyage(canvas); world3d?.resize(W || innerWidth, H || innerHeight); } catch (e) { world3d = null; }
+          try { world3d = createVoyage(canvas, { restFor: (w, h) => (tallScreen(w, h) ? PATH_TALL : PATH)[3] }); world3d?.resize(W || innerWidth, H || innerHeight); } catch (e) { world3d = null; }
           return world3d?.made;
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
