@@ -8,11 +8,19 @@
  *   node tools/import-docs.mjs --from DIR reads a local checkout instead
  *                                         (orbit-launcher's from DIR-launcher)
  *   ... --out DIR                         writes there, not assets/docs
+ *   ... --warnings FILE                   writes the warnings there, not
+ *                                         import-warnings.txt at the checkout root
  *
  * The pictures the pages show are copied in too, as assets/docs/img/<content
  * hash>.<type>: the page's policy loads pictures from the site alone, and
  * nothing the Orbit app uses may load from an outside source (owner,
  * 2026-10-20). A picture not copied becomes a link to it, and is warned of.
+ *
+ * Every warning is also written to import-warnings.txt (#82), always, empty when
+ * there are none: one per line, repo<TAB>path<TAB>kind<TAB>message, the message
+ * made log-safe and cut to 300 characters; at most 200 lines and 64 KiB (the
+ * first ones, then one line of kind `more` saying how many were left out). The
+ * publish job refuses a file outside those rules, so the import keeps to them.
  *
  * Needs `marked` (npm ci --prefix tools --ignore-scripts). Nothing here runs
  * on the site.
@@ -24,10 +32,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitiseHtml } from "./sanitise-html.mjs";
 import { offMarkup } from "./ci/docs-markup.mjs";
-import { plain, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName, picturesUsed, MAX_PICTURE_BYTES_TOTAL } from "./import-docs-lib.mjs";
+import { plain, cleanAddress, schemeOf, resolveLink, droppedBlockWarning, logSafe, slugger, rawHeading, pictureFile, pictureName, picturesUsed, MAX_PICTURE_BYTES_TOTAL } from "./import-docs-lib.mjs";
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > -1 ? process.argv[i + 1] : null; };
 const OUT = arg("--out") ?? join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "docs");
+const WARNINGS = arg("--warnings") ?? join(dirname(fileURLToPath(import.meta.url)), "..", "import-warnings.txt");
+/* the warnings file's limits, as the publish job checks them (check_warnings in tools/ci/nightly-publish.sh) */
+const MAX_WARNING_LINES = 200, MAX_WARNING_BYTES = 65536, MAX_WARNING_MESSAGE = 300;
 /* a picture's size, as docs-shape.mjs and the publish job check it, how many one source may copy and how many it
    may try to fetch, missing ones included (audit 5, S4); all pictures together are MAX_PICTURE_BYTES_TOTAL (S2) */
 const MAX_PICTURE = 1048576, MAX_PICTURES = 16, MAX_PICTURE_TRIES = 32;
@@ -61,6 +72,16 @@ async function fetchSource(src) {
 }
 const REPOS = [...new Set(SOURCES.map((s) => s.repo))];
 
+/* every warning of this import, { repo, path, kind, message }, told in the log as it comes and written to the
+   warnings file at the end */
+const warnings = [];
+function warn(src, kind, message) {
+  let m = logSafe(message);
+  if (m.length > MAX_WARNING_MESSAGE) m = m.slice(0, MAX_WARNING_MESSAGE).replace(/[\ud800-\udbff]$/, "");
+  warnings.push({ repo: src.repo, path: src.path, kind, message: m });
+  console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: ${m}`);
+}
+
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
@@ -69,8 +90,25 @@ const unescapeHtml = (s) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').rep
 function render(md, src, bySourcePath, pics) {
   const id = slugger();
   const headings = [];
-  const picture = (href) => { pics.seen?.(href); const to = resolveLink(href, src, bySourcePath, true, pics.map); if (!to.startsWith("assets/")) pics.warn?.(href); return to; };
-  const say = pics.seen ? () => {} : (m) => console.warn(m);
+  const say = pics.seen ? () => {} : (kind, m) => warn(src, kind, m);
+  /* every address is cleaned before it is judged (#82); a scheme but http, https or mailto gives null */
+  const address = (href) => {
+    const { address: a, changed } = cleanAddress(href ?? "");
+    if (changed) say("link-cleaned", `link address cleaned (tab, newline or edge control characters removed): ${logSafe(href).slice(0, 80)}`);
+    return a;
+  };
+  const dropped = (a, to) => {
+    if (to === null) say("link-dropped", `link dropped, its text kept: scheme "${logSafe(schemeOf(a))}" is not http, https or mailto: ${logSafe(a).slice(0, 80)}`);
+    return to;
+  };
+  const linkTo = (href) => { const a = address(href); return dropped(a, resolveLink(a, src, bySourcePath, false)); };
+  const picture = (href) => {
+    const a = address(href);
+    pics.seen?.(a);
+    const to = dropped(a, resolveLink(a, src, bySourcePath, true, pics.map));
+    if (to !== null && !to.startsWith("assets/")) pics.warn?.(a);
+    return to;
+  };
   const renderer = {
     heading({ tokens, depth }) {
       const text = this.parser.parseInline(tokens);
@@ -80,12 +118,14 @@ function render(md, src, bySourcePath, pics) {
     },
     link({ href, title, tokens }) {
       const text = this.parser.parseInline(tokens);
-      const to = resolveLink(href, src, bySourcePath, false);
+      const to = linkTo(href);
+      if (to === null) return text;
       const out = /^https?:/i.test(to) ? ' target="_blank" rel="noopener"' : "";
       return `<a href="${esc(to)}"${title ? ` title="${esc(title)}"` : ""}${out}>${text}</a>`;
     },
     image({ href, title, text }) {
       const to = picture(href);
+      if (to === null) return esc(text || "picture");
       if (!to.startsWith("assets/")) return `<a href="${esc(to)}"${/^https?:/i.test(to) ? ' target="_blank" rel="noopener"' : ""}>${esc(text || "picture")}</a>`;
       return `<img src="${esc(to)}" alt="${esc(text || "")}"${title ? ` title="${esc(title)}"` : ""} loading="lazy" />`;
     },
@@ -109,13 +149,14 @@ function render(md, src, bySourcePath, pics) {
     },
     html({ text }) {
       const out = sanitiseHtml(text, {
-        link: (h) => resolveLink(h, src, bySourcePath, false),
+        link: linkTo,
         image: picture,
-        warn: (m) => say(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: ${m}`),
+        warn: (m) => say("block-unclosed", m),
       });
       // text the page no longer shows is told in the import's log
       const lost = droppedBlockWarning(src, text, out);
-      if (lost) say(lost);
+      const at = `import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: `;
+      if (lost) say("block-lost-text", lost.startsWith(at) ? lost.slice(at.length) : lost);
       return out;
     },
   };
@@ -193,7 +234,7 @@ for (const src of SOURCES) {
     const f = pictureFile(href, src, REPOS);
     const key = f && `${f.repo}:${f.path}`;
     const reason = (f && (past.get(key) ?? why.get(key))) ?? "is not a file of the listed repositories";
-    console.warn(`import-docs: ${logSafe(src.repo)}/${logSafe(src.path)}: picture ${logSafe(href)} ${reason}; not copied`);
+    warn(src, "picture-not-copied", `picture ${logSafe(href)} ${reason}; not copied`);
   } });
   /* what the publish job will refuse fails here, where it was written: a marked upgrade that writes something new
      breaks the import, not the publish */
@@ -221,3 +262,20 @@ for (const f of await readdir(IMG).catch(() => [])) if (!bytesOf.has(f)) await r
 for (const [name, b] of bytesOf) if (!(await readFile(join(IMG, name)).catch(() => null))?.equals(b)) await writeFile(join(IMG, name), b);
 if (!bytesOf.size) await rm(IMG, { recursive: true, force: true });
 console.log(`index: ${index.sources.reduce((n, s) => n + s.sections.length, 0)} sections in ${index.sources.length} sources`);
+
+/* the warnings file, written always: all the warnings if they fit the line and byte caps; else the first ones
+   that fit with room for one more line, of kind `more`, saying how many were left out (under the first one's
+   source) */
+const lines = warnings.map((w) => `${w.repo}\t${w.path}\t${w.kind}\t${w.message}\n`);
+const bytes = (ls) => ls.reduce((b, l) => b + Buffer.byteLength(l), 0);
+let text = lines.join("");
+if (lines.length > MAX_WARNING_LINES || Buffer.byteLength(text) > MAX_WARNING_BYTES) {
+  const more = (k) => { const w = warnings[k], left = warnings.length - k;
+    return `${w.repo}\t${w.path}\tmore\t${left} more warning${left === 1 ? "" : "s"} left out; the import's log has them all\n`; };
+  /* at least one is left out (the byte cap can bite with fewer than 200 lines of non-ASCII messages) */
+  let keep = Math.min(MAX_WARNING_LINES - 1, lines.length - 1);
+  while (keep > 0 && bytes(lines.slice(0, keep)) + Buffer.byteLength(more(keep)) > MAX_WARNING_BYTES) keep--;
+  text = lines.slice(0, keep).join("") + more(keep);
+}
+await writeFile(WARNINGS, text);
+console.log(`warnings: ${warnings.length}, in ${WARNINGS}`);

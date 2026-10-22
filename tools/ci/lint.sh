@@ -313,9 +313,13 @@ if on stray; then
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)
-for f in node_modules package.json package-lock.json .agents; do
+for f in node_modules package.json package-lock.json .agents import-warnings.txt; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
+# the import's warnings file (#82) is written at the root of every import's
+# checkout: ignored, so it is never committed by hand
+grep -qx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore \
+  || { echo "   .gitignore must list /import-warnings.txt"; fail=1; }
 fi
 
 if on npm-pins; then

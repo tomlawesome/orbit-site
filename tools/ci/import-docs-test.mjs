@@ -612,4 +612,152 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
   rmSync(tmp, { recursive: true, force: true });
 }
 
+// ------------------------------------------------- link addresses and the warnings file (#82) --
+// cleanAddress(href) in tools/import-docs-lib.mjs cleans an address as a browser does before it judges the scheme:
+// U+0009, U+000A and U+000D are removed anywhere, U+0000-U+0020 trimmed at both ends; it returns { address, changed }.
+// resolveLink() is only given the cleaned address, and returns null for any scheme but http, https and mailto (the
+// text of such a link is kept, without its address). The import writes import-warnings.txt at the checkout root
+// (--warnings <file> names another), always, empty when there is nothing: one line per warning,
+// repo<TAB>path<TAB>kind<TAB>message, at most 200 lines (the first 199, then one line of kind `more`).
+{
+  if (typeof lib.cleanAddress !== "function") check("tools/import-docs-lib.mjs exports cleanAddress", false, `got ${typeof lib.cleanAddress}`);
+  const clean = (h) => { try { return lib.cleanAddress(h); } catch (e) { return `threw: ${e.message}`; } };
+  const same = (name, got, want) => check(name, JSON.stringify(got) === JSON.stringify(want), `gave ${JSON.stringify(got)} (want ${JSON.stringify(want)})`);
+  const addr = (h) => { const c = clean(h); return c && typeof c === "object" ? c.address : `no address: ${JSON.stringify(c)}`; };
+  // what a link becomes: cleaned, then resolved (the way the importer calls the two)
+  const cleanLink = (h, s2 = src, map = bySourcePath) => { const a = addr(h); if (a.startsWith("no address")) return a; try { return resolveLink(a, s2, map, false, new Map()); } catch (e) { return `threw: ${e.message}`; } };
+
+  // L1: a tab and a newline inside an address are removed; the link is kept
+  same("L1 cleanAddress('https://ex\\tample.com/a\\nb') is https://example.com/ab, changed", clean("https://ex\tample.com/a\nb"), { address: "https://example.com/ab", changed: true });
+  same("L1 cleanAddress(a clean address) is the address, not changed (control)", clean("https://example.com/a?b=1"), { address: "https://example.com/a?b=1", changed: false });
+  same("L1 cleanAddress('a\\rb') removes the carriage return", clean("https://example.com/a\rb"), { address: "https://example.com/ab", changed: true });
+  eq("L1 the cleaned address is kept as a link", cleanLink("https://ex\tample.com/a\nb"), "https://example.com/ab");
+  // L2: a scheme that is not http, https or mailto, once cleaned, gives no address
+  eq("L2 cleanAddress('java\\tscript:alert(1)') is javascript:alert(1)", addr("java\tscript:alert(1)"), "javascript:alert(1)");
+  eq("L2 'java\\tscript:alert(1)' resolves to null (the href is dropped)", cleanLink("java\tscript:alert(1)"), null);
+  eq("L2 cleanAddress('\\u0001javascript:x ') is javascript:x", addr("\u0001javascript:x "), "javascript:x");
+  eq("L2 '\\u0001javascript:x ' resolves to null", cleanLink("\u0001javascript:x "), null);
+  eq("L2 'JAVASCRIPT:x' in any case resolves to null", cleanLink("JAVASCRIPT:x"), null);
+  eq("L2 a data: link resolves to null", cleanLink("data:text/html,<b>x</b>"), null);
+  eq("L2 a vbscript: link resolves to null", cleanLink("vbscript:x"), null);
+  eq("L2 a mailto link is still a link (control)", cleanLink("mailto:a@example.com"), "mailto:a@example.com");
+  // L3: spaces and C0 controls at the edges are trimmed
+  eq("L3 cleanAddress(' https://x/ ') is https://x/", addr(" https://x/ "), "https://x/");
+  same("L3 cleanAddress('\\u0000\\u001f https://x/ \\u0001\\u001f') is https://x/, changed", clean("\u0000\u001f https://x/ \u0001\u001f"), { address: "https://x/", changed: true });
+  eq("L3 the trimmed address is a link, not dropped", cleanLink("\u0000\u001f https://x/ \u0001\u001f"), "https://x/");
+  // L4: an anchor and a relative path with an inner tab still resolve to the site's anchors
+  eq("L4 '#fr\\tag' resolves to #docs/readme/frag", cleanLink("#fr\tag", srcR), "#docs/readme/frag");
+  {
+    const map = new Map([[`${src.repo}:docs/x.md`, { repo: src.repo, path: "docs/x.md", slug: "x" }]]);
+    eq("L4 'docs/\\tx.md' resolves to #docs/x", cleanLink("docs/\tx.md", srcR, map), "#docs/x");
+    eq("L4 'docs/x.md#Ü\\tber' resolves to #docs/x/uber", cleanLink("docs/x.md#Ü\tber", srcR, map), "#docs/x/uber");
+  }
+
+  // L1-L7 end to end: the readme carries every case above, as markdown links and as raw html; the import is run from
+  // a scratch copy of tools/, as the picture cases are.
+  const sources = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
+  const tmp = mkdtempSync(join(tmpdir(), "import-links-"));
+  const repoCopy = join(tmp, "repo");
+  cpSync("tools", join(repoCopy, "tools"), { recursive: true, filter: (p) => !/node_modules/.test(p) });
+  symlinkSync(join(process.cwd(), "tools", "node_modules"), join(repoCopy, "tools", "node_modules"));
+  mkdirSync(join(repoCopy, "assets", "docs"), { recursive: true });
+  const O = "tomlawesome/orbit";
+  const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
+  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Quick start\n\nText for ${s2.name}.\n\n## Details\n\nMore text.\n`;
+  const KINDS = new Set(["link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "more"]);
+  const pairs = new Set(sources.map((s2) => `${s2.repo}\t${s2.path}`));
+  const BAD = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+  let k = 0;
+  // scenario(extra, args): <slug> gets md appended, every other source is a stub; args are added to the command line
+  const scenario = (extra, args = []) => {
+    const from = join(tmp, `checkout${k}`), fromL = `${from}-launcher`, out = join(tmp, `out${k}`); k++;
+    rmSync(join(repoCopy, "import-warnings.txt"), { force: true });
+    for (const s2 of sources) put(s2.repo === O ? from : fromL, s2.path, stub(s2) + (extra[s2.slug] ? `\n${extra[s2.slug]}\n` : ""));
+    const r = spawnSync(process.execPath, ["tools/import-docs.mjs", "--from", from, "--out", out, ...args], { cwd: repoCopy, encoding: "utf8", timeout: 120000, env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    return { status: r.status, stderr: r.stderr ?? "", err: r.error ? String(r.error.message) : "", out };
+  };
+  const readWarnings = (f) => (existsSync(f) ? readFileSync(f, "utf8") : null);
+  const rows = (t) => (t ?? "").split("\n").filter((l, i, a) => !(l === "" && i === a.length - 1)).map((l) => l.split("\t"));
+  // every line of a warnings file holds four fields: a listed repo/path pair, a kind of the set, a clean message
+  const wellFormed = (label, t) => {
+    const bad = rows(t).filter((f) => f.length !== 4 || !pairs.has(`${f[0]}\t${f[1]}`) || !KINDS.has(f[2]) || f.some((x) => BAD.test(x))
+      || f[3].length > 300 || f.join("\t").length > 400);
+    check(`${label}: every line is repo<TAB>path<TAB>kind<TAB>message, from the sources and the kinds, with no control character`,
+      t !== null && bad.length === 0 && !t.includes("\r"), t === null ? "no file" : `bad lines ${JSON.stringify(bad.slice(0, 3))}`);
+  };
+
+  const readme = sources.find((s2) => s2.slug === "readme");
+  const signIn = sources.find((s2) => s2.slug === "sign-in");
+  const md = [
+    "[L1 md](<https://ex\tample.com/one>)", "",
+    "<p><a href=\"https://ex\tample.com/two\nx\">L1 raw</a></p>", "",
+    "[L2 md](<java\tscript:alert(1)>)", "",
+    "<p><a href=\"\u0001javascript:x \">L2 raw</a></p>", "",
+    "<p><a href=\" \u0001https://example.com/l3\u001f \">L3 raw</a></p>", "",
+    "<p><a href=\"#qu\tick-start\">L4 anchor</a></p>", "",
+    `<p><a href="${signIn.path.replace("authentication", "authen\ttication")}">L4 rel</a></p>`, "",
+    "<p><a href=\"javascript:`@someone Closes #1\u202ex\">L7 raw</a></p>", "",
+  ].join("\n");
+  const r = scenario({ readme: md });
+  // L5: the import does not stop, and what it writes passes the publish job's allow-list
+  check("L5 an import with tabs, newlines and javascript: in link addresses exits 0", r.status === 0, `status ${r.status}${r.err ? " " + r.err : ""}; stderr: ${r.stderr.slice(0, 300)}`);
+  const page = join(r.out, "readme.json");
+  const h = existsSync(page) ? JSON.parse(readFileSync(page, "utf8")).sections.map((x) => x.html).join("\n") : "";
+  const mk = spawnSync(process.execPath, ["tools/ci/docs-markup.mjs", r.out], { encoding: "utf8", timeout: 120000 });
+  check("L5 the output passes the markup check (node tools/ci/docs-markup.mjs <out>)", existsSync(page) && mk.status === 0, `status ${mk.status}; ${(mk.stdout ?? "").slice(0, 300)} ${(mk.stderr ?? "").slice(0, 300)}`);
+  const anchor = (text) => (h.match(new RegExp(`<a\\b[^>]*>${text}</a>`)) ?? [""])[0];
+  const hrefOf = (text) => (anchor(text).match(/\bhref="([^"]*)"/) ?? [null, null])[1];
+  eq("L1 the markdown link with a tab is https://example.com/one", hrefOf("L1 md"), "https://example.com/one");
+  eq("L1 the raw-html link with a tab and a newline is https://example.com/twox", hrefOf("L1 raw"), "https://example.com/twox");
+  for (const t of ["L2 md", "L2 raw", "L7 raw"]) {
+    check(`L2 the ${t} link keeps its text and has no href`, h.includes(t) && hrefOf(t) === null, `gave ${JSON.stringify(anchor(t) || "no such text")}`);
+  }
+  check("L2 no href in the page holds a script: scheme", !/href="[^"]*script:/i.test(h), `found ${JSON.stringify((h.match(/href="[^"]*script:[^"]*"/i) ?? [""])[0])}`);
+  eq("L3 the raw-html link with edge spaces and controls is https://example.com/l3", hrefOf("L3 raw"), "https://example.com/l3");
+  eq("L4 the anchor with a tab is #docs/readme/quick-start", hrefOf("L4 anchor"), "#docs/readme/quick-start");
+  eq(`L4 the relative link with a tab is #docs/${signIn.slug}`, hrefOf("L4 rel"), `#docs/${signIn.slug}`);
+
+  // L6: the warnings file
+  const wf = join(repoCopy, "import-warnings.txt");
+  const t = readWarnings(wf);
+  check("L6 import-warnings.txt is written at the checkout root", t !== null, `no ${wf}`);
+  wellFormed("L6 the warnings of the link import", t);
+  const mine = rows(t).filter((f) => f[0] === readme.repo && f[1] === readme.path);
+  const kinded = (kind, s) => mine.filter((f) => f[2] === kind && f[3].includes(s));
+  eq("L1 one link-cleaned warning for the markdown link (ample.com/one)", kinded("link-cleaned", "ample.com/one").length, 1);
+  eq("L1 one link-cleaned warning for the raw-html link (ample.com/two)", kinded("link-cleaned", "ample.com/two").length, 1);
+  check("L2 a link-dropped warning names the scheme javascript for alert(1)", kinded("link-dropped", "alert(1)").some((f) => f[3].includes("javascript")),
+    `readme lines ${JSON.stringify(mine.slice(0, 6))}`);
+  check("L2 a link-dropped warning names the scheme javascript for javascript:x", kinded("link-dropped", "javascript:x").length >= 1, `readme lines ${JSON.stringify(mine.slice(0, 6))}`);
+  check("L3 the trimmed link is not warned as dropped", kinded("link-dropped", "example.com/l3").length === 0, JSON.stringify(kinded("link-dropped", "example.com/l3")));
+  check("L1-L4 the stderr warnings name the readme", r.stderr.split("\n").some((l) => l.includes("link address cleaned") && l.includes(readme.path)),
+    `stderr: ${r.stderr.slice(0, 300)}`);
+  // L7: a hostile message keeps none of the controls; the rest arrives as text
+  check("L7 a message with a backtick, @someone and Closes #1 arrives as text", kinded("link-dropped", "`@someone Closes #1").length === 1,
+    `readme lines ${JSON.stringify(mine.filter((f) => f[3].includes("someone")))}`);
+  check("L7 no U+202E (or any other bidi or control character) is in the warnings file", t !== null && !/[\u202a-\u202e\u2066-\u2069]/.test(t), "found one");
+
+  // L6: a clean import writes the file empty; --warnings names another file
+  const c = scenario({});
+  check("L6 a clean import exits 0", c.status === 0, `status ${c.status}; stderr: ${c.stderr.slice(0, 300)}`);
+  eq("L6 a clean import writes import-warnings.txt empty", readWarnings(wf), "");
+  const other = join(tmp, "elsewhere", "w.txt");
+  mkdirSync(dirname(other), { recursive: true });
+  const c2 = scenario({ readme: "<p><a href=\"java\tscript:x\">W</a></p>" }, ["--warnings", other]);
+  check("L6 --warnings <file> writes the warnings there", c2.status === 0 && rows(readWarnings(other)).some((f) => f[2] === "link-dropped"),
+    `status ${c2.status}; ${other}: ${JSON.stringify(readWarnings(other))}`);
+
+  // L6: 250 warnings -> the first 199, then one line of kind `more` saying how many were left out (51)
+  const many = Array.from({ length: 250 }, (_, i) => `[d${i}](javascript:x${i})`).join("\n\n");
+  const m = scenario({ security: many });
+  const mt = readWarnings(wf), mr = rows(mt);
+  check("L6 an import with 250 warnings exits 0", m.status === 0, `status ${m.status}; stderr: ${m.stderr.slice(0, 300)}`);
+  wellFormed("L6 the warnings of 250 dropped links", mt);
+  eq("L6 250 warnings are capped at 200 lines", mr.length, 200);
+  check("L6 the first 199 are warnings, the 200th of kind more", mr.length === 200 && mr.slice(0, 199).every((f) => f[2] === "link-dropped") && mr[199][2] === "more",
+    `kinds ${JSON.stringify([...new Set(mr.map((f) => f[2]))])}; last ${JSON.stringify(mr[mr.length - 1])}`);
+  check("L6 the more line says 51 were left out", mr.length > 0 && /\b51\b/.test(mr[mr.length - 1][3] ?? ""), `last ${JSON.stringify(mr[mr.length - 1])}`);
+  rmSync(tmp, { recursive: true, force: true });
+}
+
 process.exit(failed ? 1 : 0);
