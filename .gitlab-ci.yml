@@ -110,7 +110,7 @@ lint:
     - node tools/ci/glow-banding-test.mjs
 
 # The lint's own test: each case plants one fault in a scratch copy and runs
-# the whole lint, so it takes about 50 minutes alone. Its own job, beside
+# the whole lint, so it takes about 6 minutes alone. Its own job, beside
 # `lint`, so neither runs into the lane's one-hour limit (#62). The gate
 # still needs it: the pipeline fails if it does. `live:journey` does not
 # wait for it.

@@ -71,8 +71,9 @@ page".*
 
 `?level=0`, `?level=1` or `?level=2` in the address replaces the rule's choice of level (the console then says `level 2:
 live rich (?level=2)`), but only under `?door3d` and once the GPU is accepted and the probe has worked: without those
-there is no probe, the level is 0 and `?level=` changes nothing. It never grants the GPU. It beats reduced motion,
-save-data, a lean frame predicted over 16 ms and page-thread compiles. At level 2 `&rich` and `&lean` still force
+there is no probe, the level is 0 and `?level=` changes nothing. It never grants the GPU. Under save-data the probe
+never runs (`capability.js` asks the GPU for nothing there), so `?level=` is ignored and the level is 0. Where the probe
+has run, it beats reduced motion, a lean frame predicted over 16 ms and page-thread compiles. At level 2 `&rich` and `&lean` still force
 the weight, at level 1 the weight is lean whatever they say.
 `?fit=skip` does not run the flight world's speed test and takes the world as fit (`flight world: on (fitness skipped)`); for CI tests on software GL, where frame times prove nothing. It grants no GPU.
 While the live door is tried it is drawn only with `?door3d`: without it every level ships the still door, and the
@@ -165,8 +166,8 @@ so this bought little on Windows, and the rolled loops are what bought the compi
   in the door's context and in the flight's).
 - **Deferred** to a later build: the planets compile once (one context, the far half blitted). They still compile
   their one program twice.
-- **Done** for the docs' galaxy where compiles are in the background: it is compiled after the door is live, not
-  during the reveal. On the page's thread it stays under the ring (there is no better slot). The flight's rich overlay
+- **Done** for the docs' galaxy where compiles are in the background: it is compiled before the live door's
+  own chore (`assets/door/chores.js`, `ORDER`: the galaxy ranks ahead of `"door"`), not after the door is live. On the page's thread it stays under the ring (there is no better slot). The flight's rich overlay
   is compiled only where the door's weight needs it: in place of the lean one where the door is rich, as before where
   it is "both", never where it is lean.
 On the laptop that is roughly 1.5-2 s less under the ring on Firefox, and on Edge the same work off the background.

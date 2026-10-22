@@ -1,7 +1,10 @@
 #!/bin/sh
-# The gate's live check, run locally exactly as `live:journey` runs it (#19):
+# Part of the gate's live check, run locally as `live:journey` runs it (#19):
 # Firefox headed under Xvfb with software GL, the only way it gets WebGL here
-# (headless it has none and never draws a world).
+# (headless it has none and never draws a world). It runs only the six checks
+# below. It does not run the site-browser, phone-door, dropped-warning,
+# door-lows, docs-planet, docs-sky-portrait-live, flight-context-loss and csp
+# checks, nor the Chromium coverage ratchet, which `live:journey` also runs.
 #
 #   sh tools/ci/journey-local.sh [journey|upload|pin|dawn|asdawn|freeze]   # no argument: all six
 #

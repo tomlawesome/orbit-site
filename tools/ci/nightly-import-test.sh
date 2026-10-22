@@ -458,11 +458,21 @@ case "$method $route" in
   "PUT /merge_requests/7") code=200; body='{"iid":7,"state":"closed"}' ;;
   "DELETE /repository/branches/docs%2Fimport-20260101-0000") code=204; body= ;;
   "POST /merge_requests") code=201; body='{"iid":42}'
-    if [ "$SCENARIO" = noiid ]; then body='{"message":"created, but no iid"}'; fi ;;
+    if [ "$SCENARIO" = noiid ]; then body='{"message":"created, but no iid"}'; fi
+    # #75: the refusing scenarios keep a count of the tries in $STATE, as the merge PUT does
+    pn=$(cat "$STATE/post-n" 2>/dev/null || echo 0); pn=$((pn + 1)); echo "$pn" > "$STATE/post-n"
+    case $SCENARIO in
+      mropen400once) if [ "$pn" -eq 1 ]; then code=400; body='{"message":"test-refusal-body"}'; fi ;;
+      mropen400always) code=400; body='{"message":"test-refusal-body"}' ;;
+      mropen400long) code=400
+        body='{"message":"'$(printf 'x%.0s' $(seq 1 400))'TAIL-MARK-BEYOND-CUT"}' ;;
+      mropenconnonce) if [ "$pn" -eq 1 ]; then code=000; body=; connfail=1; fi ;;
+    esac ;;
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    okmerge=; case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*) okmerge=1 ;; esac
+    okmerge=; case $SCENARIO in mropen400once|mropenconnonce) okmerge=1; n=2 ;; esac
+    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
@@ -645,7 +655,7 @@ run_push() { # run_push <outfile> <scenario>
   # a clean scratch repository and state for every run
   reset_tree
   rm -rf scratch-tmp; mkdir scratch-tmp
-  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
+  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
     "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
   : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
@@ -851,6 +861,8 @@ rc=0; grep -q 'set to merge when the pipeline passes' "$out" || rc=1
 check "job 2: it says the merge request is set to merge when the pipeline passes" "$rc"
 rc=0; [ "$merge_puts" -eq 2 ] || rc=1
 check "job 2: it stopped retrying once GitLab accepted (saw $merge_puts attempts)" "$rc"
+rc=0; [ "$(grep -c '^POST /merge_requests' "$aux/api.log")" -eq 1 ] || rc=1
+check "job 2: a merge request that opens on the first try is opened with exactly one POST" "$rc"
 check_merge_calls "run 7"
 rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip"); [ "$changed" = "$appendfile" ] || rc=1
 check "job 2: the commit changes only the page that changed" "$rc"
@@ -884,6 +896,76 @@ check "job 2: the failure shows the last attempt's status (HTTP 000)" "$rc"
 rc=0; ! grep -q 'Method Not Allowed' "$out" || rc=1
 check "job 2: a stale body from an earlier attempt is not shown (no Method Not Allowed)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# Run 8b (#75): GitLab refuses the POST that opens the merge request. The job
+# tries up to 5 times in all, 3 seconds apart (none after the last), logging each
+# refusal's status and body (the body cut to 300 characters) but never the
+# request or the token. A later success carries on as a first-time success does.
+# An older import merge request (!7) is open, to show whether it is closed.
+oldmr=1
+run_push "$out" mropen400once
+rcm=$rc
+n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
+rc=0; [ "$rcm" -eq 0 ] || rc=1
+check "job 2: a merge request refused once (400) and then opened, the job exits 0 (exit $rcm)" "$rc"
+rc=0; [ "$n_posts" -eq 2 ] || rc=1
+check "job 2: it tried the POST again after the refusal, and stopped when it was accepted (saw $n_posts POSTs)" "$rc"
+rc=0; [ "$sleeps" -eq 1 ] && [ "$(grep -c '^sleep 3 ' "$aux/shim.log")" -eq 1 ] || rc=1
+check "job 2: it waited 3 seconds between the two tries (saw $sleeps sleeps)" "$rc"
+rc=0; grep -q '400' "$out" && grep -q 'test-refusal-body' "$out" || rc=1
+check "job 2: the refusal is logged with GitLab's status (400) and its answer body" "$rc"
+rc=0; grep -q 'set to merge when the pipeline passes' "$out" && [ "$merge_puts" -eq 1 ] || rc=1
+check "job 2: after a later success the new merge request is set to merge (saw $merge_puts merge PUTs)" "$rc"
+rc=0; grep -q '^PUT /merge_requests/7|state_event=close' "$aux/api.log" \
+  && grep -q '^DELETE /repository/branches/docs%2Fimport-20260101-0000' "$aux/api.log" || rc=1
+check "job 2: after a later success the older import merge request is closed with its branch" "$rc"
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
+check "job 2: the token is in neither the output nor any log after a refused try" "$rc"
+rc=0; ! grep -q -e 'source_branch=' -e 'target_branch=' -e 'PRIVATE-TOKEN' "$out" || rc=1
+check "job 2: the refused request itself is not logged" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# the same when the first try gets no answer at all (curl cannot connect)
+run_push "$out" mropenconnonce
+rcm=$rc
+n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
+rc=0; [ "$rcm" -eq 0 ] && [ "$n_posts" -eq 2 ] && [ "$sleeps" -eq 1 ] || rc=1
+check "job 2: a first try with no answer is tried again and then succeeds (exit $rcm, $n_posts POSTs, $sleeps sleeps)" "$rc"
+
+# every try refused: 5 tries, 4 waits, a failing job that says why, nothing closed
+run_push "$out" mropen400always
+rcm=$rc
+n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
+rc=0; [ "$rcm" -ne 0 ] || rc=1
+check "job 2: when GitLab refuses every try to open the merge request, the job fails (exit $rcm)" "$rc"
+rc=0; [ "$n_posts" -eq 5 ] || rc=1
+check "job 2: it tried 5 times in all (saw $n_posts POSTs)" "$rc"
+rc=0; [ "$sleeps" -eq 4 ] && [ "$(grep -c '^sleep 3 ' "$aux/shim.log")" -eq 4 ] || rc=1
+check "job 2: it waited 3 seconds between tries, and not after the last (saw $sleeps sleeps)" "$rc"
+rc=0; [ "$(grep -c 'test-refusal-body' "$out")" -ge 5 ] || rc=1
+check "job 2: each of the 5 refusals is logged with GitLab's answer body" "$rc"
+rc=0; grep -qi 'could not open' "$out" && grep -qi 'merge request' "$out" || rc=1
+check "job 2: the failure says it could not open the merge request" "$rc"
+rc=0; grep -i 'could not open' "$out" | grep -q '400' && grep -q 'test-refusal-body' "$out" || rc=1
+check "job 2: the failure shows the last status (400) and body" "$rc"
+rc=0; ! grep -q -e '^PUT' -e '^DELETE' "$aux/api.log" || rc=1
+check "job 2: with every try refused, no older merge request is closed and no branch deleted" "$rc"
+rc=0; ! grep -q '^PUT /merge_requests/[0-9]*/merge' "$aux/api.log" && [ ! -s "$aux/merge.log" ] || rc=1
+check "job 2: with every try refused, no merge PUT is sent" "$rc"
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
+check "job 2: the token is in neither the output nor any log after five refusals" "$rc"
+rc=0; ! grep -q -e 'source_branch=' -e 'target_branch=' -e 'PRIVATE-TOKEN' "$out" || rc=1
+check "job 2: the refused requests themselves are not logged" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# a long answer body is cut to 300 characters in the log
+run_push "$out" mropen400long
+rcm=$rc
+rc=0; [ "$rcm" -ne 0 ] && grep -q 'x\{50\}' "$out" || rc=1
+check "job 2: a long refusal is still logged, and the job fails (exit $rcm)" "$rc"
+rc=0; ! grep -q 'x\{301\}' "$out" && ! grep -q 'TAIL-MARK-BEYOND-CUT' "$out" || rc=1
+check "job 2: a refusal's answer body is cut to at most 300 characters" "$rc"
+oldmr=
 
 # Run 9: hooks and an fsmonitor script left in the checkout's .git: none may run, and
 # no git command may have the token in its environment or lack the switches that
