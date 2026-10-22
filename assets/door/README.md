@@ -90,8 +90,10 @@ star fields and sets the glows' origin.
   returns `null`.
 - `held`: the pictures decoded ahead of the light (`decode-ahead.js`), a list of `{ ready, held }` as
   `decodeAhead` returns them: the glows' and the Earth's, plus one for each glow the dawn draws itself (with its
-  `url`; a resize replaces the old size's). `[]` before `start()`, and again after `destroy()`, which lets
-  them go; until then they are kept so the browser does not throw the decoded copies away.
+  `url`; a resize replaces the old size's). `[]` before `start()`. They are kept until the light's reveal has
+  drawn them in (so the browser does not throw the decoded copies away before they are shown), and let go then:
+  from that point `held` is `[]` and nothing more is held (a later glow, such as a resize's, is not); `destroy()`
+  before then lets them go too. (Interface change, 2026-10, #76: they used to be kept until `destroy()`.)
 - `destroy()`: the surface taken down (a host that remounts its door): its
   resize listeners removed, a glow build under way stopped, and a first light
   under way stopped: after it, no `body.lit`, no `onLit`, no `onOpen` (from

@@ -36,6 +36,7 @@
  * engine. A case that cannot be judged says so and fails, rather than passing for nothing.
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -288,6 +289,7 @@ const cameraCase = async (ctx) => {
 };
 
 /* ── B3: a docs page that arrives after the visitor has left the docs ───────────────────────────────────────── */
+const README_TITLE = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "readme.json"), "utf8")).title;
 const docsCase = async () => {
   const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
   try {
@@ -324,6 +326,8 @@ const docsCase = async () => {
           hash: location.hash,
           readerOpen: !pad.querySelector(".reader").hidden,
           readerText: pad.querySelector(".reader").textContent,
+          readerTitle: pad.querySelector(".reader .readhead h1").textContent,
+          bodyText: pad.querySelector(".reader div.body").textContent.trim(),
           padShown: !pad.hidden && cs.display !== "none" && cs.visibility !== "hidden",
         };
       });
@@ -334,7 +338,10 @@ const docsCase = async () => {
     await runCase("B3", "a docs page that arrives after the visitor left the docs stays closed", async (want) => {
       /* control: not left, the page opens in the reader */
       const stayed = await visit(false);
-      want(stayed.now.readerOpen && /Quick start/.test(stayed.now.readerText), "control: the docs page did not open in the reader when the visitor stayed, so the held fetch is not what opens it");
+      /* the README page as the committed docs hold it, whether Orbit's README is its old long page or its landing
+         (#78): the reader's heading is the page's own title and its body holds the page's text */
+      want(stayed.now.readerOpen && stayed.now.readerTitle === README_TITLE && stayed.now.bodyText.length > 0,
+        `control: the docs page did not open in the reader when the visitor stayed (open ${stayed.now.readerOpen}, heading ${JSON.stringify(stayed.now.readerTitle)}, want ${JSON.stringify(README_TITLE)}, ${stayed.now.bodyText.length} characters of text), so the held fetch is not what opens it`);
       const gone = await visit(true);
       want(!/^#docs/.test(gone.left.hash), `control: leaving the docs left the address at ${JSON.stringify(gone.left.hash)}`);
       want(!gone.now.readerOpen, "the reader opened after the visitor had left the docs");

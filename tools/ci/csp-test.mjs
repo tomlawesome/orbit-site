@@ -169,7 +169,9 @@ const walkAll = async () => {
 };
 
 /* W8: each docs page on its own fresh context; a picture is judged by what the browser did with it. Lazy pictures
-   are scrolled into view so they are asked for. */
+   are scrolled into view one at a time, each kept there until it has loaded (or 20 s): a browser asks for a lazy
+   picture only once it has drawn a frame with it on screen, so scrolling straight past them all on a busy runner
+   left every one but the last never asked for (pipeline 2851, docs/administration's five) */
 const docsPictures = async () => {
   if (!wanted("W8")) return;
   const slugs = JSON.parse(readFileSync(join(here, "..", "docs-sources.json"), "utf8")).map((d) => d.slug);
@@ -186,9 +188,12 @@ const docsPictures = async () => {
         if (!there) continue;
         const urls = await o.page.evaluate(() => [...document.querySelectorAll("#docspad .body img")].map((im) => im.getAttribute("src")));
         seen += urls.length;
-        for (let i = 0; i < urls.length; i++) await o.page.evaluate((k) => document.querySelectorAll("#docspad .body img")[k]?.scrollIntoView({ block: "center" }), i);
         const state = () => o.page.evaluate(() => [...document.querySelectorAll("#docspad .body img")].map((im) => ({ src: im.getAttribute("src"), ok: im.complete && im.naturalWidth > 0 })));
-        const got = await until(state, (l) => l.every((x) => x.ok), 20000, 250);
+        for (let i = 0; i < urls.length; i++) {
+          await o.page.evaluate((k) => document.querySelectorAll("#docspad .body img")[k]?.scrollIntoView({ block: "center" }), i);
+          await until(state, (l) => !!l[i]?.ok, 20000, 250);
+        }
+        const got = await state();
         await sleep(1000);
         for (const x of got) want(x.ok, `docs/${slug}: picture did not load: ${x.src}`);
         const lines = say(o);
