@@ -228,7 +228,7 @@ if (base) {
   check("10. .release: line-height is declared after the font shorthand (which would reset it)", fi >= 0 && li >= 0 && li > fi, `font at ${fi}, line-height at ${li}`);
 }
 
-/* ---- 11. the README no longer says Orbit passes it today ---- */
-check("11. the README does not say Orbit passes its channel (it does not yet)", !/Orbit\s+passes\b/i.test(readme), /Orbit\s+passes\b/i.test(readme) ? "still says Orbit passes it" : "no such claim");
-check("11. the README says Orbit will pass its channel or short commit", /Orbit\s+will\s+pass/i.test(readme), /Orbit\s+will\s+pass/i.test(readme) ? "found" : "no `Orbit will pass`");
+/* ---- 11. the README says who passes a tag: the site none, Orbit its own (in either tense, so it holds once Orbit does) ---- */
+check("11. the README says the site passes no tag", /the\s+site\s+passes\s+none/i.test(readme), /the\s+site\s+passes\s+none/i.test(readme) ? "found" : "no `the site passes none`");
+check("11. the README says Orbit passes (or will pass) its channel or short commit", /Orbit\s+(?:will\s+pass|passes)\b/i.test(readme), /Orbit\s+(?:will\s+pass|passes)\b/i.test(readme) ? "found" : "no `Orbit will pass` or `Orbit passes`");
 process.exit(failed ? 1 : 0);
