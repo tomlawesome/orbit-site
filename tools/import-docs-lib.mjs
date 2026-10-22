@@ -114,13 +114,27 @@ export function picturesUsed(html) {
   return out;
 }
 
+/* an address cleaned as a browser cleans one before it reads the scheme (the
+   WHATWG URL parser's first steps): U+0009, U+000A and U+000D removed
+   anywhere, U+0000-U+0020 trimmed at both ends. So "java\tscript:" is judged
+   as the "javascript:" a browser would run. { address, changed } (#82) */
+export function cleanAddress(href) {
+  const address = String(href).replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+  return { address, changed: address !== href };
+}
+/* the scheme of an address, lower case, or null when it has none */
+export const schemeOf = (href) => /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(href)?.[1].toLowerCase() ?? null;
+
 /* a link inside a source: to a heading of its own, to another imported
    source, or out to the repository. A picture is the site's copy of it (its
    name in `pictures`, keyed "<repo>:<path>"), or else an address to link to:
    its file on github.com, never the raw host, or another host's as written.
-   A data: address is not passed on: it is read as the path it looks like,
-   so it ends on GitHub and never runs on the page. */
+   Given the address cleanAddress made. Any scheme but http, https or mailto
+   (javascript:, data:, vbscript: ...) gives null: the link's text is kept,
+   without its address (#82). */
 export function resolveLink(href, src, bySourcePath, isImage, pictures) {
+  const scheme = schemeOf(href);
+  if (scheme !== null && !["http", "https", "mailto"].includes(scheme)) return null;
   // the app's own mark, wherever a page points at it, is the site's current one (the repo's copy is out of date)
   if (isImage && /(^|\/)orbit-mark\.svg$/i.test(href)) return "assets/img/mark.svg";
   const raw = isImage && RAW.exec(href);
@@ -158,8 +172,9 @@ export function visibleText(html) {
 }
 
 /* control characters in text fetched from another repository are not written
-   to the CI log as they came: they could redraw or hide what the log says */
-export const logSafe = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim();
+   to the CI log, or the warnings file, as they came: they could redraw or hide
+   what the log says; bidi controls (U+202A-202E, U+2066-2069) could reorder it */
+export const logSafe = (s) => String(s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/ {2,}/g, " ").trim();
 
 /* the warning for a block of raw html in a source when the page no longer shows
    words the source had, or a falsy value when nothing a reader sees was lost

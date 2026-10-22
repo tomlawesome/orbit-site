@@ -213,6 +213,7 @@ import_docs:
   artifacts:
     paths:
       - assets/docs/
+      - import-warnings.txt
     expire_in: 1 day
 
 # The guard on the token is the variable's own settings, not the environment (a

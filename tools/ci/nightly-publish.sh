@@ -9,7 +9,9 @@
 # ones. Opening the merge request is tried up to 5 times, 3 seconds apart,
 # each refusal logged with GitLab's status and answer (#75). Once the new merge
 # request is open, any older import merge request still open is closed and its
-# branch deleted: the new one carries everything it had.
+# branch deleted: the new one carries everything it had. Last of all, the one
+# standing "Docs import warnings" issue is rewritten with the import's warnings
+# (#82); nothing in that step can fail the job.
 #
 # Privilege separation (#18): this is the only code that holds
 # ORBIT_SITE_IMPORT_TOKEN, a project access token, role Maintainer (to merge
@@ -27,10 +29,13 @@
 #     assets/docs/index.json and the pictures assets/docs/img/<16 hex>.(png|jpg|
 #     webp|gif), regular files, under the size caps, are read, and
 #     each is written by this script, never unpacked by a tool that follows
-#     names or links;
+#     names or links; and import-warnings.txt, required, at the archive's root,
+#     outside assets/docs/ so it can never reach the commit;
 #   - what is written is held to the shape the import writes
 #     (tools/ci/docs-shape.mjs): the pad draws the index's colour and ids into
-#     innerHTML;
+#     innerHTML; the warnings file line by line to its own rules
+#     (check_warnings): a file that breaks one is refused, never repaired or
+#     cut, as a bad page is;
 #   - which job to fetch comes from GitLab, asked with the import token (a job
 #     token cannot list a pipeline's jobs; the archive itself is downloaded with
 #     the job token);
@@ -59,13 +64,21 @@ EXPECT_PATH=ai/orbit-site
 # What the import writes: a page per source and an index, about 330 KB in nine
 # files, and its pictures, at most 16 a source of 1 MiB each and 6 MiB in all
 # (MAX_PICTURE_BYTES_TOTAL in tools/import-docs-lib.mjs; docs-shape.mjs holds
-# the artifact's img/ to that sum). Well above that, but nowhere near "a disk". Entries: 3 folders, 8 pages, the index and 128
-# pictures.
-MAX_ENTRIES=140
+# the artifact's img/ to that sum). Well above that, but nowhere near "a disk". Entries: 3 folders, 8 pages, the index, 128
+# pictures and the warnings file (#82).
+MAX_ENTRIES=141
 MAX_PICTURE_BYTES=1048576
 MAX_FILE_BYTES=2097152
 MAX_TOTAL_BYTES=8388608
 MAX_ZIP_BYTES=16777216
+# The warnings file (#82): at most 200 lines of 400 characters, 64 KiB in all;
+# the import keeps to these (tools/import-docs.mjs), so a file past them means
+# the import job is broken or captured.
+MAX_WARNING_LINES=200
+MAX_WARNING_LINE=400
+MAX_WARNING_MESSAGE=300
+MAX_WARNING_BYTES=65536
+WARN_TITLE="Docs import warnings"
 
 # Variables that change what a program loads, trusts or runs are never set
 # here. (The job takes no variables from the import job; this is the second
@@ -123,6 +136,11 @@ req() { hn=$1; tk=$2; m=$3; p=$4; shift 4; printf '%s: %s\n' "$hn" "$tk" > "$hdr
   curl -q -fsS -X "$m" -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID$p" "$@" || r=$?
   hdr_off; return "$r"; }
 api() { req PRIVATE-TOKEN "$ORBIT_SITE_IMPORT_TOKEN" "$@"; }
+# me: the import token's own user (GET /user), the one call not under
+# /projects/:id, the header file on disk only while it runs
+me() { r=0; hdr_on
+  curl -q -fsS --connect-timeout 10 --max-time 30 -X GET -H @"$hdr" "$CI_API_V4_URL/user" || r=$?
+  hdr_off; return "$r"; }
 # git: the token out of its environment, no hooks, no fsmonitor, no global or
 # system config, no ssh or gpg program, no background gc, no index refresh
 # written back. Command-line -c beats the repository's own config.
@@ -259,7 +277,7 @@ def refuse(msg):
     print("refusing the artifact: " + msg)
     sys.exit(1)
 
-allowed = {"assets/docs/index.json"} | {"assets/docs/%s.json" % s["slug"] for s in json.load(open(srcs))}
+allowed = {"assets/docs/index.json", "import-warnings.txt"} | {"assets/docs/%s.json" % s["slug"] for s in json.load(open(srcs))}
 try:
     z = zipfile.ZipFile(zpath)
     infos = z.infolist()
@@ -277,7 +295,7 @@ for i in infos:
         continue
     pic = picture.match(i.filename)
     if i.filename not in allowed and not pic:
-        refuse("%s is not a file the import writes (only assets/docs/<slug>.json, index.json and img/<16 hex>.<png|jpg|webp|gif>)" % printable)
+        refuse("%s is not a file the import writes (only assets/docs/<slug>.json, index.json, img/<16 hex>.<png|jpg|webp|gif> and import-warnings.txt)" % printable)
     if mode and not stat.S_ISREG(mode):
         refuse("%s is not a regular file (a link or a device)" % printable)
     if i.filename in seen:
@@ -307,6 +325,144 @@ except Exception:
     refuse("the archive is damaged")
 print("   %d files, %d bytes: from the archive's listing, no other entry" % (len(files), total))
 PY
+}
+
+# check_warnings <file> <sources file>: the import's warnings, held to the
+# format the import writes (#82): UTF-8, LF, at most MAX_WARNING_LINES lines of
+# MAX_WARNING_LINE characters and MAX_WARNING_BYTES in all, each line
+# repo<TAB>path<TAB>kind<TAB>message, repo and path a pair of the sources,
+# kind one of a fixed set, the message at most MAX_WARNING_MESSAGE characters
+# with no C0 or C1 control, line or paragraph separator, or bidi control. Any
+# fault refuses the artifact (not cut, not repaired), naming the line, never
+# quoting it.
+check_warnings() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+    python3 -I - "$1" "$2" "$MAX_WARNING_LINES" "$MAX_WARNING_LINE" "$MAX_WARNING_MESSAGE" "$MAX_WARNING_BYTES" <<'PY'
+import json, re, sys
+
+wpath, srcs = sys.argv[1], sys.argv[2]
+max_lines, max_line, max_message, max_bytes = (int(a) for a in sys.argv[3:7])
+kinds = {"link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "more"}
+bad = re.compile("[\x00-\x1f\x7f-\x9f  ‪-‮⁦-⁩]")
+
+def refuse(msg):
+    print("refusing the artifact: import-warnings.txt" + msg)
+    sys.exit(1)
+
+pairs = {(s["repo"], s["path"]) for s in json.load(open(srcs, encoding="utf-8"))}
+with open(wpath, "rb") as f:
+    data = f.read(max_bytes + 1)
+if len(data) > max_bytes:
+    refuse(" is larger than %d bytes" % max_bytes)
+try:
+    text = data.decode("utf-8")
+except UnicodeDecodeError:
+    refuse(" is not UTF-8")
+if text and not text.endswith("\n"):
+    refuse(": its last line has no newline")
+lines = text.split("\n")[:-1]
+if len(lines) > max_lines:
+    refuse(" has %d lines, more than %d" % (len(lines), max_lines))
+for n, l in enumerate(lines, 1):
+    at = " line %d: " % n
+    if len(l) > max_line:
+        refuse(at + "longer than %d characters" % max_line)
+    f = l.split("\t")
+    if len(f) != 4:
+        refuse(at + "not four tab-separated fields (repo, path, kind, message)")
+    repo, path, kind, message = f
+    if (repo, path) not in pairs:
+        refuse(at + "its repo and path are not a source in tools/docs-sources.json")
+    if kind not in kinds:
+        refuse(at + "its kind is not one of %s" % ", ".join(sorted(kinds)))
+    if len(message) > max_message:
+        refuse(at + "its message is longer than %d characters" % max_message)
+    c = bad.search(message)
+    if c:
+        refuse(at + "its message holds U+%04X, a control, separator or bidi character" % ord(c.group()))
+print("   import-warnings.txt: %d lines, every one in the import's format" % len(lines))
+PY
+}
+
+# warnings_body <warnings file> <sources file> <out>: the issue's body, from a
+# checked warnings file: a fixed first paragraph, then `none`, or per source
+# (in the sources' order) a `### <repo>/<path>` heading, both from the sources,
+# and one four-backtick fence holding its lines as `<kind>  <message>`. Every
+# backtick in a message is made ' so no line can close the fence, and every line
+# in it starts with a kind, so none is a quick action (/), a mention (@) or a
+# reference (#, !); inside a fence GitLab renders none of them.
+warnings_body() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+    python3 -I - "$1" "$2" "$3" "$CI_PIPELINE_ID" "$(date -u '+%Y-%m-%d %H:%M UTC')" <<'PY'
+import json, sys
+
+wpath, srcs, out, pipeline, when = sys.argv[1:6]
+with open(wpath, encoding="utf-8") as f:
+    lines = f.read().split("\n")[:-1]
+by = {}
+for l in lines:
+    repo, path, kind, message = l.split("\t")
+    by.setdefault((repo, path), []).append("%s  %s" % (kind, message.replace("`", "'")))
+body = ["This issue lists the warnings of the nightly docs import, one block per source. The nightly publish job "
+        "rewrites it on every run and reopens it when a run has warnings, so closing it hides them only until the "
+        "next run that has some. Written by pipeline %s at %s." % (pipeline, when), ""]
+if not lines:
+    body.append("none")
+seen = set()
+for s in json.load(open(srcs, encoding="utf-8")):
+    k = (s["repo"], s["path"])
+    if k in by and k not in seen:
+        seen.add(k)
+        body += ["### %s/%s" % k, "", "````"] + by[k] + ["````", ""]
+with open(out, "w", encoding="utf-8", newline="\n") as f:
+    f.write("\n".join(body).rstrip("\n") + "\n")
+PY
+}
+
+# The one standing "Docs import warnings" issue (#82), kept the way Renovate
+# keeps its Dependency Dashboard: found by author (the import token's own user),
+# label docs-import and exact title, rewritten in place, never duplicated. None:
+# it is created; two or more: nothing is edited. A closed one is reopened when
+# there are warnings. Run last, in a subshell, as
+# `( update_warnings_issue ) || echo ...`, so nothing in it can change how the
+# job ends. Every call has a time limit and the header file on disk only while
+# it runs; answers are parsed once it is gone; the body goes from a file, never
+# an argument. GitLab's own filter by author_id is checked again here. Under
+# DRY_RUN it only reads, and prints the action and the body.
+update_warnings_issue() {
+  wf=$art/import-warnings.txt; body=$scratch/issue-body; reopen=
+  warnings_body "$wf" "$scratch/sources.json" "$body" || return 1
+  ans=$(me) || { echo "   (could not ask GitLab who the import token's user is)"; return 1; }
+  uid=$(printf '%s\n' "$ans" | json 'if (!Number.isInteger(j.id) || j.id < 1) process.exit(1); console.log(j.id)') || return 1
+  found=$(apij 'const m = j.filter((x) => x && x.title === "'"$WARN_TITLE"'" && x.author && x.author.id === '"$uid"' && Array.isArray(x.labels) && x.labels.includes("docs-import"));
+    console.log(m.length, m.length === 1 && Number.isInteger(m[0].iid) ? m[0].iid : "-", m.length === 1 && m[0].state === "closed" ? "closed" : "open")' \
+    GET "/issues?labels=docs-import&author_id=$uid&state=all&per_page=100" --connect-timeout 10 --max-time 30) || return 1
+  set -- $found
+  count=${1:-}; iid=${2:-}; state=${3:-}
+  case $count in ''|*[!0-9]*) return 1 ;; esac
+  if [ "$count" -gt 1 ]; then
+    echo "   the warnings issue is ambiguous: $count issues of the import token's user are titled \"$WARN_TITLE\" with label docs-import; none edited"
+    return 0
+  fi
+  if [ "$count" -eq 1 ]; then
+    case $iid in ''|*[!0-9]*) return 1 ;; esac
+    [ ! -s "$wf" ] || [ "$state" != closed ] || reopen=1
+  fi
+  if [ -n "$DRY_RUN" ]; then
+    if [ "$count" -eq 0 ]; then echo "DRY_RUN: would create the warnings issue, with this body:"
+    else echo "DRY_RUN: would rewrite the warnings issue #$iid${reopen:+ and reopen it}, with this body:"; fi
+    sed 's/^/   | /' "$body"
+    return 0
+  fi
+  if [ "$count" -eq 0 ]; then
+    api POST "/issues" --connect-timeout 10 --max-time 30 --data-urlencode "title=$WARN_TITLE" \
+      --data-urlencode "labels=docs-import" --data-urlencode "description@$body" >/dev/null || return 1
+    echo "   created the warnings issue"
+  else
+    api PUT "/issues/$iid" --connect-timeout 10 --max-time 30 --data-urlencode "description@$body" \
+      ${reopen:+--data-urlencode} ${reopen:+state_event=reopen} >/dev/null || return 1
+    echo "   rewrote the warnings issue #$iid${reopen:+ and reopened it}"
+  fi
 }
 
 # Older import merge requests still open, as "iid branch" lines. Only a merge
@@ -386,6 +542,7 @@ main() {
     printf '%s\n' "$script"
     exit 1
   fi
+  check_warnings "$art/import-warnings.txt" "$scratch/sources.json" || exit 1
 
   if [ -n "$DRY_RUN" ]; then
     # the commit is built in a scratch repository whose base is HEAD; the
@@ -429,6 +586,8 @@ main() {
     # reverted, and would merge itself: close it and its branch (#21).
     echo "== older import merge requests"
     close_older "" "nothing new upstream" || exit 1
+    echo "== the warnings issue"
+    ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
     exit 0
   fi
   cgit diff --cached --no-ext-diff --no-textconv --stat "$base" | tail -1
@@ -439,6 +598,8 @@ main() {
   if [ -n "$DRY_RUN" ]; then
     echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
     close_older "" "$branch" || true
+    echo "== the warnings issue"
+    ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
     exit 0
   fi
 
@@ -474,6 +635,9 @@ main() {
   # The header file is on disk only while one try runs, never across the waits,
   # and the answer is parsed only once it is gone.
   mrans="$scratch/mr-answer"
+  # the description goes from a file, as the warnings issue's body does
+  mrdesc="$scratch/mr-description"
+  printf '%s\n' "The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass." > "$mrdesc"
   mrtries=5
   for i in $(seq 1 "$mrtries"); do
     rm -f "$mrans" "$mrans.err"
@@ -483,7 +647,7 @@ main() {
       --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
       --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
       --data-urlencode "remove_source_branch=true" \
-      --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass." \
+      --data-urlencode "description@$mrdesc" \
       2>"$mrans.err") || code=000
     hdr_off
     case $code in 2??) break ;; esac
@@ -523,7 +687,12 @@ main() {
       -X PUT -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$iid/merge" \
       --data-urlencode "auto_merge=true" --data-urlencode "sha=$sha" 2>"$resp.err") || code=000
     hdr_off
-    case $code in 2??) echo "   set to merge when the pipeline passes"; exit 0 ;; esac
+    case $code in 2??)
+      echo "   set to merge when the pipeline passes"
+      echo "== the warnings issue"
+      ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
+      exit 0 ;;
+    esac
     [ "$i" -eq "$tries" ] || sleep 10
   done
   echo "could not set !$iid to merge itself; it is open for a maintainer"
