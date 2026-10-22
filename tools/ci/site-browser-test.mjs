@@ -621,9 +621,10 @@ const retryCase = async () => {
         await page.evaluate(() => { window.__frames = 0; const tick = () => { window.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
         await planet.evaluate((el) => el.click());
         await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
-        /* M1a: the page forms (the shot needs about 45 to 134 frames, by frame length; the budget is 300 frames; the
+        /* M1a: the page forms (the shot needs about 45 to 134 frames, by frame length, after the world's bake, which
+           install.js races against a 6 s WAIT: up to 360 frames more at 60 a second, so the budget is 600 frames; the
            300 s wall-clock backstop only keeps a stalled page from hanging; the 15 s let-go never adds 'formed') */
-        const FRAME_BUDGET = 300;
+        const FRAME_BUDGET = 600;
         const progress = () => page.evaluate(() => ({ formed: document.querySelector("#installpad").classList.contains("formed"), frames: window.__frames }));
         const formedAt = await until(progress, (v) => v.formed || v.frames > FRAME_BUDGET, 300000, 100);
         const formed = formedAt.formed;
