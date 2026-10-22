@@ -88,12 +88,12 @@ No browser is named in the rules. The names only explain where a machine lands.
 
 | Machine | Browser | Probe-equivalent facts | Level |
 |---|---|---|---|
-| Desktop, RTX 3080, 3840x2160 at 1.5x | Edge | compiles in background; lean 13-16 ms at 3.3 Mpx | 2 |
-| Desktop, RTX 3080 | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 0: compiles stall the page (`?level=2` shows the live door) |
-| Laptop 14", Ryzen 7 4700U with integrated Radeon, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 1 or 2 by the prediction; its runs predicted the rich at 23-25 ms of 40: 2 |
+| Desktop, high-end discrete GPU, 3840x2160 at 1.5x | Edge | compiles in background; lean 13-16 ms at 3.3 Mpx | 2 |
+| Desktop, high-end discrete GPU | Firefox | page-thread compiles: install world 0.5-1 s, door lean 0.37-0.41 s, rich 0.5-0.7 s, flight ~1.9 s classic / 3.1 s with the slab Earth; lean 4-7 ms | 0: compiles stall the page (`?level=2` shows the live door) |
+| Laptop, integrated GPU, 1920x1080 at 1.25x | Edge | compiles in background (install 1.4 s, flight 1.8 s, galaxy 0.4 s); lean 18 ms a frame; uploads and first draws ~5 s after the reveal | 1 or 2 by the prediction; its runs predicted the rich at 23-25 ms of 40: 2 |
 | Laptop, same | Firefox | install 1.6 s, flight 3.1 s, door 0.4 + 0.7 s, planets 0.24, galaxy 0.18: 6.2 s of compiles, each a stall; lean 11 ms, rich 23 ms, world planets 11.9 ms (halved) | 0: compiles stall the page |
-| iPhone 13 Pro Max, 428x926 at 3x (drawn at 2x) | Safari 26 | WebGL2, float targets, compiles in background (130-170 ms each); lean 3.3 ms, rich 5.7 ms at 0.48 Mpx; uploads in tens of ms; frames at 30 a second during the test (Low Power Mode?) | 2 |
-| MacBook, Apple GPU (Apple silicon), 1512x982 at 2x, 8 cores | Safari 26 | compiles in background (150-167 ms each; the very first compile of the context 503 ms, see below); probe 10.2 ms per Mpx, as fast as the 3080; lean 4.3 ms, rich 6.7 ms at 2.06 Mpx; uploads 5-47 ms; frame gaps 20 ms around the rich compile | 2, the most headroom measured |
+| Phone, high-density screen (drawn at 2x) | Safari | WebGL2, float targets, compiles in background (130-170 ms each); lean 3.3 ms, rich 5.7 ms at 0.48 Mpx; uploads in tens of ms; frames at 30 a second during the test (a power-saving mode?) | 2 |
+| Second laptop, 2x screen, 8 cores | Safari | compiles in background (150-167 ms each; the very first compile of the context 503 ms, see below); probe 10.2 ms per Mpx, as fast as the desktop; lean 4.3 ms, rich 6.7 ms at 2.06 Mpx; uploads 5-47 ms; frame gaps 20 ms around the rich compile | 2, the most headroom measured |
 
 Readiness measured on 8 October 2026 (cold, private window), after the ordering work: desktop Edge ways in 5.3 s,
 button 6.0 s; desktop Firefox 8.7 s / 9.3 s (before compiles were moved under the ring); laptop Edge 8.6 s / 9.5 s;
@@ -114,7 +114,7 @@ band with maps of noise so every path runs), `upload` (maps of the site's sizes 
 the GPU in bands as the site does, against whole: 0 bytes apart is the pass),
 `stall` (a spinner turns while the rich shader compiles: the frame gaps, and the eye's verdict on the spinner),
 `worker` (whether a worker can compile a shader without the page standing still), and
-`network` (two of the maps fetched fresh). Numbers from each device go into the table above. A laptop's power state changes everything: the 4700U on battery
+`network` (two of the maps fetched fresh). Numbers from each device go into the table above. A laptop's power state changes everything: the laptop on battery
 compiled the probe in 315 ms and drew the rich door at 24 ms a frame, on mains 197 ms and 11 ms. Say which when
 pasting a run, and compare runs in the same state only (or against the probe in the same run).
 
@@ -127,7 +127,7 @@ be short enough to paste from one: a friend with a Mac should be able to open th
 
 ## Measured with the tests (8 October 2026)
 
-| | Desktop RTX 3080 (over Remote Desktop: 1920x1080 at 1.25x, reduced motion on) | Laptop 4700U, integrated Radeon, 1920x1080 at 1.25x |
+| | Desktop, high-end discrete GPU (1920x1080 at 1.25x, reduced motion on) | Laptop, integrated GPU, 1920x1080 at 1.25x |
 |---|---|---|
 | Compile, Firefox (each a stall): probe 2k / door lean 16k / door rich / flight head 28k / flight rich | 199 / 279 / 439 / 346 / 537 ms | 317 / 457 / 772 / 583 / 934 ms |
 | Compile, Edge (background, same programs) | 200 / 286 / 450 / 398 / 543 ms | 308 / 421 / 1039 / 777 / 1393 ms |
@@ -136,12 +136,12 @@ be short enough to paste from one: a friend with a Mac should be able to open th
 | Upload 4096x2048 with mipmaps | ~50 ms | ~70-130 ms |
 | Stall of the page for the rich compile, Firefox | 445 ms | 520 ms |
 
-**WebKit, both devices (8 October).** iPhone 13 Pro Max: compiles 130-170 ms each in the background (probe 168, the
-salted probe again 88), lean 3.3 / rich 5.7 ms at 0.48 Mpx, uploads <= 45 ms. MacBook with an Apple GPU, Safari 26,
-1512x982 at 2x: probe 503 ms then 91; door lean 152, rich 167, flight head 151, rich 166 ms; probe 10.2 ms per Mpx;
+**WebKit, both devices (8 October).** The phone: compiles 130-170 ms each in the background (probe 168, the
+salted probe again 88), lean 3.3 / rich 5.7 ms at 0.48 Mpx, uploads <= 45 ms. The Safari laptop,
+at 2x: probe 503 ms then 91; door lean 152, rich 167, flight head 151, rich 166 ms; probe 10.2 ms per Mpx;
 lean 4.3 / rich 6.7 ms at the band's 2.06 Mpx (first frames 96 and 110 ms); uploads 5-47 ms; rich compile 158 ms with
 frame gaps of 20 ms either side; 40 Mbit/s. Two Safari habits to design for: the *first* compile of a fresh context is
-3-5x the rest (503 vs 91 on the Mac, 168 vs 88 on the phone), so the probe's second compile is the honest one and the
+3-5x the rest (503 vs 91 on the Safari laptop, 168 vs 88 on the phone), so the probe's second compile is the honest one and the
 first is warm-up to be discounted; and "mipmaps 0 ms" every time means they are built lazily, on first use, so the
 first draw of a real shader carries ~100 ms there (which the unseen proving draw absorbs, as it should).
 
@@ -189,7 +189,7 @@ same. What the page feels meanwhile differs by browser, and the answer settles t
   the page's background compiles already are. Edge keeps the page path.
 - *Safari, Chrome:* not measured; both compile in the background on the page, so the question is Firefox's.
 
-**Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Mac 0.20), rich ≈ 0.3-0.55 (the Mac 0.32, the PCs 0.45-0.55); a compile ≈ the
+**Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Safari laptop 0.20), rich ≈ 0.3-0.55 (the Safari laptop 0.32, the PCs 0.45-0.55); a compile ≈ the
 probe's compile time scaled by the shader's rolled size (the per-character rule from before the loops were rolled no
 longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is made up ("GTX 980",
 "R9 200 Series"); Edge's is real.
@@ -199,6 +199,6 @@ longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is m
 - Whether the worker design (everything WebGL compiled and drawn in a worker on Firefox, the live door after the
   last compile) is built; the test says it would make the ring and the reveal smooth through every compile there.
 - Whether level 1 on a weak GPU keeps the world planets (two world draws a frame) or only the spheres.
-- Calibration of the probe against the real shaders: four points (the 3080, the 4700U's Radeon, the phone, the Mac);
+- Calibration of the probe against the real shaders: four points (the desktop, the laptop, the phone, the Safari laptop);
   rich's ratio spreads 0.3-0.55, so the real rich measure, unseen, stays the gate and the probe only decides whether
   to try it.

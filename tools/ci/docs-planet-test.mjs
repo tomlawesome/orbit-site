@@ -1,5 +1,5 @@
 /*
- * Live test for #49 (the docs planet on the 3D door is unlabelled and takes no tap on an iPhone), written from the
+ * Live test for #49 (the docs planet on the 3D door is unlabelled and takes no tap on a phone), written from the
  * specification alone (owner decision 5a) and judged through what a visitor's browser shows: whether each planet's
  * label is shown (computed opacity of `#door .planet .tag`), whether a point on its hit area
  * (`document.elementFromPoint` over `.planet .hit`) lands on that planet, and whether a tap there opens its landing.
@@ -14,8 +14,8 @@
  * reported (getSupportedExtensions, getExtension) and every program's and shader's COMPLETION_STATUS_KHR (0x91B1) is
  * answered by the fake, never by the driver:
  *   fast   true 160 ms after the program was linked (the shader compiled), and 503 ms for the very first compile of
- *          a fresh context, as Safari measures them (CAPABILITIES.md: 130-170 ms each, the first 503 ms; iPhone 13 Pro
- *          Max and an Apple-silicon MacBook). FROM=poll counts from the first poll instead of the link, COMPILE_MS and
+ *          a fresh context, as Safari measures them (CAPABILITIES.md: 130-170 ms each, the first 503 ms; a phone and
+ *          the Safari laptop). FROM=poll counts from the first poll instead of the link, COMPILE_MS and
  *          FIRST_MS change the times;
  *   stuck  false for ever.
  * Pages with faking open `?preview&door3d&gpu=force&level=2&lean&fit=skip` (the live door forced, CAPABILITIES.md; the door's
