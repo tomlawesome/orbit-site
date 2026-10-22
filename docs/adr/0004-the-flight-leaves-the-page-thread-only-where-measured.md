@@ -1,6 +1,6 @@
 # ADR-0004: The flight's compiles leave the page's thread only where that is measured to help
 
-**Status:** Proposed (owner to answer questions 1 and 2 below, and to take measurement M1 before the Safari build)
+**Status:** Proposed (owner to answer question 2 below, and to take measurement M1 before the Safari build; question 1 answered 1a)
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); ADR-0001 (the folder Orbit copies); ADR-0002
 (decision 12d, the leisure proof; decision 7, nothing remembered); #76 (memory on a phone); PERFORMANCE.md "The
@@ -85,7 +85,10 @@ its star cloud about that point and remakes it (never mid-flight) if the shape h
 
 **The quick sign-out is a timing policy, not a compile (question 1).** ADR-0002 12d's leisure delay exists so the
 fitness verdict, which is never remembered (decision 7), is not taken on a busy page and a fit phone called unfit
-for the whole visit. Shortening it where compiles are in the background is a trade the owner makes, below.
+for the whole visit. Kept as it is (owner, 2026-10-22, question 1 answered 1a): the verdict is taken once a visit and
+never remembered, so one unlucky early verdict paints every flight that visit, while a sign-out within 4 s of arriving is
+rare outside a review bed. Revisit if a phone shows a painted descent after the world was made and the page had been
+quiet for over a second: then prove on "quiet", with 4 s as the cap rather than the floor.
 
 ## 3. Interface changes (README, `assets/door/`)
 
@@ -234,7 +237,7 @@ not rises. The unaudited-line count makes this its own batch after an audit.
 
 ## Questions for the owner
 
-**1** The painted quick sign-out: shorten the leisure proof where the page's compiles are in the background?
+**1** (answered 1a, owner, 2026-10-22) The painted quick sign-out: shorten the leisure proof where the page's compiles are in the background?
   **1a** keep 4 s / 2 s as ADR-0002 12d set them.
   **1b** (recommended) where `gpu().parallel` is true, prove as soon as the world is made and the reveal is drawn in
   (`later` with `after` near 0, which still waits for `drawnIn()`), keeping the delay where compiles stall the page
