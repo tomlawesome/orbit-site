@@ -588,7 +588,15 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
   after the last compile. The still door, the orbits and the ring are 2D and the compositor's, and stay on the page.
 - **Edge: no.** A worker's compile stalls the page and the spinner whatever the worker does, while Edge's own page
   compiles, polled, stall nothing; and Edge shares its program cache across contexts, so the page path it has is
-  already the smooth one. Edge, Chrome and Safari keep the page path.
+  already the smooth one.
+- **Safari (a real phone, 22 October 2026): no stall to fix.** A worker has WebGL2 there and compiles each program in
+  about 260-340 ms while the page's longest frame gap stays at 34 ms with 2D and 74 ms with its own WebGL (idle:
+  37 / 41 ms); the animations are smooth. The same source then compiles on the page in 4-14 ms, so a worker's compile
+  warms the page's. And the `stall` test, twice, shows the page's own rich-door compile (550 and 398 ms, in the
+  background) leaving the frame gaps at 29-34 ms before and after, the spinner turning throughout.
+- **What each browser gets (ADR-0004).** Chrome, Edge and Safari keep the page path: Chrome and Edge because a worker's
+  compile would stall them, Safari because it was measured not to stall (and a worker's compile would warm the page's
+  if that ever changed, so no pre-warm is built). Firefox's move of the drawing into a worker is deferred to #85.
 - **The two tries before the answer:** the first test read pixels back in the page's loop, which was itself the
   stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
   process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).

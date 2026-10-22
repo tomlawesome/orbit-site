@@ -187,7 +187,16 @@ same. What the page feels meanwhile differs by browser, and the answer settles t
   And its GPU process shares one program cache across contexts: the same source on the page afterwards costs 3 / 8 /
   11 ms. So on Edge the worker is no use for smoothness (the page path already has it) and only a cache-warmer, which
   the page's background compiles already are. Edge keeps the page path.
-- *Safari, Chrome:* not measured; both compile in the background on the page, so the question is Firefox's.
+- *Safari (a real phone, 22 October 2026).* A worker has WebGL2 there and its compiles run in the background: probe
+  315 ms (page drawing 2D) / 259 ms (page drawing WebGL too), rich door 338 / 333, flight head 332 / 336. The page's
+  longest frame gap meanwhile was 34 ms with 2D and 74 ms with its own WebGL (idle: 37 / 41 ms), and the animations
+  looked smooth. The same source compiled on the page afterwards cost probe 4 ms, rich door 12, flight head 14: a
+  worker's compile warms the page's, as on Edge. The `stall` test (the page's own compile of the rich door, with the
+  page's loop running), twice: 550 and 398 ms in the background, frame gaps 33 / 29 ms before and 34 / 34 after, the
+  spinner turning throughout. So Safari has no compile freeze to fix, keeps the page path, and gets no worker
+  pre-warm (ADR-0004).
+- *Chrome:* not measured on its own; it compiles in the background on the page like Edge, so the question is Firefox's
+  (its move is deferred to #85, ADR-0004).
 
 **Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Safari laptop 0.20), rich ≈ 0.3-0.55 (the Safari laptop 0.32, the PCs 0.45-0.55); a compile ≈ the
 probe's compile time scaled by the shader's rolled size (the per-character rule from before the loops were rolled no
