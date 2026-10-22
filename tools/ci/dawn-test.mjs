@@ -11,7 +11,8 @@
  * #28: the dawn's world element reads data-rasterised "pending", then "ready". "ready" must come only once the glows are
  * drawn and the Earth's pictures that start() asks for (found from a normal run's network log: img/dawn/dawn-pre.webp
  * and img/dawn/dawn.webp) have loaded. They are held for several seconds with page.route and let go: "ready" must not
- * show while they are held, must show after, and after every one of those requests has finished. Control: unheld, it
+ * show while they are held, must show after, and after every one of those pictures has finished (read in the page: its
+ * resource timing against when it set "ready", not when the runner hears of the finish). Control: unheld, it
  * reaches "ready".
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
@@ -108,22 +109,18 @@ try {
     } finally { await page.close(); }
   };
 
-  /* hold: false for the control. Answers what the page saw, plus the Earth requests' times in the runner's clock. */
+  /* hold: false for the control. Answers what the page saw, plus the Earth requests as the runner saw them asked for, and the page's own record of when they ended. */
   const draw = async (hold) => {
     const { page, problems } = await open();
     try {
-      const earth = [];   /* { url, asked, finished } */
+      const earth = [];   /* { url, asked } */
       let release = () => {};
       const released = new Promise((ok) => { release = ok; });
       await page.route(EARTH, async (route) => {
-        const e = { url: route.request().url().replace(/^.*\/assets\//, "assets/"), asked: Date.now(), finished: null };
+        const e = { url: route.request().url().replace(/^.*\/assets\//, "assets/"), asked: Date.now() };
         earth.push(e);
         if (hold) await released;
         await route.continue().catch(() => {});
-      });
-      page.on("requestfinished", (req) => {
-        const e = earth.find((x) => x.url === req.url().replace(/^.*\/assets\//, "assets/") && x.finished === null);
-        if (e) e.finished = Date.now();
       });
       const began = await page.evaluate(() => window.drawBegin());
       let atHold = null, releasedAt = null;
@@ -137,8 +134,6 @@ try {
       try {
         await page.waitForFunction(() => window.drawNow() === "ready", null, { timeout: READY_WITHIN, polling: 50 });
       } catch { waited = `data-rasterised never read "ready" within ${READY_WITHIN} ms of the start`; }
-      /* a moment more, so the last of the requests' finish events have arrived */
-      await new Promise((ok) => setTimeout(ok, 300));
       const r = await page.evaluate(() => window.drawEnd());
       return { r: { ...r, earth, began, atHold, releasedAt, waited }, problems };
     } finally { await page.close(); }
@@ -338,9 +333,10 @@ try {
       ["data-rasterised read pending", r.seen.pending !== undefined],
       ["data-rasterised was not ready while they were held", r.atHold !== "ready" && (r.seen.ready === undefined || r.seen.ready >= r.releasedAt)],
       ["data-rasterised became ready after they were released", r.seen.ready !== undefined && !r.waited],
-      ["every Earth request had finished before ready", r.earth.length > 0 && r.seen.ready !== undefined && r.earth.every((e) => e.finished !== null && e.finished <= r.seen.ready)],
+      /* judged in the page (its resource timing against when it set ready), not by when the runner is told of the finish */
+      ["every Earth picture had finished (in the page) before ready", r.earth.length > 0 && r.readyPerf !== null && r.earth.every((e) => r.earthEnds.some((x) => x.url === e.url && x.responseEnd > 0 && x.responseEnd <= r.readyPerf))],
       ["no error was thrown", !r.thrown && r.errors.length === 0],
-    ], (r) => `held ${JSON.stringify(r.earth.map((e) => e.url))}; at the end of the hold ${JSON.stringify(r.atHold)}; ready at ${r.seen.ready === undefined ? "never" : `+${r.seen.ready - r.began} ms`}, released at +${r.releasedAt - r.began} ms, requests finished at ${JSON.stringify(r.earth.map((e) => e.finished === null ? null : e.finished - r.began))}`],
+    ], (r) => `held ${JSON.stringify(r.earth.map((e) => e.url))}; at the end of the hold ${JSON.stringify(r.atHold)}; ready at ${r.seen.ready === undefined ? "never" : `+${r.seen.ready - r.began} ms`}, released at +${r.releasedAt - r.began} ms, in the page, response ends ${JSON.stringify(r.earthEnds.map((x) => Math.round(x.responseEnd)))} ms, ready set at ${r.readyPerf === null ? "never" : Math.round(r.readyPerf)} ms`],
 
     ["data-rasterised is pending by the time start() returns (a host checking straight after sees it)", () => pendingAtOnce(), (r) => [
       ["data-rasterised reads \"pending\" straight after start()", r.value === "pending"],

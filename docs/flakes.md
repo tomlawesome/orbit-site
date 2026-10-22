@@ -16,6 +16,7 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 - 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · ready +4039 ms, one request's finish event +4045 ms; "not ready while held" passed; passed on the next run
 - 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · same case, failed again on the run after; the test compares the runner-side arrival of Playwright's requestfinished event with ready, and Chromium can deliver that event after the page has used the body (CI runs dawn on Firefox only)
 - 2026-10-20 · 42fbb6e · local Chromium engines pass (fifth audit), agent host · ready +4020 ms, Earth requests finished +4022/4023 ms; the third sighting files #73
+- 2026-10-22 · Fixed by the commit that closes #73: the check now reads the page's own resource timing (each Earth picture's responseEnd) against when the page set ready, so the runner's event delivery no longer matters
 
 ## Docker image pull from the dependency proxy: not found
 

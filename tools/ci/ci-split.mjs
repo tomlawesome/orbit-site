@@ -279,7 +279,8 @@ if (imp !== null) {
   if (!lines(imp.script).some((l) => /nightly-import\.sh/.test(l))) bad(".gitlab-ci.yml: import_docs does not run tools/ci/nightly-import.sh");
   const art = isObj(imp.artifacts) ? imp.artifacts : {};
   const paths = Array.isArray(art.paths) ? art.paths : art.paths === undefined ? [] : [art.paths];
-  if (paths.length !== 1 || paths[0] !== "assets/docs/") bad(`.gitlab-ci.yml: import_docs artifacts must be assets/docs/ alone, found: ${paths.join(", ") || "none"}`);
+  // the pages and the import's warnings (#82), exactly: the publish job requires both and refuses anything else
+  if (JSON.stringify(paths) !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) bad(`.gitlab-ci.yml: import_docs artifacts must be exactly assets/docs/ and import-warnings.txt, found: ${paths.join(", ") || "none"}`);
   const life = seconds(art.expire_in);
   if (!(life > 0 && life <= 86400)) bad(`.gitlab-ci.yml: import_docs artifacts need a short expire_in (at most 1 day), found: ${art.expire_in ?? "none"}`);
 }

@@ -468,7 +468,8 @@ export function liveDoor(world) {
     .then((p) => { prog = p; if (mode === "rich") rich = p; })
     .then(() => Promise.all(keys.map(load)))
     /* a map that failed (a dropped download; fetchOnce forgets a failed fetch) asked for once more, once the first
-       round is in, as the flight does (voyage.js: warm), so the door and the flight draw the same Earth */
+       round is in, before the reveal; the flight has its own retry (voyage.js: warm), which runs beside this one, so
+       the door and the flight draw the same Earth */
     .then(() => Promise.all(keys.filter((k) => failed.has(k) && !dead).map(load)))
     /* the sharper strip, once the small one is in (sharpStrip): put on the GPU beside it, and drawn from then on */
     .then(() => { if (maps.lightsS) stripS.ready((bm) => { if (dead) return; maps.lightsS2 = upload("lightsS", bm); dirty = true; wake(); }); else stripS.fail(); })
