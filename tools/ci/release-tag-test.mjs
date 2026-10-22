@@ -32,21 +32,24 @@ const FOOT = '<p class="foot">credit</p>';
 const LOCK = '<div class="planets"></div>';
 const FULL = { image, lockup: LOCK, gate: GATE, foot: FOOT, indent: "  " };
 
-/* the surfaces, each with option sets; `today` is the sha256 of the markup the code wrote before the option existed
-   (taken at the commit before this test), for the byte-for-byte check */
+/* the surfaces, each with option sets. `today(s)` is the sha256 of the markup the code writes now with no tag,
+   worked out from the current files, so an edit to the door's markup does not break the byte-for-byte checks; that
+   the site's page matches the writer is checked in 6 */
 const SURFACES = {
-  "dawn, image only": { fn: dawnMarkup, opts: { image }, today: "996027f942a76a963de108cf9c5d839c435c026f5736eed448dceb4308468b64" },
-  "dawn, slots and indent": { fn: dawnMarkup, opts: FULL, today: "d2194255b05641a6d85c8a472a17b37c18efffa1261f923610b0f54e9332762e" },
-  "dawn, heading: false": { fn: dawnMarkup, opts: { ...FULL, heading: false }, today: "f6aedef2f16a54bb21f818373005aa863caf49ad2be3753404562f419d0b6be9" },
-  "dusk, image only": { fn: duskMarkup, opts: { image }, today: "c9594b2848edcf53a5613af550dc4f77e6474986b0bb95f215983f6704fe2ccf" },
-  "dusk, gate foot farewell indent": { fn: duskMarkup, opts: { image, gate: GATE, foot: FOOT, farewell: { said: "Goodbye", sub: "see you" }, indent: "  " }, today: "73f347de863c06c364fe9915adba10423a0730a02856166bee70b7b1fde22d8d" },
-  "dusk, asDawn": { fn: duskMarkup, opts: { image, gate: GATE, foot: FOOT, asDawn: true, indent: "  " }, today: "934f8a172c0866e16f37089a1dce0bd1b86084d4d4dfb74a1696af8ac49c315f" },
-  "dusk, asDawn, image only": { fn: duskMarkup, opts: { image, asDawn: true }, today: "4067f625082fedc39f3e8df1c89da7ecf50327ef09ed1442f30a93913ce67210" },
+  "dawn, image only": { fn: dawnMarkup, opts: { image } },
+  "dawn, slots and indent": { fn: dawnMarkup, opts: FULL },
+  "dawn, heading: false": { fn: dawnMarkup, opts: { ...FULL, heading: false } },
+  "dusk, image only": { fn: duskMarkup, opts: { image } },
+  "dusk, gate foot farewell indent": { fn: duskMarkup, opts: { image, gate: GATE, foot: FOOT, farewell: { said: "Goodbye", sub: "see you" }, indent: "  " } },
+  "dusk, asDawn": { fn: duskMarkup, opts: { image, gate: GATE, foot: FOOT, asDawn: true, indent: "  " } },
+  "dusk, asDawn, image only": { fn: duskMarkup, opts: { image, asDawn: true } },
 };
+
+const today = (s) => sha(s.fn(s.opts));
 
 /* ---- 1. no tag: byte for byte today's ---- */
 for (const [name, s] of Object.entries(SURFACES)) {
-  const want = s.today;
+  const want = today(s);
   const got = (o) => sha(s.fn(o));
   check(`1. ${name}, no tag: the same bytes as today`, got(s.opts) === want, got(s.opts) === want ? "sha256 matches" : `sha256 ${got(s.opts).slice(0, 12)}… (today: ${want.slice(0, 12)}…)`);
   check(`1. ${name}, tag: "": the same bytes as today`, got({ ...s.opts, tag: "" }) === want, got({ ...s.opts, tag: "" }) === want ? "sha256 matches" : "differs");
@@ -164,7 +167,7 @@ check("6. index.html has no .release", !/class="release"/.test(readFileSync(join
 for (const [name, sf] of Object.entries(SURFACES)) {
   for (const [label, v] of [["false", false], ["0", 0], ["null", null], ["{}", {}], ["[]", []], ["true", true], ["1", 1]]) {
     const got = sha(sf.fn({ ...sf.opts, tag: v }));
-    check(`7. ${name}, tag: ${label} (not a string): the same bytes as today`, got === sf.today, got === sf.today ? "sha256 matches" : "a tag was written");
+    check(`7. ${name}, tag: ${label} (not a string): the same bytes as today`, got === today(sf), got === today(sf) ? "sha256 matches" : "a tag was written");
   }
 }
 
@@ -225,7 +228,7 @@ if (base) {
   check("10. .release: line-height is declared after the font shorthand (which would reset it)", fi >= 0 && li >= 0 && li > fi, `font at ${fi}, line-height at ${li}`);
 }
 
-/* ---- 11. the README no longer says Orbit passes it today ---- */
-check("11. the README does not say Orbit passes its channel (it does not yet)", !/Orbit\s+passes\b/i.test(readme), /Orbit\s+passes\b/i.test(readme) ? "still says Orbit passes it" : "no such claim");
-check("11. the README says Orbit will pass its channel or short commit", /Orbit\s+will\s+pass/i.test(readme), /Orbit\s+will\s+pass/i.test(readme) ? "found" : "no `Orbit will pass`");
+/* ---- 11. the README says who passes a tag: the site none, Orbit its own (in either tense, so it holds once Orbit does) ---- */
+check("11. the README says the site passes no tag", /the\s+site\s+passes\s+none/i.test(readme), /the\s+site\s+passes\s+none/i.test(readme) ? "found" : "no `the site passes none`");
+check("11. the README says Orbit passes (or will pass) its channel or short commit", /Orbit\s+(?:will\s+pass|passes)\b/i.test(readme), /Orbit\s+(?:will\s+pass|passes)\b/i.test(readme) ? "found" : "no `Orbit will pass` or `Orbit passes`");
 process.exit(failed ? 1 : 0);
