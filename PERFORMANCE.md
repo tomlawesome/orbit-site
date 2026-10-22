@@ -162,7 +162,7 @@ Tried, October 2026:
 
 ## The Earth's march cheaper, and a ladder: lean first, rich if affordable (8 October 2026)
 
-- Measured on an RTX 3080 (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
+- Measured on the desktop (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
   about 10 ms a million pixels: far too heavy for a mid-range GPU.
 - The slab's march now reads one texel a step instead of three. Each clouds map (global, near) gets a field, made
   once per context by a pass right after the map is put on the GPU (assets/door/voyage.js: cloudField; RGBA8 at the map's own
@@ -191,13 +191,13 @@ Tried, October 2026:
 - SwiftShader (software rendering: relative only), 1440×900, deviceScaleFactor 2, band 2880×648: lean 1.1 s a frame
   in one load (then stepped to 1×) and 2.0 s in another; rich (forced) 3.3 s; the committed slab 3.3 s. Other runs
   shared the machine, so the noise is about 2×. SwiftShader also pays for every branch on every step, so it shows
-  little of the fields' saving. Still to be measured on the RTX 3080.
+  little of the fields' saving. Still to be measured on the desktop.
 
 - 8 October 2026, `?door3d` only: the install's and the information's door planets are drawn by their own world (install.js: `doorPlanets`), its whole pipeline twice a frame into a square five radii a side; over 8 ms a frame (the first 30 timed) it draws them at half scale, and the console says which.
 
 ## The dive's click, and the strip small first (8 October 2026)
 
-- Measured on the RTX 3080 (4K at 1.5×): the first second after a click on the install planet drew 60 frames, the
+- Measured on the desktop (4K at 1.5×): the first second after a click on the install planet drew 60 frames, the
   worst 33 ms; on the information planet 58, the worst 67 ms. At the click the world went from the door's square
   (doorPlanets) to the full screen, and `resize` made its HDR target and bloom chain again at 3.3 Mpx in that frame.
 - world.js `resize` now keeps the targets for the last two sizes drawn (keyed by the drawn size; a third lets the one
@@ -458,7 +458,7 @@ Tried, October 2026:
 ## The ladder (8 October 2026)
 
 - Why: the live door (`?door3d`) is beautiful on a fast GPU with a background compiler, and costs a slow machine
-  dearly. On the laptop (Ryzen 4700U) in Firefox, where every compile stalls the page, its programs add about 1.1 s
+  dearly. On the laptop in Firefox, where every compile stalls the page, its programs add about 1.1 s
   to the loading ring: the door 650 ms, the planets 260, and the flight's rich overlay in place of the lean one about
   400 more. After the reveal its uploads, its first frames and its two live loops run beside the orbits for the rest
   of the visit: the Earth 16-18 ms a frame at 20 a second, the world planets 13-17 ms, dropped to half scale. The
@@ -525,7 +525,7 @@ desktop as the check that nothing regressed; every build verified pixel-identica
 CAPABILITIES.md corrected whenever a measurement overturns a belief (as the loops did today).
 
 Targets, laptop, Firefox, first visit: the ring 4 s or under (10 s today); the ways in open at 7 s or under (15 s);
-Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
+Edge, the Safari laptop and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 
 1. **Rolled loops.** Tried and measured the same day: no gain on the real shaders (above). Taken out.
 2. **Chore waiting** (in). The `chores at … ready` line (assets/door/chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
@@ -588,7 +588,15 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
   after the last compile. The still door, the orbits and the ring are 2D and the compositor's, and stay on the page.
 - **Edge: no.** A worker's compile stalls the page and the spinner whatever the worker does, while Edge's own page
   compiles, polled, stall nothing; and Edge shares its program cache across contexts, so the page path it has is
-  already the smooth one. Edge, Chrome and Safari keep the page path.
+  already the smooth one.
+- **Safari (a real phone, 22 October 2026): no stall to fix.** A worker has WebGL2 there and compiles each program in
+  about 260-340 ms while the page's longest frame gap stays at 34 ms with 2D and 74 ms with its own WebGL (idle:
+  37 / 41 ms); the animations are smooth. The same source then compiles on the page in 4-14 ms, so a worker's compile
+  warms the page's. And the `stall` test, twice, shows the page's own rich-door compile (550 and 398 ms, in the
+  background) leaving the frame gaps at 29-34 ms before and after, the spinner turning throughout.
+- **What each browser gets (ADR-0004).** Chrome, Edge and Safari keep the page path: Chrome and Edge because a worker's
+  compile would stall them, Safari because it was measured not to stall (and a worker's compile would warm the page's
+  if that ever changed, so no pre-warm is built). Firefox's move of the drawing into a worker is deferred to #85.
 - **The two tries before the answer:** the first test read pixels back in the page's loop, which was itself the
   stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
   process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).
