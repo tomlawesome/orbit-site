@@ -348,6 +348,9 @@ Tried, October 2026:
     after `"door"` and `"measure"` in assets/door/chores.js ORDER, and the docs' journey still hurries it. On the page's thread it
     stays a `"compile"` chore under the ring. `compiled()` (assets/door/engine.js) and main.js's wait still don't wait for it on
     the background path.
+    - *Superseded 2026-10: the galaxy no longer comes after the door is live. `ORDER` in assets/door/chores.js ranks
+      `"galaxy"` before `"door"` (the live door's chore), not after it and `"measure"`; this applies to the table
+      below and to "Seen on the background path" under it too.*
   - **Counts in the console** (`?door3d` only): each `… compiled in N ms` line gains `(N programs)`, and main.js prints
     `programs compiled before the door: N (…)` once all the ring waits for, the door's first weight and the planets
     are compiled.
