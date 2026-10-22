@@ -28,6 +28,11 @@
  *       throw when it is put in the pad) does not show that, and the fault is logged with console.error, carrying the
  *       thrown error. Controls: the failed fetch does show it; the same page undisturbed draws the docs; the
  *       disturbance did fire on the fault visit.
+ *   B9  a docs page with a heading titled "Mermaid" (so id="mermaid", which the browser also exposes as the page-wide
+ *       name `mermaid`) before its diagram still draws the diagram as an <svg> within 30 s, and does not fall back to the
+ *       diagram's source shown as code (pre.code[data-lang="mermaid"]); the heading is on the page and is the element
+ *       with that id. Control: the same page without that heading draws the <svg> (the library loads from
+ *       cdn.jsdelivr.net, so this case needs the network).
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
@@ -391,6 +396,7 @@ const docsFaultCase = async () => {
         return pad.querySelector(".entry, .chart .star") || /have not been imported/.test(pad.innerText) || window.__faults > 0;
       }, null, { timeout: 30000 });
       await sleep(2000);
+      /* (window.mermaid is not compared with the heading: once the library has loaded, the name is the library's) */
       const seen = await page.evaluate(() => {
         const pad = document.querySelector("#docspad");
         return { notImported: /have not been imported/.test(pad.innerText), drawn: !!pad.querySelector(".entry, .chart .star"), faults: window.__faults || 0 };
@@ -411,6 +417,68 @@ const docsFaultCase = async () => {
       want(fault.logged > 0, `the drawing fault was not logged with console.error carrying the thrown error ("${FAULT}")${fault.errors.length ? `; page errors: ${fault.errors[0]}` : ""}`);
     });
   } finally { await fctx.close(); }
+};
+
+/* ── B9: a docs diagram beside a heading titled "Mermaid" ──────────────────────────────────────────────────── */
+/* the committed architecture page, cut to its first diagram; `withHeading` puts a section whose heading is titled
+   "Mermaid" (id="mermaid") before the diagram */
+const mermaidPage = (withHeading) => {
+  const page = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "architecture.json"), "utf8"));
+  const diagram = page.sections.find((s) => /data-mermaid/.test(s.html));
+  if (!diagram) throw new Error("assets/docs/architecture.json holds no figure[data-mermaid] to serve");
+  const sections = [page.sections[0]];
+  if (withHeading) sections.push({ id: "mermaid", title: "Mermaid", html: '<h2 id="mermaid">Mermaid</h2>\n<p>Diagrams on this page are drawn with the Mermaid library.</p>', summary: "", text: "Mermaid Diagrams on this page are drawn with the Mermaid library.", subs: [] });
+  sections.push(diagram);
+  return { ...page, sections };
+};
+const mermaidCase = async () => {
+  const mctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+  try {
+    const visit = async (withHeading) => {
+      const page = await open(mctx);
+      const body = JSON.stringify(mermaidPage(withHeading));
+      await page.route("**/assets/docs/architecture.json", (route) => route.fulfill({ status: 200, contentType: "application/json", body }));
+      await page.goto(`${SITE}?preview#docs/architecture`, { waitUntil: "load" });
+      await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
+      await page.locator("#docspad figure[data-mermaid]").first().waitFor({ state: "attached", timeout: 30000 });
+      /* settled: the figure holds an svg, or the source is shown as code, or 30 s have gone */
+      const settled = () => page.evaluate(() => {
+        const pad = document.querySelector("#docspad");
+        return { svg: !!pad.querySelector("figure[data-mermaid] svg"), code: !!pad.querySelector('pre.code[data-lang="mermaid"]') };
+      });
+      await until(settled, (v) => v.svg, 30000, 250);
+      await sleep(1000);
+      const seen = await page.evaluate(() => {
+        const pad = document.querySelector("#docspad");
+        const h = document.getElementById("mermaid");
+        const shown = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden"; };
+        return {
+          figures: pad.querySelectorAll("figure[data-mermaid]").length,
+          svgs: pad.querySelectorAll("figure[data-mermaid] svg").length,
+          codeShown: [...pad.querySelectorAll('pre.code[data-lang="mermaid"]')].filter(shown).length,
+          headingInPad: !!h && pad.contains(h),
+          headingTag: h ? h.tagName : "",
+          headingText: h ? h.textContent.trim() : "",
+          headingShown: shown(h),
+        };
+      });
+      const errors = page.errors.slice();
+      await page.close();
+      return { ...seen, errors };
+    };
+    await runCase("B9", 'a docs diagram beside a heading titled "Mermaid" is still drawn as an svg', async (want) => {
+      /* control: the same page without that heading draws the diagram */
+      const plain = await visit(false);
+      want(plain.figures > 0 && plain.svgs > 0 && plain.codeShown === 0,
+        `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged (does the run reach cdn.jsdelivr.net?)`);
+      const clash = await visit(true);
+      want(clash.headingInPad && clash.headingShown && clash.headingTag === "H2" && clash.headingText === "Mermaid",
+        `control: the "Mermaid" heading was not shown as the element with id "mermaid" (in the pad ${clash.headingInPad}, shown ${clash.headingShown}, ${clash.headingTag} ${JSON.stringify(clash.headingText)})`);
+      want(clash.figures > 0 && clash.svgs > 0, `the diagram was not drawn as an svg beside the "Mermaid" heading (${clash.figures} figure(s), ${clash.svgs} svg(s) within 30 s)`);
+      want(clash.codeShown === 0, `the diagram's source was shown as code (pre.code[data-lang="mermaid"], ${clash.codeShown} shown) beside the "Mermaid" heading`);
+      want(!clash.errors.length, `page error: ${clash.errors[0]}`);
+    });
+  } finally { await mctx.close(); }
 };
 
 /* ── B2: the install page after the shared WebGL world's context was lost ──────────────────────────────────── */
@@ -579,7 +647,7 @@ try {
   /* B2 and B3 use pages of their own and are started once B1 has had the machine to itself; the walk's cases wait
      in real time for the walk, so the others fit into the waiting */
   const others = [];
-  const background = () => { others.push(docsCase(), docsFaultCase(), lostContextCase().then(retryCase)); };
+  const background = () => { others.push(docsCase(), docsFaultCase(), mermaidCase(), lostContextCase().then(retryCase)); };
   await homeCases(ctx, background);
   await cameraCase(ctx);
   await Promise.all(others);

@@ -419,12 +419,17 @@ export function createDocs(pad) {
     }, { root: scroll, rootMargin: "-80px 0px -60% 0px", threshold: 0 });
     reader.querySelectorAll(".sec").forEach((s) => tocWatch.observe(s));
   }
-  /* a failed or blocked load is not remembered: the next diagram tries again (createScriptLoader) */
+  /* a failed or blocked load is not remembered: the next diagram tries again (createScriptLoader). The library is
+     kept here once loaded and read from nowhere else: before it loads, window.mermaid can be a docs heading whose
+     id is "mermaid" (the browser names elements by id on window), which would stand in for it (#74) */
+  /** @type {any} */
+  let lib = null;
   const mermaid = createScriptLoader(() => new Promise((resolve, reject) => {
     const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
   }).then(() => {
     const dark = document.documentElement.dataset.theme !== "day";
-    window.mermaid.initialize({ startOnLoad: false, theme: "base", themeVariables: { darkMode: dark, background: "transparent", primaryColor: dark ? "#131c3a" : "#eef2fb", primaryTextColor: dark ? "#e9edf8" : "#0b1020", primaryBorderColor: dark ? "#3a4a7a" : "#9aa8c8", lineColor: dark ? "#8791b3" : "#5a6684", fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" } });
+    lib = window.mermaid;
+    lib.initialize({ startOnLoad: false, theme: "base", themeVariables: { darkMode: dark, background: "transparent", primaryColor: dark ? "#131c3a" : "#eef2fb", primaryTextColor: dark ? "#e9edf8" : "#0b1020", primaryBorderColor: dark ? "#3a4a7a" : "#9aa8c8", lineColor: dark ? "#8791b3" : "#5a6684", fontFamily: "Inter, system-ui, sans-serif", fontSize: "13px" } });
   }));
   /* diagrams in the source: drawn by mermaid, fetched only when a page has one */
   function drawDiagrams() {
@@ -432,12 +437,12 @@ export function createDocs(pad) {
     const draw = async () => {
       for (const f of figs) {
         const src = f.querySelector("pre")?.textContent; if (!src || f.dataset.drawn) continue;
-        try { const { svg } = await window.mermaid.render(`mm${Math.random().toString(36).slice(2, 8)}`, src); f.insertAdjacentHTML("afterbegin", svg); f.querySelector("figcaption").remove(); }
+        try { const { svg } = await lib.render(`mm${Math.random().toString(36).slice(2, 8)}`, src); f.insertAdjacentHTML("afterbegin", svg); f.querySelector("figcaption").remove(); }
         catch { f.innerHTML = `<pre class="code" data-lang="mermaid"><code>${esc(src)}</code></pre>`; }
         f.dataset.drawn = "1";
       }
     };
-    if (window.mermaid) { draw(); return; }
+    if (lib) { draw(); return; }
     mermaid.get().then(draw).catch(() => figs.forEach((f) => { const src = f.querySelector("pre")?.textContent || ""; f.innerHTML = `<pre class="code" data-lang="mermaid"><code>${esc(src)}</code></pre>`; }));
   }
   /* any #docs link, wherever it is written on this landing, is read here */
