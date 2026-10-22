@@ -54,14 +54,17 @@
     };
 
     /* drawBegin() starts the dawn and watches its world's data-rasterised; drawNow() says what it reads now; drawEnd()
-       says when each value first showed (epoch ms, the same clock as the test runner's) and stops watching */
+       says when each value first showed (epoch ms, the same clock as the test runner's) and stops watching. It also
+       answers with the page's own record of when "ready" was set and when each Earth picture's response ended (both
+       on performance.now(), the page's clock, so the order does not depend on when the runner is told of anything). */
     const seen = {}, drawErrors = [];
-    let watcher = null, thrown = null;
-    const look = () => { const v = dawn.world.dataset.rasterised; if (v) seen[v] ??= Date.now(); };
+    let watcher = null, thrown = null, readyPerf = null;
+    const look = () => { const v = dawn.world.dataset.rasterised; if (v) seen[v] ??= Date.now(); if (v === "ready") readyPerf ??= performance.now(); };
     const onerror = (e) => drawErrors.push(String(e.message || e));
     window.drawBegin = () => {
       addEventListener("error", onerror);
       watcher = setInterval(look, 10);
+      new MutationObserver(look).observe(dawn.world, { attributes: true, attributeFilter: ["data-rasterised"] });
       try { look(); dawn.start(); look(); } catch (e) { thrown = String(e && e.message || e); }
       return Date.now();
     };
@@ -70,7 +73,10 @@
       look();
       clearInterval(watcher);
       removeEventListener("error", onerror);
-      return { seen, now: dawn.world.dataset.rasterised ?? null, thrown, errors: drawErrors };
+      const earth = performance.getEntriesByType("resource")
+        .filter((e) => /\/assets\/door\/img\/dawn\/dawn(-pre)?\.webp(\?|$)/.test(e.name))
+        .map((e) => ({ url: e.name.replace(/^.*\/assets\//, "assets/"), responseEnd: e.responseEnd }));
+      return { seen, now: dawn.world.dataset.rasterised ?? null, thrown, errors: drawErrors, readyPerf, earthEnds: earth };
     };
 
     /* #27: a destroyed dawn. destroyRun(kind) does one of
