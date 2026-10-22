@@ -6,8 +6,10 @@
 # its own branch, opens the merge request, and asks GitLab to merge it when the
 # lint and the live journey are green, so every import is tested before Pages
 # serves it. A run with nothing new opens nothing, but still closes the older
-# ones. Once the new merge request is open, any older import merge request still
-# open is closed and its branch deleted: the new one carries everything it had.
+# ones. Opening the merge request is tried up to 5 times, 3 seconds apart,
+# each refusal logged with GitLab's status and answer (#75). Once the new merge
+# request is open, any older import merge request still open is closed and its
+# branch deleted: the new one carries everything it had.
 #
 # Privilege separation (#18): this is the only code that holds
 # ORBIT_SITE_IMPORT_TOKEN, a project access token, role Maintainer (to merge
@@ -142,6 +144,9 @@ cgit() { nogit -c safe.directory="$top" --git-dir="$gitdir" --work-tree="$top" "
 # is gone, so node never runs while a token is on disk.
 apij() { js=$1; shift; ans=$(api "$@") || return 1; printf '%s\n' "$ans" | json "$js"; }
 json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);$1})"; }
+# answer <file>: a saved API answer and curl's own complaint (<file>.err), on one
+# line, cut to 300 characters, for the log
+answer() { cat "$1" "$1.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300; }
 
 refuse() { echo "refusing the artifact: $1"; exit 1; }
 
@@ -463,11 +468,33 @@ main() {
   rm -f "$cred"
 
   echo "== merge request"
-  iid=$(apij 'console.log(j.iid)' POST "/merge_requests" \
-    --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
-    --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
-    --data-urlencode "remove_source_branch=true" \
-    --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass.")
+  # GitLab can refuse the open for a moment (#75): it is tried up to 5 times in
+  # all, 3 seconds apart, the same way as the auto-merge below. Each refusal is
+  # logged with its status and answer, cut to 300 characters, never the request.
+  # The header file is on disk only while one try runs, never across the waits,
+  # and the answer is parsed only once it is gone.
+  mrans="$scratch/mr-answer"
+  mrtries=5
+  for i in $(seq 1 "$mrtries"); do
+    rm -f "$mrans" "$mrans.err"
+    hdr_on
+    code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$mrans" -w '%{http_code}' \
+      -X POST -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests" \
+      --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
+      --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
+      --data-urlencode "remove_source_branch=true" \
+      --data-urlencode "description=The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass." \
+      2>"$mrans.err") || code=000
+    hdr_off
+    case $code in 2??) break ;; esac
+    echo "   try $i of $mrtries refused: HTTP $code $(answer "$mrans")"
+    [ "$i" -eq "$mrtries" ] || sleep 3
+  done
+  case $code in 2??) ;; *)
+    echo "could not open the merge request for $branch after $mrtries tries; nothing closed. GitLab's last answer: HTTP $code $(answer "$mrans")"
+    exit 1 ;;
+  esac
+  iid=$(json 'console.log(j.iid)' < "$mrans" 2>/dev/null) || iid=
   case $iid in ''|*[!0-9]*)
     echo "GitLab's answer to the merge request had no numeric iid ('$iid'); stopping before closing anything"
     exit 1 ;;
@@ -500,7 +527,7 @@ main() {
     [ "$i" -eq "$tries" ] || sleep 10
   done
   echo "could not set !$iid to merge itself; it is open for a maintainer"
-  echo "   GitLab's last answer: HTTP $code $(cat "$resp" "$resp.err" 2>/dev/null | tr -s '\n' ' ' | cut -c1-300)"
+  echo "   GitLab's last answer: HTTP $code $(answer "$resp")"
   exit 1
 }
 main "$@"
