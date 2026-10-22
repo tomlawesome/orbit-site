@@ -1,6 +1,7 @@
 # ADR-0004: The flight's compiles leave the page's thread only where that is measured to help
 
-**Status:** Proposed (owner to take measurement M1 before the Safari build; questions 1 and 2 answered 1a and 2a)
+**Status:** Accepted (2026-10-22). Questions 1 and 2 answered 1a and 2a; measurement M1 taken: no Safari stall, so
+section 4's pre-warm is not built, and the door folder's interface is unchanged.
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); ADR-0001 (the folder Orbit copies); ADR-0002
 (decision 12d, the leisure proof; decision 7, nothing remembered); #76 (memory on a phone); PERFORMANCE.md "The
@@ -55,7 +56,10 @@ under-the-ring compiles already contain in part (ring 8.7 s and 15.4 s on the tw
 has only just gained the capability, so no phone gains. Section 6 keeps the outline so the work is not designed
 twice. Deferred to #85, after M3 (owner, 2026-10-22, question 2 answered 2a).
 
-**Safari: the pre-warm in a worker, if and only if the page's own compile is measured to stall the page (M1).** Measured
+**Safari: the pre-warm in a worker, if and only if the page's own compile is measured to stall the page (M1).**
+*Outcome (2026-10-22): M1 on a real phone, twice, showed no stall (rich compile 550 and 398 ms, frame gaps 29-34 ms
+before and after, the spinner turning throughout); the pre-warm is not built. Sections 3 and 4 stand as the record of
+what it would have been.* Measured
 on the device the issue came from: a worker compiles each program in ~300 ms while the page's frames stay where they
 were idle, and the same source then compiles on the page in 4-14 ms. So a worker can take the cold compile off the
 page and leave the page a warm one, with no drawing moved and no change to a flight's pixels. What is not measured is
@@ -228,7 +232,8 @@ not rises. The unaudited-line count makes this its own batch after an audit.
 
 - **M1, before the Safari build:** `/tests/`, pick "stall", on a phone (plugged in, power saving off, twice) and
   on a desktop with Safari: the three gap lines and the eye's verdict on the spinner. A stall of the compile's length funds
-  section 4; gaps within two frames close the Safari half with the numbers on #43.
+  section 4; gaps within two frames close the Safari half with the numbers on #43. *Taken 2026-10-22 on a phone, twice: no
+  stall (numbers on #43); no desktop Safari run, the 8 October desktop record already shows 20 ms gaps.*
 - **M2, after it (if built):** the real door on the phone with Safari's Web Inspector from a Mac: the console lines
   `flight: warmed in a worker in N ms`, `flight: shaders compiled in N ms` (expected tens of ms where it was hundreds),
   `flight: first second N frames, worst N ms`; then the same with `?warm=off`. The eye on the reveal and on the gate's
