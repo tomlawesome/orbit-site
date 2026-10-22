@@ -44,6 +44,11 @@
 # pictures (pics128 accepted, pictoomany refused); and the merge request's assets/docs/img/ is
 # exactly the archive's: a picture the import no longer writes is deleted (picgone, picswap).
 #
+# Warnings (#82): the import job also hands on import-warnings.txt (one warning per line,
+# repo<TAB>path<TAB>kind<TAB>message), required in the archive and checked line by line; the
+# publish then rewrites the one standing "Docs import warnings" issue the token's own user wrote
+# (warn-* scenarios, W1-W10). Every other archive carries the file empty.
+#
 # Runs on a scratch copy of the current commit, so the checkout is untouched.
 # npm, node, git, curl and sleep are shims first on PATH that log what they were
 # called with; nothing touches the network.
@@ -98,7 +103,7 @@ reset_tree() {
   [ ! -L assets/docs ] || rm -f assets/docs
   "$realgit" checkout -q -f "$base"
   "$realgit" reset -q --hard "$basecommit"
-  rm -f evil.txt; find assets -type p -delete
+  rm -f evil.txt import-warnings.txt; find assets -type p -delete
   "$realgit" clean -qfd -e scratch-tmp
   for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/docs/import-*'); do
     "$realgit" branch -q -D "$b"
@@ -146,7 +151,7 @@ page = page_of(src)
 extra = []   # (name, data, unix mode)
 def edit(name, fn):
     j = json.loads(files[name]); fn(j); files[name] = json.dumps(j, separators=(',', ':')).encode()
-if sc != 'nothing':
+if sc not in ('nothing', 'warn-none'):
     edit('administration.json', lambda j: j['sections'][0].update(summary=j['sections'][0]['summary'] + ' (changed)'))
 REG, LNK, CHR = 0o100644, 0o120777, 0o020644
 if sc == 'symlinkfile': extra.append(('assets/docs/readme.json', b'/etc/hostname', LNK)); del files['readme.json']
@@ -211,12 +216,33 @@ if sc == 'picraw': addpic(png(1), 'png'); addhtml('<p><img src="https://raw.gith
 if sc == 'picasfile': extra.append(('assets/docs/img', b'x', REG)); imgdir = False; pics.clear()   # no folder, so none of the commit's pictures
 if sc == 'notzip':
     open(out, 'wb').write(b'this is not a zip archive'); sys.exit(0)
+# the warnings file (#82): import-warnings.txt at the archive's root, as the import job's artifact paths hand it
+# on; empty unless the scenario carries warnings, and absent for warn-missing
+srcs = json.load(open('tools/docs-sources.json'))
+S0, S1 = srcs[0], srcs[1]
+def wl(s, kind, msg): return '%s\t%s\t%s\t%s\n' % (s['repo'], s['path'], kind, msg)
+one = wl(S0, 'link-dropped', 'link dropped, its text kept: scheme "javascript" is not http, https or mailto: javascript:x')
+warnings = {
+    'warn-some': wl(S0, 'link-cleaned', 'link address cleaned (tab, newline or edge control characters removed): https://example.com/one')
+        + one + wl(S1, 'picture-not-copied', ('picture not copied: WIDE ' + 'y' * 300)[:300]),
+    'warn-mention': wl(S0, 'link-dropped', '@someone #1 !2 Closes #1 /close') + wl(S0, 'link-dropped', '/close @someone'),
+    'warn-fence': wl(S0, 'link-dropped', 'a ```` b ' + '`' * 12 + ' c'),
+    'warn-control': wl(S0, 'link-cleaned', 'fine') + wl(S0, 'link-dropped', 'esc \x1b[31m red'),
+    'warn-bidi': wl(S0, 'link-cleaned', 'fine') + wl(S0, 'link-dropped', 'rtl \u202e txt'),
+    'warn-badrepo': wl({'repo': 'someone/else', 'path': S0['path']}, 'link-dropped', 'x'),
+    'warn-badkind': wl(S0, 'link-evil', 'x'),
+    'warn-long': wl(S0, 'link-dropped', 'z' * (401 - len(wl(S0, 'link-dropped', '')) + 1)),
+    'warn-many': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(201)),
+    'warn-max': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(200)),
+}
+for s1 in ('warn-apifail', 'warn-reopen', 'warn-lookalike', 'warn-two'): warnings[s1] = one
 def zi(name, mode):
     z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
 with zipfile.ZipFile(out, 'w') as z:
     for d in ('assets/', 'assets/docs/') + (('assets/docs/img/',) if pics and imgdir else ()):    # the directory entries a runner's archive carries
         z.writestr(zi(d, 0o040755), b'')
     for n, data in files.items(): z.writestr(zi('assets/docs/' + n, REG), data)
+    if sc != 'warn-missing': z.writestr(zi('import-warnings.txt', REG), warnings.get(sc, '').encode('utf-8'))
     for n, data, mode in extra: z.writestr(zi(n, mode), data)
     for n, data, mode in pics: z.writestr(zi('assets/docs/img/' + n, mode), data)
 # the pictures a good archive carries, for the test to compare with the merge request's
@@ -248,6 +274,10 @@ case "$*" in
         fs.writeFileSync(f, JSON.stringify(j));' ;;
       empty) rm -f assets/docs/*.json ;;
     esac
+    # the import writes its warnings file (#82): import-warnings.txt, or the file --warnings names
+    w=import-warnings.txt; prev=
+    for a in "$@"; do [ "$prev" != --warnings ] || w=$a; prev=$a; done
+    [ "$SCENARIO" = nowarnfile ] || : > "$w"
     exit 0 ;;
 esac
 exec "$REAL_NODE" "$@"
@@ -335,6 +365,14 @@ run_job1 "$out" 1 nothing
 rc4=$rc
 rc=0; [ "$rc4" -eq 0 ] && grep -q 'DRY_RUN: nothing new' "$out" || rc=1
 check "job 1: a dry run with nothing changed says so (exit $rc4)" "$rc"
+reset_tree
+
+# Run 4b (#82): an import that leaves no import-warnings.txt fails the job, naming the file.
+run_job1 "$out" "" nowarnfile
+rcw=$rc
+rc=0; [ "$rcw" -ne 0 ] && grep -q 'import-warnings.txt' "$out" || rc=1
+check "W job 1: an import that writes no import-warnings.txt fails, naming it (exit $rcw)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 reset_tree
 
 # ---------------------------------------------------------------- part 2 --
@@ -443,7 +481,12 @@ while [ $# -gt 0 ]; do
     *) url=$a ;;
   esac
 done
-path=${url#"$CI_API_V4_URL/projects/$CI_PROJECT_ID"}
+# a call outside the project (#82: GET /user) is logged as API:<path>
+case $url in
+  "$CI_API_V4_URL/projects/$CI_PROJECT_ID"*) path=${url#"$CI_API_V4_URL/projects/$CI_PROJECT_ID"} ;;
+  "$CI_API_V4_URL/"*) path="API:${url#"$CI_API_V4_URL"}" ;;
+  *) path=$url ;;
+esac
 route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
@@ -472,7 +515,7 @@ case "$method $route" in
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
     okmerge=; case $SCENARIO in mropen400once|mropenconnonce) okmerge=1; n=2 ;; esac
-    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*) okmerge=1 ;; esac
+    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
@@ -494,11 +537,31 @@ case "$method $route" in
       *) body="[$job]" ;;
     esac ;;
   "GET /jobs/555/artifacts") code=200; body= ;;
+  # the warnings issue (#82): the token's own user is 4242; its one issue is !5, open, unless the scenario says otherwise
+  "GET API:/user") code=200; body='{"id":4242,"username":"project_1_bot_test"}' ;;
+  "GET /issues") code=200
+    mine='{"iid":5,"title":"Docs import warnings","state":"opened","labels":["docs-import"],"author":{"id":4242}}'
+    case $SCENARIO in
+      warn-lookalike) body='[{"iid":6,"title":"Docs import warnings","state":"opened","labels":["docs-import"],"author":{"id":999}},{"iid":8,"title":"Docs import warnings (old)","state":"opened","labels":["docs-import"],"author":{"id":4242}}]' ;;
+      warn-two) body='['$mine',{"iid":11,"title":"Docs import warnings","state":"opened","labels":["docs-import"],"author":{"id":4242}}]' ;;
+      warn-reopen|warn-closednone) body='[{"iid":5,"title":"Docs import warnings","state":"closed","labels":["docs-import"],"author":{"id":4242}}]' ;;
+      *) body="[$mine]" ;;
+    esac ;;
+  "POST /issues") code=201; body='{"iid":9,"title":"Docs import warnings"}' ;;
+  "PUT /issues/"*) code=200; body='{"iid":5}'
+    [ "$SCENARIO" != warn-apifail ] || { code=500; body='{"message":"500 Internal Server Error"}'; } ;;
   *) note=" UNEXPECTED" ;;
 esac
 echo "$method $route$data$note" >> "$STATE/api.log"
 echo "$method $route $kind" >> "$STATE/tok.log"
 echo "api $method $route" >> "$STATE/git.log"
+case $route in /issues*) # the issue calls: their query and data, and a copy of a body sent from a file
+  query=; case $path in *\?*) query=${path#*\?} ;; esac
+  echo "$method $route query=$query data=$data" >> "$STATE/issues.log"
+  printf '%s\n' "$data" | tr '|' '\n' | while IFS= read -r d; do
+    case $d in description@*) f=${d#description@}; [ ! -f "$f" ] || cp "$f" "$STATE/issue-body" ;; esac
+  done ;;
+esac
 if [ -n "$ismerge" ]; then # one line per merge PUT: header ok?, timeout flags, sha sent
   query=; case $path in *\?*) query=${path#*\?} ;; esac
   sha=$(printf '%s|%s' "$data" "$query" | tr '|&' '\n\n' | sed -n 's/^sha=//p' | head -n 1)
@@ -660,6 +723,7 @@ run_push() { # run_push <outfile> <scenario>
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
   : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
+  rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
   headsha=$basecommit     # unless the scenario's main already holds pictures
   case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
@@ -864,7 +928,7 @@ check "job 2: it stopped retrying once GitLab accepted (saw $merge_puts attempts
 rc=0; [ "$(grep -c '^POST /merge_requests' "$aux/api.log")" -eq 1 ] || rc=1
 check "job 2: a merge request that opens on the first try is opened with exactly one POST" "$rc"
 check_merge_calls "run 7"
-rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip"); [ "$changed" = "$appendfile" ] || rc=1
+rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip" 2>/dev/null || true); [ "$changed" = "$appendfile" ] || rc=1
 check "job 2: the commit changes only the page that changed" "$rc"
 [ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
 
@@ -1138,7 +1202,7 @@ oldmr=; stale=; dry=
 # checkout had staged are not in the commit.
 run_push "$out" stage
 rc13=$rc
-changed=$("$realgit" diff --name-only "$basecommit" "$tip")
+changed=$("$realgit" diff --name-only "$basecommit" "$tip" 2>/dev/null || true)
 rc=0; [ "$rc13" -eq 0 ] || rc=1
 check "job 2: the job succeeds when other files are staged in the checkout (exit $rc13)" "$rc"
 rc=0; [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -v -e '^assets/docs/')" ] || rc=1
@@ -1310,6 +1374,168 @@ rc=0; grep -q '^POST /merge_requests' "$aux/api.log" && grep -q 'push' "$aux/shi
 check "job 2: the harmless page was pushed and a merge request opened" "$rc"
 rc=0; ! grep -q -e 'carries script' -e 'carry no script' "$out" || rc=1
 check "job 2: the harmless page is not reported as carrying script" "$rc"
+
+# ---------------------------------------------------------------- warnings (#82) --
+# The archive carries import-warnings.txt beside assets/docs/: UTF-8, one warning per line,
+# repo<TAB>path<TAB>kind<TAB>message, the repo/path a pair of tools/docs-sources.json, the kind
+# one of a fixed set, the message at most 300 characters with no control, bidi or separator
+# character; at most 200 lines of at most 400 characters. A file that breaks a rule, or no file,
+# is refused as a bad page is (W5, W6). Otherwise, once the merge request is set to merge (or
+# with nothing new, before the job stops), the publish rewrites the one issue titled exactly
+# "Docs import warnings" with label docs-import that the token's own user wrote (GET /user,
+# GET /issues?labels=docs-import&author_id=<id>&state=all): PUT /issues/:iid, or POST /issues
+# when there is none. The body is sent from a file: a fixed first paragraph (with the pipeline
+# id, 77), then `none`, or per source a `### <repo>/<path>` heading and one four-backtick fence
+# holding `<kind>  <message>` lines, every backtick in a message made '. Nothing there can fail
+# the job. The fake GitLab's user is 4242 and its issue !5, open, unless the scenario says.
+body="$aux/issue-body"
+"$realpython" -c '
+import json
+for s in json.load(open("tools/docs-sources.json")): print("### %s/%s" % (s["repo"], s["path"]))
+' > "$aux/headings"
+issue_puts() { grep -c '^PUT /issues/' "$aux/api.log" || true; }
+issue_posts() { grep -c '^POST /issues' "$aux/api.log" || true; }
+show_body() { [ -f "$body" ] && sed 's/^/     body: /' "$body" || echo "     (no issue body was sent from a file)"; }
+# in_fence <text>: the text is in the body, and every line holding it is inside a ```` fence
+in_fence() {
+  [ -f "$body" ] && awk -v t="$1" '$0 == "````" { f = !f; next } index($0, t) { n++; if (!f) bad++ } END { exit !(n > 0 && bad == 0) }' "$body"
+}
+# fence_lines: every line inside a fence starts with a kind and two spaces; prints how many there are
+fence_lines() {
+  awk '$0 == "````" { f = !f; next } f { n++; if ($0 !~ /^(link-cleaned|link-dropped|block-lost-text|block-unclosed|picture-not-copied|more)  /) bad++ }
+    END { if (bad) print -1; else print n + 0 }' "$body"
+}
+warn_ok() { # warn_ok <scenario> <what it is>: the job exits 0 and the merge request is set to merge
+  run_push "$out" "$1"
+  rcx=$rc
+  ok=0; [ "$rcx" -eq 0 ] && grep -q 'set to merge when the pipeline passes' "$out" || ok=1
+  check "W job 2 publishes $2 (exit $rcx)" "$ok"
+  [ "$ok" -eq 0 ] || sed 's/^/     /' "$out"
+}
+# the issue calls come after the merge request is set to merge
+issue_after_merge() {
+  lm=$(grep -n '^PUT /merge_requests/42/merge' "$aux/api.log" | tail -n 1 | cut -d: -f1)
+  fic=$(grep -n -e '^GET API:/user' -e '^GET /issues' -e '^PUT /issues/' -e '^POST /issues' "$aux/api.log" | head -n 1 | cut -d: -f1)
+  rc=0; [ -n "$lm" ] && [ -n "$fic" ] && [ "$lm" -lt "$fic" ] || rc=1
+  check "W $1: the warnings issue is touched only after the merge request is set to merge" "$rc"
+}
+
+# W1: an empty file and nothing new -> the issue's body says none, it is PUT, the job exits 0
+run_push "$out" warn-none
+rcx=$rc
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'nothing new' "$out" || rc=1
+check "W1 warn-none: nothing new with an empty warnings file exits 0 and says nothing new (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && [ "$(issue_posts)" -eq 0 ] || rc=1
+check "W1 warn-none: the bot's issue !5 is updated with a PUT (no new issue)" "$rc"
+rc=0; [ -f "$body" ] && grep -qx 'none' "$body" && ! grep -q '^### ' "$body" && ! grep -q '`' "$body" || rc=1
+check "W1 warn-none: the body says none, with no heading and no fence" "$rc"
+[ "$rc" -eq 0 ] || show_body
+rc=0; [ -f "$body" ] && sed -n '1,/^none$/p' "$body" | grep -q '\b77\b' || rc=1
+check "W1 warn-none: the first paragraph names the pipeline (77)" "$rc"
+
+# W2: two sources' warnings -> two headings, each source's lines in one four-backtick fence, each line its kind first
+warn_ok warn-some "an archive with warnings for two sources"
+issue_after_merge warn-some
+rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && [ "$(issue_posts)" -eq 0 ] || rc=1
+check "W2 warn-some: the bot's issue !5 is updated with a PUT" "$rc"
+rc=0; [ -f "$body" ] && [ "$(grep -c '^### ' "$body")" -eq 2 ] && [ -z "$(grep '^#' "$body" | grep -vxF -f "$aux/headings")" ] || rc=1
+check "W2 warn-some: the body has two ### <repo>/<path> headings, both listed sources" "$rc"
+rc=0; [ -f "$body" ] && [ "$(grep -cx '````' "$body")" -eq 4 ] && [ "$(fence_lines)" -eq 3 ] || rc=1
+check "W2 warn-some: two four-backtick fences hold the three lines, each starting with its kind and two spaces" "$rc"
+[ "$rc" -eq 0 ] || show_body
+rc=0; in_fence 'link-cleaned  link address cleaned' && in_fence 'link-dropped  link dropped' && in_fence 'picture-not-copied  picture not copied: WIDE' || rc=1
+check "W2 warn-some: each warning arrives inside a fence, prefixed by its kind (the 300-character one too)" "$rc"
+rc=0; [ -f "$body" ] && awk '/^### /{h=$0} $0 ~ /WIDE/ {print h}' "$body" | grep -q "^### $(sed -n 2p "$aux/headings" | cut -c5-)\$" || rc=1
+check "W2 warn-some: a source's warning sits under its own heading" "$rc"
+rc=0; grep '^GET /issues ' "$aux/issues.log" | grep -q 'author_id=4242' && grep '^GET /issues ' "$aux/issues.log" | grep -q 'labels=docs-import' \
+  && grep '^GET /issues ' "$aux/issues.log" | grep -q 'state=all' || rc=1
+check "W2 warn-some: the issue is looked up by label docs-import, the token's own user (author_id=4242) and state=all" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/issues.log"
+# W10: token hygiene, on the same run
+rc=0; grep -q '^GET API:/user import$' "$aux/tok.log" && grep -q '^GET /issues import$' "$aux/tok.log" && grep -q '^PUT /issues/5 import$' "$aux/tok.log" || rc=1
+check "W10 warn-some: GET /user, GET /issues and PUT /issues/5 carry the import token (PRIVATE-TOKEN)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/tok.log"
+rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-markup.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
+check "W10 warn-some: no npm, node only for -e and the checks, and never while the header file is on disk" "$rc"
+[ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
+rc=0; grep '^PUT /issues/5' "$aux/api.log" | grep -q '|description@' && ! grep -q 'description=' "$aux/api.log" || rc=1
+check "W10 warn-some: the body is sent from a file (description@file), never as an argument" "$rc"
+rc=0; [ -f "$body" ] && ! grep -q -e "$fake" -e "$fakejob" "$body" && ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
+check "W10 warn-some: no token is in the body file, the output or any log" "$rc"
+rc=0; [ -n "$tip" ] && ! "$realgit" ls-tree -r --name-only "$tip" | grep -qx 'import-warnings.txt' \
+  && [ -z "$("$realgit" diff --name-only "$basecommit" "$tip" | grep -v '^assets/docs/')" ] || rc=1
+check "W10 warn-some: import-warnings.txt is not in the pushed commit, which changes only assets/docs" "$rc"
+
+# W3: mentions, references and quick actions in a message stay inside the fence
+warn_ok warn-mention "an archive whose warning holds @someone, #1, !2, Closes #1 and /close"
+rc=0; in_fence '@someone' && in_fence 'Closes #1' && in_fence '/close' || rc=1
+check "W3 warn-mention: @someone, Closes #1 and /close appear only inside the fence" "$rc"
+[ "$rc" -eq 0 ] || show_body
+rc=0; [ -f "$body" ] && ! grep -q '^[/@!]' "$body" && [ -z "$(grep '^#' "$body" | grep -vxF -f "$aux/headings")" ] || rc=1
+check "W3 warn-mention: no body line starts with /, @ or !, and none with # but a ### <repo>/<path> heading" "$rc"
+[ "$rc" -eq 0 ] || show_body
+
+# W4: backticks in a message cannot close the fence
+warn_ok warn-fence "an archive whose warning holds four and twelve backticks"
+rc=0; [ -f "$body" ] && [ -z "$(grep '`' "$body" | grep -vx '````')" ] || rc=1
+check "W4 warn-fence: no backtick survives in the body but the fences" "$rc"
+rc=0; [ -f "$body" ] && [ "$(grep -cx '````' "$body")" -eq $((2 * $(grep -c '^### ' "$body"))) ] && [ "$(grep -c '^### ' "$body")" -eq 1 ] || rc=1
+check "W4 warn-fence: exactly two fence lines for the one source" "$rc"
+rc=0; in_fence "link-dropped  a '''' b '''''''''''' c" || rc=1
+check "W4 warn-fence: the message arrives with each backtick made '" "$rc"
+[ "$rc" -eq 0 ] || show_body
+
+# W5, W6: a warnings file that breaks a rule, or none, is refused as a bad page is. The refusal is for
+# what the file holds, not for its being there (a publish that does not know the file refuses it as
+# "is not a file the import writes").
+warn_refused() { # warn_refused <scenario> <what it is> <text the refusal must carry>
+  refused "$1" "$2" "$3"
+  rc=0; ! grep -q 'is not a file the import writes' "$out" || rc=1
+  check "W job 2: the refusal of $2 is not for an unknown entry" "$rc"
+}
+warn_refused warn-control "a warning holding U+001B (ESC)" 'import-warnings\.txt.*\(line \|:\)2\([^0-9]\|$\)'
+warn_refused warn-bidi "a warning holding U+202E" 'import-warnings\.txt.*\(line \|:\)2\([^0-9]\|$\)'
+warn_refused warn-badrepo "a warning for a repo not in the sources" 'import-warnings\.txt'
+warn_refused warn-badkind "a warning of an unknown kind" 'import-warnings\.txt'
+warn_refused warn-long "a warning line of 401 characters" 'import-warnings\.txt'
+warn_refused warn-many "201 warning lines" 'import-warnings\.txt'
+warn_refused warn-missing "an archive without import-warnings.txt" 'missing.*import-warnings\.txt\|import-warnings\.txt.*missing'
+# control: 200 lines (the most) are published
+warn_ok warn-max "an archive with 200 warning lines (the most allowed)"
+rc=0; [ -f "$body" ] && [ "$(fence_lines)" -eq 200 ] || rc=1
+check "W6 warn-max: all 200 lines reach the issue" "$rc"
+
+# W7: a look-alike by another user, and one by the bot with another title, are never touched; a new issue is made
+warn_ok warn-lookalike "an archive whose only look-alike issues are another user's or titled otherwise"
+rc=0; [ "$(issue_posts)" -eq 1 ] && [ "$(issue_puts)" -eq 0 ] || rc=1
+check "W7 warn-lookalike: a new issue is created (one POST) and no look-alike is PUT" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+rc=0; grep '^POST /issues' "$aux/api.log" | grep -q '|title=Docs import warnings\(|\|$\)' && grep '^POST /issues' "$aux/api.log" | grep -q '|labels=docs-import\(|\|$\)'   && grep '^POST /issues' "$aux/api.log" | grep -q '|description@' || rc=1
+check "W7 warn-lookalike: the new issue is titled Docs import warnings, labelled docs-import, its body from a file" "$rc"
+rc=0; [ -f "$body" ] && in_fence 'link-dropped  link dropped' || rc=1
+check "W7 warn-lookalike: the new issue's body carries the warning in a fence" "$rc"
+
+# W8: two matching issues of the bot's: nothing is edited, it is logged, the job still succeeds
+warn_ok warn-two "an archive when the bot has two matching issues"
+rc=0; [ "$(issue_posts)" -eq 0 ] && [ "$(issue_puts)" -eq 0 ] && grep -qi 'ambiguous' "$out" || rc=1
+check "W8 warn-two: with two matching issues nothing is created or edited, and the log says ambiguous" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+# W9: the issue PUT fails (500): the job still exits 0, the merge request already set to merge
+warn_ok warn-apifail "an archive when GitLab refuses the issue update (500)"
+issue_after_merge warn-apifail
+rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && grep -q 'could not update the warnings issue' "$out" || rc=1
+check "W9 warn-apifail: the update was tried, and the log says it could not update the warnings issue" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+# a closed issue and warnings: reopened in the same PUT; closed and none: updated, left closed
+warn_ok warn-reopen "an archive with warnings when the bot's issue is closed"
+rc=0; [ "$(issue_puts)" -eq 1 ] && grep '^PUT /issues/5' "$aux/api.log" | grep -q '|state_event=reopen\(|\|$\)' || rc=1
+check "W9 warn-reopen: a closed issue with warnings is reopened (state_event=reopen) in its one PUT" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$aux/api.log"
+warn_ok warn-closednone "an archive with no warnings when the bot's issue is closed"
+rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && ! grep -q 'state_event' "$aux/issues.log" && [ -f "$body" ] && grep -qx 'none' "$body" || rc=1
+check "W9 warn-closednone: a closed issue with no warnings gets the body none and is left closed" "$rc"
 
 reset_tree
 rm -f "$out"

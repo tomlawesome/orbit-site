@@ -746,7 +746,7 @@ split_case "import_docs naming the token" $ci "import_docs names ORBIT_SITE_IMPO
   y = y.replace("  script:\n    - sh tools/ci/nightly-import.sh\n", "  script:\n    - echo $ORBIT_SITE_IMPORT_TOKEN | wc -c\n    - sh tools/ci/nightly-import.sh\n");'
 split_case "import_docs running on merge requests" $ci "import_docs rules must be" '
   y = y.replace("import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n", "import_docs:\n  stage: maintenance\n  image: $NODE_IMAGE\n  interruptible: false\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
-split_case "import_docs handing on more than the docs" $ci "import_docs artifacts must be assets/docs/ alone" '
+split_case "import_docs handing on more than the docs" $ci "import_docs artifacts must be" '
   y = y.replace("      - assets/docs/\n", "      - assets/docs/\n      - tools/\n");'
 split_case "import_docs with a long-lived artifact" $ci "import_docs artifacts need a short expire_in" '
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 30 days\n");'
@@ -790,6 +790,118 @@ split_case "the import script calling the API" tools/ci/nightly-import.sh "calls
   y = y.replace("  node tools/import-docs.mjs\n", "  node tools/import-docs.mjs\n  curl -fsS https://gitlab.invalid/api\n");'
 split_case "the publish script running npm" tools/ci/nightly-publish.sh "runs npm" '
   y = y.replace("  echo \"== the artifact\"\n", "  echo \"== the artifact\"\n  npm ci --prefix tools\n");'
+
+# Cases (w1)-(w10) (#82): import_docs hands on exactly [assets/docs/, import-warnings.txt]; the file is never
+# tracked, and .gitignore lists it. warn_split_case <label> <js>: the import_docs artifact paths are first set to
+# the two (whatever the committed file holds), then <js> edits y and must change it; the ci-split section must
+# fail naming .gitlab-ci.yml and import_docs artifacts.
+warn_paths='
+  y = y.replace(/(\nimport_docs:\n[\s\S]*?\n  artifacts:\n    paths:\n)(?:      - [^\n]*\n)+/, "$1      - assets/docs/\n      - import-warnings.txt\n");'
+warn_split_case() {
+  F="$ci" Y="$(cat "$ci")" JS0="$warn_paths" JS="$2" node -e '
+    let y = new Function("y", process.env.JS0 + "; return y;")(process.env.Y); const before = y;
+    if (!y.includes("      - assets/docs/\n      - import-warnings.txt\n")) { console.error("the paths were not set"); process.exit(3); }
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out proxy ci-split
+  if [ "$rc" -eq 1 ] && grep -Eq "$ci: .*import_docs artifacts" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $ci: import_docs artifacts)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# (w1) the committed file hands on exactly the two
+rc=0
+node -e '
+  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"));
+  const p = JSON.stringify(y.import_docs.artifacts.paths);
+  if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
+' > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (w1) the committed import_docs hands on exactly assets/docs/ and import-warnings.txt"
+else
+  echo "FAIL (w1) the committed import_docs hands on exactly assets/docs/ and import-warnings.txt"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+# (w2) the two paths pass the whole lint
+F="$ci" Y="$(cat "$ci")" JS0="$warn_paths" node -e '
+  const y = new Function("y", process.env.JS0 + "; return y;")(process.env.Y);
+  require("fs").writeFileSync(process.env.F, y.replace(/\n*$/, "\n"));
+'
+commit_all "(w2) the two artifact paths"
+lint_to_out
+if [ "$rc" -eq 0 ] && ! grep -q 'import_docs artifacts' "$out"; then
+  echo "ok   (w2) import_docs handing on assets/docs/ and import-warnings.txt passes"
+else
+  echo "FAIL (w2) import_docs handing on assets/docs/ and import-warnings.txt passes (exit $rc, want 0 and no import_docs artifacts line)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+warn_split_case "(w3) import_docs handing on assets/docs/ alone (no warnings file)" '
+  y = y.replace("      - import-warnings.txt\n", "");'
+warn_split_case "(w4) import_docs handing on the warnings file alone" '
+  y = y.replace("      - assets/docs/\n", "");'
+warn_split_case "(w5) import_docs handing on the two and tools/" '
+  y = y.replace("      - import-warnings.txt\n", "      - import-warnings.txt\n      - tools/\n");'
+warn_split_case "(w6) import_docs handing on the warnings under another name" '
+  y = y.replace("      - import-warnings.txt\n", "      - warnings.txt\n");'
+warn_split_case "(w7) import_docs handing on a pattern that holds the warnings file" '
+  y = y.replace("      - import-warnings.txt\n", "      - import-warnings.*\n");'
+warn_split_case "(w8) import_docs handing on the warnings file twice" '
+  y = y.replace("      - import-warnings.txt\n", "      - import-warnings.txt\n      - import-warnings.txt\n");'
+# (w9) the committed .gitignore lists import-warnings.txt, git does not track it, and one on disk passes the lint
+rc=0
+grep -qx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore || rc=1
+[ -z "$(git ls-files import-warnings.txt)" ] || rc=1
+if [ "$rc" -eq 0 ]; then
+  printf 'tomlawesome/orbit\tREADME.md\tlink-dropped\tx\n' > import-warnings.txt
+  lint_to_out
+  rm -f import-warnings.txt
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   (w9) .gitignore lists import-warnings.txt, and an untracked one passes the lint"
+  else
+    echo "FAIL (w9) .gitignore lists import-warnings.txt, and an untracked one passes the lint (exit $rc)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+else
+  echo "FAIL (w9) .gitignore lists import-warnings.txt and git does not track it"
+  failed=1
+fi
+# (w10) a tracked import-warnings.txt fails the lint, naming it
+printf 'tomlawesome/orbit\tREADME.md\tlink-dropped\tx\n' > import-warnings.txt
+git add -f import-warnings.txt
+commit_all "(w10) track import-warnings.txt"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q 'import-warnings.txt' "$out"; then
+  echo "ok   (w10) a tracked import-warnings.txt fails"
+else
+  echo "FAIL (w10) a tracked import-warnings.txt fails (exit $rc, want 1 naming import-warnings.txt)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+# (w11) a .gitignore that does not list import-warnings.txt fails the lint, naming .gitignore
+grep -vx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore > "$out.gi" || true
+cat "$out.gi" > .gitignore; rm -f "$out.gi"
+commit_all "(w11) .gitignore without import-warnings.txt"
+lint_to_out
+if [ "$rc" -eq 1 ] && grep -q '\.gitignore' "$out" && grep -q 'import-warnings.txt' "$out"; then
+  echo "ok   (w11) a .gitignore without import-warnings.txt fails"
+else
+  echo "FAIL (w11) a .gitignore without import-warnings.txt fails (exit $rc, want 1 naming .gitignore and import-warnings.txt)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
 
 # Cases (y1)-(y9) judge the same section once it reads .gitlab-ci.yml as YAML
 # (issue #52). yaml_pass_case <label> <js>: <js> edits the string y and must
