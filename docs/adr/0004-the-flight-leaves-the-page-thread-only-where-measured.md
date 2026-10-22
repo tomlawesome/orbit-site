@@ -196,11 +196,13 @@ runner's business, not the test's), and in both cases `flight: shaders compiled`
 Tests (Node, same harness):
 
 - P1 `galaxyStars(n, rest)` is deterministic: two calls with the same arguments give identical arrays.
-- P2 with `rest = PATH[3]`, at least 5% of the stars lie within 0.23 of it and under 1% within 0.23 of `PATH_TALL[3]`;
-  with `rest = PATH_TALL[3]`, the reverse. The two outputs differ only in the stars of that cloud: every star within
-  0.23 of neither point is identical in both.
+- P2 with `rest = PATH[3]`, at least 5% of the stars lie within 0.23 of it and less than half that share within 0.23
+  of `PATH_TALL[3]`; with `rest = PATH_TALL[3]`, the reverse. (The disc is dense about the landscape point on its
+  own: about 2.3% of the stars lie near `PATH[3]` even with the cloud moved away, so a fixed 1% bound was wrong.)
+  A star's place is read from `galaxyStars`'s `P`, 8 floats a star (x, y, z, w for each end of its streak). The two
+  outputs differ only in the stars of that cloud: every star within 0.23 of neither point is identical in both.
 - P3 through the engine: a world warmed on a 400x800 stub page uploads star positions (the `bufferData` the fake gl
-  records) whose cloud is about `PATH_TALL[3]`; on 1280x800, about `PATH[3]`.
+  records, 8 floats a star) whose cloud is about `PATH_TALL[3]` by P2's measure; on 1280x800, about `PATH[3]`.
 - P4 a world warmed landscape, then resized to portrait before a flight: by the flight's first frame a new
   `bufferData` carries the portrait cloud and the old buffers were deleted; the remake never happens between a
   flight's `start` and its end (a flight on the virtual clock sees one star buffer throughout).

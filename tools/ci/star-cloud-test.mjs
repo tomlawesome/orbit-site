@@ -4,8 +4,9 @@
  *
  *   P1  voyage.js galaxyStars(n, rest) is pure: two calls with the same arguments give identical arrays.
  *   P2  the cloud is made about the point it is given: with rest = PATH[3] at least 5% of the stars lie within 0.23 of
- *       it and under 1% within 0.23 of PATH_TALL[3]; with rest = PATH_TALL[3], the reverse. The two outputs differ
- *       only in the stars of that cloud: a star within 0.23 of neither point is the same in both.
+ *       it and less than half that share within 0.23 of PATH_TALL[3]; with rest = PATH_TALL[3], the reverse (the disc
+ *       is dense about the landscape point on its own, so a share there is natural). The two outputs differ only in
+ *       the stars of that cloud: a star within 0.23 of neither point is the same in both.
  *   P3  through the engine: a world warmed on a 400x800 page uploads a star cloud about PATH_TALL[3]; on 1280x800,
  *       about PATH[3].
  *   P4  a world warmed landscape and then turned to portrait before a flight: a new star upload carries the portrait
@@ -22,15 +23,19 @@ import { INDEX, installPage, installClock, childMain, runCase, check, finish, er
 
 const RADIUS = 0.23, STARS = 48000, BIG = 30000;
 
-/* the star positions of whatever galaxyStars answers: a flat x, y, z list (the answer itself, or its `P`) */
+/* the star positions of whatever galaxyStars answers: its `P`, STRIDE floats a star (x, y, z, w for each end of the
+   star's streak; a star's place is the first three) */
+const STRIDE = 8;
 const positionsOf = (out) => (ArrayBuffer.isView(out) || Array.isArray(out) ? out : out && out.P);
-const dist = (p, i, pt) => Math.hypot(p[i] - pt[0], p[i + 1] - pt[1], p[i + 2] - pt[2]);
+const dist = (p, i, pt) => Math.hypot(p[i] - pt[0], p[i + 1] - pt[1], p[i + 2] - pt[2]);   /* i: the star's first float */
 /* the share of the stars within RADIUS of a point */
 function share(p, pt) {
   let n = 0;
-  for (let i = 0; i + 2 < p.length; i += 3) if (dist(p, i, pt) <= RADIUS) n++;
-  return n / (p.length / 3);
+  for (let i = 0; i + 2 < p.length; i += STRIDE) if (dist(p, i, pt) <= RADIUS) n++;
+  return n / (p.length / STRIDE);
 }
+/* the cloud is about `rest`: at least 5% of the stars are near it, and the other point has less than half that share */
+const about = (near, other) => near >= 0.05 && other < near / 2;
 const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 /* the page's fake context, made to remember star-sized uploads, buffer and array deletions and draws, in order */
@@ -41,7 +46,7 @@ function watchGl(page) {
   g.createBuffer = () => ({ buf: ++n });
   g.bindBuffer = (target, b) => { bound = b; };
   g.bufferData = (target, data) => {
-    const star = ArrayBuffer.isView(data) && data.length >= BIG && data.length % 3 === 0 && data.some((v) => v < 0);
+    const star = ArrayBuffer.isView(data) && data.length >= BIG && data.length % STRIDE === 0 && data.some((v) => v < 0);
     log.push({ op: "upload", star, buffer: bound, pos: star ? Float32Array.from(data) : null });
   };
   g.deleteBuffer = (b) => { log.push({ op: "deleteBuffer", buffer: b }); };
@@ -80,11 +85,11 @@ const CASES = {
     const { galaxyStars } = await import("../../assets/door/voyage.js");
     const wide = positionsOf(galaxyStars(STARS, PATH[3])), tall = positionsOf(galaxyStars(STARS, PATH_TALL[3]));
     let others = 0, changed = 0;
-    for (let i = 0; i + 2 < wide.length; i += 3) {
+    for (let i = 0; i + 2 < wide.length; i += STRIDE) {
       const far = (p) => dist(p, i, PATH[3]) > RADIUS && dist(p, i, PATH_TALL[3]) > RADIUS;
       if (far(wide) && far(tall)) {
         others++;
-        if (wide[i] !== tall[i] || wide[i + 1] !== tall[i + 1] || wide[i + 2] !== tall[i + 2]) changed++;
+        for (let k = 0; k < STRIDE; k++) if (wide[i + k] !== tall[i + k]) { changed++; break; }
       }
     }
     return {
@@ -116,12 +121,12 @@ const CASES = {
     const after = log.slice(mark);
     const firstDraw = after.findIndex((e) => e.op === "draw");
     const ups = after.map((e, i) => ({ e, i })).filter(({ e }) => e.op === "upload" && e.star);
-    const portraitAt = ups.findIndex(({ e }) => share(e.pos, engine.PATH_TALL[3]) >= 0.05);
+    const portraitAt = ups.findIndex(({ e }) => about(share(e.pos, engine.PATH_TALL[3]), share(e.pos, engine.PATH[3])));
     const inFlight = firstDraw < 0 ? after : after.slice(firstDraw);
     return {
       verdict, starsBefore: before.length, oldBuffers: oldBuffers.size, draws: after.filter((e) => e.op === "draw").length,
       landscapeBefore: before.length ? share(before[before.length - 1].pos, engine.PATH[3]) : null,
-      portraitUploads: ups.filter(({ e }) => share(e.pos, engine.PATH_TALL[3]) >= 0.05).length,
+      portraitUploads: ups.filter(({ e }) => about(share(e.pos, engine.PATH_TALL[3]), share(e.pos, engine.PATH[3]))).length,
       portraitBeforeFirstFrame: portraitAt >= 0 && (firstDraw < 0 || ups[portraitAt].i < firstDraw),
       oldDeleted: [...oldBuffers].filter((b) => after.some((e) => e.op === "deleteBuffer" && e.buffer === b)).length,
       arraysDeleted: after.filter((e) => e.op === "deleteVertexArray").length,
@@ -155,11 +160,11 @@ if (process.argv[2] === "--child") await childMain(CASES);
 {
   const r = runCase(import.meta.url, "about-the-point");
   const pc = (x) => `${(100 * x).toFixed(2)}%`;
-  check("P2 (precondition): both calls answer the same number of stars, in threes", !r.error && r.sameLength === true && r.stride === 3, `stride ${r.stride}, same length ${r.sameLength}${errOf(r)}`);
-  check("P2: with rest = PATH[3], at least 5% of the stars lie within 0.23 of it and under 1% within 0.23 of PATH_TALL[3]",
-    !r.error && r.wideNearWide >= 0.05 && r.wideNearTall < 0.01, `near PATH[3] ${pc(r.wideNearWide)}, near PATH_TALL[3] ${pc(r.wideNearTall)}${errOf(r)}`);
-  check("P2: with rest = PATH_TALL[3], at least 5% lie within 0.23 of it and under 1% within 0.23 of PATH[3]",
-    !r.error && r.tallNearTall >= 0.05 && r.tallNearWide < 0.01, `near PATH_TALL[3] ${pc(r.tallNearTall)}, near PATH[3] ${pc(r.tallNearWide)}${errOf(r)}`);
+  check("P2 (precondition): both calls answer the same number of stars, with STRIDE floats each", !r.error && r.sameLength === true && r.stride === STRIDE, `stride ${r.stride}, same length ${r.sameLength}${errOf(r)}`);
+  check("P2: with rest = PATH[3], at least 5% of the stars lie within 0.23 of it and less than half that share within 0.23 of PATH_TALL[3]",
+    !r.error && about(r.wideNearWide, r.wideNearTall), `near PATH[3] ${pc(r.wideNearWide)}, near PATH_TALL[3] ${pc(r.wideNearTall)}${errOf(r)}`);
+  check("P2: with rest = PATH_TALL[3], at least 5% lie within 0.23 of it and less than half that share within 0.23 of PATH[3]",
+    !r.error && about(r.tallNearTall, r.tallNearWide), `near PATH_TALL[3] ${pc(r.tallNearTall)}, near PATH[3] ${pc(r.tallNearWide)}${errOf(r)}`);
   check("P2: the two outputs differ only in the stars of that cloud (every star within 0.23 of neither point is identical in both)",
     !r.error && r.others > 0 && r.changed === 0, `${r.changed} of ${r.others} far stars differ${errOf(r)}`);
 }
@@ -168,8 +173,8 @@ if (process.argv[2] === "--child") await childMain(CASES);
   const t = runCase(import.meta.url, "engine-tall"), w = runCase(import.meta.url, "engine-wide");
   const pc = (x) => (x === null || x === undefined ? "n/a" : `${(100 * x).toFixed(2)}%`);
   check("P3 (precondition): a warmed world uploads star positions, on a portrait page and on a landscape one", !t.error && !w.error && t.uploads >= 1 && w.uploads >= 1, `portrait ${t.uploads} upload(s), landscape ${w.uploads}${errOf(t)}${errOf(w)}`);
-  check("P3: warmed on 1280x800, the star cloud is about PATH[3]", !w.error && w.nearWide >= 0.05 && w.nearTall < 0.01, `near PATH[3] ${pc(w.nearWide)}, near PATH_TALL[3] ${pc(w.nearTall)}${errOf(w)}`);
-  check("P3: warmed on 400x800, the star cloud is about PATH_TALL[3]", !t.error && t.nearTall >= 0.05 && t.nearWide < 0.01, `near PATH_TALL[3] ${pc(t.nearTall)}, near PATH[3] ${pc(t.nearWide)}${errOf(t)}`);
+  check("P3: warmed on 1280x800, the star cloud is about PATH[3]", !w.error && about(w.nearWide, w.nearTall), `near PATH[3] ${pc(w.nearWide)}, near PATH_TALL[3] ${pc(w.nearTall)}${errOf(w)}`);
+  check("P3: warmed on 400x800, the star cloud is about PATH_TALL[3]", !t.error && about(t.nearTall, t.nearWide), `near PATH_TALL[3] ${pc(t.nearTall)}, near PATH[3] ${pc(t.nearWide)}${errOf(t)}`);
 }
 /* P4 */
 {
