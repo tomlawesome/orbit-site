@@ -407,6 +407,9 @@ await b.close();
     }
     const withNode = join(dir, "withnode");
     mkdirSync(join(withNode, "node"), { recursive: true });
+    /* every stand-in run fails, and so does the check: the failure is said to cut the coverage short, and the check's own exit stays */
+    const failedRuns = runSh("browser", withNode);
+    check("coverage-run.sh browser says a failed Chromium run left coverage incomplete when the check fails, and still exits non-zero", failedRuns.status !== 0 && /failed in Chromium: journey/.test(out(failedRuns)) && /incomplete because the Chromium run failed/.test(out(failedRuns)), `exit ${failedRuns.status}: ${JSON.stringify(out(failedRuns).split("\n").filter(Boolean).slice(-2))}`);
     check("(control) with a node directory, check does not say the Node coverage is missing", !/no Node coverage/.test(out(runSh("check", withNode))), "no message");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }

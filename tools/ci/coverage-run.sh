@@ -82,9 +82,15 @@ if [ "$mode" != check ]; then
     xvfb-run -a -s "-screen 0 $screen" node --import ./tools/ci/coverage-hook.mjs "$test" || failed="$failed $run"
   done
   if [ -n "$failed" ]; then
-    echo "coverage-run: failed in Chromium:$failed (the Firefox runs are what gate these; their coverage is still counted)"
+    echo "coverage-run: failed in Chromium:$failed (the Firefox runs are what gate these; what each reached before it failed is still counted)"
   fi
 fi
 
 echo "== coverage"
-node tools/ci/coverage.mjs "$COVERAGE_DIR"
+status=0
+node tools/ci/coverage.mjs "$COVERAGE_DIR" || status=$?
+if [ "$status" -ne 0 ] && [ -n "${failed-}" ]; then
+  # a run that stops early never reaches the rest of its page, so a file can read below its floor for that alone
+  echo "coverage-run: the coverage of$failed is incomplete because the Chromium run failed; a file below its floor above may be that, not a lost line: read the failure first, then rerun" >&2
+fi
+exit "$status"
