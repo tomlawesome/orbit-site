@@ -1,6 +1,6 @@
 # ADR-0004: The flight's compiles leave the page's thread only where that is measured to help
 
-**Status:** Proposed (owner to answer question 2 below, and to take measurement M1 before the Safari build; question 1 answered 1a)
+**Status:** Proposed (owner to take measurement M1 before the Safari build; questions 1 and 2 answered 1a and 2a)
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); ADR-0001 (the folder Orbit copies); ADR-0002
 (decision 12d, the leisure proof; decision 7, nothing remembered); #76 (memory on a phone); PERFORMANCE.md "The
@@ -53,7 +53,7 @@ the interface Orbit copies, and every flight is verified pixel-identical against
 (PERFORMANCE.md's estimate) against the 15,000 unaudited-line ceiling, for a gain the late lean door and the
 under-the-ring compiles already contain in part (ring 8.7 s and 15.4 s on the two machines; target 4 s). Firefox for Android
 has only just gained the capability, so no phone gains. Section 6 keeps the outline so the work is not designed
-twice. Question 2 asks the owner whether to fund it now instead.
+twice. Deferred to #85, after M3 (owner, 2026-10-22, question 2 answered 2a).
 
 **Safari: the pre-warm in a worker, if and only if the page's own compile is measured to stall the page (M1).** Measured
 on the device the issue came from: a worker compiles each program in ~300 ms while the page's frames stay where they
@@ -202,7 +202,7 @@ Tests (Node, same harness):
   flight's `start` and its end (a flight on the virtual clock sees one star buffer throughout).
 - P5 the docs sky's portrait picture test (`docs-sky-portrait-test.mjs`) still passes: the rest point it reads did not move.
 
-## 6. Deferred, in outline: the drawing in a worker for Firefox (its own issue)
+## 6. Deferred, in outline: the drawing in a worker for Firefox (#85, after M3)
 
 Both canvases handed over (`#warp` 2D and `#warpgl`), the engine and the world running in a module worker as the
 modules they are, behind one page adapter for what they read of the page (size, pixel ratio, hidden, animations); the
@@ -245,5 +245,5 @@ not rises. The unaudited-line count makes this its own batch after an audit.
   a busier page can call a fit machine unfit for the visit; `drawnIn()` and the chores' `quiet()` are the guard, and a
   wrong verdict costs one visit, nothing remembered.
   **1c** prove at once everywhere.
-**2** Firefox's full move (section 6): defer to its own issue after M3 (recommended), or fund it now in M3 as its own
+**2** (answered 2a, owner, 2026-10-22: #85) Firefox's full move (section 6): defer to its own issue after M3 (recommended), or fund it now in M3 as its own
   batch?
