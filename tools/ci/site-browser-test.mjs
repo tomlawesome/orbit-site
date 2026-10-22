@@ -396,6 +396,7 @@ const docsFaultCase = async () => {
         return pad.querySelector(".entry, .chart .star") || /have not been imported/.test(pad.innerText) || window.__faults > 0;
       }, null, { timeout: 30000 });
       await sleep(2000);
+      /* (window.mermaid is not compared with the heading: once the library has loaded, the name is the library's) */
       const seen = await page.evaluate(() => {
         const pad = document.querySelector("#docspad");
         return { notImported: /have not been imported/.test(pad.innerText), drawn: !!pad.querySelector(".entry, .chart .star"), faults: window.__faults || 0 };
@@ -459,7 +460,6 @@ const mermaidCase = async () => {
           headingTag: h ? h.tagName : "",
           headingText: h ? h.textContent.trim() : "",
           headingShown: shown(h),
-          idHolder: window.mermaid === h,
         };
       });
       const errors = page.errors.slice();
@@ -472,8 +472,8 @@ const mermaidCase = async () => {
       want(plain.figures > 0 && plain.svgs > 0 && plain.codeShown === 0,
         `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged (does the run reach cdn.jsdelivr.net?)`);
       const clash = await visit(true);
-      want(clash.headingInPad && clash.headingShown && clash.headingTag === "H2" && clash.headingText === "Mermaid" && clash.idHolder,
-        `control: the "Mermaid" heading was not shown as the element with id "mermaid" (in the pad ${clash.headingInPad}, shown ${clash.headingShown}, ${clash.headingTag} ${JSON.stringify(clash.headingText)}, the page-wide name is the heading ${clash.idHolder})`);
+      want(clash.headingInPad && clash.headingShown && clash.headingTag === "H2" && clash.headingText === "Mermaid",
+        `control: the "Mermaid" heading was not shown as the element with id "mermaid" (in the pad ${clash.headingInPad}, shown ${clash.headingShown}, ${clash.headingTag} ${JSON.stringify(clash.headingText)})`);
       want(clash.figures > 0 && clash.svgs > 0, `the diagram was not drawn as an svg beside the "Mermaid" heading (${clash.figures} figure(s), ${clash.svgs} svg(s) within 30 s)`);
       want(clash.codeShown === 0, `the diagram's source was shown as code (pre.code[data-lang="mermaid"], ${clash.codeShown} shown) beside the "Mermaid" heading`);
       want(!clash.errors.length, `page error: ${clash.errors[0]}`);
