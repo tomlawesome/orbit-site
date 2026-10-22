@@ -21,13 +21,13 @@ Two standard patterns are in play, and the decision is which browser gets which:
 
 | Browser | The page's own compile | A worker's compile | Does a worker's compile warm the page's? | Source |
 | --- | --- | --- | --- | --- |
-| Firefox (desktop, laptop) | on the page's thread; the flight 1.9-3.1 s, every compile a stall | the page stays smooth; a page canvas drawing WebGL meanwhile stalls for the compile's length | **no** (the full price again) | 8 Oct, PERFORMANCE.md |
+| Firefox (two desktop machines) | on the page's thread; the flight 1.9-3.1 s, every compile a stall | the page stays smooth; a page canvas drawing WebGL meanwhile stalls for the compile's length | **no** (the full price again) | 8 Oct, PERFORMANCE.md |
 | Edge, Chrome | in the background, polled; smooth | **stalls the page and the spinner** | not needed: the cache is already shared across contexts | 8 Oct |
 | Safari (the phone, 22 Oct) | not measured with the page's loop running (`stall` test never run on the phone); the `compile` test says it reports `KHR_parallel_shader_compile` and compiles in 130-170 ms each (8 Oct) | 260-340 ms each; the page's longest gap 34 ms with 2D, 74 ms with its own WebGL drawing too (idle: 37 / 41 ms); the eye: "pretty smooth" | **yes**: 4 / 12 / 14 ms afterwards | #43 note, 22 Oct |
 
 Two corrections to #43's "Why", from the folder's own numbers: Safari does report `KHR_parallel_shader_compile`
 (both measured devices, CAPABILITIES.md; and the worker today), so "Safari compiles on the page's own thread" is not
-established; and nothing in the repository measures a one-second freeze on Safari. What the owner saw on the phone
+established; and nothing in the repository measures a one-second freeze on Safari. What was seen on a real device
 (a painted sign-out "after a few seconds on home") is what ADR-0002 decision 12d builds: the world is proved at leisure,
 4 s after the door is lit (`assets/js/main.js`, `proveLater(4000)` in `onLit`; 2 s after a descent back, `readyDoor`),
 and a descent before that flies painted, on every browser, however fast the compiles were. The compile and the painted
@@ -51,7 +51,7 @@ both run in the worker, every page touch in them (`document`, `innerWidth`, `dev
 the chores' `drawnIn`, the live door's hand-off) goes behind messages, a module worker and a `Worker` factory join
 the interface Orbit copies, and every flight is verified pixel-identical against the page path. Two to three builds
 (PERFORMANCE.md's estimate) against the 15,000 unaudited-line ceiling, for a gain the late lean door and the
-under-the-ring compiles already contain in part (ring 8.7 s desktop, 15.4 s laptop; target 4 s). Firefox for Android
+under-the-ring compiles already contain in part (ring 8.7 s and 15.4 s on the two machines; target 4 s). Firefox for Android
 has only just gained the capability, so no phone gains. Section 6 keeps the outline so the work is not designed
 twice. Question 2 asks the owner whether to fund it now instead.
 
@@ -60,7 +60,7 @@ on the device the issue came from: a worker compiles each program in ~300 ms whi
 were idle, and the same source then compiles on the page in 4-14 ms. So a worker can take the cold compile off the
 page and leave the page a warm one, with no drawing moved and no change to a flight's pixels. What is not measured is
 whether the cold compile on the page ever stalled it: Safari reports background compiles, and the only page-loop
-figure on record is the laptop's "frame gaps 20 ms around the rich compile". The `stall` test (`/tests/`, pick
+figure on record is a desktop's "frame gaps 20 ms around the rich compile". The `stall` test (`/tests/`, pick
 "stall") answers it in a minute on the phone. If the page stands still for the compile's length, build section 4; if
 the gaps stay within two frames, Safari has no freeze to fix, the pre-warm is not built (dead code in a folder Orbit
 copies), and the painted quick sign-out is question 1's to answer.
@@ -223,8 +223,8 @@ not rises. The unaudited-line count makes this its own batch after an audit.
 
 ## 8. What the owner measures on a real device
 
-- **M1, before the Safari build:** `/tests/`, pick "stall", on the phone (plugged in, Low Power Mode off, twice) and
-  on the laptop with Safari: the three gap lines and the eye's verdict on the spinner. A stall of the compile's length funds
+- **M1, before the Safari build:** `/tests/`, pick "stall", on a phone (plugged in, power saving off, twice) and
+  on a desktop with Safari: the three gap lines and the eye's verdict on the spinner. A stall of the compile's length funds
   section 4; gaps within two frames close the Safari half with the numbers on #43.
 - **M2, after it (if built):** the real door on the phone with Safari's Web Inspector from a Mac: the console lines
   `flight: warmed in a worker in N ms`, `flight: shaders compiled in N ms` (expected tens of ms where it was hundreds),
