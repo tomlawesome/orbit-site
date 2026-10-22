@@ -10,6 +10,7 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 - 2026-10-11 · f97a9bb · journey-local.sh freeze ×8, agent host (load average 5-34) · failed 1 of 8, 1 task of 50 ms; the third sighting files #32
 - 2026-10-11 · 7c49676 · journey-local.sh (all six), agent host (load average 10-23) · 1 task of 50 ms; the diff touches only teardown, passed on the next run
 - 2026-10-11 · 4e8dd43 · pipeline 2496 live:journey (CI runner, no GPU) · 1 task of 55 ms; the diff touches only teardown, re-run
+- 2026-10-22 · c8c9b71 · pipeline 2888 live:journey job 38457 (CI runner, no GPU) · 1 task of 80 ms; the diff touches only AGENTS.md, and the same site code passed in pipeline 2884; #32 reopened
 
 ## dawn-test, Chromium: "every Earth request had finished before ready" in the held-pictures case ([#73](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/73))
 
