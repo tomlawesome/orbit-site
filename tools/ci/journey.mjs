@@ -269,10 +269,25 @@ const landings = async (prefix) => {
   await step(`a docs page opens${prefix ? " (preview)" : ""}`, async () => {
     await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
-    await page.waitForFunction(() => document.querySelector("#docspad")?.textContent.includes("Quick start"), null, { timeout: 30000 });
+    /* the README page is Orbit's landing, as Orbit wrote it (#78): the reader shows it with text, and its first
+       picture is a copy under assets/docs/img/ that has loaded, so the copied pictures (#72) load under the policy */
+    try { await page.locator("#docspad .reader").waitFor({ state: "visible", timeout: 30000 }); }
+    catch { throw new Error("the README page never opened in the docs reader within 30s"); }
+    try { await page.waitForFunction(() => document.querySelector("#docspad .reader div.body")?.textContent.trim().length > 0, null, { timeout: 30000 }); }
+    catch { throw new Error("the docs reader opened on the README page but held no text within 30s"); }
+    const first = page.locator("#docspad .reader div.body img").first();
+    try { await first.waitFor({ state: "attached", timeout: 30000 }); }
+    catch { throw new Error("the README page shows no picture: no img in the docs reader within 30s"); }
+    const src = await first.getAttribute("src");
+    if (!String(src).startsWith("assets/docs/img/")) throw new Error(`the README page's first picture is ${JSON.stringify(src)}, want a copy under assets/docs/img/`);
+    await first.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});
+    try {
+      await page.waitForFunction(() => { const i = document.querySelector("#docspad .reader div.body img"); return !!i && i.complete && i.naturalWidth > 0; }, null, { timeout: 30000 });
+    } catch { throw new Error(`the README page's first picture (${src}) never loaded within 30s (naturalWidth 0: missing, or refused by the page's policy)`); }
   });
+  /* the diagram is on a page that has one: in the current import only the architecture page holds figure[data-mermaid] */
   await step(`a docs diagram draws${prefix ? " (preview)" : ""}`, async () => {
-    await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
+    await page.goto(SITE + prefix + "#docs/architecture", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     try { await page.locator("#docspad figure[data-mermaid] svg").first().waitFor({ state: "attached", timeout: 30000 }); }
     catch { throw new Error("the docs diagram (figure[data-mermaid]) never drew an svg within 30s"); }
