@@ -232,6 +232,10 @@ Loaded before the host's own sheet. Its header lists what it asks of the
 host (`--star-far`, `--star-near`, `--display`, `--mono`, `html.rich`) and
 the keyframes it defines that a host may use (`driftf`, `driftn`,
 `spinback`). Every `url()` in it stays inside the folder.
+Its fixed text sizes are in `rem` (orbit-site #79), so they follow the host's
+root font size: a host that scales its root for a reader's text size scales
+the door's text with it. At the default 16px root they are the old pixel sizes.
+Sizes tied to the surface (`--R`) stay as they are.
 
 `.release` (the tag under the name, above): positioned from the name's measure
 (`--R` where the surface sets it), coloured and sized by the sheet, and shown
