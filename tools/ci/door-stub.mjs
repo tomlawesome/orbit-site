@@ -327,15 +327,102 @@ export const listenerCounts = (page) => ({
  * stub page: returns { door, dawn, ob, baseline } with the listener counts taken before the dawn was mounted.
  * The fake context cannot make the capability probe say ok (see the report), so the live door runs as its "lean" one.
  */
-export async function mountLive(page) {
+export async function mountLive(page, extraFlags = {}) {
   const ob = installObservers();
   const { host, world } = dawnHost(() => {});
   page.query = (sel) => (/#door .world/.test(sel) ? world : any());
   const door = await import(INDEX);
-  const d = door.createDoor({ typingWait: 0, flags: { door3d: "1", level: "2" } });
+  const d = door.createDoor({ typingWait: 0, flags: { door3d: "1", level: "2", ...extraFlags } });
   door.gpu();
   door.openChores();
   const baseline = listenerCounts(page);
   const dawn = d.dawn(host);
-  return { door, dawn, ob, baseline };
+  return { door, d, dawn, ob, baseline, host, world };
+}
+
+/*
+ * trackGl(page) -> tr: records what the page's WebGL contexts and canvases are asked, for the live door's tests. Call it
+ * right after installPage(), before anything asks for a context. The first canvas to ask for webgl2 is the gate's and
+ * gets the page's own fake context; every later canvas gets a context of its own (a distinct object whose
+ * isContextLost() and WEBGL_lose_context are its own), so "a fresh context" can be told from "the lost one".
+ *   tr.objects   every texture, buffer, framebuffer and vertex array made: { kind, id, released, probe }; the crop
+ *                probe's (a texture it puts a probe image on, a buffer it reads back) are marked probe
+ *   tr.live()    the objects made and not released, the probe's left out: { texture, buffer, framebuffer, vertexArray }
+ *   tr.faults    a delete of an object never made, or twice
+ *   tr.canvases  every canvas the page made, each with a classList (and className) and its listeners in .listeners
+ *   tr.contexts  the webgl2 contexts handed out, in order: { canvas, gl, gate }; gl.__state.lost says if it is lost
+ *   tr.lose(i)   lose context i as a browser does (isContextLost() true, then webglcontextlost on its canvas)
+ *   tr.everLive  the canvases that were ever given the class "live"
+ */
+export function trackGl(page) {
+  const KINDS = ["texture", "buffer", "framebuffer", "vertexArray"];
+  const tr = { objects: [], faults: [], canvases: [], contexts: [], everLive: new Set(), gate: null };
+  const boundTex = {}, boundBuf = {};
+  const g = page.glBase;
+  for (const kind of KINDS) {
+    const K = kind[0].toUpperCase() + kind.slice(1);
+    const make = g["create" + K], drop = g["delete" + K];
+    g["create" + K] = () => {
+      const h = (make ? make() : {}) || {};
+      Object.assign(h, { kind, released: false, probe: false, n: tr.objects.length });
+      tr.objects.push(h);
+      return h;
+    };
+    g["delete" + K] = (h) => {
+      if (h == null) return;
+      if (!tr.objects.includes(h)) tr.faults.push(`delete${K} of an object never made`);
+      else if (h.released) tr.faults.push(`delete${K} of #${h.n} twice`);
+      else { h.released = true; if (drop) drop(h); }
+    };
+  }
+  const bindTexture = g.bindTexture, bindBuffer = g.bindBuffer, tex = g.texImage2D, sub = g.texSubImage2D, readBack = g.getBufferSubData;
+  g.bindTexture = (t, h) => { boundTex[t] = h; return bindTexture(t, h); };
+  g.bindBuffer = (t, h) => { boundBuf[t] = h; };
+  g.texImage2D = (...a) => { if (a[a.length - 1]?.probe && boundTex[a[0]]) boundTex[a[0]].probe = true; return tex(...a); };
+  g.texSubImage2D = (...a) => { if (a[a.length - 1]?.probe && boundTex[a[0]]) boundTex[a[0]].probe = true; return sub(...a); };
+  g.getBufferSubData = (t, o, out) => { if (boundBuf[t]) boundBuf[t].probe = true; return readBack(t, o, out); };
+  tr.live = () => Object.fromEntries(KINDS.map((k) => [k, tr.objects.filter((h) => h.kind === k && !h.probe && !h.released).length]));
+  tr.liveTotal = () => Object.values(tr.live()).reduce((n, x) => n + x, 0);
+
+  const ownGl = () => {
+    const state = { lost: false };
+    const lose = { loseContext() { state.lost = true; }, restoreContext() { state.lost = false; } };
+    return new Proxy(page.gl, {
+      get: (t, k) => (k === "isContextLost" ? () => state.lost : k === "__state" ? state : k === "getExtension" ? (n) => (n === "WEBGL_lose_context" ? lose : t.getExtension(n)) : t[k]),
+    });
+  };
+  const create = page.document.createElement;
+  page.document.createElement = (tag) => {
+    const c = create(tag);
+    if (tag !== "canvas") return c;
+    const classes = new Set();
+    const note = (n) => { classes.add(n); if (n === "live") tr.everLive.add(c); };
+    c.classList = {
+      add(...n) { n.forEach(note); }, remove(...n) { n.forEach((x) => classes.delete(x)); }, contains: (x) => classes.has(x),
+      toggle(x, f) { const on = f === undefined ? !classes.has(x) : !!f; if (on) note(x); else classes.delete(x); return on; },
+    };
+    Object.defineProperty(c, "className", { get: () => [...classes].join(" "), set: (v) => { classes.clear(); String(v).split(/\s+/).filter(Boolean).forEach(note); }, configurable: true });
+    c.listeners = {};
+    const add = c.addEventListener, rem = c.removeEventListener, get = c.getContext;
+    c.addEventListener = (type, fn) => { (c.listeners[type] ||= []).push(fn); add(type, fn); };
+    c.removeEventListener = (type, fn) => { c.listeners[type] = (c.listeners[type] || []).filter((f) => f !== fn); rem(type, fn); };
+    c.getContext = (kind, ...r) => {
+      if (kind !== "webgl2") return get(kind, ...r);
+      if (!c.gl) {
+        const gate = !tr.gate;
+        if (gate) tr.gate = c;
+        c.gl = gate ? get(kind, ...r) : ownGl();
+        tr.contexts.push({ canvas: c, gl: c.gl, gate });
+      }
+      return c.gl;
+    };
+    tr.canvases.push(c);
+    return c;
+  };
+  tr.lose = (i) => {
+    const { canvas, gl } = tr.contexts[i];
+    if (gl.__state) gl.__state.lost = true; else page.lost = true;
+    for (const fn of [...(canvas.listeners.webglcontextlost || [])]) fn({ type: "webglcontextlost", preventDefault() {} });
+  };
+  return tr;
 }

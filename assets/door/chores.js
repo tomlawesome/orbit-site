@@ -240,11 +240,21 @@ export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")
 const fetched = new Map();
 /** @param {string} url */
 const keyOf = (url) => { try { return new URL(url, document.baseURI).href; } catch { return url; } };
+/* the longest a picture is waited for (its answer and its body both): a download that opens and never delivers is
+   given up on and forgotten like a failed one, so the flight is never held flat by it and the next ask tries again.
+   Longer than the journey's own hold (8 s), as COMPILE_WAIT, below, bounds a compile */
+export const PICTURE_WAIT = 20000;
 /** @param {string} url @returns {Promise<Blob>} */
 export function fetchOnce(url) {
   const key = keyOf(url);
   if (!fetched.has(key)) {
-    const p = fetch(url).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); });
+    const ac = typeof AbortController === "undefined" ? null : new AbortController();
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    /** @type {Promise<never>} */
+    const limit = new Promise((_, no) => { timer = setTimeout(() => { ac?.abort(); no(new Error(`${url}: no answer in ${PICTURE_WAIT} ms`)); }, PICTURE_WAIT); });
+    const got = fetch(url, ac ? { signal: ac.signal } : undefined).then((r) => { if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.blob(); });
+    const p = Promise.race([got, limit]).finally(() => clearTimeout(timer));
     fetched.set(key, p);
     /* a failed fetch is forgotten, so the next ask tries the network again */
     p.catch(() => { if (fetched.get(key) === p) fetched.delete(key); });

@@ -97,6 +97,8 @@ const AIR = 1.4;
 let ctx = null;
 /** @returns {DoorContext} */
 function context() {
+  /* (a context lost is never handed out again: the next live door makes its own, on a canvas of its own) */
+  if (ctx?.gl?.isContextLost()) ctx = null;
   if (ctx) return ctx;
   const canvas = document.createElement("canvas");
   canvas.className = "wl live";
@@ -182,6 +184,8 @@ export function compileDoor() {
 export function liveDoor(world) {
   const { canvas, gl } = /** @type {DoorContext & { gl: WebGL2RenderingContext }} */ (context());  /* (non-null after the next line: the inner functions are hoisted, so the narrowing would not reach them) */
   if (!gl) { measuredNow(); return null; }
+  /* (unseen until shown, also on a canvas a door destroyed before it gave back: destroy, below) */
+  canvas.className = "wl live";
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const since = performance.now();
   /* the pictures down the wire at once; only putting them on the GPU waits its turn. The sharpest lights at the
@@ -244,7 +248,8 @@ export function liveDoor(world) {
     .then((bm) => {
       if (dead) { bm.close?.(); return; }
       const wh = /** @type {[number, number]} */ ([bm.width, bm.height]);
-      return uploadBanded(gl, bm, { tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, drawable: (t) => { maps[key] = t; dims[key] = wh; } });
+      /* (one that lands after the door is taken down is given back at once, and never kept) */
+      return uploadBanded(gl, bm, { tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, drawable: (t) => { if (dead) { gl.deleteTexture(t); return; } maps[key] = t; dims[key] = wh; } });
     })
     .then(() => {
       if (dead) return;
@@ -416,7 +421,7 @@ export function liveDoor(world) {
   function show() {
     if (dead) return;
     if (dirty) draw();
-    requestAnimationFrame(() => { if (!dead) world.classList.add("live"); });
+    requestAnimationFrame(() => { if (!dead && !gl.isContextLost()) world.classList.add("live"); });
     if (mode === "rich") { state.rich = !fell; wantRich(); }
     followDoor(state);
     seen = true;
@@ -488,7 +493,9 @@ export function liveDoor(world) {
   const onResize = () => { if (prog && !dead) { resize(); wake(); } };
   /* a lost context: no call on it, the loop stopped, and the door down until a remount; the world no longer live, so
      its canvas goes and the page shows its pictures again (door.css: .world.live) */
-  const onLost = () => { dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; world.classList.remove("live"); measuredNow(); };
+  /* (the context itself is let go, so a remount is handed a fresh one: context, above; preventDefault says the page
+     takes the loss in hand rather than leaving the canvas for good) */
+  const onLost = (/** @type {Event} */ e) => { e.preventDefault?.(); dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; world.classList.remove("live"); if (ctx?.canvas === canvas) ctx = null; measuredNow(); };
   addEventListener("resize", onResize);
   document.addEventListener("visibilitychange", wake);
   canvas.addEventListener("webglcontextlost", onLost);
@@ -501,8 +508,9 @@ export function liveDoor(world) {
   watchers[watchers.length - 1].observe(document.body, { attributes: true, attributeFilter: ["class"] });
   /* taken down (dawn.destroy): the loop stopped, its listeners and observers removed, nothing it was waiting for acts
      (a door destroyed before it was shown never becomes the world's door: followDoor), and it leaves the sharp strip's
-     queue so it holds no other context back. Its textures stay on the context until the page goes (as a flight world's do
-     not): a remount makes its own */
+     queue so it holds no other context back. What it put on the page's one context (its maps, the blank, the sun table,
+     the clouds' fields, the glow, the unseen target, its vertex array) is given back, as a flight world's is, since a
+     remount makes its own; the compiled programs stay, kept for the next door (ctx.weights). Its canvas is no longer live */
   const destroy = () => {
     dead = true;
     if (raf) cancelAnimationFrame(raf);
@@ -512,7 +520,19 @@ export function liveDoor(world) {
     canvas.removeEventListener("webglcontextlost", onLost);
     for (const w of watchers) w.disconnect();
     stripS.leave();
+    release();
+    canvas.className = "wl";
     measuredNow();
+  };
+  /* (on a lost context there is nothing to give back: every call is a no-op) */
+  const release = () => {
+    const ts = new Set([...Object.values(maps), ...Object.values(fields), blank, sunTex, glowT, off?.t]);
+    for (const t of ts) if (t) gl.deleteTexture(t);
+    for (const k of Object.keys(maps)) delete maps[k];
+    for (const k of Object.keys(fields)) delete fields[k];
+    if (off?.f) gl.deleteFramebuffer(off.f);
+    off = null; sunTex = null; glowT = null;
+    gl.deleteVertexArray(vao);
   };
   return { ready, state, wake, destroy };
 }

@@ -23,7 +23,7 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, noteChores, compilesAside } from "./chores.js";
+import { chore, note, noteChores, compilesAside, PICTURE_WAIT } from "./chores.js";
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
 
@@ -385,22 +385,41 @@ export function createFlight(canvas, options = {}) {
   const clock = options.now ?? (() => performance.now());
   /* the Earth the door shows under its dawn (tools/dawn.py): the flight starts on that very picture and
      lets it go into its own plainer world as the climb gets under way. The door has already asked for it. */
-  const earth = typeof Image === "undefined" ? null : new Image();
-  /* asked for by warm(), below, with the rest of what the flight draws */
-  const earthReady = earth ? new Promise((r) => { earth.addEventListener("load", r, { once: true }); earth.addEventListener("error", r, { once: true }); }) : Promise.resolve();
+  /* (asked for by warm(), below, with the rest of what the flight draws; asked again, as a new request, by a later
+     warm if it did not come in time: a stalled request is not restarted by setting the same address again) */
+  /** @type {HTMLImageElement | null} */
+  let earth = null;
+  /** @type {Promise<unknown>} */
+  let earthReady = Promise.resolve();
   /* … and a copy of it whose left and right edges fade, so that as the world shrinks the picture's sides never show */
   /** @type {HTMLCanvasElement | null} */
   let earthF = null;
-  if (earth) earth.addEventListener("load", () => {
-    try {
-      const c = document.createElement("canvas"); c.width = earth.naturalWidth; c.height = earth.naturalHeight;
-      const x = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
-      x.drawImage(earth, 0, 0); x.globalCompositeOperation = "destination-in";
-      const g = x.createLinearGradient(0, 0, c.width, 0);
-      g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.025, "#000"); g.addColorStop(0.975, "#000"); g.addColorStop(1, "rgba(0,0,0,0)");
-      x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); earthF = c;
-    } catch { /* the plain picture, then */ }
-  }, { once: true });
+  const askEarth = () => {
+    if (typeof Image === "undefined") return;
+    const img = new Image();
+    earth = img;
+    earthReady = new Promise((r) => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); });
+    img.addEventListener("load", () => {
+      if (img !== earth) return;
+      try {
+        const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const x = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
+        x.drawImage(img, 0, 0); x.globalCompositeOperation = "destination-in";
+        const g = x.createLinearGradient(0, 0, c.width, 0);
+        g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.025, "#000"); g.addColorStop(0.975, "#000"); g.addColorStop(1, "rgba(0,0,0,0)");
+        x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); earthF = c;
+      } catch { /* the plain picture, then */ }
+    }, { once: true });
+    img.src = image("dawn/dawn.webp");
+  };
+  /* … waited for no longer than any picture (PICTURE_WAIT, chores.js): true once it has come (or failed), false if the
+     wait ran out, so a stalled request never holds the flight flat */
+  const earthWait = () => {
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const late = new Promise((r) => { timer = setTimeout(() => r(false), PICTURE_WAIT); });
+    return Promise.race([earthReady.then(() => true), late]).finally(() => clearTimeout(timer));
+  };
   /* the flight's world in WebGL beneath this canvas where it can be had (voyage.js): the Earth as a globe, the
      Milky Way, the streaks as light. Without it, this canvas draws all of it, as it always has. */
   /* made when the flight is first readied (warm), not when the page starts: the door's first light is never kept
@@ -1220,6 +1239,17 @@ export function createFlight(canvas, options = {}) {
   }
 
   let /** @type {Promise<void> | null} */ warmed = null, /** @type {Promise<void> | null} */ proved = null, /** @type {Promise<unknown> | null} */ warmedDocs = null, /** @type {Promise<unknown> | null} */ provedDocs = null, /** @type {Promise<unknown> | null} */ compiled = null;
+  /* the Earth's picture did not come within its wait (earthWait): the next warm waits for it again, and proves then */
+  let earthLate = false;
+  /** the flight readied once its world is made: the Earth's picture waited for, the world's pictures put on the GPU
+      @param {Promise<void>} made */
+  const settle = (made) => {
+    const earthIn = earthWait();
+    return Promise.all([earthIn, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {})
+      .then(() => earthIn).then((ok) => { earthLate = !ok; if (world3d?.dead) letGo(); if (!options.plain) { note(ok ? "flight: ready" : "flight: ready, without the Earth's picture"); noteChores("flight ready"); } });
+  };
+  /** @type {Promise<void>} */
+  let made = Promise.resolve();
   return {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
@@ -1232,8 +1262,13 @@ export function createFlight(canvas, options = {}) {
        frame drawn; the default proves the world (its test frames and the fitness test: voyage.js), which the host
        asks at leisure once the door is lit, or a flight up asks if it is first; the world is drawn only once proved. */
     warm({ prove = true } = {}) {
+      /* a world that died after it was made (its context lost: a backgrounded phone tab, a GPU reset) is let go, and
+         the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
+      if (world3d?.dead && !destroyed) { letGo(); warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; }
+      /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
+      else if (earthLate && warmed) { earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.complete) askEarth(); warmed = settle(made); }
       if (!warmed) {
-        if (earth && !earth.src) earth.src = image("dawn/dawn.webp");
+        if (!earth) askEarth();
         /* its pictures asked for (only if the GPU gate lets the page have a world: voyage.js), and its world made (its
            shaders set compiling in the background), at once; what it then puts on the GPU waits its turn as chores
            (voyage.js). Where the browser compiles on the page's own thread (compilesAside false), the world is made as
@@ -1248,17 +1283,18 @@ export function createFlight(canvas, options = {}) {
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
            voyage.js) */
         const first = DOOR3D() && !options.plain ? probe().catch(() => null) : Promise.resolve();
-        const made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
+        made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
         compiled = made.then(() => world3d?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(world3d?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
-        warmed = Promise.all([earthReady, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (!options.plain) { note("flight: ready"); noteChores("flight ready"); } });
+        warmed = settle(made);
       }
       /* (a later ask lets the world try once more for a map that failed: voyage.js warm; it settles by itself) */
       else if (world3d && !world3d.dead) world3d.warm({ prove: false }).catch(() => {});
       if (!prove) return warmed;
       if (!proved) {
-        proved = warmed.then(() => (world3d ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); });
+        /* (not while the Earth's picture is late: proved by the warm that has it) */
+        proved = warmed.then(() => (world3d && !earthLate ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (earthLate) proved = null; });
       }
       return proved;
     },
