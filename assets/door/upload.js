@@ -176,7 +176,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
       gl.texImage2D(T, 0, internal, format, type, bitmap);
       params(t);
       if (mips) levels(t);
-    } catch (e) { drop(t); throw e; }
+    } catch (e) { drop(t); if (!keep) bitmap.close?.(); throw e; }
     if (!keep) bitmap.close?.();
     drawable?.(t);
     return t;
