@@ -616,12 +616,21 @@ const retryCase = async () => {
         /* the retry: the line is good now, and the visitor presses Install again */
         failing = false;
         const hitsBefore = hits, logBefore = page.log.length;
+        /* frames are counted in the page from just before the click: the shot advances by at most 50 ms a frame, so
+           it takes a number of frames, not a number of seconds, however slowly the machine draws */
+        await page.evaluate(() => { window.__frames = 0; const tick = () => { window.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
         await planet.evaluate((el) => el.click());
         await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
-        /* M1a: the page forms (the 6 s wait and about 5 s of shot, with margin; the 15 s let-go never adds 'formed') */
-        const formed = await until(() => page.evaluate(() => document.querySelector("#installpad").classList.contains("formed")), (v) => v, 30000, 100);
+        /* M1a: the page forms (the shot needs about 45 to 134 frames, by frame length, after the world's bake, which
+           install.js races against a 6 s WAIT: up to 360 frames more at 60 a second, so the budget is 600 frames; the
+           300 s wall-clock backstop only keeps a stalled page from hanging; the 15 s let-go never adds 'formed') */
+        const FRAME_BUDGET = 600;
+        const progress = () => page.evaluate(() => ({ formed: document.querySelector("#installpad").classList.contains("formed"), frames: window.__frames }));
+        const formedAt = await until(progress, (v) => v.formed || v.frames > FRAME_BUDGET, 300000, 100);
+        const formed = formedAt.formed;
         const after = await classes();
-        want(formed, `the second dive never added 'formed' to #installpad within 30 s (flat ${after.flat}, lit ${after.lit}): the words, back and home stay hidden over a pad nothing draws`);
+        want.note(`'formed' ${formed ? "arrived" : "did not arrive"} after ${formedAt.frames} frames`);
+        want(formed, `the second dive never added 'formed' to #installpad within ${FRAME_BUDGET} frames (${formedAt.frames} passed; flat ${after.flat}, lit ${after.lit}): the words, back and home stay hidden over a pad nothing draws`);
         /* M1b: the world is lit and the poster is not kept over it */
         const end = await classes();
         want(end.lit && !end.flat, `after the second dive #installpad should be lit and not flat, but lit is ${end.lit} and flat is ${end.flat}`);

@@ -14,12 +14,16 @@
  *       screenshot with only that canvas showing (everything else on the page hidden), by the share of the window's
  *       pixels that differ (by more than 24 in a channel) from the screenshot's most common colour ("drawn"; a blank
  *       sky is one colour). Samples are taken at fixed frames after the loss (SAMPLE_AT), counting only those taken
- *       while the flight is under way (body has showwarp, not instrument: the arrival scene is drawn too); at least one
- *       must reach half of what the 2D control (F0d) shows on #warp alone at that same frame of its flight, and twice
- *       what the WebGL control (F0w) shows there at that frame (in a WebGL flight #warp holds only the background
- *       layer). A frame is compared only where #warp alone tells the controls apart (F0d over twice F0w: early in the
- *       climb a WebGL flight still shows the door's Earth there), and at least one must be. The console must show no
- *       uncaught error (a page error).
+ *       while the flight is under way (body has showwarp, not instrument: the arrival scene is drawn too). A frame is
+ *       judged only where #warp alone tells the two controls apart: their pictures of #warp at that frame of their
+ *       flights differ in at least GAP_FLOOR of the window's pixels (by more than 24 in a channel; in a WebGL flight
+ *       #warp holds only the background layer, and early in the climb the door's Earth), and at least MIN_JUDGED
+ *       frames must be. At each judged frame the loss case's #warp must be drawn (the share above, at least half of
+ *       the 2D control's at that frame), moving as the 2D control moved, and its picture must differ from the WebGL
+ *       control's picture at that frame by at least half of the gap between the two controls' pictures: it is the 2D
+ *       flight, not the blank sky or the WebGL one. Whether a frame is judged is not decided by a count of one
+ *       colour's pixels, so how a browser shades a gradient sky does not matter. The console must show no uncaught
+ *       error (a page error).
  *       Controls: before the loss the flight was drawing in WebGL (draw calls on #warpgl during the climb, counted by
  *       an init script wrapping the draw calls) and the flight was still under way (body not yet `bare`); the loss took
  *       (isContextLost()); and two flights on their own pages, stepped frame for frame as the loss case is: an
@@ -61,6 +65,11 @@ const WIDTH = Number(process.env.FLIGHT_WIDTH || 400), HEIGHT = Number(process.e
 const MOVED = 0.002;          /* the share of the window that must change in MOVE_FRAMES for the sky to count as drawn live */
 const DRAWN = 0.005;          /* the share of the window that must differ from the sky's plain colour to count as drawn */
 const MOVE_FRAMES = 24;       /* 0.4 s of the flight's time */
+/* the share of the window's pixels (differing by more than 24 in a channel) in which the two controls' #warp pictures
+   must differ for a frame to be judged. Measured at frames 36-54: 0.20-0.32 in Chromium, 0.28-0.46 in Firefox; two
+   pictures of the same sky differ in none. 0.15 is under every measured gap with room for another shading, and a gap
+   that small still leaves half of it (0.075, some 15 times DRAWN) for the loss picture to show against the WebGL one */
+const GAP_FLOOR = 0.15;
 /* the moments judged, in the page's frames (1000/60 ms each) counted from the flight's first (the first frame after the
    click whose body shows the flight's canvas, showwarp: the journey's warp beat, which starts the flight; within
    WARP_BY frames of the click): the loss comes LOSS_AFTER frames into the flight; after it, the #warp samples */
@@ -329,7 +338,7 @@ const controlSamples = async (page, what, start) => {
     const c = await bodyClass(page);
     const pic = await grab(page, ["warp"]);
     pics.set(f, pic);
-    warpAt.set(f, { share: (await judge(page, pic)).share, live: underWayNow(c) });
+    warpAt.set(f, { share: (await judge(page, pic)).share, live: underWayNow(c), pic });
     if (look && !underWayNow(c)) break;
   }
   /* #warp alone's movement between each loss case's samples, one to the next (the loss's own frame first) */
@@ -363,7 +372,8 @@ const lostMidFlight = async (notes, when, need, needMove, controlsLive) => {
     await lossSaid(page, `${when} loss`);
     progress(`${when} loss: the flight's context lost at its frame ${loseAt} (${start + loseAt} after the click; body: ${cls}); stepping the flight on`);
     /* #warp alone at the loss's frame and at each sample frame after it, against the controls at that same frame:
-       drawn, and moving since the sample before as the 2D control moved between the same two frames. Every frame the
+       drawn as the 2D control's is, differing from the WebGL control's picture, and moving since the sample before as
+       the 2D control moved between the same two frames. Every frame the
        controls can judge must pass, not the best of them: with the clock stepped no first frame is late, and a fallback
        that draws once and stops, or only late, fails */
     const samples = [], judged = [];
@@ -378,7 +388,7 @@ const lostMidFlight = async (notes, when, need, needMove, controlsLive) => {
       const pair = `${prevF}>${f}`;
       prev = pic; prevF = f;
       const live = underWayNow(c);
-      const want = need(f), mwant = needMove(pair);
+      const n = await need(page, f), mwant = needMove(pair);
       if (!live) {
         /* the loss flight may end only where the controls' flights have ended too */
         const early = controlsLive(f);
@@ -386,13 +396,14 @@ const lostMidFlight = async (notes, when, need, needMove, controlsLive) => {
         if (early) result.endedEarly = { k, body: c };
         break;
       }
-      if (want === null) { samples.push(`+${k}: drawn ${share.toFixed(3)}, moved ${moved.toFixed(3)} (the controls cannot tell 2D here)`); continue; }
-      const ok = share >= want && (mwant === null || moved >= mwant);
-      judged.push({ k, share, want, moved, mwant, ok });
-      samples.push(`+${k}: drawn ${share.toFixed(3)} / ${want.toFixed(3)} (${share >= want ? "+" : ""}${(share - want).toFixed(3)}), moved ${moved.toFixed(3)} / ${mwant === null ? "not judged, the 2D control is still here" : `${mwant.toFixed(3)} (${moved >= mwant ? "+" : ""}${(moved - mwant).toFixed(3)})`}${ok ? "" : " FAILS"}`);
+      if (n === null) { samples.push(`+${k}: drawn ${share.toFixed(3)}, moved ${moved.toFixed(3)} (the controls cannot tell 2D here)`); continue; }
+      const want = n.drawn, differ = (await judge(page, pic, n.w)).moved;
+      const ok = share >= want && differ >= n.differ && (mwant === null || moved >= mwant);
+      judged.push({ k, share, want, differ, dwant: n.differ, moved, mwant, ok });
+      samples.push(`+${k}: drawn ${share.toFixed(3)} / ${want.toFixed(3)} (${share >= want ? "+" : ""}${(share - want).toFixed(3)}), differs from F0w ${differ.toFixed(3)} / ${n.differ.toFixed(3)} (${differ >= n.differ ? "+" : ""}${(differ - n.differ).toFixed(3)}), moved ${moved.toFixed(3)} / ${mwant === null ? "not judged, the 2D control is still here" : `${mwant.toFixed(3)} (${moved >= mwant ? "+" : ""}${(moved - mwant).toFixed(3)})`}${ok ? "" : " FAILS"}`);
     }
     const counted = judged.length, firstFail = judged.find((j) => !j.ok) ?? null;
-    result.margins = counted ? { drawn: Math.min(...judged.map((j) => j.share - j.want)), moved: Math.min(...judged.filter((j) => j.mwant !== null).map((j) => j.moved - j.mwant)) } : null;
+    result.margins = counted ? { drawn: Math.min(...judged.map((j) => j.share - j.want)), differ: Math.min(...judged.map((j) => j.differ - j.dwant)), moved: Math.min(...judged.filter((j) => j.mwant !== null).map((j) => j.moved - j.mwant)) } : null;
     Object.assign(result, { counted, movedCounted: judged.filter((j) => j.mwant !== null).length, firstFail });
     notes.push(`${when} loss at frame ${loseAt} of the flight, #warp alone at frames after it (got / needed, margin): ${samples.join(", ")}; body then: ${await bodyClass(page)}; ${await canvases(page)}`);
     result.drawsAfter = await draws(page);
@@ -418,13 +429,18 @@ try {
   const two = await twoDControl();
   notes.push(`F0d flight started after a loss (2D), started at frame ${two.start} after the click, at its frame ${LOSS_AFTER.early}: ${show(two)}, ${two.draws} WebGL draw call(s) on #warpgl, loss ${JSON.stringify(two.lost)}; ${two.parts}`);
   want(isDrawn(two), `control F0d: a flight started after a context loss (drawn in 2D today) shows no drawn, moving sky mid-climb (${show(two)}; want drawn above ${DRAWN}, moving above ${MOVED}), so the measure is wrong`);
-  /* the 2D fallback is judged on #warp alone, against this run's own controls at the same frame: at least half of what
-     the 2D control (F0d) shows there, and at least twice what the WebGL control (F0w) shows there (its background).
-     A frame counts only where both controls were under way and #warp alone tells them apart (F0d over twice F0w: early
-     in the climb a WebGL flight still shows the door's Earth on #warp) */
-  const need = (f) => {
+  /* the 2D fallback is judged on #warp alone, against this run's own controls at the same frame. A frame counts only
+     where both controls were under way and their #warp pictures differ in at least GAP_FLOOR of the window (early in
+     the climb a WebGL flight still shows the door's Earth on #warp, which can make them alike). There the loss case
+     must be drawn as at least half of the 2D control (F0d) is, and differ from the WebGL control's (F0w) picture by at
+     least half the gap between the controls' pictures */
+  const gaps = new Map();
+  const need = async (page, f) => {
     const d = two.warpAt.get(f), w = control.warpAt.get(f);
-    return d?.live && w?.live && d.share > 2 * w.share ? Math.max(0.5 * d.share, 2 * w.share) : null;
+    if (!d?.live || !w?.live) return null;
+    if (!gaps.has(f)) gaps.set(f, (await judge(page, d.pic, w.pic)).moved);
+    const gap = gaps.get(f);
+    return gap >= GAP_FLOOR ? { gap, drawn: 0.5 * d.share, differ: 0.5 * gap, w: w.pic } : null;
   };
   /* the movement a loss case's #warp must show between two of its samples: half what the 2D control's showed between
      the same two frames, where that control moved at all (over MOVED) */
@@ -445,12 +461,12 @@ try {
       want(Array.isArray(r.lost) && r.lost.length > 0 && r.lost.every((x) => x === true), `control (${when} loss): the loss did not take on the flight's context (${JSON.stringify(r.lost)})`);
       if (r.lost?.length) {
         want(!r.endedEarly, `the flight whose context was lost mid-flight (${when} in the climb) was over ${r.endedEarly?.k} frames after the loss (body: ${r.endedEarly?.body}), while both control flights were still under way at that frame`);
-        want(r.counted >= MIN_JUDGED, `control (${when} loss): the sky after the loss was judged at ${r.counted} sample frame(s), want at least ${MIN_JUDGED} (frames where the flight was under way and #warp alone tells the 2D control from the WebGL one), so the 2D takeover was not judged through the flight`);
+        want(r.counted >= MIN_JUDGED, `control (${when} loss): the sky after the loss was judged at ${r.counted} sample frame(s), want at least ${MIN_JUDGED} (frames where the flight was under way and the controls' #warp pictures differ in at least ${GAP_FLOOR}), so the 2D takeover was not judged through the flight`);
         want(r.movedCounted >= MIN_JUDGED, `control (${when} loss): the sky's movement after the loss was judged at ${r.movedCounted} sample frame(s), want at least ${MIN_JUDGED} (frames where the 2D control moved over ${MOVED}), so a still picture could pass`);
         notes.push(`${when} loss, judged at ${r.counted} sample frame(s) for drawn and ${r.movedCounted} for movement (at least ${MIN_JUDGED} each)`);
         const b = r.firstFail;
-        want(r.counted === 0 || !b, `the flight canvas area is not drawn and moving in every frame after the context was lost mid-flight (${when} in the climb): #warp alone ${b?.k} frames after the loss drawn ${b?.share.toFixed(3)} where it needs ${b?.want.toFixed(3)} (half the 2D control's, and twice the WebGL control's, at that frame), moved ${b?.moved.toFixed(3)} since the sample before where it needs ${b?.mwant === null ? "(not judged)" : b?.mwant.toFixed(3)} (half the 2D control's between the same frames)`);
-        if (r.margins) notes.push(`${when} loss, smallest margin over the judged frames: drawn ${r.margins.drawn.toFixed(3)}, moved ${Number.isFinite(r.margins.moved) ? r.margins.moved.toFixed(3) : "not judged"}`);
+        want(r.counted === 0 || !b, `the flight canvas area is not drawn and moving in every frame after the context was lost mid-flight (${when} in the climb): #warp alone ${b?.k} frames after the loss drawn ${b?.share.toFixed(3)} where it needs ${b?.want.toFixed(3)} (half the 2D control's at that frame) and differs from the WebGL control's picture in ${b?.differ.toFixed(3)} where it needs ${b?.dwant.toFixed(3)} (half the gap between the controls' pictures), moved ${b?.moved.toFixed(3)} since the sample before where it needs ${b?.mwant === null ? "(not judged)" : b?.mwant.toFixed(3)} (half the 2D control's between the same frames)`);
+        if (r.margins) notes.push(`${when} loss, smallest margin over the judged frames: drawn ${r.margins.drawn.toFixed(3)}, differ from F0w ${r.margins.differ.toFixed(3)}, moved ${Number.isFinite(r.margins.moved) ? r.margins.moved.toFixed(3) : "not judged"}`);
         want(!r.errors.length, `page error (${when} loss): ${r.errors[0]}`);
       }
     }

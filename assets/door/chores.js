@@ -24,7 +24,7 @@
  */
 /** @type {Job[]} */
 const queue = [];
-let open = false, soft = false, compiling = false, running = false, /** @type {string[] | null} */ want = null, until = 0, wake = 0, started = 0, openedAt = 0;
+let open = false, soft = false, compiling = false, running = false, resting = false, /** @type {string[] | null} */ want = null, until = 0, wake = 0, started = 0, openedAt = 0;
 /* when someone last typed (watchTyping): an unhurried chore waits while they are, so a texture upload never lands
    between a keystroke and its echo (Orbit's addition; settings.typingWait, 0 to never wait) */
 let lastInput = -Infinity;
@@ -82,7 +82,7 @@ const tags = (tag) => /** @type {string[]} */ ([]).concat(tag);
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
 
 function pump() {
-  if (running || !queue.length) return;
+  if (running || resting || !queue.length) return;
   const now = performance.now();
   /* what the chosen journey needs, first */
   let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => /** @type {string[]} */ (want).includes(t))) : -1;
@@ -121,16 +121,18 @@ function pump() {
     const end = () => {
       if (over) return;
       over = true; clearTimeout(cap);
-      running = false; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
+      running = false; resting = true; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
       if (early) { softN++; softMs += performance.now() - t0; }
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
          so nothing heavy sits right beside them); hurried, still a frame; a soft one during the reveal, a frame and no
          more (it fits in a frame's slack, and the reveal is short) */
       /* (a soft one after the reveal, or hurried: the next at once while the frame's share lasts) */
+      /* (the rest is kept whoever asks next: a chore queued, or a journey hurried, during it waits for its end) */
+      const next = () => { resting = false; pump(); };
       /** @param {number} ms */
-      const frame = (ms) => requestAnimationFrame(() => { frameAt = performance.now(); setTimeout(pump, ms); });
+      const frame = (ms) => requestAnimationFrame(() => { frameAt = performance.now(); setTimeout(next, ms); });
       /* (during the reveal a smaller share, 4 ms: a second band in the frame when the first was quick) */
-      if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(pump, 0);
+      if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(next, 0);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
     };
@@ -227,8 +229,9 @@ export function quiet() {
     requestAnimationFrame(look);
   });
 }
-/** for the test only (?door3d, index.js: window.__chores): the queue as it is now */
-export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), running, started, open, soft, compiling, openedAt });
+/** for the test only (?door3d, index.js: window.__chores; tools/ci/freeze.mjs): the queue as it is now (queuedSoft:
+    whether each queued one is soft, beside queued) */
+export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), queuedSoft: queue.map((j) => j.soft), running, started, open, soft, compiling, openedAt });
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
 /* (keyed by the address resolved against the page, so a relative and an absolute spelling of one picture share
