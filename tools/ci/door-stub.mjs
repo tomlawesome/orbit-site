@@ -327,12 +327,12 @@ export const listenerCounts = (page) => ({
  * stub page: returns { door, dawn, ob, baseline } with the listener counts taken before the dawn was mounted.
  * The fake context cannot make the capability probe say ok (see the report), so the live door runs as its "lean" one.
  */
-export async function mountLive(page) {
+export async function mountLive(page, extraFlags = {}) {
   const ob = installObservers();
   const { host, world } = dawnHost(() => {});
   page.query = (sel) => (/#door .world/.test(sel) ? world : any());
   const door = await import(INDEX);
-  const d = door.createDoor({ typingWait: 0, flags: { door3d: "1", level: "2" } });
+  const d = door.createDoor({ typingWait: 0, flags: { door3d: "1", level: "2", ...extraFlags } });
   door.gpu();
   door.openChores();
   const baseline = listenerCounts(page);
