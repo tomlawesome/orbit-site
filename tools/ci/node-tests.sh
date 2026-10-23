@@ -18,7 +18,7 @@ fi
 for t in fetch-once dates sanitise-html comment-rules home-props goodbye-markup descent-homes \
   gpu-gate hurry dawn-destroyed-light dawn-let-go retire-after-destroy destroyed-world released-world \
   rich-remount sharp-strip-remount fit-skip door-context-restore door-wordmark release-tag door-shimmer \
-  door-probe-chores door-world door-banded-upload door-sky door-rem star-cloud door-live-teardown fetch-once-limit flight-waits door-live-release door-live-lost local-server \
+  door-probe-chores door-world door-banded-upload door-sky door-rem star-cloud door-live-teardown fetch-once-limit flight-waits door-live-release door-live-lost door-lows-glows door-lows-strip door-lows-probe-stored door-lows-compile-hidden door-lows-banded-fail local-server \
   site-world site-home-date site-home site-tilt site-lock site-pads site-pads-sources docs-shape docs-sky-portrait site-data sw; do
   echo "== $t"
   node "tools/ci/$t-test.mjs"
