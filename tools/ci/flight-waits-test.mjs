@@ -17,7 +17,7 @@
  * stub page in door-stub.mjs. Every wait runs on a virtual clock (installClock): the limit is 25000 ms of the page's
  * clock at most, and nothing depends on how fast the machine runs. A picture "never loads" through page.imageHook.
  */
-import { INDEX, isProbeSrc, installPage, installClock, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
+import { INDEX, isProbeSrc, installPage, installClock, childMain, runCase, check, finish, errOf, sleep } from "./door-stub.mjs";
 
 const LIMIT_MS = 25000;
 const FIT = /flight world: on/;
@@ -54,7 +54,12 @@ async function earthCase({ never, retry }) {
     page.imageHook = (img) => { img.fire("load"); };           /* the picture works now */
     const before = page.lines.filter((l) => FIT.test(l)).length;
     let again = "pending";
+    const asked = page.images.length;
     journey.warm().then(() => { again = "resolved"; }, () => { again = "rejected"; });
+    /* the stub's pictures load on a real timer (door-stub.mjs: StubImage), so the picture asked for again is waited
+       for, in real time, before the virtual clock runs on: else, with no other timer queued, the clock can jump
+       straight past the picture's limit and the page sees it late again (a race in the harness, not the door) */
+    for (let i = 0; i < 200 && !page.images.slice(asked).some((im) => im.complete); i++) { await clock.advance(0); await sleep(5); }
     await clock.advance(LIMIT_MS, () => again !== "pending" && page.lines.filter((l) => FIT.test(l)).length > before);
     out.again = again; out.provedAgain = page.lines.filter((l) => FIT.test(l)).length - before;
   }

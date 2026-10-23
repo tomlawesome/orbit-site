@@ -27,3 +27,8 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 ## site-browser B7, Chromium: the install page's second dive is still flat
 
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
+
+## flight-waits W3: a later warm() does not prove the world
+
+- 2026-10-23 · 17824c8 (and dev 8b2d23e) · node-tests.sh under coverage-run.sh, agent host · 0 'flight world: on' lines; 6 of 10 runs with coverage, 2 of 10 without, 4 of 10 on dev's door code
+- Fixed by the next commit: the stub's picture loads on a real timer, and the virtual clock could jump past the picture's limit first; W3 now waits for the new picture before running the clock on (0 of 20 failed; still fails with the door's re-request removed)
