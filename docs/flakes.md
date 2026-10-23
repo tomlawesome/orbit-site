@@ -23,3 +23,7 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 ## Docker image pull from the dependency proxy: not found
 
 - 2026-10-12 · 0acc271 (and 3 other Renovate heads) · pipelines 2547-2550 lint · node:22-bookworm digest "not found" from the dependency proxy; 2547 passed on retry 2026-10-13
+
+## site-browser B7, Chromium: the install page's second dive is still flat
+
+- 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
