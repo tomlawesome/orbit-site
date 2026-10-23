@@ -84,10 +84,13 @@ star fields and sets the glows' origin.
   frame loop stops, its resize and visibility listeners and its observers are
   removed, nothing it was waiting for acts any more (a door destroyed before it
   was shown never becomes the flight's door), and it leaves the sharp strip's
-  queue (so it holds no other context back). A lost context takes it down the
-  same way, and it stays down until a remount. Its textures stay on the
-  context; a remount makes its own. `dawn.live.start()` on a destroyed dawn
-  returns `null`.
+  queue (so it holds no other context back). What it put on the page's context
+  (its textures, framebuffer and vertex array) is deleted, an upload landing
+  after it included; its compiled programs are kept for the next door, and its
+  canvas loses its `live` class. A lost context takes it down the same way, and
+  it stays down until a remount, which is handed a fresh context. (Interface
+  change, 2026-10, #84: its textures used to stay on the context.)
+  `dawn.live.start()` on a destroyed dawn returns `null`.
 - `held`: the pictures decoded ahead of the light (`decode-ahead.js`), a list of `{ ready, held }` as
   `decodeAhead` returns them: the glows' and the Earth's, plus one for each glow the dawn draws itself (with its
   `url`; a resize replaces the old size's). `[]` before `start()`. They are kept until the light's reveal has
@@ -148,7 +151,10 @@ destroy, later, reduced, warm, warmDocs, compiled }`.
   a flight up asked first holds on it (`ready`); it draws the
   warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
   world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
-  own canvas, as it always could.
+  own canvas, as it always could. A world lost after it was made is replaced by the next `warm()`. No picture is
+  waited for longer than `PICTURE_WAIT` (20 s, `chores.js`): a download that never finishes is given up and asked
+  again by the next ask, and an Earth's picture that has not come by then settles `warm()` without proving the
+  world, which the next `warm()` does once the picture is in.
 - `later(fn, { after = 4000 })` → `stop()`: `fn` at leisure, `after` ms from now and once the page's painted
   animations have finished; never called if `stop()` is, or if a `fly()` or `descend()` begins first (both drop
   every pending `later`: a compile on the page's own thread, started mid-flight, would be a pause in the middle
