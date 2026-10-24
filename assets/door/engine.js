@@ -1244,12 +1244,15 @@ export function createFlight(canvas, options = {}) {
   /** the flight readied once its world is made: the Earth's picture waited for, the world's pictures put on the GPU
       @param {Promise<void>} made */
   const settle = (made) => {
-    const earthIn = earthWait();
+    const earthIn = earthWait(), mine = round;
     return Promise.all([earthIn, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {})
-      .then(() => earthIn).then((ok) => { earthLate = !ok; if (world3d?.dead) letGo(); if (!options.plain) { note(ok ? "flight: ready" : "flight: ready, without the Earth's picture"); noteChores("flight ready"); } });
+      .then(() => earthIn).then((ok) => { if (mine !== round) return; earthLate = !ok; if (world3d?.dead) letGo(); if (!options.plain) { note(ok ? "flight: ready" : "flight: ready, without the Earth's picture"); noteChores("flight ready"); } });
   };
   /** @type {Promise<void>} */
   let made = Promise.resolve();
+  /* the warm-up's round: a new one each time the flight is readied again (a lost world replaced, a late Earth asked
+     again), so what an older round finishes later changes nothing of the newer one's (a stale-callback guard) */
+  let round = 0;
   return {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
@@ -1264,9 +1267,9 @@ export function createFlight(canvas, options = {}) {
     warm({ prove = true } = {}) {
       /* a world that died after it was made (its context lost: a backgrounded phone tab, a GPU reset) is let go, and
          the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
-      if (world3d?.dead && !destroyed) { letGo(); warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; }
+      if (world3d?.dead && !destroyed) { round++; letGo(); warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; }
       /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
-      else if (earthLate && warmed) { earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.complete) askEarth(); warmed = settle(made); }
+      else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.complete) askEarth(); warmed = settle(made); }
       if (!warmed) {
         if (!earth) askEarth();
         /* its pictures asked for (only if the GPU gate lets the page have a world: voyage.js), and its world made (its
@@ -1294,7 +1297,8 @@ export function createFlight(canvas, options = {}) {
       if (!prove) return warmed;
       if (!proved) {
         /* (not while the Earth's picture is late: proved by the warm that has it) */
-        proved = warmed.then(() => (world3d && !earthLate ? world3d.warm() : null)).catch(() => {}).then(() => { if (world3d?.dead) letGo(); if (earthLate) proved = null; });
+        const mine = round;
+        proved = warmed.then(() => (world3d && !earthLate && mine === round ? world3d.warm() : null)).catch(() => {}).then(() => { if (mine !== round) return; if (world3d?.dead) letGo(); if (earthLate) proved = null; });
       }
       return proved;
     },
