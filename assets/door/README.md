@@ -188,8 +188,8 @@ The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
 `showwarp`, `launching`, `bare`, `instrument`, `withdrawing`, `dispersing`,
 `showdusk`, `farewell`, `holding`. The host's surfaces style themselves on
 them.
-`dawn()` and `dusk()` also set `loading` and `lit` (first light, below), and the
-host sets `ready-flight` (below).
+`dawn()` also sets `loading` and `lit` (its `light()`, first light, below);
+`dusk()` sets neither. The site's host sets `ready-flight` (below).
 
 ### Markup (`markup.js`)
 
@@ -250,8 +250,9 @@ nothing of it. `#dusk.asdawn` hides it on a phone with the name.
 
 The host's own body class: `ready-flight`. The gate is hidden until
 `body.lit.ready-flight` (`door.css`), so the host adds `ready-flight` to the
-body once the flight is ready to begin (the site: `openNow` in
-`assets/js/main.js`). Without it the gate never shows.
+body once the flight is ready to begin (the site: `openWays` in
+`assets/js/main.js`). Only the site's host needs it: Orbit shows its gate on
+`body.lit` (its own `flight.css`).
 
 ### What the folder touches in the host page
 

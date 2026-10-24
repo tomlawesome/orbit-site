@@ -295,11 +295,16 @@ export const COMPILE_WAIT = 5000;
     @returns {Promise<boolean>} */
 export const compiledWithin = (gl, par, list, every = 40, stop = () => false) => new Promise((resolve) => {
   if (!par) { resolve(true); return; }
-  const t0 = performance.now();
+  /* (only the time the page is seen counts: a hidden tab's compiles and timers may be held back by the browser, so a
+     phone tab put in the background mid-compile does not lose its world for the visit) */
+  let seen = 0, last = performance.now();
   const poll = () => {
+    const now = performance.now();
+    if (typeof document === "undefined" || !document.hidden) seen += now - last;
+    last = now;
     if (gl.isContextLost() || stop()) resolve(false);
     else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) resolve(true);
-    else if (performance.now() - t0 > COMPILE_WAIT) resolve(false);
+    else if (seen > COMPILE_WAIT) resolve(false);
     else setTimeout(poll, every);
   };
   poll();

@@ -147,7 +147,7 @@ export function probe() {
   if (!g) { got = FAILED; return (memo = Promise.resolve(FAILED)); }
   return (memo = (async () => {
     let /** @type {Probe | null} */ r = null, how = "fresh";
-    try { const s = JSON.parse(localStorage.getItem(KEY()) || "null"); if (s?.r?.ok && Date.now() - s.t < WEEK) { r = s.r; how = "stored"; } } catch { /* probed afresh */ }
+    try { const s = JSON.parse(localStorage.getItem(KEY()) || "null"); if (s?.r?.ok && typeof s.t === "number" && s.t <= Date.now() && Date.now() - s.t < WEEK) { r = s.r; how = "stored"; } } catch { /* probed afresh */ }
     if (!r) {
       r = await measure(g.gl).catch(() => FAILED);
       if (r.ok) try { localStorage.setItem(KEY(), JSON.stringify({ t: Date.now(), r })); } catch { /* this visit only */ }
