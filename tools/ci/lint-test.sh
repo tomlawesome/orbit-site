@@ -53,6 +53,9 @@
 # publish_docs's before_script or after_script (its own, extended or from default:); services: on publish_docs or
 # default:, or a changed publish_docs image; and import_docs expire_in of 999 hours or 2 days (24 hours and
 # 30 minutes pass).
+# And #92 (nothing on the site loads from a third party): the pages' policy naming an outside host for scripts, styles or fonts
+# (cases c9-c14), and an outside address in a page's tags or styles, site.css or a site script (the site_case/site_ok cases,
+# each refusal paired with a local equivalent and with a link to another site, which pass).
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -1594,14 +1597,15 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   const hs = inline(h).map(hash);
   if (bad && E.NOHASH) hs.shift();
   if (bad && E.STALE) hs.push("'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='");
-  const src = ["'self'", ...hs, "https://cdn.jsdelivr.net"];
+  const src = ["'self'", ...hs];
   if (bad && E.UNSAFE) src.splice(1, 0, `'${E.UNSAFE}'`);
-  const parts = [
+  let parts = [
     "default-src 'self'", "script-src " + src.join(" "),
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'", "font-src 'self'",
     "img-src 'self' data: blob:", "connect-src 'self'", "worker-src 'self'",
     ...(bad && E.NOOBJECT ? [] : ["object-src 'none'"]), ...(bad && E.NOBASE ? [] : ["base-uri 'self'"]), "form-action 'self'",
   ];
+  if (bad && E.OUTSIDE) parts = parts.map((x) => x.startsWith(E.OUTSIDE + " ") ? x + " " + E.OUTSIDE_VAL : x);
   const meta = `  <meta http-equiv="Content-Security-Policy" content="${parts.join("; ")}" />\n`;
   if (bad && E.DROP_LINK) h = h.replace(/[ \t]*<link rel="stylesheet"[^>]*>\n/, "");
   if (bad && E.EDIT_SCRIPT) h = h.replace("catch(e){}", "catch(e){/* edited */}");
@@ -1684,6 +1688,88 @@ csp_fail "a policy with no base-uri 'self'" install.html NOBASE=1
 
 # Case (c7): an inline event handler attribute.
 csp_fail "an inline event handler attribute" install.html HANDLER=1
+
+# Cases (c9)-(c14), #92 (owner, 2026-10-27: nothing on the site loads from a third party): the policy lists 'self' only
+# for scripts, styles and fonts. csp_set's correct pages (c0) are the pair: they carry exactly 'self' (and the hashes)
+# and pass. An outside host, a scheme-only source or a wildcard in any of the three directives fails and names the page.
+csp_fail "script-src naming an outside host" index.html OUTSIDE=script-src OUTSIDE_VAL=https://cdn.example.invalid
+csp_fail "script-src naming a bare outside host" 404.html OUTSIDE=script-src OUTSIDE_VAL=cdn.example.invalid
+csp_fail "style-src naming an outside host" 404.html OUTSIDE=style-src OUTSIDE_VAL=https://fonts.example.invalid
+csp_fail "style-src allowing every https: source" install.html OUTSIDE=style-src OUTSIDE_VAL=https:
+csp_fail "font-src naming an outside host" install.html OUTSIDE=font-src OUTSIDE_VAL=https://fonts.example.invalid
+csp_fail "font-src with a wildcard" index.html OUTSIDE=font-src OUTSIDE_VAL='*'
+
+# Cases for #92 (site loads): the lint refuses an outside address in anything the pages load: a page's own tags, a style in
+# a page, the site's stylesheet and its scripts. Each refusal is paired with the local equivalent, which passes, and
+# with a link to another site, which passes (a link is not a load). The whole lint runs, because the section that holds
+# this rule is the implementation's to name; the committed tree passes it (c8), so a refusal here is the planted line's.
+# site_case <label> <file> <line> <named>: <line> goes before </body> in a page, or at the end of any other file; the
+# lint must exit 1 naming <named>. site_ok <label> <file> <line>: the same line must leave the lint passing.
+plant() {
+  case "$2" in
+    *.html) node -e 'const fs=require("fs");const [f,l]=process.argv.slice(1);const t=fs.readFileSync(f,"utf8");const i=t.lastIndexOf("</body>");if(i<0)process.exit(1);fs.writeFileSync(f,t.slice(0,i)+l+"\n"+t.slice(i))' "$2" "$3" ;;
+    *) printf '%s\n' "$3" >> "$2" ;;
+  esac
+}
+site_case() {
+  plant "$1" "$2" "$3"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $4)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+site_ok() {
+  plant "$1" "$2" "$3"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# the pages' tags
+site_case "an outside stylesheet link in index.html" index.html '<link rel="stylesheet" href="https://fonts.example.invalid/css?family=Z" />' "index.html"
+site_case "an outside stylesheet link in 404.html" 404.html '<link rel="stylesheet" href="https://fonts.example.invalid/css?family=Z" />' "404.html"
+site_case "an outside script in install.html" install.html '<script src="https://cdn.example.invalid/x.js"></script>' "install.html"
+site_case "a protocol-relative script in index.html" index.html '<script src="//cdn.example.invalid/x.js"></script>' "index.html"
+site_case "an outside font preload in index.html" index.html '<link rel="preload" as="font" href="https://fonts.example.invalid/z.woff2" crossorigin />' "index.html"
+site_case "an outside preconnect in 404.html" 404.html '<link rel="preconnect" href="https://fonts.example.invalid" />' "404.html"
+site_case "an outside picture in index.html" index.html '<img src="https://img.example.invalid/x.png" alt="" />' "index.html"
+site_case "an outside frame in install.html" install.html '<iframe src="https://frame.example.invalid/"></iframe>' "install.html"
+site_case "an outside @font-face in a style in 404.html" 404.html '<style>@font-face{font-family:Z;src:url(https://fonts.example.invalid/z.woff2) format("woff2")}</style>' "404.html"
+site_case "an outside @import in a style in index.html" index.html '<style>@import url("https://fonts.example.invalid/f.css");</style>' "index.html"
+site_ok "a local stylesheet link in index.html" index.html '<link rel="stylesheet" href="assets/site.css" />'
+site_ok "a local script in 404.html" 404.html '<script src="assets/js/main.js"></script>'
+site_ok "a local @font-face in a style in 404.html" 404.html '<style>@font-face{font-family:Z;src:url(assets/img/mark.svg)}</style>'
+site_ok "a link to another site in index.html" index.html '<a href="https://example.invalid/credit" target="_blank" rel="noopener">credit</a>'
+site_ok "an outside address as text in index.html" index.html '<p>curl -fsSL https://example.invalid/get.sh | sh</p>'
+# the site's stylesheet
+site_case "an outside @import in site.css" assets/site.css '@import url("https://fonts.example.invalid/f.css");' "assets/site.css"
+site_case "an outside @font-face in site.css" assets/site.css '@font-face{font-family:Z;src:url(https://fonts.example.invalid/z.woff2) format("woff2")}' "assets/site.css"
+site_case "a quoted protocol-relative url() in site.css" assets/site.css '.x{background:url("//cdn.example.invalid/x.png")}' "assets/site.css"
+site_ok "a local url() in site.css" assets/site.css '.y{background:url(img/mark.svg)}'
+site_ok "a local @font-face in site.css" assets/site.css '@font-face{font-family:Z;src:url("fonts/z.woff2") format("woff2")}'
+site_ok "a data: url() in site.css" assets/site.css '.z{background:url(data:image/svg+xml,%3Csvg/%3E)}'
+# the site's scripts (a script that loads something names the address as the thing it loads)
+site_case "an outside script made by a site script" assets/js/sky.js 'export const OUT5 = () => { const s = document.createElement("script"); s.src = "https://cdn.example.invalid/m.js"; document.head.appendChild(s); };' "assets/js/sky.js"
+site_case "an outside import() in a site script" assets/js/sky.js 'export const OUT6 = () => import("https://cdn.example.invalid/m.js");' "assets/js/sky.js"
+site_case "an outside fetch in a site script" assets/js/sky.js 'export const OUT7 = () => fetch("https://api.example.invalid/x");' "assets/js/sky.js"
+site_case "a protocol-relative picture in a site script" assets/js/sky.js 'export const OUT8 = () => { new Image().src = "//cdn.example.invalid/p.png"; };' "assets/js/sky.js"
+site_case "an outside stylesheet made by a site script" assets/js/sky.js 'export const OUT9 = () => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://fonts.example.invalid/f.css"; document.head.appendChild(l); };' "assets/js/sky.js"
+site_ok "a local script made by a site script" assets/js/sky.js 'export const IN1 = () => { const s = document.createElement("script"); s.src = "assets/js/data.js"; document.head.appendChild(s); };'
+site_ok "a local fetch in a site script" assets/js/sky.js 'export const IN2 = () => fetch("assets/docs/index.json");'
+site_ok "a link to another site made by a site script" assets/js/sky.js 'export const IN3 = () => { const a = document.createElement("a"); a.href = "https://example.invalid/credit"; return a; };'
+site_ok "the SVG namespace in a site script" assets/js/sky.js 'export const IN4 = "http://www.w3.org/2000/svg";'
 
 # Cases n1-n3: section "no real names, host logins or private addresses" (#56).
 # The private address is built from parts, so this file holds no literal one
