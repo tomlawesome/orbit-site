@@ -27,6 +27,7 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 ## site-browser B7, Chromium: the install page's second dive is still flat
 
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
+- 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
 
 ## flight-waits W3: a later warm() does not prove the world
 
