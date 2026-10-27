@@ -334,7 +334,7 @@ About 2,300 new lines in all, against the 15,000 ceiling.
 
 ## Questions for the owner
 
-*Answered 2026-10-27 (owner): 16a, 17a, 18a. 19 and 20 open.*
+*Answered 2026-10-27 (owner): 16a, 17a, 18a, 19a, 20a.*
 
 **16** How the live jobs decide to start.
 16a (recommended) Always start and select inside the job: one map, the fail-safe in code, static YAML; a docs-only
