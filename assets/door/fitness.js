@@ -19,6 +19,7 @@
  * median: one hitch is not a slow machine. It stops as soon as most of the timed frames have agreed.
  */
 import { flag } from "./settings.js";
+import { page } from "./page.js";
 
 /** the most one frame may take, in milliseconds */
 export const FIT_MS = 30;
@@ -60,7 +61,7 @@ export function frameCost(gl, draw, { now = () => performance.now(), warm = WARM
 
 /** The one line that says whether the flight's world is drawn, and why. @param {string} verdict */
 export function sayVerdict(verdict) {
-  try { console.info(`orbit · flight world: ${verdict}`); } catch { /* fine */ }
+  try { page.verdict(`orbit · flight world: ${verdict}`); } catch { /* fine */ }
 }
 
 const SOFTWARE = /llvmpipe|softpipe|swiftshader|microsoft basic render/i;
@@ -90,11 +91,13 @@ function rendererOf(gl) {
  */
 export function gpu() {
   if (verdict !== undefined) return verdict;
-  if (typeof document === "undefined") return null;
+  const gate = page.gate();
+  if (!gate) return null;
   verdict = null;
-  const force = flag("gpu") === "force";
+  /* (a gate that is not checked: the worker's canvas, the page's gate having judged already) */
+  const force = flag("gpu") === "force" || !gate.check;
   try {
-    const canvas = document.createElement("canvas");
+    const { canvas } = gate;
     const gl = /** @type {WebGL2RenderingContext | null} */ (canvas.getContext("webgl2", {
       antialias: false, alpha: false, depth: false, powerPreference: "high-performance",
       ...(force ? {} : { failIfMajorPerformanceCaveat: true }),

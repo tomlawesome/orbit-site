@@ -122,7 +122,11 @@ removes the resize listeners.
 
 `canvas` is `#warp`, `name` is `#launchname`, the glyphs are functions
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
-destroy, later, reduced, warm, warmDocs, compiled }`.
+destroy, later, reduced, warm, warmDocs, compiled }`. `journey()` takes no
+context of `canvas`: its 2D context is taken at the first `warm`, `warmDocs`,
+`fly` or `descend` (ADR-0004 6a.4: a canvas with a context can never be handed
+to a worker), and `destroy()` before any of them takes none. `compiled()`
+before any of them resolves at once.
 
 - `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
@@ -357,6 +361,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
 | `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
+| `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2) |
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |
 | `markup.js`, `door.css` | The markup and the stylesheet |
