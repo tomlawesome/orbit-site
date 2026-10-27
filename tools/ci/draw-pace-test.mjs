@@ -12,8 +12,8 @@
  *   O  three chores, the queue never opened: under "none" they run; control: they wait, and run once opened
  *   T  typingWait 600, a key pressed, a chore queued: under "none" it runs within 100 ms; control: it waits past
  *      100 ms, and runs later
- *   M  under "none", a chore with the measure's 200 ms rest, then another: the second starts 200 ms or more after the
- *      first (control: R's rest-20 chores run within one rest)
+ *   M  under "none", a measure (a chore tagged "measure", with the measures' 200 ms rest), then another: the second
+ *      starts 200 ms or more after the first (control: R's rest-20 chores run within one rest)
  *   U  uploadBanded(gl, 4096x4096 bitmap): under "none" one texImage2D of the full height and nothing else of the
  *      picture's; control: the picture goes on in bands (more than one upload call)
  *
@@ -92,7 +92,7 @@ async function measure() {
   const { clock, door, frames } = await setup({ none: true });
   const ran = [];
   const note = noter(clock, frames, ran);
-  door.chore(note("measure"), MEASURE_REST, "");
+  door.chore(note("measure"), MEASURE_REST, "measure");
   door.chore(note("after"), REST, "");
   door.openChores();
   await clock.advance(5000);
