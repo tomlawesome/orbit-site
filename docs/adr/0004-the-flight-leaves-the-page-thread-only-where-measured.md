@@ -548,7 +548,8 @@ Browser (Playwright, the shape of `tools/ci/pin-test.mjs` and `csp-test.mjs`):
 
 Each batch is a pipeline; each is reviewed inline at the point it is written; tests first, from this section, by
 an agent that has not seen the code (the house order of work). Line counts are estimates of new and changed lines,
-tests included; the unaudited count stood at 3,337 on 2026-10-27.
+tests included. The audit came first (owner, question 5 below): the sixth audit (#90) read everything to a621f59 and
+found no High or Medium, so the count starts again from there.
 
 1. **The seam** (~600 lines): `page.js` and every page touch of the moved modules routed through it (no behaviour
    change on the page path: the existing suites prove it); `journey.js` makes its engine at first need;
@@ -574,6 +575,14 @@ now hold only the install world's); the time at which each way in opens. The eye
 gate's flight, both ways. Edge with `?draw=worker` once, for P1's by-hand half.
 
 ### Questions for the owner (#85)
+
+*Answered 2026-10-27 (owner): 3a, with a wider rule: nothing on the site loads from a third party at all, so every
+font and script is hosted on the site itself (its own issue, which also takes the other Google fonts and the diagram
+library off outside hosts); 4a; 5a in effect (the owner ran the audit first, #90); 6a: two contexts, since MDN's
+WebGL best practices say to lose a context only "when you're definitely done with" it, and the site's own worlds
+still draw on the page's. Once they move into the worker too (4a's follow-up), the page is done with it and the
+follow-up loses it.*
+
 
 **3** The font the worker draws names with (6a.2): the page's `'JetBrains Mono'` is Google's and cannot be handed
   to a worker, so either the site hosts the file or the names are not pixel-identical.
