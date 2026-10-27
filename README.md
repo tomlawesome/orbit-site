@@ -43,6 +43,9 @@ Words used in the table:
 | `404.html` | Not found |
 | `assets/door/` | The shared door (ADR-0001): the Earth door, the flight, their engine, timeline, stylesheet, markup and imagery, in one self-contained folder Orbit pulls in unchanged. `assets/door/README.md` is its interface. Also licensed AGPL-3.0 (`LICENSE`, section 3) |
 | `assets/site.css` | The site's own styles: the five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
+| `assets/fonts/` | The three typefaces, served from the site (#92): Space Grotesk, Inter and JetBrains Mono, each its foundry's latest release trimmed by `tools/fonts.mjs` to one small variable woff2 (latin, the weights the pages use); `fonts.css` holds their `@font-face` rules, each naming its source release (`index.html` and `404.html` link it), and `OFL-*.txt` each family's licence. `jetbrains-mono-latin.woff2` is also the file the door's worker writes with (ADR-0004 6a, `settings.fonts`) |
+| `tools/fonts.mjs` | Writes `assets/fonts/` (`npm ci --prefix tools && node tools/fonts.mjs`; needs the network and `unzip`): downloads each family's release, checks its sha256, trims it the same way every time with HarfBuzz's subsetter (`harfbuzzjs`) and packs it with Google's woff2 encoder (`wawoff2`). Its table of releases is the fonts' one pin; Renovate watches the tags |
+| `assets/vendor/` | Mermaid's release file (`mermaid-<version>.min.js`, the npm package's `dist/mermaid.min.js`, unchanged) and its licence. `assets/js/pads.js` loads it when a docs page has a diagram; its path there (`MERMAID`) is the version's one pin, and the command to add a new one is beside it |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
 | `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today |
 | `assets/js/sky.js` | The home sky's star tiles, grain, packs |
@@ -112,10 +115,22 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
 
 - NASA imagery (Black Marble, Blue Marble, Cassini, LRO): public domain,
   credited in the layout table above and in `LICENSE`.
+- The typefaces in `assets/fonts/` (#92), each under the SIL Open Font License 1.1 (its `OFL-*.txt` beside it, from
+  the same release): Space Grotesk 2.0.0 (the Space Grotesk Project Authors), Inter 4.1 (the Inter Project Authors)
+  and JetBrains Mono 2.304 (the JetBrains Mono Project Authors), each from its project's GitHub release, trimmed by
+  `tools/fonts.mjs` (a modified version, as the licence allows; none of the three reserves its name). The releases,
+  their sha256 and how they are trimmed are in that script alone; `fonts.css` names each face's release.
+- Mermaid 12.2.0 (MIT, Knut Sveidqvist and contributors), `assets/vendor/`, from the npm registry's tarball, checked
+  against its published integrity. Its one file carries other projects' code under their own terms: mostly MIT and
+  ISC (d3, cytoscape, KaTeX, lodash, dagre and others), BSD-3-Clause (parts of d3, d3-sankey), Apache-2.0
+  (chevrotain), DOMPurify (Apache-2.0 or MPL-2.0), robust-predicates (Unlicense) and elkjs (Eclipse Public License
+  2.0; its source: https://github.com/kieler/elkjs and the Eclipse ELK project). Pinned by its path in
+  `assets/js/pads.js` alone; Renovate watches it (`renovate.json`).
 - `marked` (MIT), `sharp` (Apache-2.0; the glow tool and its test only), `js-yaml`
   (MIT; the lint reads `.gitlab-ci.yml` with it), `typescript` (Apache-2.0; the lint's door
-  type check only, #30) and `playwright` (Apache-2.0; CI only).
-  None ships to a visitor. `marked`, `sharp`, `js-yaml` and `typescript` are pinned in
+  type check only, #30), `harfbuzzjs` (MIT) and `wawoff2` (MIT; `tools/fonts.mjs` only, by hand, #92) and
+  `playwright` (Apache-2.0; CI only).
+  None ships to a visitor. `marked`, `sharp`, `js-yaml`, `typescript`, `harfbuzzjs` and `wawoff2` are pinned in
   `tools/package.json` and nowhere else; `playwright` by `PLAYWRIGHT_VERSION`
   and `PLAYWRIGHT_IMAGE` in `.gitlab-ci.yml`.
 
