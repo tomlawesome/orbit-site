@@ -10,7 +10,7 @@ fail=0
 # `sh tools/ci/lint.sh ci-split names` runs only those, in this order, so a test
 # that plants one fault pays for one section (#65); `--list` names them. An
 # unknown name runs nothing and exits 2, so a typo cannot pass.
-sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp names stray npm-pins"
+sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins"
 if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
 for s in "$@"; do
   case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
@@ -257,10 +257,13 @@ if on csp; then
 echo "== the pages carry a Content-Security-Policy that covers what they run"
 # GitHub Pages sends no headers, so index.html, 404.html and install.html each carry the policy as a
 # <meta http-equiv="Content-Security-Policy">. A meta covers only what follows it, so it comes first in <head>, before
-# any script, link or style. Scripts run only from the site, jsDelivr (the pinned Mermaid) and the page's own inline
-# scripts, each allowed by its sha256 in script-src: no 'unsafe-inline' or 'unsafe-eval' for scripts, object-src 'none',
-# base-uri 'self', and no inline event handler (it would need 'unsafe-inline'). An inline script edited without its
-# hash changed is blocked in every visitor's browser, so a missing or stale hash prints the value to paste (audit #12).
+# any script, link or style. Scripts run only from the site and the page's own inline scripts, each allowed by its
+# sha256 in script-src: no 'unsafe-inline' or 'unsafe-eval' for scripts, object-src 'none', base-uri 'self', and no
+# inline event handler (it would need 'unsafe-inline'). An inline script edited without its hash changed is blocked in
+# every visitor's browser, so a missing or stale hash prints the value to paste (audit #12). Nothing on the site loads
+# from a third party (#92, owner 2026-10-27): script-src, style-src and font-src are each named and list 'self' and
+# nothing else from outside the page (no host, no scheme such as https:, no wildcard); hashes for scripts and styles,
+# and 'unsafe-inline' for styles, stay allowed.
 node - <<'CSP_EOF' || fail=1
 const fs = require("fs");
 const crypto = require("crypto");
@@ -288,6 +291,14 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   }
   if (!(dir["object-src"] || []).includes("\x27none\x27")) bad(`${page}: the policy lacks object-src \x27none\x27`);
   if (!(dir["base-uri"] || []).includes("\x27self\x27")) bad(`${page}: the policy lacks base-uri \x27self\x27`);
+  for (const name of ["script-src", "style-src", "font-src"]) {
+    const toks = dir[name];
+    if (!toks) { bad(`${page}: the policy has no ${name} (it would fall back to default-src); name it, with \x27self\x27`); continue; }
+    if (!toks.includes("\x27self\x27")) bad(`${page}: ${name} does not list \x27self\x27`);
+    const extra = toks.filter((t) => t !== "\x27self\x27" && !(name !== "font-src" && /^\x27sha(256|384|512)-[A-Za-z0-9+\/=]+\x27$/.test(t))
+      && !(name === "style-src" && t === "\x27unsafe-inline\x27") && !(name === "script-src" && /^\x27unsafe-(inline|eval)\x27$/.test(t)));
+    if (extra.length) bad(`${page}: ${name} allows ${extra.join(" ")}; nothing on the site loads from a third party (#92), so list \x27self\x27 only and host the file here`);
+  }
   const inline = scripts.filter((s) => !s.src).map((s) => hash(s.body));
   for (const h of inline) if (!src.includes(h)) bad(`${page}: an inline script has no matching hash in script-src (it would be blocked); add ${h}`);
   for (const h of src.filter((t) => /^\x27sha(256|384|512)-/.test(t))) if (!inline.includes(h)) bad(`${page}: script-src has ${h}, which matches no inline script (an edited script keeps its old hash?); the inline scripts hash to ${inline.join(" ") || "nothing"}`);
@@ -301,6 +312,83 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   }
 }
 CSP_EOF
+fi
+
+if on loads; then
+echo "== nothing the site loads comes from a third party (#92)"
+# Owner, 2026-10-27: every font, script, style and picture is the site's own; a link to another site is fine, loading
+# from one is not. The policy (csp, above) stops a visitor's browser; this names the line. Read: the pages (tests/'s
+# too), their <style>s, style attributes and inline scripts; every stylesheet under assets/; the site's scripts (sw.js,
+# assets/js, tests/). An outside address is http://, https:// or //host. A load is a tag that fetches (<link>, but for
+# the relations that only name a page, such as canonical; <script src>, <img>, <source>, <iframe>, <embed>, <object>,
+# <video>, <audio>, <track>, <input src>, <form action>), also when a script writes the tag as text; a url() or an
+# @import; and, in a script, an address given to import, fetch(), new Worker() and the like, set as an element's src,
+# srcset or poster, or as the href of an element made with createElement("link") or given a rel. Anything else is a
+# link or text (<a href>, a.href, location, a credit, the install command) and passes. assets/door/ also has its own,
+# stricter rule (the door section). And the pinned Mermaid (assets/js/pads.js: MERMAID) is the one file in assets/vendor/.
+node - <<'LOADS_EOF' || fail=1
+const fs = require("fs"), path = require("path");
+const { execFileSync } = require("child_process");
+const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
+const say = (f, what, a) => bad(`${f}: loads ${what} from another site, ${a.trim().slice(0, 90)}; nothing on the site loads from a third party (#92): host it here (a link to another site is fine)`);
+const OUT = /^\s*(?:https?:)?\/\//i;
+const list = (d, re) => !fs.existsSync(d) ? [] : fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)
+  .flatMap((e) => e.isDirectory() ? list(path.posix.join(d, e.name), re) : re.test(e.name) ? [path.posix.join(d, e.name)] : []);
+const blank = (t, re) => t.replace(re, (c) => c.replace(/[^\n]/g, " "));
+/* the relations of a <link> that name a page rather than fetch something for this one */
+const NAMES = new Set(["canonical", "alternate", "author", "me", "license", "help", "next", "prev", "bookmark", "external", "nofollow", "noopener", "noreferrer"]);
+const tags = (f, t) => {
+  for (const m of t.matchAll(/<(link|script|img|source|iframe|frame|embed|object|video|audio|track|input|form)\b([^>]*)>/gi)) {
+    const tag = m[1].toLowerCase(), attrs = m[2];
+    const attr = (n) => { const a = attrs.match(new RegExp(`(?:^|\\s)${n}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i")); return a ? a[1] ?? a[2] ?? a[3] : ""; };
+    const check = (n, what) => { const v = attr(n); if (OUT.test(v)) say(f, what, v); };
+    if (tag === "link") {
+      const rel = attr("rel").toLowerCase().split(/\s+/).filter(Boolean);
+      if (!rel.length || rel.some((r) => !NAMES.has(r))) check("href", `<link rel="${rel.join(" ")}">`);
+    } else if (tag === "form") check("action", "<form action>");
+    else if (tag === "object") check("data", "<object data>");
+    else {
+      check("src", `<${tag} src>`); check("poster", `<${tag} poster>`);
+      for (const c of attr("srcset").split(",")) { const u = c.trim().split(/\s+/)[0] || ""; if (OUT.test(u)) say(f, `<${tag} srcset>`, u); }
+    }
+  }
+};
+/* url() and @import; in a script, url( only as CSS writes it (lower case, not a call such as new URL() or x.url()) */
+const css = (f, t, script) => {
+  for (const m of t.matchAll(script ? /(?<![\w$.])url\(\s*(["']?)([^"')]*)\1\s*\)/g : /url\(\s*(["']?)([^"')]*)\1\s*\)/gi)) if (OUT.test(m[2])) say(f, "url()", m[2]);
+  for (const m of t.matchAll(/@import\s+(["'])([^"']*)\1/gi)) if (OUT.test(m[2])) say(f, "@import", m[2]);
+};
+/* a script handing an address to something that fetches it */
+const Q = "([\"'`])\\s*((?:https?:)?\\/\\/[^\"'`\\s]*)";
+const code = (f, t) => {
+  for (const m of t.matchAll(new RegExp(`\\b(import|from|fetch|importScripts|sendBeacon|EventSource|WebSocket|Worker|SharedWorker|register)\\s*\\(?\\s*${Q}`, "g"))) say(f, `${m[1]}`, m[3]);
+  for (const m of t.matchAll(new RegExp(`\\.\\s*(src|srcset|poster)\\s*=\\s*${Q}`, "g"))) say(f, `.${m[1]} =`, m[3]);
+  for (const m of t.matchAll(new RegExp(`\\.setAttribute\\(\\s*["'](src|srcset|poster)["']\\s*,\\s*${Q}`, "g"))) say(f, `setAttribute("${m[1]}")`, m[3]);
+  /* href: a load only on a <link>, known by how the element was made or by its rel; on anything else it is a link */
+  for (const m of t.matchAll(new RegExp(`([\\w$]+)\\s*\\.\\s*(?:href\\s*=|setAttribute\\(\\s*["']href["']\\s*,)\\s*${Q}`, "g"))) {
+    const v = m[1].replace(/\$/g, "\\$");
+    if (new RegExp(`(?<![\\w$])${v}\\s*=\\s*document\\s*\\.\\s*createElement\\(\\s*["'\`]link["'\`]`).test(t) || new RegExp(`(?<![\\w$.])${v}\\s*\\.\\s*(rel|as)\\s*=`).test(t)) say(f, "a <link>'s href", m[3]);
+  }
+};
+for (const f of ["index.html", "404.html", "install.html", ...list("tests", /\.html$/)]) {
+  const t = blank(fs.readFileSync(f, "utf8"), /<!--[\s\S]*?-->/g);
+  tags(f, t);
+  css(f, [...t.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>|\sstyle\s*=\s*"([^"]*)"|\sstyle\s*=\s*'([^']*)'/gi)].map((m) => m[1] ?? m[2] ?? m[3] ?? "").join("\n"), false);
+  for (const m of t.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script\s*>/gi)) code(f, m[1]);
+}
+for (const f of list("assets", /\.css$/).filter((f) => !f.startsWith("assets/docs/"))) css(f, blank(fs.readFileSync(f, "utf8"), /\/\*[\s\S]*?\*\//g), false);
+for (const f of ["sw.js", ...list("assets/js", /\.js$/), ...list("tests", /\.js$/)]) {
+  const t = fs.readFileSync(f, "utf8");
+  tags(f, t); css(f, t, true); code(f, t);
+}
+const pin = /const MERMAID = \{ src: "([^"]+)"/.exec(fs.readFileSync("assets/js/pads.js", "utf8"));
+const vendored = execFileSync("git", ["ls-files", "-z", "--", "assets/vendor"]).toString("utf8").split("\0").filter((f) => /\/mermaid-[^/]*\.js$/.test(f));
+if (!pin) bad("assets/js/pads.js: no const MERMAID = { src: \"...\" } found");
+else {
+  if (!vendored.includes(pin[1])) bad(`assets/js/pads.js: MERMAID names ${pin[1]}, which is not in the repository; add it (the command is beside MERMAID)`);
+  for (const f of vendored) if (f !== pin[1]) bad(`${f}: not the Mermaid assets/js/pads.js pins (${pin[1]}); remove it`);
+}
+LOADS_EOF
 fi
 
 if on names; then

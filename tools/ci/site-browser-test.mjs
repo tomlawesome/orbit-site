@@ -31,8 +31,8 @@
  *   B9  a docs page with a heading titled "Mermaid" (so id="mermaid", which the browser also exposes as the page-wide
  *       name `mermaid`) before its diagram still draws the diagram as an <svg> within 30 s, and does not fall back to the
  *       diagram's source shown as code (pre.code[data-lang="mermaid"]); the heading is on the page and is the element
- *       with that id. Control: the same page without that heading draws the <svg> (the library loads from
- *       cdn.jsdelivr.net, so this case needs the network).
+ *       with that id. Control: the same page without that heading draws the <svg> (the library is the site's own
+ *       copy, assets/vendor/, #92).
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
@@ -470,7 +470,7 @@ const mermaidCase = async () => {
       /* control: the same page without that heading draws the diagram */
       const plain = await visit(false);
       want(plain.figures > 0 && plain.svgs > 0 && plain.codeShown === 0,
-        `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged (does the run reach cdn.jsdelivr.net?)`);
+        `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged`);
       const clash = await visit(true);
       want(clash.headingInPad && clash.headingShown && clash.headingTag === "H2" && clash.headingText === "Mermaid",
         `control: the "Mermaid" heading was not shown as the element with id "mermaid" (in the pad ${clash.headingInPad}, shown ${clash.headingShown}, ${clash.headingTag} ${JSON.stringify(clash.headingText)})`);
