@@ -5,7 +5,10 @@
  * named points. The flights themselves (the profiles) are the host's too: the climb and the descent are here (UP,
  * DOWN, DOWN_DAWN), and a host makes its own from them (the site: assets/js/journeys.js).
  */
-import { createFlight, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP, homeProps } from "./engine.js";
+import { createFlight, wireProfile, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP, homeProps } from "./engine.js";
+import { createRemoteFlight } from "./remote-flight.js";
+import { drawnAside } from "./fitness.js";
+import { flag } from "./settings.js";
 import { drawnIn } from "./chores.js";
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
 
@@ -136,12 +139,18 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const clock = journeyClock();
   /* the engine, made at the first need (warm, warmDocs, fly, descend), never at mount: it takes the canvas's 2D
      context, and a canvas with a context can never be handed to a worker (ADR-0004 6a.4). One asked for after
-     destroy() is made destroyed, as the one destroy() would have taken down */
-  /** @type {ReturnType<typeof createFlight> | null} */
+     destroy() is made destroyed, as the one destroy() would have taken down. In a worker where that is chosen
+     (fitness.js: drawnAside), behind the same surface (remote-flight.js), which may replace the canvas if it falls
+     back; no time limit on the worker's answer under draw=worker */
+  /** @type {import("./remote-flight.js").Flight | null} */
   let made = null;
-  let destroyed = false;
+  let destroyed = false, remote = false;
   const need = () => {
-    if (!made) { made = createFlight(canvas, { now: clock.now }); if (destroyed) made.destroy(); }
+    if (!made) {
+      remote = !destroyed && drawnAside();
+      made = remote ? createRemoteFlight(canvas, { now: clock.now, cap: flag("draw") !== "worker" }) : createFlight(canvas, { now: clock.now });
+      if (destroyed) made.destroy();
+    }
     return made;
   };
   const onResize = () => made?.resize();
@@ -216,6 +225,8 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   /** @param {Profile} profile @param {FlyOptions} [options] */
   function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null, at } = {}) {
     need();
+    /* (a flight drawn in a worker is posted by name: one whose curves are neither UP's nor DOWN's throws here, ADR-0004 6a.3) */
+    if (remote) wireProfile(profile);
     dropLeisure();
     cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");

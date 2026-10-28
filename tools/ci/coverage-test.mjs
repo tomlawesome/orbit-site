@@ -527,4 +527,71 @@ await b.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+/* N. Node records from another checkout (#97), written from the issue before the fix. Node names a file by an absolute
+   file:// URL from the machine that ran it; on CI that is file:///builds/ai/orbit-site/assets/..., a path that is not
+   under the local checkout. A record naming a file by an absolute path OUTSIDE the checkout counts for the site file
+   whose path it ends with, after a `/`; a path that ends with no site file is ignored; a path inside the checkout is
+   mapped as before. The same records give the same per-file numbers wherever the checkout is. */
+{
+  const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
+  try {
+    const site = join(dir, "site");
+    mkdirSync(join(site, "assets/js"), { recursive: true });
+    mkdirSync(join(site, "assets/door"), { recursive: true });
+    const PAGE = "assets/door/page.js";
+    const page = "const x = 1;\nfunction f() {\n  return 2;\n}\nfunction g() {\n  return 3;\n}\n";
+    writeFileSync(join(site, "sw.js"), "self.x = 1;\n");
+    writeFileSync(join(site, "assets/js/a.js"), "const a = 1;\n");
+    writeFileSync(join(site, PAGE), page);
+    /* Node ran the top level and g, not f */
+    const pf = page.indexOf("function f"), pg = page.indexOf("function g");
+    const functions = [{ ranges: [{ startOffset: 0, endOffset: page.length, count: 1 }] }, { ranges: [{ startOffset: pf, endOffset: pg, count: 0 }] }];
+    /* the measurement of one Node record naming `url`, in its own run directory */
+    let n = 0;
+    const measureUrl = (urls) => {
+      const cov = join(dir, "cov-" + n++);
+      mkdirSync(join(cov, "node"), { recursive: true });
+      writeFileSync(join(cov, "node", "coverage-1.json"), JSON.stringify({ result: urls.map((url) => ({ url, functions })) }));
+      return measure([cov], site).files;
+    };
+    const numbers = (files, f) => ({ covered: files[f].covered, total: files[f].total, percent: files[f].percent });
+    const none = (files) => Object.entries(files).filter(([, m]) => m.covered !== 0).map(([f]) => f);
+
+    const local = measureUrl(["file://" + join(site, PAGE)]);
+    const want = numbers(local, PAGE);
+    check("N0 (setup) a record under the local base reaches part of the door page: some lines run, some not", want.covered > 0 && want.covered < want.total && want.percent > 0 && want.percent < 100, JSON.stringify(want));
+
+    /* (a) a foreign absolute root gives the local numbers */
+    const ciRoot = measureUrl(["file:///builds/ai/orbit-site/" + PAGE]);
+    check("N1 (a) a Node record under file:///builds/ai/orbit-site/ counts for the site file it ends with, as the local record does", same(numbers(ciRoot, PAGE), want), `${JSON.stringify(numbers(ciRoot, PAGE))} (want ${JSON.stringify(want)})`);
+    check("N1 ... and the whole report is the same as the local one", same(ciRoot, local), same(ciRoot, local) ? "same" : "reports differ");
+
+    /* (b) a second, different foreign root gives the same numbers */
+    const other = measureUrl(["file:///elsewhere/x/" + PAGE]);
+    check("N2 (b) the same record under a different foreign root gives the same numbers", same(numbers(other, PAGE), want) && same(other, ciRoot), `${JSON.stringify(numbers(other, PAGE))} (want ${JSON.stringify(want)})`);
+
+    /* (c) a foreign path ending in a file that is not a site file counts for nothing */
+    const test = measureUrl(["file:///builds/x/tools/ci/foo-test.mjs"]);
+    const modules = measureUrl(["file:///builds/x/node_modules/a.js"]);
+    const deep = measureUrl(["file:///builds/x/assets/js/sub/dir/a.js"]);
+    check("N3 (c) a foreign test file counts for no site file", none(test).length === 0, `lines run in ${JSON.stringify(none(test))} (want none)`);
+    check("N3 ... nor does a foreign node_modules file", none(modules).length === 0, `lines run in ${JSON.stringify(none(modules))} (want none)`);
+    check("N3 ... nor a foreign file deeper than a site file's directory (assets/js/sub/dir/a.js is not assets/js/a.js)", none(deep).length === 0, `lines run in ${JSON.stringify(none(deep))} (want none)`);
+
+    /* (d) the match follows a `/`: a last part that matches only part of a file's name does not count */
+    const notassets = measureUrl(["file:///x/notassets/door/page.js"]);
+    check("N4 (d) /x/notassets/door/page.js does not count for assets/door/page.js", none(notassets).length === 0, `lines run in ${JSON.stringify(none(notassets))} (want none)`);
+    const mysw = measureUrl(["file:///elsewhere/mysw.js"]);
+    check("N4 ... nor /elsewhere/mysw.js for sw.js", mysw["sw.js"].covered === 0, `sw.js covered ${mysw["sw.js"].covered} (want 0)`);
+
+    /* the foreign root is only a prefix: sw.js, at the top of the site, counts under one */
+    const sw = measureUrl(["file:///builds/ai/orbit-site/sw.js"]);
+    check("N5 a foreign record for sw.js, a file at the top of the site, counts for it", sw["sw.js"].covered > 0, `sw.js covered ${sw["sw.js"].covered} (want some)`);
+
+    /* (e) control: the local base still counts, and a foreign record unions with it */
+    check("N6 (e) (control) a record under the local base still counts", local[PAGE].covered > 0 && same(measureUrl(["file://" + join(site, PAGE), "file:///builds/ai/orbit-site/" + PAGE])[PAGE], local[PAGE]), JSON.stringify(numbers(local, PAGE)));
+    check("N6 ... and a path inside the checkout that is not a site file counts for nothing", none(measureUrl(["file://" + join(site, "assets/js/other.js")])).length === 0, "none");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
 process.exit(failed ? 1 : 0);

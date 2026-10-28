@@ -26,7 +26,16 @@ FLAGS.gpu = /[?&]gpu=force\b/.test(location.search) ? "force" : null;
 /* ?fit=skip: the flight world's speed test is not run and the world is taken as fit, so a test on a machine with no GPU
    checks what the flight does, not how fast the machine draws (the owner judges that on real browsers); it grants no GPU */
 FLAGS.fit = /[?&]fit=skip\b/.test(location.search) ? "skip" : null;
-const door = createDoor({ image: (p) => `assets/door/img/${p}`, flags: FLAGS });
+/* ?draw=worker|page: where the flight is drawn, whatever the door's rule says (assets/door/fitness.js: drawnAside; the
+   worker is Firefox's by the rule, ADR-0004 6a.4) */
+FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
+const door = createDoor({
+  image: (p) => `assets/door/img/${p}`, flags: FLAGS,
+  /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
+     it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way */
+  drawWorker: () => new Worker("assets/door/draw-worker.js", { type: "module" }),
+  fonts: [{ family: "JetBrains Mono", weight: 500, url: "assets/fonts/jetbrains-mono-latin.woff2" }],
+});
 /* (the GPU is asked once, by showDoor below, before anything else needs it: assets/door/fitness.js. The capability probe,
    and with it the level, is the live door's alone: only under ?door3d, when the GPU was accepted, on that one context) */
 const $ = (s) => document.querySelector(s);

@@ -48,14 +48,17 @@ import { page } from "./page.js";
 /* the pictures, where the host says they are (settings.js: image), resolved once they are first wanted, never at load */
 /** @type {Pictures | null} */
 let textures = null;
+/* (by the path the host's image() is asked for: the page resolves each for the worker, remote-flight.js) */
+/** @type {Pictures} */
+export const PICTURE_PATHS = {
+  lights: "flight/earth-lights.webp", day: "flight/earth-day.webp", clouds: "flight/earth-clouds.webp",
+  euro: "flight/europe-lights.webp", moon: "flight/moon.webp",
+  /* finer, about where the door looks (NEAR) */
+  lightsN: "dawn/lights-near.webp", cloudsN: "dawn/clouds-near.webp", dayN: "dawn/land-near.webp",
+};
 /** @returns {Pictures} */
 export function pictures() {
-  return textures || (textures = {
-    lights: image("flight/earth-lights.webp"), day: image("flight/earth-day.webp"), clouds: image("flight/earth-clouds.webp"),
-    euro: image("flight/europe-lights.webp"), moon: image("flight/moon.webp"),
-    /* finer, about where the door looks (NEAR) */
-    lightsN: image("dawn/lights-near.webp"), cloudsN: image("dawn/clouds-near.webp"), dayN: image("dawn/land-near.webp"),
-  });
+  return textures || (textures = Object.fromEntries(Object.entries(PICTURE_PATHS).map(([k, p]) => [k, image(p)])));
 }
 /* the live door, while it is tried (?door3d: the host's flag): engine.js waits for the probe under it. Only
    where the door is live here (capability.js: liveDoor, the flag and level 1 or 2) is the strip below drawn */

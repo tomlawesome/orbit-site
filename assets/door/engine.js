@@ -394,6 +394,8 @@ const SHUTTER = 0.042;
    by the fixtures is the same beat every time on every machine */
 const PINNED_STEP = 1000 / 60;
 
+/* the Earth the flight starts on, by the path the host's image() is asked for (remote-flight.js resolves it too) */
+export const EARTH_PICTURE = "dawn/dawn.webp";
 /**
  * One flight, bound to one canvas. Everything the mockup held at module scope
  * lives in this closure instead, so two of these can never tread on each
@@ -429,7 +431,7 @@ export function createFlight(canvas, options = {}) {
   /** @type {HTMLCanvasElement | null} */
   let earthF = null;
   const askEarth = () => {
-    const pic = page.picture(image("dawn/dawn.webp"), (img, w, h) => {
+    const pic = page.picture(image(EARTH_PICTURE), (img, w, h) => {
       if (pic !== earth) return;
       try {
         const c = page.canvas(w, h);
@@ -1293,6 +1295,8 @@ export function createFlight(canvas, options = {}) {
     compiled() { return compiled || Promise.resolve(); },
     /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
     get drawingWorld() { return !!flight && !!voyage; },
+    /** whether the flight last started is drawn with the WebGL world (the worker's `frame` says so: draw-worker.js) */
+    get withWorld() { return !!voyage; },
     /* everything the flight draws, fetched and made ready before it is wanted; resolves when it is. Where the page may
        not use the GPU (fitness.js: gpu()) there is no world, none of its pictures is fetched, and this is the Earth's
        picture alone. `prove: false` (the door's, speculative): the world made and its pictures on the GPU, and no

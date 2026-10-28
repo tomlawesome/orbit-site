@@ -219,6 +219,9 @@ coverage:
   variables:
     GIT_DEPTH: 0 # the selection reads both ends of the change's range
   artifacts:
+    # kept when it fails too: a new file always fails its first run (no floor yet),
+    # and its floor can only come from these records (#96)
+    when: always
     paths: [coverage/]
     expire_in: 7 days
   script:

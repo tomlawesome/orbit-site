@@ -1,16 +1,16 @@
 /*
  * The page, as the flight's modules see it (ADR-0004 6a.2): every touch of the page by engine.js, voyage.js,
  * chores.js and fitness.js goes through here, so the same modules can one day draw in a worker, where there is no
- * page and this answers from what the page last said. On the page (the only place it runs for now) it reads the real
- * thing, exactly as those modules did themselves. Read at call time (`page.size()`), never kept, so what answers can
- * be changed once per thread before anything is drawn.
+ * page and this answers from what the page last said (draw-worker.js: setPage, from the page's `hello`). On the page it
+ * reads the real thing, exactly as those modules did themselves. Read at call time (`page.size()`), never kept, so what
+ * answers can be changed once per thread before anything is drawn.
  */
 /**
  * A picture asked for (picture): settled once it has loaded or failed.
  * @typedef {object} Picture
  * @property {Promise<void>} settled
  * @property {() => boolean} done  it has loaded or failed (an image's `complete`)
- * @property {() => HTMLImageElement | null} drawable  the picture once it has come with pixels, else null
+ * @property {() => CanvasImageSource | null} drawable  the picture once it has come with pixels, else null
  */
 /**
  * The GPU gate's canvas (fitness.js: gpu()) and whether the gate checks it (the caveat flag and the renderer's name).
@@ -37,7 +37,7 @@ export const page = {
   cancelFrame: (id) => cancelAnimationFrame(id),
   /** a picture for drawImage, asked for now; `loaded(img, w, h)` once it has come (not if it fails); null where
       there are no pictures
-      @param {string} url @param {(img: HTMLImageElement, w: number, h: number) => void} loaded @returns {Picture | null} */
+      @param {string} url @param {(img: CanvasImageSource, w: number, h: number) => void} loaded @returns {Picture | null} */
   picture(url, loaded) {
     if (typeof Image === "undefined") return null;
     const img = new Image();
@@ -66,4 +66,10 @@ export const page = {
   note(line) { console.info(line); },
   /** the line that says whether the flight's world is drawn @param {string} line */
   verdict(line) { console.info(line); },
+  /** whether a page shares this thread, so a compile here freezes it (chores.js: compilesAside; in the worker, no) */
+  shared: () => true,
 };
+
+/** what answers for the page on this thread, given once before anything is drawn (the worker's, draw-worker.js)
+    @param {Partial<typeof page>} over */
+export function setPage(over) { Object.assign(page, over); }

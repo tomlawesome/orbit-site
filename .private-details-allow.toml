@@ -1,0 +1,45 @@
+# Paths the shared private-details check (ai/agent-infra#32) allows on
+# purpose, each for the named rules only (#94; owner, 2026-10-28, answer 1a).
+# Never list commits here.
+
+[[allowlists]]
+description = "the development disclosure keeps the tool's name: the site's own line (recorded exception) and the imported docs' disclosures"
+targetRules = ["ai-attribution"]
+paths = [
+  '''^index\.html$''',
+  '''^assets/docs/(index|launcher|readme)\.json$''',
+]
+
+[[allowlists]]
+description = "tool names: the assistant's settings folder, and the no-real-names lint's own pattern list"
+targetRules = ["ai-attribution"]
+paths = [
+  '''^AGENTS\.md$''',
+  '''^tools/ci/no-real-names\.mjs$''',
+]
+
+[[allowlists]]
+description = "the copyright holder's name"
+targetRules = ["private-surname"]
+paths = ['''^LICENSE$''']
+
+[[allowlists]]
+description = "made-up addresses: the demo household's relay and the lint's test fixtures"
+targetRules = ["email-address"]
+paths = [
+  '''^assets/js/data\.js$''',
+  '''^tools/ci/lint-test\.sh$''',
+]
+
+[[allowlists]]
+description = "the no-real-names lint's private address ranges and its tests' version-string probes"
+targetRules = ["ip-address"]
+paths = [
+  '''^tools/ci/no-real-names\.mjs$''',
+  '''^tools/ci/no-real-names-test\.mjs$''',
+]
+
+[[allowlists]]
+description = "the lint's tests probe an AI co-author trailer on purpose"
+targetRules = ["ai-tool-credit"]
+paths = ['''^tools/ci/lint-test\.sh$''']
