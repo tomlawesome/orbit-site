@@ -905,6 +905,14 @@ posted and answering what the case says), the clock virtual where a wait would o
 Browser (Playwright; the live job's Firefox under Xvfb on software GL, the Chromium shard for coverage and pixels),
 joining `tools/ci/test-map.json`'s `worlds` group with the two new files:
 
+- W8 the governor's measure, told apart from the page's (owner, answer 6b-3a: "careful here that the test is actually
+  good and doesn't just default to the old stuff"): on the worker path (the fake answering `up`, the page's frames
+  on the virtual clock), `install.js`'s governor fed by `drew { dt }` alone. (a) the worker slow (`drew.dt` 50 ms a
+  frame) and the page fast (its own frames 16.7 ms): the density drops as it does on the page path for a 50 ms
+  frame. (b) the worker fast (`drew.dt` 16.7 ms) and the page slow (its own frames 50 ms): the density does not drop.
+  (c) no `drew` at all for a second: the density holds where it was, never reads the page's period instead. Each
+  case also run on the page path as the control: (a)'s page frames at 50 ms drop it there. A build that still reads
+  the page's own period fails (a) and (b) both.
 - PW1 Firefox, the gate's own browser: `/?preview&gpu=force&fit=skip&draw=worker`, then a click on the install's
   planet: the console carries `install: drawn in a worker`, `install: shaders compiled in N ms`, `install: ready`,
   `first light: compiles aside`, `gpu: the page's context let go`; `#installpad` gains `lit` and the body
@@ -952,7 +960,7 @@ code (the house order of work). Line counts are estimates of new and changed lin
    W6, W7. The page path is unchanged throughout: the existing suites prove it.
 2. **The worker** (~550 lines): `world-worker.js`, `remote-world.js`, `ensure()`'s choice and `install: drawn …`,
    the fallback, `make` unchored on the worker path, `startDoor`'s refusal, the ring's rule and its line, the
-   context let go, the two coverage floors, `test-map.json`. Tests W2 to W5.
+   context let go, the two coverage floors, `test-map.json`. Tests W2 to W5, W8.
 3. **The proof** (~300 lines): `tests/world.html`, PW1 to PW3, PERFORMANCE.md "The worker, measured" and
    CAPABILITIES.md brought up to date, M4's numbers when the owner has them.
 
@@ -976,6 +984,11 @@ softer picture on a slow frame as it does on the page path (6b.3's expectation).
 window (not private): the ring's laps before the door lights. Edge with `?draw=worker` once, for PW2's by-hand half.
 
 ### Questions for the owner (#93)
+
+**Owner, 2026-10-28:** 6b-1a; 6b-2a; 6b-3a, on condition that its test tells the two measures apart (W8);
+6b-4a, "let's try it", after asking what the 8 s counts from: the cap runs from the door's critical pictures
+(`dawn.js`: `crit`, then `after()`), the ring lights as soon as both workers have compiled, after at least one 1.8 s
+lap, and 8 s is reached only on a machine that has not compiled by then (today's wait: 9 s, on every visit).
 
 **6b-1** The worker's identity (6b.1): **6b-1a** (recommended) the site's own `assets/js/world-worker.js`, because
   the door's worker cannot import the site's world without a slot in a folder Orbit copies, and two workers fall
