@@ -190,7 +190,8 @@ Fixed here so the tests can be written before the code, and the code built to th
 - Each test runs as `node <file>`, one after another, in the job's environment plus `BROWSER`, `SITE`,
   `PW_WS_ENDPOINT`, `HEADED=1`, `WEBGL=required`, `LIBGL_ALWAYS_SOFTWARE=1`; a failure does not stop the rest. In
   Chromium with `COVERAGE_DIR` set, `node --import tools/ci/coverage-hook.mjs <file>`, and the hook names its file
-  `browser-<test>-<CI_NODE_INDEX or 0>-<pid>.json`.
+  `browser-<test>-<CI_NODE_INDEX or 0>-<pid>.json`. The hook wraps `chromium.connect` as well as `chromium.launch`,
+  since the shared browser is reached by connecting; a connected page's `page.coverage` records as a launched one's does.
 - Exit 1 if any test whose `gates` names BROWSER failed; 0 otherwise; 2 for a usage error.
 
 **`tools/ci/live-lib.mjs`**: `freePort()` (bind 0, read the number back, close); `browserPlan(env, { own })` is
