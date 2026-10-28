@@ -232,7 +232,7 @@ cannot judge from a partial run is visible and not a block.
   to it, or launches as today when the test asks for its own flags. Each test keeps `newContext()` per case, which is
   the freshness they rely on (localStorage, the probe's week-long key, routes). Tests that must launch their own:
   `freeze` (`--ignore-gpu-blocklist --enable-gpu`, the machine the bug is on), `docs-sky-portrait-live`
-  (`--use-angle=swiftshader`), `upload` (headless Chromium beside headed Firefox). The shared browser is launched
+  (`--use-angle=swiftshader`), `upload` (headless Chromium beside headed Firefox by hand; in the gate each browser's job runs its own half, by `BROWSER`). The shared browser is launched
   plain, as the rest launch today, so no test's conditions change. Saving: a browser launch (3-5 s) per test, about
   a minute per job; the real win of the item is that a crash in one test's browser no longer costs the next test its
   launch time, and the pattern is what Playwright documents for several browsers.

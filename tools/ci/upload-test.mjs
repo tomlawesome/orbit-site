@@ -32,7 +32,9 @@ try {
   /* ENGINES=chromium runs only the first: the coverage run (tools/ci/coverage-run.sh) wants Chromium's V8 only; else
      BROWSER, as tools/ci/live-run.mjs sets it, runs that engine's half; neither runs both */
   const engines = process.env.ENGINES || process.env.BROWSER;
-  for (const [name, headless] of [["chromium", true], ["firefox", false]].filter(([n]) => !engines || engines.split(",").includes(n))) {
+  const chosen = [["chromium", true], ["firefox", false]].filter(([n]) => !engines || engines.split(",").includes(n));
+  if (!chosen.length) { console.error(`upload-test: no engine named in "${engines}" (chromium, firefox); nothing would run`); process.exit(2); }
+  for (const [name, headless] of chosen) {
     const problems = [];
     let result = null;
     let browser = null;

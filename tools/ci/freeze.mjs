@@ -15,7 +15,8 @@
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
  *
- * (sh tools/ci/journey-local.sh freeze does exactly that. BROWSER is ignored: this check is Chromium's.)
+ * (sh tools/ci/journey-local.sh --browser chromium freeze does exactly that; without --browser chromium the runner
+ *  skips it, since this check is Chromium's and BROWSER is otherwise ignored.)
  *
  * The run fails loudly, and does not pass vacuously, if the browser's WebGL2 is not a software renderer: its
  * renderer is read first and logged.
