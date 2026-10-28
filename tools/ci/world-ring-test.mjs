@@ -11,7 +11,8 @@
  * keeps the door's entry the only thing it imports from the folder).
  *
  *   drawnAside, aside false, door3d false      not a first visit: no wait. A first visit: wait, 8000 ms
- *   drawnAside, door3d true                    wait, 9000 ms, on every visit: the live door compiles on the page
+ *   drawnAside, door3d true                    wait, 8000 ms, on every visit: the live door compiles on the page,
+ *                                              so today's Firefox shape stands (main.js: asideHere false, 8000)
  *   drawnAside false                           as today in every case (the table below is main.js's rule as it stands:
  *                                              asideHere = maintenance || saveData || aside;
  *                                              wait = !maintenance && (firstVisit || !asideHere);
@@ -60,8 +61,8 @@ function expect(name, o, wait, ms) {
 expect("W7 worker, not a first visit: no wait", { drawnAside: true, firstVisit: false }, false);
 expect("W7 worker, a first visit: wait, 8 s", { drawnAside: true, firstVisit: true }, true, 8000);
 /* the live door compiles on the page, so today's shape stands */
-expect("W7 worker with the live door, not a first visit: wait, 9 s", { drawnAside: true, door3d: true, firstVisit: false }, true, 9000);
-expect("W7 worker with the live door, a first visit: wait, 9 s", { drawnAside: true, door3d: true, firstVisit: true }, true, 9000);
+expect("W7 worker with the live door, not a first visit: wait, 8 s", { drawnAside: true, door3d: true, firstVisit: false }, true, 8000);
+expect("W7 worker with the live door, a first visit: wait, 8 s", { drawnAside: true, door3d: true, firstVisit: true }, true, 8000);
 /* the page path: as today in every case (maintenance, save-data, aside, door3d, first visit: all 32) */
 for (let i = 0; i < 32; i++) {
   const o = { maintenance: !!(i & 1), saveData: !!(i & 2), aside: !!(i & 4), door3d: !!(i & 8), firstVisit: !!(i & 16), drawnAside: false };
