@@ -11,7 +11,7 @@
  *
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, canvas, lost, made, compileMs, bake(), baked, draw(view, dt), onDrew(fn), finish(), resize(w, h, scale),
- *     lookOf(opts), lose() }
+ *     measure(sets), lookOf(opts), lose(), destroy() }
  * opts beside the look's and the pictures': gated (the page's gate has already judged, so gpu() is not asked: a world
  * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
  * view can carry its look from wherever it is built (ADR-0004 6b.2).
@@ -490,8 +490,9 @@ function ringProfile(n) {
   return px;
 }
 
-/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen) */
-function picturesOf(opts) {
+/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen); exported for the page
+   side of a world drawn in a worker, which resolves them on the page (remote-world.js) */
+export function picturesOf(opts) {
   const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
   return {
     small,
@@ -767,11 +768,23 @@ export function createWorld(canvas, opts = {}) {
   const onDrew = (fn) => { drew.add(fn); return () => drew.delete(fn); };
   /* waits for everything asked of the GPU so far to be done: for timing frames */
   const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
+  /* each set of views timed as install.js calibrate times it: the first drawn and finished, then the rest drawn and
+     finished, timed; one ms a set, the time a draw took. Here at once; in a worker, the same, asked by message */
+  function measure(sets) {
+    return Promise.resolve(sets.map((set) => {
+      paint(set[0]); finish();
+      const rest = set.length > 1 ? set.slice(1) : [set[0], set[0], set[0]];
+      const t0 = performance.now();
+      for (const v of rest) paint(v);
+      finish();
+      return (performance.now() - t0) / rest.length;
+    }));
+  }
+  const lose = () => { gl.getExtension("WEBGL_lose_context")?.loseContext(); };
   return {
-    gl, canvas, bake, draw, onDrew, resize, finish, made, lookOf,
+    gl, canvas, bake, draw, onDrew, resize, finish, measure, made, lookOf, lose, destroy: lose,
     get baked() { return baked; },
     get lost() { return gl.isContextLost(); },
     get compileMs() { return took; },
-    lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };
 }

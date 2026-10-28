@@ -29,7 +29,7 @@ const KS = [0, 0.5, 1];
 const DOT = { x: 380, y: 250, r: 28, g: 1.3, light: [-0.3, 0.9, -0.2], rot: 0.4, k: 1 };
 
 async function scenario(infoOpts) {
-  const b = await bootInstallPage({});
+  const b = await bootInstallPage({ draw: "page" });
   const uniforms = namedUniforms(b.page);
   const { createInstall } = await import(INSTALL);
   const mod = await import(WORLD);

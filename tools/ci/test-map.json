@@ -46,6 +46,8 @@
     "worlds": [
       "assets/js/install.js",
       "assets/js/world.js",
+      "assets/js/remote-world.js",
+      "assets/js/world-worker.js",
       "assets/js/planets3d.js",
       "assets/img/install/**"
     ],

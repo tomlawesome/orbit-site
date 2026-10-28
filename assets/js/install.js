@@ -11,9 +11,10 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor } from "../door/index.js";
+import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor, drawnAside, settings } from "../door/index.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld, lookOf } from "./world.js";
+import { createRemoteWorld, whyPage } from "./remote-world.js";
 import { onTilt } from "./tilt.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -78,6 +79,16 @@ const SPRITE = { tiltZ: 0.38, tiltX: -0.32 };
 /* the install's world and the information's are one world, worn two ways (opts.world: its look): compiled, loaded
    and baked once, its canvas moved to whichever is showing */
 let shared = null;
+/* whether the world is drawn in a worker (remote-world.js, world-worker.js): exactly where the flight is (the door's
+   drawnAside, ADR-0004 6b.4), decided once, at the shared world's first making, after the gate has run, and said once
+   where the host gave a worker */
+let inWorker;
+function drawnHere() {
+  if (inWorker !== undefined) return inWorker;
+  inWorker = drawnAside();
+  if (settings.drawWorker) note(inWorker ? "install: drawn in a worker" : `install: drawn on the page: ${whyPage()}`);
+  return inWorker;
+}
 /* each world by the door's name for its planet (install, info), so the door's planets can be drawn by their own
    worlds (doorPlanets); and that loop, once started */
 const worlds = new Map();
@@ -121,7 +132,8 @@ export function createInstall(pad, opts = {}) {
     if (world || failed) return world;
     if (!shared) {
       let w = null;
-      try { w = createWorld(own, { ...opts.world, tag: TAG }); } catch (e) { console.warn(e); }
+      const o = { ...opts.world, tag: TAG };
+      try { w = drawnHere() ? createRemoteWorld(own, o) : createWorld(own, o); } catch (e) { console.warn(e); }
       shared = { world: w, owner: null };
     }
     world = shared.world;
@@ -132,20 +144,29 @@ export function createInstall(pad, opts = {}) {
     look = lookOf(opts.world || {});
     /* the frames the loop drew, as the world reports them (world.js: onDrew), counted and governed while this page owns it */
     world.onDrew((dt, ms) => { if (shared.owner === api && running) drew(dt, ms); });
-    /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
-    /* (the world's own canvas: the element it draws to, whichever that is) */
-    shared.world.canvas.addEventListener("webglcontextlost", (e) => {
-      e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
-      if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
-    });
+    listen();
     return world;
+  }
+  /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
+  const onLost = (e) => {
+    e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
+    if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
+  };
+  /* (heard on the world's own canvas, the element it draws to, whichever that is: a world drawn in a worker that fell
+     back draws to a fresh one, remote-world.js; looked at again each frame, and that one is drawn to from then on) */
+  let heard = null;
+  function listen() {
+    const c = shared?.world?.canvas;
+    if (!c) return;
+    if (shared.owner === api) canvas = c;
+    if (c !== heard) { heard = c; c.addEventListener("webglcontextlost", onLost); }
   }
   /* the world's canvas brought here (from the other page, if it was there), and the other let go of it */
   function adopt() {
     if (!shared?.world || shared.lost) return;
     if (shared.owner && shared.owner !== api) shared.owner.stop();
     shared.owner = api;
-    canvas = shared.world.canvas;
+    listen();
     if (canvas.previousSibling !== slot) slot.after(canvas);
     if (own !== canvas) own.hidden = true;
   }
@@ -245,6 +266,10 @@ export function createInstall(pad, opts = {}) {
   /* (dt: the loop's period, given only by the loop, so the world reports the frame: onDrew) */
   function draw(now, force = null, reg = null, dt = undefined) {
     const w = world; if (!w || !lay) return;
+    w.draw(viewAt(now, force, reg), dt);
+  }
+  /* the view drawn at now: plain data (ADR-0004 6b.3: on the worker path it is posted as it is) */
+  function viewAt(now, force = null, reg = null) {
     const idle = clock;
     const k = reg ? 0 : u;
     const dot0 = reg ? reg.dot : motion?.dot || null;
@@ -278,7 +303,7 @@ export function createInstall(pad, opts = {}) {
     const zoom = prev ? Math.abs(Math.log(v.dist * g) - Math.log(prev.dist * pg)) / dtS : 0;
     const blur = reduced ? 0 : Math.min(10, zoom * H * 0.006) * s;
     prev = { t: now, cam: v.cam, dist: v.dist, g };
-    w.draw({
+    return {
       cam: v.cam, fwd: v.fwd, right: v.right, up: v.up,
       focal: lay.focal * s, sunPx: [at(sp[0] * s, 0), at(sp[1] * s, 1)],
       shift: reg ? [reg.T[0] / 2 + v.shift[0] * s - reg.o[0] - reg.S / 2, reg.T[1] / 2 + v.shift[1] * s - reg.o[1] - reg.S / 2] : [v.shift[0] * s, v.shift[1] * s],
@@ -286,7 +311,7 @@ export function createInstall(pad, opts = {}) {
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
       vel, focusD: v.dist, blur, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [at((W / 2 + v.shift[0]) * s, 0), at((H / 2 + v.shift[1]) * s, 1)],
-    }, dt);
+    };
   }
   /* going in, the world starts as bright as the door's planet is as it flares, and settles as the camera moves:
      the flare is where the one becomes the other */
@@ -308,18 +333,18 @@ export function createInstall(pad, opts = {}) {
   /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
      the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
      the scene's, which goes with its area; the part chosen is the largest that keeps a frame inside 15 ms */
-  /* (a promise, though the page's measure is done at once: ADR-0004 6b.4) */
+  /* (a promise: the page's measure is done at once, a worker's when it answers, ADR-0004 6b.4. Each part a set of four
+     views, the first drawn untimed and three timed, as world.js measure times them) */
   function calibrate() {
     const w = world; if (!w || !w.baked || motion || reduced || shared?.owner?.busy) return Promise.resolve();
     const keep = u; u = 0.5;
-    const time = (part) => { draw(performance.now(), { part, dustN: 18 }); w.finish(); const t0 = performance.now();
-      for (let i = 0; i < 3; i++) draw(performance.now(), { part, dustN: 18 }); w.finish(); return (performance.now() - t0) / 3; };
-    try {
-      const t1 = time(0.4), t2 = time(0.8);
+    let sets;
+    try { sets = [0.4, 0.8].map((part) => [0, 1, 2, 3].map(() => viewAt(performance.now(), { part, dustN: 18 }))); } finally { u = keep; prev = null; }
+    return w.measure(sets).then(([t1, t2] = []) => {
+      if (!Number.isFinite(t1) || !Number.isFinite(t2)) return;
       const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16);
       mq = clamp(Math.sqrt(Math.max(0, (18 - c) / d)), 0.55, 1);
-    } finally { u = keep; prev = null; }
-    return Promise.resolve();
+    }, () => {});
   }
   /* the world drawn once, unseen, as soon as it is ready: a driver finishes a shader on its first draw, and that
      first draw would otherwise be the dive's first frame, stalling it just as the door's planet gives way to it */
@@ -362,6 +387,7 @@ export function createInstall(pad, opts = {}) {
   }
   function frame(now) {
     if (!running) return;
+    listen();
     /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
        tried again on the next start (prepare), so its flat is not final and does not stop the loop */
     if (failed) { running = false; return; }
@@ -468,9 +494,13 @@ export function createInstall(pad, opts = {}) {
          queued at once and run under the first light's ring, which main.js holds until it is done; hurried with
          this journey's own). The time the compiles took is said (world.js: compileMs) */
       if (!this.prepared) {
-        fetchWorld(opts.world);
+        /* (in a worker, the worker asks for its own pictures; and nothing compiles on the page: made at once, ADR-0004 6b.5) */
+        const aside = drawnHere();
+        if (!aside) fetchWorld(opts.world);
         const make = () => { const w = ensure(); if (w) size(); return w; };
-        const made = (compilesAside() ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
+        const made = (aside || compilesAside() ? Promise.resolve(make()) : chore(make, 20, ["compile", TAG])).catch(() => null);
+        /* whether the world came up in a worker (main.js lets the page's context go once it and the flight's have) */
+        this.aside = made.then((w) => (w?.aside ? w.aside() : false));
         made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms${counted("world")}` : "failed"}`)));
         this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
@@ -493,7 +523,7 @@ export function createInstall(pad, opts = {}) {
       const w = ensure();
       adopt();
       if (running) return;
-      running = true; last = 0;
+      running = true; last = 0; w?.run?.(true);
       const t0 = performance.now(); size(); sized = performance.now() - t0;
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
       /* flat follows each bake, set or cleared, since a failed map is tried again; a lost context keeps it */
@@ -534,6 +564,7 @@ export function createInstall(pad, opts = {}) {
       });
     },
     stop() {
+      if (running) shared?.world?.run?.(false);
       running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer); untilt(); untilt = () => {};
       /* the world is free again: the door's planets may be drawn by it */
@@ -599,6 +630,8 @@ export function createInstall(pad, opts = {}) {
    canvas of its own at that place on the door, behind the ring or before it as its anchor goes. planets3d.js draws
    them until the first of these frames (html[data-worldplanets]), and the docs' moon all along */
 function startDoor(door, lead, after = null) {
+  /* not where the world is drawn in a worker: the door's pictures stay (ADR-0004 6b.1) */
+  if (drawnHere()) return null;
   if (doorLoop) return doorLoop.ready;
   /* only where the door is live (capability.js: ?door3d, level 1 or 2) */
   if (!liveDoor()) return null;

@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside } from "../door/index.js";
+import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu } from "../door/index.js";
 import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -111,6 +111,7 @@ function warmJourneys() {
     PADS.info.world?.prepare?.(),      /* 4. the information's world */
   ];
   warmingAll = Promise.all(all.map((p) => Promise.resolve(p).catch(() => {})));
+  loseGate();
   /* each way in opens as its journey is readied (or has failed, and goes as it can): the planets show from the
      first but take no click until then, and the gate is not shown at all */
   const settled = (p) => Promise.resolve(p).catch(() => {});
@@ -130,6 +131,16 @@ function warmJourneys() {
   if (DOOR3D) doorLive().then((live) => live && Promise.all([compiledAll, dawn.live.firstCompiled(), planets3d.then((m) => m.planetsCompiled())])
     .then(() => { const p = programs(); note(`programs compiled before the door: ${p.n} (${p.by})`); })).catch(() => {});
   return warmingAll;
+}
+/* the page's WebGL context let go once nothing on the page draws with it (ADR-0004 6b.6, owner 6b-2a): the flight's
+   worker and the worlds' both up, and not the live door, which draws with it. gpu() still gives the verdict after */
+function loseGate() {
+  if (DOOR3D) return;
+  Promise.all([journey.aside(), PADS.install.ring.aside]).then(([flight, world]) => {
+    if (!flight || !world) return;
+    gpu()?.gl.getExtension("WEBGL_lose_context")?.loseContext();
+    note("gpu: the page's context let go");
+  }).catch(() => {});
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
    shows once the flight is */
@@ -262,13 +273,15 @@ function showDoor() {
      paint back). A showing that comes before that start leaves it to it */
   const firstLight = !doorLitOnce; doorLitOnce = true;
   const light = () => {
-    /* the ring's rule (ring.js). drawnAside: false while the install's and the information's worlds still compile on
-       the page, whatever the flight does (ADR-0004 6b.5: the worker path's shape comes with their worker) */
+    /* the ring's rule (ring.js). drawnAside: the flight's rule, which the install's and the information's worlds follow
+       (install.js), so where it holds nothing compiles on the page (ADR-0004 6b.5) */
     let ring = { wait: false, ms: 8000 };
     if (firstLight) {
-      const here = { maintenance: MAINTENANCE, saveData: saveData(), aside: !MAINTENANCE && !saveData() && compilesAside(), drawnAside: false, door3d: !!DOOR3D, firstVisit };
+      const off = MAINTENANCE || saveData();
+      const here = { maintenance: MAINTENANCE, saveData: saveData(), aside: !off && compilesAside(), drawnAside: !off && drawnAside(), door3d: !!DOOR3D, firstVisit };
       asideHere = offPage(here);
       ring = ringWaits(here);
+      note(asideHere ? "first light: compiles aside" : "first light: the ring waits for the compiles");
       if (!asideHere) { openCompiles(); compileFirst(); }
     }
     const waitCompiled = ring.wait;
