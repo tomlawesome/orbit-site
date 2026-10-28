@@ -19,6 +19,7 @@
       "404.html",
       "assets/site.css",
       "assets/js/main.js",
+      "assets/js/ring.js",
       "assets/js/tilt.js",
       "sw.js",
       "assets/img/door/**",

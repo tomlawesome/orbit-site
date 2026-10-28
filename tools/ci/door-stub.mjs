@@ -523,6 +523,7 @@ export function installDom(page, { baseURI = BASE } = {}) {
       dom.tokens.set(this.token, this);
       return this.token;
     }
+    dispatchEvent(ev) { for (const f of [...(this.listeners[ev.type] || [])]) f(ev); return !ev.defaultPrevented; }
     remove() { this.parentNode?.removeChild(this); }
     replaceWith(n) { this.parentNode?.replaceChild(n, this); }
     before(n) { this.parentNode?.insertBefore(n, this); }
@@ -833,3 +834,116 @@ export async function infoWorld() {
   if (start < 0 || end < 0) throw new Error("INFO_WORLD was not found in assets/js/main.js (this test reads it from there)");
   return new Function(`return ${src.slice(start + "const INFO_WORLD = ".length, end + 2)}`)();
 }
+
+/*
+ * ===== The install and information worlds drawn in a worker (ADR-0004 6b, tests W2-W5 and W8) =====
+ * Everything below is new for batch 2's tests and changes nothing above it (one method, dispatchEvent, was added to the
+ * canvas class installDom makes: nothing called it before).
+ */
+
+/* a function found in a message, or null: a message must be plain data (structured clone carries no function) */
+export const findFn = (x, path = "", seen = new Set()) => {
+  if (typeof x === "function") return path || "(top)";
+  if (!x || typeof x !== "object" || seen.has(x)) return null;
+  seen.add(x);
+  for (const k of Object.keys(x)) { const p = findFn(x[k], `${path}.${k}`, seen); if (p) return p; }
+  return null;
+};
+/* a value as text, typed arrays tagged with their type, so a Float32Array and an Array of the same numbers differ */
+export const plainOf = (v) => JSON.stringify(v, (k, x) => (ArrayBuffer.isView(x) ? { typed: x.constructor.name, v: Array.from(x) } : x));
+
+/*
+ * fakeWorldWorkers(auto) -> host: what `new Worker(...)` gives install.js (see installWorldWorker). Every worker made is in
+ * host.list. A worker records what it is posted (posted, transfers, late: posted after terminate, cloneErrors: a message
+ * structured clone could not carry), counts terminate(), and says what it is told with say(msg) (a message event) or
+ * fail() (an error event), through onmessage / addEventListener alike. `auto` makes the common answers by itself on the
+ * clock, a worker answering in order once it has said `up`:
+ *   up        after `canvas`: { ok, why } (null: says nothing)         default { ok: true }
+ *   compiled  after that `up` when ok: { ok, ms } (null: nothing)       default { ok: true, ms: 40 }
+ *   baked     to each `bake`: true / { ok: false } (null: nothing)      default true
+ *   measured  to each `measure`: the ms of each set, in order (the last for any more) (null: nothing)   default [10, 20]
+ *   drew      to each `view`: { dt, ms } (dt a number, or a function of the view message); null: nothing   default { dt: 16.7, ms: 1 }
+ * host.auto may be changed by a case at any time.
+ */
+export function fakeWorldWorkers(auto = {}) {
+  const host = {
+    made: 0, list: [], args: [],
+    auto: { up: { ok: true }, compiled: { ok: true, ms: 40 }, baked: true, measured: [10, 20], drew: { dt: 16.7, ms: 1 }, ...auto },
+  };
+  class FakeWorld {
+    constructor() {
+      host.made++; host.list.push(this);
+      this.posted = []; this.postedAt = []; this.transfers = []; this.late = []; this.cloneErrors = []; this.terminated = 0; this.upSaid = false; this.waiting = [];
+      this.on = { message: [], error: [], messageerror: [] };
+      this.onmessage = null; this.onerror = null; this.onmessageerror = null;
+    }
+    postMessage(msg, transfer) {
+      if (this.terminated) { this.late.push(msg); return; }
+      try { structuredClone(msg); } catch (e) { this.cloneErrors.push(`${msg && msg.type}: ${e && e.message}`); }
+      this.posted.push(msg); this.transfers.push(transfer ?? []); this.postedAt.push(performance.now());
+      if (msg && msg.type === "canvas" && host.auto.up) {
+        setTimeout(() => {
+          this.say({ type: "up", ...host.auto.up });
+          if (host.auto.up.ok !== false && host.auto.compiled) setTimeout(() => this.say({ type: "compiled", ...host.auto.compiled }), 0);
+        }, 0);
+      }
+      this.answer(msg);
+    }
+    answer(msg) {
+      const a = host.auto;
+      if (!msg || !["bake", "measure", "view"].includes(msg.type)) return;
+      if (!this.upSaid) { this.waiting.push(msg); return; }
+      if (msg.type === "bake" && a.baked) setTimeout(() => this.say({ type: "baked", id: msg.id, ok: a.baked === true || a.baked.ok !== false }), 0);
+      if (msg.type === "measure" && a.measured) setTimeout(() => this.say({ type: "measured", id: msg.id, ms: (msg.sets || []).map((s, i) => a.measured[i] ?? a.measured[a.measured.length - 1]) }), 0);
+      if (msg.type === "view" && a.drew) setTimeout(() => this.say({ type: "drew", seq: msg.seq, dt: typeof a.drew.dt === "function" ? a.drew.dt(msg) : a.drew.dt, ms: a.drew.ms ?? 1 }), 0);
+    }
+    terminate() { this.terminated++; }
+    addEventListener(type, fn) { (this.on[type] ||= []).push(fn); }
+    removeEventListener(type, fn) { this.on[type] = (this.on[type] || []).filter((f) => f !== fn); }
+    say(data) {
+      if (this.terminated) return;
+      if (data && data.type === "up" && data.ok) { this.upSaid = true; for (const m of this.waiting.splice(0)) this.answer(m); }
+      const ev = { type: "message", data, target: this };
+      if (typeof this.onmessage === "function") this.onmessage(ev);
+      for (const f of [...this.on.message]) f(ev);
+    }
+    fail(message = "the worker failed") {
+      if (this.terminated) return;
+      const ev = { type: "error", message, error: new Error(message), target: this, preventDefault() {} };
+      if (typeof this.onerror === "function") this.onerror(ev);
+      for (const f of [...this.on.error]) f(ev);
+    }
+    of(type) { return this.posted.filter((m) => m && m.type === type); }
+  }
+  host.make = (...a) => { host.args.push(a); return new FakeWorld(); };
+  host.first = () => host.list[0] ?? null;
+  return host;
+}
+
+/*
+ * installWorldWorker(b, host): the page's `Worker` is the fake (b is bootInstallPage's result), so a site module that
+ * makes its own worker (remote-world.js: `new Worker(new URL("./world-worker.js", import.meta.url), { type: "module" })`)
+ * gets host's. Each `new Worker(...)` is in b.workers (its arguments) and host.args. The flight's own worker is the
+ * door's `drawWorker` (the boot's), not this.
+ */
+export function installWorldWorker(b, host) {
+  globalThis.Worker = class Worker { constructor(...a) { b.workers.push(a); return host.make(...a); } };
+  return host;
+}
+
+/* a case that needs install.js's world.js import seen (world-spy.mjs): the child is run with the hook registered */
+export function runCaseSpied(fileUrl, how, timeout = 120000) {
+  const args = ["--import", fileURLToPath(new URL("./world-spy-register.mjs", import.meta.url)), fileURLToPath(fileUrl), "--child", how];
+  const r = spawnSync(process.execPath, args, { encoding: "utf8", timeout });
+  const line = (r.stdout || "").split("\n").find((l) => l.startsWith("RESULT "));
+  if (!line) return { error: `the child printed no result (exit ${r.status}): ${(r.stderr || "").split("\n").slice(0, 3).join(" | ")}` };
+  return JSON.parse(line.slice(7));
+}
+
+/* a scene as install.js's form() and unform() take it: the door's planet, a body with a rectangle and a size */
+export const sceneAt = (x = 380, y = 250, r = 28) => ({
+  body: { getBoundingClientRect: () => ({ left: x - r, top: y - r, width: 2 * r, height: 2 * r }), closest: () => null, offsetWidth: 2 * r },
+  near() {},
+});
+/* the door's planet as install.js's dotOf reads it, for still(k, idle, dot) */
+export const DOT = { x: 380, y: 250, r: 28, g: 1.3, light: [-0.3, 0.9, -0.2], rot: 0.4, k: 1 };
