@@ -2,7 +2,7 @@
 // and prints the selection. Test impact analysis from a path-to-test map, failing safe: a path the map does not
 // know selects everything. Node built-ins only.
 //
-//   node tools/ci/test-select.mjs [--base REF] [--json]
+//   node tools/ci/test-select.mjs [--base REF] [--json | --group NAME]
 //
 // The rule, in order:
 //   1. LIVE_ALL=true, promotion (a merge request from dev into main), a push whose CI_COMMIT_BEFORE_SHA is all
@@ -13,6 +13,9 @@
 //   4. Otherwise the tests of every group a changed path matches, plus every test whose own file changed.
 //      `none` matches (so the path is mapped) and adds nothing.
 // --json prints {"all": <bool>, "tests": [<names>]} and nothing else; without it, the reasoning for a job's log.
+// --group NAME prints `yes` when everything is selected or a changed path matched group NAME, else `no`, exit 0
+// either way: the lint:test and lint:import jobs run their tests unless it says `no`, so an error (non-zero, no
+// output) runs them. tools/ci/live-run.mjs imports selection() and account() for the same answer and log.
 // A git failure (a range not in the clone) selects everything, with the reason.
 import { readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -86,42 +89,52 @@ export function source(env, base) {
   return { everything: "no CI and no --base (give --base REF to select for a change)" };
 }
 
-function main(argv, env) {
-  let json = false, base = null;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--json") json = true;
-    else if (argv[i] === "--base" && i + 1 < argv.length) base = argv[++i];
-    else if (argv[i].startsWith("--base=")) base = argv[i].slice(7);
-    else { console.error(`test-select: unknown argument ${argv[i]} (usage: node tools/ci/test-select.mjs [--base REF] [--json])`); return 2; }
-  }
-  const map = loadMap();
+/* the selection for this environment: { sel: { all, tests, reason, lines, matched }, label, names } */
+export function selection(env, base, root = ROOT) {
+  const map = loadMap(root);
   const names = Object.keys(map.tests || {});
   const src = source(env, base);
-  let sel, label;
-  if (src.everything) {
-    sel = { all: true, tests: names, reason: src.everything, lines: [], matched: new Set() };
-    label = "no diff taken";
-  } else {
-    try {
-      const from = src.mergeBase ? git(ROOT, "merge-base", src.mergeBase, "HEAD").trim() : src.from;
-      const changed = changedSince(ROOT, from);
-      sel = selectFor(map, changed);
-      label = `${src.label}: ${changed.length} changed path${changed.length === 1 ? "" : "s"}`;
-    } catch (e) {
-      sel = { all: true, tests: names, reason: `the changed paths could not be read (${e.message})`, lines: [], matched: new Set() };
-      label = src.label;
-    }
+  if (src.everything) return { sel: { all: true, tests: names, reason: src.everything, lines: [], matched: new Set() }, label: "no diff taken", names };
+  try {
+    const from = src.mergeBase ? git(root, "merge-base", src.mergeBase, "HEAD").trim() : src.from;
+    const changed = changedSince(root, from);
+    return { sel: selectFor(map, changed), label: `${src.label}: ${changed.length} changed path${changed.length === 1 ? "" : "s"}`, names };
+  } catch (e) {
+    return { sel: { all: true, tests: names, reason: `the changed paths could not be read (${e.message})`, lines: [], matched: new Set() }, label: src.label, names };
   }
-  if (json) {
-    process.stdout.write(JSON.stringify({ all: sel.all, tests: sel.tests }) + "\n");
-    return 0;
-  }
+}
+
+/* the reasoning, as a job's log shows it */
+export function account({ sel, label, names }) {
   const out = [`test-select: ${label}`, ...sel.lines];
   const groups = [...sel.matched];
   out.push(`groups matched: ${groups.length ? groups.join(", ") : "(no group)"}`);
   if (sel.all) out.push(`everything: ${sel.reason}`);
   out.push(`selected ${sel.tests.length} of ${names.length}${sel.tests.length ? `: ${sel.tests.join(", ")}` : ""}`);
-  process.stdout.write(out.join("\n") + "\n");
+  return out;
+}
+
+function main(argv, env) {
+  let json = false, base = null, group = null;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--json") json = true;
+    else if (argv[i] === "--base" && i + 1 < argv.length) base = argv[++i];
+    else if (argv[i].startsWith("--base=")) base = argv[i].slice(7);
+    else if (argv[i] === "--group" && i + 1 < argv.length) group = argv[++i];
+    else if (argv[i].startsWith("--group=")) group = argv[i].slice(8);
+    else { console.error(`test-select: unknown argument ${argv[i]} (usage: node tools/ci/test-select.mjs [--base REF] [--json | --group NAME])`); return 2; }
+  }
+  if (json && group !== null) { console.error("test-select: --json and --group are one or the other"); return 2; }
+  const found = selection(env, base);
+  if (group !== null) {
+    process.stdout.write(found.sel.all || found.sel.matched.has(group) ? "yes\n" : "no\n");
+    return 0;
+  }
+  if (json) {
+    process.stdout.write(JSON.stringify({ all: found.sel.all, tests: found.sel.tests }) + "\n");
+    return 0;
+  }
+  process.stdout.write(account(found).join("\n") + "\n");
   return 0;
 }
 
