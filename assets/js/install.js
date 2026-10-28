@@ -13,7 +13,7 @@
  */
 import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor } from "../door/index.js";
 import { reduced } from "./sky.js";
-import { createWorld, fetchWorld } from "./world.js";
+import { createWorld, fetchWorld, lookOf } from "./world.js";
 import { onTilt } from "./tilt.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -122,15 +122,19 @@ export function createInstall(pad, opts = {}) {
     if (!shared) {
       let w = null;
       try { w = createWorld(own, { ...opts.world, tag: TAG }); } catch (e) { console.warn(e); }
-      shared = { world: w, canvas: own, owner: null };
+      shared = { world: w, owner: null };
     }
     world = shared.world;
     /* a page that adopts the shared world after its context was lost takes the flat path, and does not draw to it */
-    if (world && (shared.lost || world.gl.isContextLost())) { shared.lost = true; world = null; }
+    if (world && (shared.lost || world.lost)) { shared.lost = true; world = null; }
     if (!world) { failed = true; pad.classList.add("flat"); return null; }
-    look = world.lookOf(opts.world || {});
+    /* (worked out here, and carried by every view: world.js lookOf) */
+    look = lookOf(opts.world || {});
+    /* the frames the loop drew, as the world reports them (world.js: onDrew), counted and governed while this page owns it */
+    world.onDrew((dt, ms) => { if (shared.owner === api && running) drew(dt, ms); });
     /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
-    shared.canvas.addEventListener("webglcontextlost", (e) => {
+    /* (the world's own canvas: the element it draws to, whichever that is) */
+    shared.world.canvas.addEventListener("webglcontextlost", (e) => {
       e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
       if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
     });
@@ -141,7 +145,7 @@ export function createInstall(pad, opts = {}) {
     if (!shared?.world || shared.lost) return;
     if (shared.owner && shared.owner !== api) shared.owner.stop();
     shared.owner = api;
-    canvas = shared.canvas;
+    canvas = shared.world.canvas;
     if (canvas.previousSibling !== slot) slot.after(canvas);
     if (own !== canvas) own.hidden = true;
   }
@@ -238,7 +242,8 @@ export function createInstall(pad, opts = {}) {
      density reg.d, the square S pixels a side starting at reg.o (pixels from the left and the foot of the screen's
      frame, T): everything given in the screen's pixels is moved by where the square starts, so each pixel of it is
      the pixel the screen's frame would have there */
-  function draw(now, force = null, reg = null) {
+  /* (dt: the loop's period, given only by the loop, so the world reports the frame: onDrew) */
+  function draw(now, force = null, reg = null, dt = undefined) {
     const w = world; if (!w || !lay) return;
     const idle = clock;
     const k = reg ? 0 : u;
@@ -281,7 +286,7 @@ export function createInstall(pad, opts = {}) {
       part: force?.part ?? partAt(), dustN: force?.dustN ?? (motion ? 18 : 30),
       time: now / 1000, bg: smooth(0.02, 0.26, k), sunVis, expo: lerp(0.72, 1.0, smooth(0.35, 0.95, k)) * flare(),
       vel, focusD: v.dist, blur, dust: TUNE.look.dust, fringe: TUNE.look.fringe, grain: TUNE.look.grain, blurC: [at((W / 2 + v.shift[0]) * s, 0), at((H / 2 + v.shift[1]) * s, 1)],
-    });
+    }, dt);
   }
   /* going in, the world starts as bright as the door's planet is as it flares, and settles as the camera moves:
      the flare is where the one becomes the other */
@@ -303,8 +308,9 @@ export function createInstall(pad, opts = {}) {
   /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
      the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
      the scene's, which goes with its area; the part chosen is the largest that keeps a frame inside 15 ms */
+  /* (a promise, though the page's measure is done at once: ADR-0004 6b.4) */
   function calibrate() {
-    const w = world; if (!w || !w.baked || motion || reduced || shared?.owner?.busy) return;
+    const w = world; if (!w || !w.baked || motion || reduced || shared?.owner?.busy) return Promise.resolve();
     const keep = u; u = 0.5;
     const time = (part) => { draw(performance.now(), { part, dustN: 18 }); w.finish(); const t0 = performance.now();
       for (let i = 0; i < 3; i++) draw(performance.now(), { part, dustN: 18 }); w.finish(); return (performance.now() - t0) / 3; };
@@ -313,6 +319,7 @@ export function createInstall(pad, opts = {}) {
       const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16);
       mq = clamp(Math.sqrt(Math.max(0, (18 - c) / d)), 0.55, 1);
     } finally { u = keep; prev = null; }
+    return Promise.resolve();
   }
   /* the world drawn once, unseen, as soon as it is ready: a driver finishes a shader on its first draw, and that
      first draw would otherwise be the dive's first frame, stalling it just as the door's planet gives way to it */
@@ -344,14 +351,23 @@ export function createInstall(pad, opts = {}) {
   /* and its click, timed: the world's resize to the screen (sized: start) and the shot's first draw, so a stall there
      can be told from one later on (each the page's own time to ask for it; the GPU's share is not waited for) */
   let stat = null, sized = 0;
+  /* a frame the loop drew (world.js: onDrew): dt the loop's period before it, ms the time its drawing took to issue */
+  function drew(dt, ms) {
+    if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, dt); if (performance.now() - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
+    if (stat && stat.first == null && motion && !motion.reverse) {
+      stat.first = ms;
+      note(`${TAG}: dive began: resize ${sized.toFixed(1)} ms, first frame ${stat.first.toFixed(1)} ms`);
+    }
+    govern(Math.min(100, dt));
+  }
   function frame(now) {
     if (!running) return;
-    if (stat && !stat.done) { stat.n++; stat.worst = Math.max(stat.worst, last ? now - last : 0); if (now - stat.t0 >= 1000) { stat.done = true; note(`${TAG}: first second ${stat.n} frames, worst ${Math.round(stat.worst)} ms`); } }
     /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
        tried again on the next start (prepare), so its flat is not final and does not stop the loop */
     if (failed) { running = false; return; }
     raf = requestAnimationFrame(frame);
-    const dt = last ? Math.min(100, now - last) : 16; last = now;
+    /* (period: the loop's own, for the frame drawn below; dt: the same, a stall counted as no more than 100 ms) */
+    const period = last ? now - last : 16, dt = Math.min(100, period); last = now;
     let handing = false;
     if (pad.hidden || document.hidden || !world || !world.baked) return;
     /* the shot's last frame, kept on screen while the door's loop takes the planet back (doorPlanets: back) */
@@ -402,13 +418,10 @@ export function createInstall(pad, opts = {}) {
        camera is following the pointer or the tilt; the GPU rests in between */
     const following = Math.abs(pointer.x - pointer.sx) + Math.abs(pointer.y - pointer.sy) > 0.002;
     if (!motion && !following && (tick++ & 3)) return;
-    if (stat && stat.first == null && motion && !motion.reverse) {
-      const t0 = performance.now(); draw(now); stat.first = performance.now() - t0;
-      note(`${TAG}: dive began: resize ${sized.toFixed(1)} ms, first frame ${stat.first.toFixed(1)} ms`);
-    } else draw(now);
+    /* (counted and governed as the world reports it drawn: drew) */
+    draw(now, null, null, period);
     /* the shot's first frame is up, the same as the door's last: only now does the door's own canvas go */
     if (handing) { canvas.style.opacity = "1"; doorLoop?.release(TAG); }
-    govern(dt);
   }
   /* where the dot is, and how big it is once it has swelled (its layout size, not its size mid-transition) */
   /* going, the dot has swelled by half before the planet comes up through it; coming back, the planet ends at the
@@ -466,7 +479,7 @@ export function createInstall(pad, opts = {}) {
           .then((ok) => {
             note(`${TAG}: ready`); noteChores(`${TAG} ready`);
             if (ok) chore(touch, 60, TAG);
-            return ok ? chore(() => { calibrate(); return true; }, 200, "measure") : false;
+            return ok ? chore(() => calibrate().then(() => true), 200, "measure") : false;
           });
         /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is
            flat (no world, or its context lost) keeps the false: only a map failure is worth another try */
@@ -546,7 +559,7 @@ export function createInstall(pad, opts = {}) {
   const mine = {
     api, tag: TAG,
     ok: () => !!world && !failed && world.baked,
-    canvas: () => shared?.canvas,
+    canvas: () => shared?.world?.canvas,
     scale: () => scale,
     /* the world's targets made for the door's square (side css px at density d) before its loop first draws it, and
        for the screen again (full) if the square has had to change: the world keeps both (world.js: resize), so the

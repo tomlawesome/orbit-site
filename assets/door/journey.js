@@ -44,6 +44,7 @@ import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, run
  * @property {(how?: { prove?: boolean }) => Promise<void>} warm
  * @property {(how?: { prove?: boolean }) => Promise<unknown>} warmDocs
  * @property {() => Promise<unknown>} compiled
+ * @property {() => Promise<boolean>} aside
  */
 
 /* the descent that sets down on the dawn again, rather than cooling into the dusk */
@@ -145,10 +146,18 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   /** @type {import("./remote-flight.js").Flight | null} */
   let made = null;
   let destroyed = false, remote = false;
+  /* whether the flight is drawn in a worker that came up (aside()): settled at the first need, false on the page path,
+     and from the worker's `up` or its fallback where it is drawn there (remote-flight.js) */
+  /** @type {(v: boolean | Promise<boolean>) => void} */
+  let asideIs = () => {};
+  /** @type {Promise<boolean>} */
+  const aside = new Promise((r) => { asideIs = r; });
   const need = () => {
     if (!made) {
       remote = !destroyed && drawnAside();
-      made = remote ? createRemoteFlight(canvas, { now: clock.now, cap: flag("draw") !== "worker" }) : createFlight(canvas, { now: clock.now });
+      const far = remote ? createRemoteFlight(canvas, { now: clock.now, cap: flag("draw") !== "worker" }) : null;
+      made = far ?? createFlight(canvas, { now: clock.now });
+      asideIs(far ? far.aside() : false);
       if (destroyed) made.destroy();
     }
     return made;
@@ -277,7 +286,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
   /* (before any need there is no engine, and nothing of it to take down) */
-  function destroy() { dropLeisure(); reset(); made?.destroy(); destroyed = true; clock.dispose(); removeEventListener("resize", onResize); }
+  function destroy() { dropLeisure(); reset(); made?.destroy(); destroyed = true; asideIs(false); clock.dispose(); removeEventListener("resize", onResize); }
   return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => need().warm(how), warmDocs: (how) => need().warmDocs(how),
-    compiled: () => (made ? made.compiled() : Promise.resolve()) };
+    compiled: () => (made ? made.compiled() : Promise.resolve()), aside: () => aside };
 }

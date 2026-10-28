@@ -12,6 +12,7 @@ import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 import { createLock } from "./lock.js";
+import { offPage, ringWaits } from "./ring.js";
 
 /* the shared door (assets/door/index.js), with what differs here: where its pictures are, and the debug switches read
    from the address (the folder itself never reads the address) */
@@ -261,15 +262,20 @@ function showDoor() {
      paint back). A showing that comes before that start leaves it to it */
   const firstLight = !doorLitOnce; doorLitOnce = true;
   const light = () => {
+    /* the ring's rule (ring.js). drawnAside: false while the install's and the information's worlds still compile on
+       the page, whatever the flight does (ADR-0004 6b.5: the worker path's shape comes with their worker) */
+    let ring = { wait: false, ms: 8000 };
     if (firstLight) {
-      asideHere = MAINTENANCE || saveData() || compilesAside();
+      const here = { maintenance: MAINTENANCE, saveData: saveData(), aside: !MAINTENANCE && !saveData() && compilesAside(), drawnAside: false, door3d: !!DOOR3D, firstVisit };
+      asideHere = offPage(here);
+      ring = ringWaits(here);
       if (!asideHere) { openCompiles(); compileFirst(); }
     }
-    const waitCompiled = !MAINTENANCE && firstLight && (firstVisit || !asideHere);
+    const waitCompiled = ring.wait;
     dawn.light({
       firstVisit, wait: waitCompiled, aside: asideHere,
       /* the journeys are readied once the ring is up and running; where the ring waits for their shaders, this is what it waits for */
-      after() { warmJourneys(); return waitCompiled ? within(compiledAll, asideHere ? 9000 : 8000) : null; },
+      after() { warmJourneys(); return waitCompiled ? within(compiledAll, ring.ms) : null; },
       onLit() {
         /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
         planetsIn = new Promise((r) => requestAnimationFrame(() => {

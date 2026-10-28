@@ -21,6 +21,7 @@ import { page } from "./page.js";
 /** @import { Profile } from "./engine.js" */
 /** @typedef {ReturnType<typeof createFlight>} Engine */
 /** @typedef {Omit<Engine, "withWorld">} Flight the engine's surface, as the journey holds it */
+/** @typedef {Flight & { aside: () => Promise<boolean> }} RemoteFlight and whether the worker came up (ADR-0004 6b.6) */
 /** @typedef {{ kind: "warm" | "warmDocs", prove: boolean, resolve: (v?: unknown) => void }} Ask */
 
 /* the longest `up` is waited for under the automatic rule (COMPILE_WAIT's figure, a cap not a measurement): past it the
@@ -31,7 +32,7 @@ export const WORKER_WAIT = 5000;
 /**
  * @param {HTMLCanvasElement} canvas #warp, handed to the worker
  * @param {{ now?: () => number, cap?: boolean }} [options] now: the journey's clock; cap: wait WORKER_WAIT for `up`
- * @returns {Flight}
+ * @returns {RemoteFlight}
  */
 export function createRemoteFlight(canvas, { now = () => performance.now(), cap = true } = {}) {
   let warp = canvas;
@@ -49,6 +50,10 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   /** @type {(v: unknown) => void} */
   let compiledIs = () => {};
   const compiled = new Promise((r) => { compiledIs = r; });
+  /* true once the worker said `up`; false once the flight is on the page before it did (a fallback, or destroyed) */
+  /** @type {(v: boolean) => void} */
+  let asideIs = () => {};
+  const aside = new Promise((r) => { asideIs = r; });
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let timer;
   /** @type {Worker | null} */
@@ -64,7 +69,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     const m = e.data;
     if (engine || destroyed || !m || typeof m !== "object") return;
     switch (m.type) {
-      case "up": if (m.ok) { up = true; clearTimeout(timer); } else fallBack(String(m.why || "the worker cannot draw here")); break;
+      case "up": if (m.ok) { up = true; clearTimeout(timer); asideIs(true); } else fallBack(String(m.why || "the worker cannot draw here")); break;
       /* (the worker's console lines, printed as they come: every line reads as it does on the page) */
       case "note": if (m.kind === "verdict") page.verdict(String(m.line)); else page.note(String(m.line)); break;
       case "compiled": compiledIs(!!m.ok); break;
@@ -98,6 +103,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     }
     gl?.remove(); gl = null;
     const mine = engine = createFlight(warp, { now });
+    asideIs(false);
     page.note(`orbit · flight: drawn on the page: ${why}`);
     if (destroyed) { mine.destroy(); return; }
     for (const ask of pending.values()) (ask.kind === "warmDocs" ? mine.warmDocs({ prove: ask.prove }) : mine.warm({ prove: ask.prove })).then(ask.resolve);
@@ -149,6 +155,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   };
   return {
     compiled() { return engine ? engine.compiled() : compiled; },
+    aside() { return aside; },
     /* (a world in a worker cannot stall the page: the journey keeps real time, 6a.3) */
     get drawingWorld() { return engine ? engine.drawingWorld : false; },
     warm({ prove = true } = {}) { return ask("warm", prove); },
@@ -176,6 +183,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       for (const a of pending.values()) a.resolve();
       pending.clear();
       compiledIs(false);
+      asideIs(false);
     },
     resize() { if (engine) { engine.resize(); return; } style(); post({ type: "size", ...sizeNow() }); },
     get running() {
