@@ -426,3 +426,302 @@ export function trackGl(page) {
   };
   return tr;
 }
+
+/*
+ * ===== The flight drawn in a worker (ADR-0004 6a, tests D2-D5) =====
+ * Everything below is new for the worker path and changes nothing above it. The page side (D2-D4): a small DOM whose
+ * canvases have a parent, an id, a class and attributes and can be handed over (transferControlToOffscreen), and a
+ * fake `Worker` that records what it is posted and says what a case tells it to. The worker side (D5): a stub `self`
+ * and a global scope with no page in it, which draw-worker.js is imported into.
+ */
+export const WORKER = "../../assets/door/draw-worker.js";
+export const BASE = "https://site.test/app/";
+/* the paths the door asks the host's `image()` for when the flight is warmed (voyage.js pictures(); engine.js dawn.webp) */
+export const PICTURE_PATHS = ["flight/earth-lights.webp", "flight/earth-day.webp", "flight/earth-clouds.webp", "flight/europe-lights.webp", "flight/moon.webp",
+  "dawn/lights-near.webp", "dawn/clouds-near.webp", "dawn/land-near.webp", "dawn/dawn.webp"];
+/* the host's font, as settings.fonts takes it (a relative url), and the same as the page posts it (absolute) */
+export const FONTS = [{ family: "Test Mono", weight: 500, url: "assets/fonts/test-mono.woff2" }];
+export const FONTS_ABS = [{ family: "Test Mono", weight: 500, url: new URL("assets/fonts/test-mono.woff2", BASE).href }];
+/* the host's `image(path)`: a relative address under img/; the same resolved against BASE is what the page posts */
+export const hostImage = (p) => "img/" + p;
+export const absImage = (p) => new URL(hostImage(p), BASE).href;
+export const IMAGES_ABS = Object.fromEntries(PICTURE_PATHS.map((p) => [p, absImage(p)]));
+
+/* a 2D context that records every call on its canvas, with the (virtual) time of the call */
+const recording2d = (page, c) => new Proxy({}, {
+  get: (t, k) => (k === "canvas" ? c : k in t ? t[k] : typeof k === "symbol" ? undefined : (...a) => { c.ops.push({ op: String(k), at: performance.now() }); page.paints.push({ op: String(k), w: c.width, h: c.height }); return any(); }),
+  set: (t, k, v) => { t[k] = v; return true; },
+});
+/* the calls that put something on a canvas (not the setting-up of gradients and paths) */
+export const DRAW_OPS = new Set(["clearRect", "fillRect", "fill", "stroke", "drawImage", "fillText", "strokeText", "putImageData", "strokeRect"]);
+
+/*
+ * installDom(page, { baseURI }) -> dom. Call right after installPage(). Replaces document.createElement("canvas") with
+ * canvases that live in a parent: dom.warp (#warp, in dom.parent) is the journey's canvas. A canvas handed over
+ * (transferControlToOffscreen) returns a plain token (dom.tokenOf) and gives no context again, as in a browser (it
+ * throws). dom.find(id) is the canvas with that id that is in the page. HTMLCanvasElement is the canvas class.
+ */
+export function installDom(page, { baseURI = BASE } = {}) {
+  const dom = { canvases: [], tokens: new Map(), parent: null, warp: null };
+  let tokenN = 0;
+  class Parent {
+    constructor() { this.children = []; }
+    insertBefore(n, ref) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+      const i = ref ? this.children.indexOf(ref) : -1;
+      if (i < 0) this.children.push(n); else this.children.splice(i, 0, n);
+      n.parentNode = this; return n;
+    }
+    appendChild(n) { return this.insertBefore(n, null); }
+    append(...ns) { for (const n of ns) this.insertBefore(n, null); }
+    removeChild(n) { const i = this.children.indexOf(n); if (i >= 0) this.children.splice(i, 1); n.parentNode = null; return n; }
+    replaceChild(n, old) {
+      if (n === old) return old;
+      if (n.parentNode) n.parentNode.removeChild(n);
+      const i = this.children.indexOf(old);
+      if (i < 0) throw new Error("replaceChild: the old child is not here");
+      this.children[i] = n; n.parentNode = this; old.parentNode = null; return old;
+    }
+  }
+  class Canvas {
+    constructor() {
+      this.attrs = new Map(); this.parentNode = null; this.style = {}; this.dataset = {};
+      this.width = 300; this.height = 150; this.transferred = false; this.token = null; this.gotContext = null;
+      this.ops = []; this.listeners = {}; this.c2d = null;
+      dom.canvases.push(this);
+    }
+    get id() { return this.attrs.get("id") ?? ""; }
+    set id(v) { this.attrs.set("id", String(v)); }
+    get className() { return this.attrs.get("class") ?? ""; }
+    set className(v) { this.attrs.set("class", String(v)); }
+    get classList() {
+      const self = this, list = () => self.className.split(/\s+/).filter(Boolean);
+      return {
+        add(...n) { self.className = [...new Set([...list(), ...n])].join(" "); },
+        remove(...n) { self.className = list().filter((x) => !n.includes(x)).join(" "); },
+        contains: (x) => list().includes(x),
+        toggle(x, f) { const on = f === undefined ? !list().includes(x) : !!f; (on ? this.add : this.remove).call(this, x); return on; },
+      };
+    }
+    setAttribute(k, v) { this.attrs.set(k, String(v)); }
+    getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
+    hasAttribute(k) { return this.attrs.has(k); }
+    removeAttribute(k) { this.attrs.delete(k); }
+    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+    removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn); }
+    getContext(kind) {
+      if (this.transferred) throw new Error("InvalidStateError: the canvas has been handed to an OffscreenCanvas");
+      this.gotContext ||= kind;
+      if (kind === "webgl2") { page.contexts++; return page.gl; }
+      return (this.c2d ||= recording2d(page, this));
+    }
+    transferControlToOffscreen() {
+      if (this.transferred || this.gotContext) throw new Error("InvalidStateError: the canvas cannot be handed over");
+      this.transferred = true;
+      this.token = { offscreen: ++tokenN };
+      dom.tokens.set(this.token, this);
+      return this.token;
+    }
+    remove() { this.parentNode?.removeChild(this); }
+    replaceWith(n) { this.parentNode?.replaceChild(n, this); }
+    before(n) { this.parentNode?.insertBefore(n, this); }
+    after(n) { const p = this.parentNode; if (p) p.insertBefore(n, p.children[p.children.indexOf(this) + 1] ?? null); }
+    /* what a test reads: whether this one is in the page */
+    get inPage() { return !!this.parentNode; }
+  }
+  dom.Canvas = Canvas;
+  dom.parent = new Parent();
+  dom.tokenOf = (c) => c.token;
+  dom.find = (id) => dom.canvases.find((c) => c.parentNode && c.id === id) ?? null;
+  dom.inPage = () => dom.canvases.filter((c) => c.parentNode);
+  const doc = page.document, create = doc.createElement;
+  doc.createElement = (tag) => (tag === "canvas" ? new Canvas() : create(tag));
+  doc.baseURI = baseURI;
+  doc.getElementById = (id) => dom.find(id);
+  doc.querySelector = (sel) => { const m = /^#([\w-]+)$/.exec(sel); return m ? dom.find(m[1]) : page.query(sel); };
+  globalThis.HTMLCanvasElement = Canvas;
+  dom.warp = new Canvas();
+  dom.warp.id = "warp"; dom.warp.className = "warp-canvas lit"; dom.warp.setAttribute("aria-hidden", "true"); dom.warp.setAttribute("data-role", "flight");
+  dom.parent.appendChild(dom.warp);
+  dom.journeyOptions = (on = {}) => ({ canvas: dom.warp, name: any(), dawnGlyph: () => null, duskGlyph: () => null, on });
+  return dom;
+}
+
+/*
+ * fakeWorkers(auto) -> host. host.make() is what a case's `drawWorker` returns; every worker made is in host.list.
+ * A worker records what it is posted (posted, transfers, late: posted after terminate, cloneErrors: a message
+ * structured clone could not carry), counts terminate(), and says what it is told with say(msg) (a message event) or
+ * fail() (an error event), through onmessage / addEventListener alike. `auto` makes the common answers by itself, on
+ * the clock: up (after `canvases`), warmed (after `warm`) and frame (after `start`), the last two only once it has
+ * said `up` (a worker answers in order when it is ready); a case sets host.auto.x = null to say nothing.
+ */
+export function fakeWorkers(auto = {}) {
+  const host = { made: 0, list: [], auto: { up: { ok: true, renderer: "stub renderer" }, warmed: true, frame: true, ...auto } };
+  class FakeWorker {
+    constructor() {
+      host.made++; host.list.push(this);
+      this.posted = []; this.postedAt = []; this.transfers = []; this.late = []; this.cloneErrors = []; this.terminated = 0; this.upSaid = false; this.waiting = [];
+      this.on = { message: [], error: [], messageerror: [] };
+      this.onmessage = null; this.onerror = null; this.onmessageerror = null;
+    }
+    postMessage(msg, transfer) {
+      if (this.terminated) { this.late.push(msg); return; }
+      try { structuredClone(msg); } catch (e) { this.cloneErrors.push(`${msg && msg.type}: ${e && e.message}`); }
+      this.posted.push(msg); this.transfers.push(transfer ?? []); this.postedAt.push(performance.now());
+      if (msg && msg.type === "canvases" && host.auto.up) setTimeout(() => this.say({ type: "up", ...host.auto.up }), 0);
+      this.answer(msg);
+    }
+    /* a worker answers in order once it is up: a message that comes before is answered when `up` is said */
+    answer(msg) {
+      const a = host.auto;
+      if (!msg || (msg.type !== "warm" && msg.type !== "start")) return;
+      if (!this.upSaid) { this.waiting.push(msg); return; }
+      if (msg.type === "warm" && a.warmed) setTimeout(() => this.say({ type: "warmed", id: msg.id, ok: true }), 0);
+      if (msg.type === "start" && a.frame) setTimeout(() => this.say({ type: "frame", seq: msg.seq, world: true }), 0);
+    }
+    terminate() { this.terminated++; }
+    addEventListener(type, fn) { (this.on[type] ||= []).push(fn); }
+    removeEventListener(type, fn) { this.on[type] = (this.on[type] || []).filter((f) => f !== fn); }
+    say(data) {
+      if (this.terminated) return;
+      if (data && data.type === "up" && data.ok) { this.upSaid = true; for (const m of this.waiting.splice(0)) this.answer(m); }
+      const ev = { type: "message", data, target: this };
+      if (typeof this.onmessage === "function") this.onmessage(ev);
+      for (const f of [...this.on.message]) f(ev);
+    }
+    fail(message = "the worker failed") {
+      if (this.terminated) return;
+      const ev = { type: "error", message, error: new Error(message), target: this, preventDefault() {} };
+      if (typeof this.onerror === "function") this.onerror(ev);
+      for (const f of [...this.on.error]) f(ev);
+    }
+    of(type) { return this.posted.filter((m) => m && m.type === type); }
+  }
+  host.make = () => new FakeWorker();
+  host.first = () => host.list[0] ?? null;
+  return host;
+}
+
+/*
+ * bootWorkerPage(o) -> { page, clock, dom, host, door, d, journey }: the stub page for D2-D4 with the worker path
+ * possible: a Worker, OffscreenCanvas and HTMLCanvasElement.prototype.transferControlToOffscreen, a gate that reports no
+ * background compile (parallel false, the Firefox tell) and no navigator.userAgentData, and the door made with a
+ * drawWorker (the fake) and fonts. The virtual clock is installed; nothing is waited for in real time.
+ *   o.draw          flags.draw ("worker" | "page"; absent: the automatic rule)
+ *   o.flags         other flags
+ *   o.worker=false  no drawWorker given;  o.fonts=false  no fonts given
+ *   o.parallel      the gate's context has KHR_parallel_shader_compile (true)
+ *   o.userAgentData navigator.userAgentData is defined;  o.saveData  navigator.connection.saveData
+ *   o.noWorkerGlobal / o.noOffscreen / o.noTransfer   the browser lacks it
+ *   o.hidden, o.settle, o.size [W, H, dpr], o.auto (fakeWorkers' answers)
+ */
+export async function bootWorkerPage(o = {}) {
+  const page = installPage({ hidden: !!o.hidden });
+  const clock = installClock();
+  const dom = installDom(page, { baseURI: BASE });
+  const [W, H, dpr] = o.size ?? [1280, 800, 1.5];
+  globalThis.innerWidth = W; globalThis.innerHeight = H; globalThis.devicePixelRatio = dpr;
+  globalThis.Worker = class Worker {};
+  if (o.noWorkerGlobal) delete globalThis.Worker;
+  if (o.noOffscreen) delete globalThis.OffscreenCanvas;
+  if (o.noTransfer) delete dom.Canvas.prototype.transferControlToOffscreen;
+  if (!o.parallel) {
+    const get = page.glBase.getExtension;
+    page.glBase.getExtension = (n) => (n === "KHR_parallel_shader_compile" ? null : get(n));
+  }
+  const nav = (k, v) => Object.defineProperty(globalThis.navigator, k, { value: v, configurable: true, writable: true });
+  if (o.userAgentData) nav("userAgentData", { brands: [{ brand: "Chromium", version: "130" }], mobile: false });
+  if (o.saveData) nav("connection", { saveData: true });
+  const host = fakeWorkers(o.auto);
+  const door = await import(INDEX);
+  const given = { typingWait: 0, settle: o.settle ?? 700, image: hostImage, flags: { ...(o.draw ? { draw: o.draw } : {}), ...(o.flags || {}) } };
+  if (o.worker !== false) given.drawWorker = () => host.make();
+  if (o.fonts !== false) given.fonts = FONTS.map((f) => ({ ...f }));
+  const d = door.createDoor(given);
+  door.openChores();
+  const journey = d.journey(dom.journeyOptions());
+  return { page, clock, dom, host, door, d, journey, given };
+}
+
+/* what a case finds of the console: the lines about where the flight is drawn */
+export const drawnLines = (page) => page.lines.filter((l) => /flight: drawn (in a worker|on the page)/.test(l));
+
+/*
+ * installWorkerSelf(page) -> w: the global scope of a dedicated worker, for D5, installed after installPage() and
+ * installClock(): the page's own globals are taken away (a worker has no document, window, Image, innerWidth,
+ * devicePixelRatio, matchMedia, getComputedStyle, localStorage or requestIdleCallback, so any touch of one throws),
+ * `self` has postMessage / onmessage / close / fonts, and the transferred canvases (w.warp, w.warpgl) are
+ * OffscreenCanvas fakes whose contexts are the stub's recording gl and 2D. It records: w.posted (what the worker
+ * posted; w.cloneErrors: what structured clone could not carry), w.closed, w.rafs (animation frames asked, with
+ * w.rafLog their times), w.fetched (urls fetched), w.faces / w.fontsAdded (FontFace made / added to self.fonts),
+ * w.compiles (each compileShader: the frames asked by then and the chore queue then). w.holdFonts() makes FontFace
+ * load() wait until the returned release() is called. w.send(msg) delivers a message to the worker.
+ */
+export function installWorkerSelf(page) {
+  const w = {
+    posted: [], cloneErrors: [], closed: 0, rafs: 0, rafLog: [], fetched: [], faces: [], fontsAdded: [], loads: 0,
+    compiles: [], snaps: [], listeners: {}, chores: null, gate: null,
+  };
+  for (const k of ["document", "window", "Image", "innerWidth", "innerHeight", "devicePixelRatio", "matchMedia", "getComputedStyle", "localStorage", "requestIdleCallback", "cancelIdleCallback"]) delete globalThis[k];
+  const raf = globalThis.requestAnimationFrame;
+  const counted = (f) => { w.rafs++; w.rafLog.push(performance.now()); return raf(f); };
+  globalThis.requestAnimationFrame = counted;
+  const post = (m) => {
+    try { structuredClone(m); } catch (e) { w.cloneErrors.push(`${m && m.type}: ${e && e.message}`); }
+    w.posted.push(m);
+  };
+  const self_ = {
+    postMessage: post, onmessage: null, close() { w.closed++; },
+    fonts: { add(f) { w.fontsAdded.push(f); }, delete() {}, ready: Promise.resolve() },
+    addEventListener(type, fn) { (w.listeners[type] ||= []).push(fn); }, removeEventListener() {},
+    requestAnimationFrame: counted, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+  };
+  globalThis.self = self_;
+  /* (the worker's global scope is `self`: its names are bare there too) */
+  globalThis.postMessage = post; globalThis.close = self_.close;
+  w.self = self_;
+  w.send = (data) => {
+    const ev = { type: "message", data };
+    if (typeof self_.onmessage === "function") self_.onmessage(ev);
+    for (const f of [...(w.listeners.message || [])]) f(ev);
+  };
+  w.of = (type) => w.posted.filter((m) => m && m.type === type);
+  let fontGate = null;
+  w.holdFonts = () => { let go; fontGate = new Promise((r) => { go = r; }); return () => go(); };
+  globalThis.FontFace = class FontFace {
+    constructor(family, source, descriptors) { this.family = family; this.source = source; this.descriptors = descriptors; this.status = "unloaded"; w.faces.push(this); }
+    load() { w.loads++; this.status = "loading"; return (fontGate || Promise.resolve()).then(() => { this.status = "loaded"; return this; }); }
+  };
+  globalThis.fetch = async (url) => { w.fetched.push(String(url)); return { ok: true, status: 200, blob: async () => ({ size: 1, type: "image/webp" }) }; };
+  /* the canvases a page hands over: sizes set on them are logged */
+  const offscreen = (name) => {
+    const c = {
+      name, _w: 300, _h: 150, sizes: [], ops: [], listeners: {}, c2d: null,
+      get width() { return c._w; }, set width(v) { c._w = v; c.sizes.push([c._w, c._h]); },
+      get height() { return c._h; }, set height(v) { c._h = v; c.sizes.push([c._w, c._h]); },
+      addEventListener(type, fn) { (c.listeners[type] ||= []).push(fn); }, removeEventListener() {},
+      getContext(kind) { if (kind === "webgl2") { page.contexts++; return page.gl; } return (c.c2d ||= recording2d(page, c)); },
+      transferToImageBitmap() { return { width: c._w, height: c._h, close() {} }; },
+    };
+    return c;
+  };
+  w.warp = offscreen("warp"); w.warpgl = offscreen("warpgl");
+  /* the worker's gate context has no background compile, as on Firefox (so a compile would freeze whatever shares the thread) */
+  const getExtension = page.glBase.getExtension;
+  page.glBase.getExtension = (n) => (n === "KHR_parallel_shader_compile" ? null : getExtension(n));
+  /* every shader compiled: how many frames had been asked by then, and what the chore queue held */
+  page.glBase.compileShader = (s) => { w.compiles.push({ src: String(s?.src ?? ""), rafs: w.rafs, queued: w.chores ? w.chores().queued : [] }); };
+  return w;
+}
+
+/*
+ * chk(name, r, fn): a case's check, read safely. A case that errored, or found nothing to look at (r.none says why),
+ * fails with that said plainly; fn(r) returns [ok, detail], and a result it cannot read fails with the result shown
+ * (never a crash in the parent that hides the other cases).
+ */
+export function chk(name, r, fn) {
+  if (r.error || r.none) { check(name, false, String(r.none || r.error)); return; }
+  let ok = false, detail = "";
+  try { [ok, detail] = fn(r); } catch (e) { detail = `the result could not be read (${e && e.message}): ${JSON.stringify(r).slice(0, 240)}`; }
+  check(name, !!ok, detail);
+}
