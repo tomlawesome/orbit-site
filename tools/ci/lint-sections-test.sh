@@ -39,17 +39,17 @@ lastline() { tail -n 1 "$tmp/$1.out"; }
 oneline() { tr '\n' '|' <"$tmp/$1.out" | cut -c1-200; }
 
 # L1 no arguments: every section runs
-d="no arguments, clean tree: exit 0, 16 headers, last line 'lint: ok'"
+d="no arguments, clean tree: exit 0, 17 headers, last line 'lint: ok'"
 run_lint all
 n=$(nheaders all)
-if [ "$rc" -eq 0 ] && [ "$n" -eq 16 ] && [ "$(lastline all)" = "lint: ok" ]; then
+if [ "$rc" -eq 0 ] && [ "$n" -eq 17 ] && [ "$(lastline all)" = "lint: ok" ]; then
     pass L1 "$d"
 else
     fail L1 "$d" "exit=$rc headers=$n last='$(lastline all)'"
 fi
 
 # L2 --list prints the ids and runs nothing
-d="--list: exit 0, the 16 ids in file order, no '== ' or 'lint:' line"
+d="--list: exit 0, the 17 ids in file order, no '== ' or 'lint:' line"
 run_lint list --list
 want=$(printf '%s\n' $ids)
 got=$(cat "$tmp/list.out")
@@ -70,7 +70,7 @@ else
 fi
 
 # L4 every id alone prints one header; together they equal the no-argument run
-d="each id alone prints one header; the 16 together equal the no-argument headers"
+d="each id alone prints one header; the 17 together equal the no-argument headers"
 : >"$tmp/each.txt"
 bad=""
 for id in $ids; do
