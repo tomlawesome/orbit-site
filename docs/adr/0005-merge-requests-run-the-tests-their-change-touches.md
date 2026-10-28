@@ -88,6 +88,8 @@ initial groups, from each test's own header:
 | `dawn` | harness | Firefox |
 | `asdawn` | harness | Firefox |
 | `dropped-warning` | import | Chromium (headless, 2 s) |
+| `draw-pixels` | harness, flight | Chromium (added with #85 batch 3: the worker path's pixel identity, ADR-0004 6a.7 P1) |
+| `draw-live` | page, flight | Firefox (added with #85 batch 3: P2 and P3) |
 
 (`pin` leaves the browser: section 5.) `assets/door/**` is in `all`, so no door-only test needs a door path.
 

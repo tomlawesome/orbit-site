@@ -596,12 +596,20 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
   background) leaving the frame gaps at 29-34 ms before and after, the spinner turning throughout.
 - **What each browser gets (ADR-0004).** Chrome, Edge and Safari keep the page path: Chrome and Edge because a worker's
   compile would stall them, Safari because it was measured not to stall (and a worker's compile would warm the page's
-  if that ever changed, so no pre-warm is built). Firefox's move of the drawing into a worker is deferred to #85.
+  if that ever changed, so no pre-warm is built). Firefox's move of the drawing into a worker is #85, built (below).
 - **The two tries before the answer:** the first test read pixels back in the page's loop, which was itself the
   stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
   process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).
 
-**The build, if funded:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
+**Built (#85, ADR-0004 6a).** On Firefox the flight and the docs galaxy are now drawn in a module worker that owns both
+canvases (`?draw=worker|page`; otherwise the rule in `fitness.js` `drawnAside()`), the page keeping the clock, the beats
+and the 2D door; any failure falls back to the page. The install and info worlds still compile on the page (#93), so
+the ring's wait for them stays. Pixel-identical to the page path in Chromium (`tools/ci/draw-pixels-test.mjs`).
+**Not yet measured:** nothing here is a number for the worker path. The owner's M3 run on a real desktop (ADR-0004
+6a.10: `?preview` against `?preview&draw=page`, the console lines of each) is still to come, and the targets above
+stand until it is in.
+
+**The build, as it was planned:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
 state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;
 measures taken there; the live door late and in the worker too (the door's own canvas handed over when its journeys
 are ready). Verified pixel-identical against the page path, in Edge, before the switch is made for Firefox only

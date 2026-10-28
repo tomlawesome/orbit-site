@@ -325,9 +325,11 @@ try {
       dawn: [["harness"], ["firefox"]],
       asdawn: [["harness"], ["firefox"]],
       "dropped-warning": [["import"], ["chromium"]],
+      "draw-pixels": [["harness", "flight"], ["chromium"]],
+      "draw-live": [["page", "flight"], ["firefox"]],
     };
     const names = Object.keys(real.tests || {});
-    check("R1 the map's tests are the ADR's thirteen browser tests (pin is not one: it left the browser)", sameSet(names, Object.keys(TABLE)), JSON.stringify(sorted(names)));
+    check("R1 the map's tests are the ADR's browser tests (pin is not one: it left the browser)", sameSet(names, Object.keys(TABLE)), JSON.stringify(sorted(names)));
     const wrong = Object.entries(TABLE).filter(([n, [g, b]]) => !real.tests?.[n] || !sameSet(real.tests[n].groups || [], g) || !sameSet(real.tests[n].browsers || [], b)).map(([n]) => n);
     check("R2 each test's groups and browsers are as the ADR's table", wrong.length === 0, wrong.length ? `differ: ${wrong.join(", ")}` : "all as the table");
     const gates = Object.entries(real.tests || {}).filter(([n, t]) => !sameSet(t.gates || [], n === "site-browser" ? ["firefox"] : t.browsers || [])).map(([n]) => n);
@@ -346,9 +348,9 @@ try {
     };
     r("R4 assets/js/home.js (home): journey and site-browser", ["journey", "site-browser"], { write: { "assets/js/home.js": "h2\n" } });
     r("R5 assets/js/pads.js (docs): journey, csp, site-browser", ["journey", "csp", "site-browser"], { write: { "assets/js/pads.js": "p2\n" } });
-    r("R6 assets/js/journeys.js (flight): journey, flight-context-loss, docs-planet, docs-sky-portrait-live", ["journey", "flight-context-loss", "docs-planet", "docs-sky-portrait-live"], { write: { "assets/js/journeys.js": "j2\n" } });
-    r("R7 index.html (page): every page test, not the harness or import tests", ["journey", "csp", "phone-door", "site-browser", "freeze", "flight-context-loss", "docs-planet", "docs-sky-portrait-live", "door-lows"], { write: { "index.html": "i2\n" } });
-    r("R8 tests/upload.html (harness): upload, dawn, asdawn", ["upload", "dawn", "asdawn"], { write: { "tests/upload.html": "u2\n" } });
+    r("R6 assets/js/journeys.js (flight): journey, flight-context-loss, docs-planet, docs-sky-portrait-live, draw-pixels, draw-live", ["journey", "flight-context-loss", "docs-planet", "docs-sky-portrait-live", "draw-pixels", "draw-live"], { write: { "assets/js/journeys.js": "j2\n" } });
+    r("R7 index.html (page): every page test, not the harness or import tests", ["journey", "csp", "phone-door", "site-browser", "freeze", "flight-context-loss", "docs-planet", "docs-sky-portrait-live", "door-lows", "draw-live"], { write: { "index.html": "i2\n" } });
+    r("R8 tests/upload.html (harness): upload, dawn, asdawn, draw-pixels", ["upload", "dawn", "asdawn", "draw-pixels"], { write: { "tests/upload.html": "u2\n" } });
     r("R9 tools/import-docs.mjs (import): dropped-warning", ["dropped-warning"], { write: { "tools/import-docs.mjs": "x2\n" } });
     r("R10 tools/ci/lint.sh (tooling): no browser test", [], { write: { "tools/ci/lint.sh": "l2\n" } });
     r("R11 README.md and docs/** (none): no browser test", [], { write: { "README.md": "r2\n", "docs/adr/0001.md": "a2\n" } });

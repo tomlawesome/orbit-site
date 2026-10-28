@@ -193,6 +193,20 @@
       "gates": ["firefox"],
       "seconds": { "firefox": 111 }
     },
+    "draw-pixels": {
+      "file": "tools/ci/draw-pixels-test.mjs",
+      "groups": ["harness", "flight"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 40 }
+    },
+    "draw-live": {
+      "file": "tools/ci/draw-live-test.mjs",
+      "groups": ["page", "flight"],
+      "browsers": ["firefox"],
+      "gates": ["firefox"],
+      "seconds": { "firefox": 55 }
+    },
     "dropped-warning": {
       "file": "tools/ci/dropped-warning-test.mjs",
       "groups": ["import"],

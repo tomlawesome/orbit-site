@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="../assets/door/door.css" />
+  <link rel="stylesheet" href="../assets/fonts/fonts.css" />
+  <style>
+    html, body { margin: 0; background: #000; }
+    /* the canvases are judged as they are drawn, not as the stylesheet fades them in; nothing else is on the page */
+    #warp, #warpgl { opacity: 1 !important; transition: none !important; }
+    #launchname { display: none; }
+  </style>
+</head>
+<body>
+  <!-- Driven by tools/ci/draw-pixels-test.mjs (#85, ADR-0004 6a.7 P1): a door and a journey made through
+       assets/door/index.js alone, as a host makes them, with the flags the address gives (?gpu=force&fit=skip&draw=worker|page,
+       as the site reads them) and the host's worker and font. window.show(kind, at) readies the flight, then starts a
+       journey pinned at `at` ms: kind "up" (UP), "demo" (demoFlight with two named households), "docs" (docsFlight
+       with a chart) or "down" (descend). The pinned frame is drawn once and the page waits for nothing more: the test
+       waits for #warp[data-drawn] and takes the picture. Nothing else on the page draws or flies. -->
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div id="launchname" aria-hidden="true"></div>
+  <script type="module">
+    import { createDoor, openChores, openCompiles, UP } from "../assets/door/index.js";
+    import { demoFlight, docsFlight } from "../assets/js/journeys.js";
+
+    /* the flags, read from the address as the site's main.js reads them */
+    const FLAGS = {
+      gpu: /[?&]gpu=force\b/.test(location.search) ? "force" : null,
+      fit: /[?&]fit=skip\b/.test(location.search) ? "skip" : null,
+      draw: location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null,
+    };
+    const door = createDoor({
+      image: (path) => `../assets/door/img/${path}`, flags: FLAGS,
+      drawWorker: () => new Worker("../assets/door/draw-worker.js", { type: "module" }),
+      fonts: [{ family: "JetBrains Mono", weight: 500, url: "../assets/fonts/jetbrains-mono-latin.woff2" }],
+    });
+    const glyph = () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 10 10");
+      return svg;
+    };
+    const journey = door.journey({ canvas: document.getElementById("warp"), name: document.getElementById("launchname"), dawnGlyph: glyph, duskGlyph: glyph });
+
+    /* two households, named, each with its items as bodies (the names are drawn with the page's face or the worker's) */
+    const HOMES = [
+      { name: "Larkspur", bodies: [[31, -12, "#e0b860", 5], [36, 8, "#9fc3e0", 3]] },
+      { name: "Quillmoor", bodies: [[-27, 18, "#c98fd0", 4]] },
+    ];
+    /* the docs' chart: where the page shows it, and a small field and two named constellations (all numbers fixed) */
+    const CHART = {
+      rect: { x: 120, y: 80, w: 1040, h: 640 },
+      geometry: {
+        W: 1040, H: 640,
+        field: {
+          dots: Array.from({ length: 40 }, (_, i) => ({ x: (i * 97) % 1040, y: (i * 61) % 640, r: 0.8 + (i % 3) * 0.4, o: 0.3 + (i % 5) * 0.12 })),
+          arcs: ["M 40 320 A 480 280 0 0 1 1000 320", "M 120 520 A 400 200 0 0 1 920 520"],
+        },
+        cons: [
+          { c: "#8fb8ff", name: "Architecture", pts: [[160, 140], [260, 200], [350, 170], [430, 260]] },
+          { c: "#f87171", name: "Operations", pts: [[620, 420], [700, 380], [790, 450], [860, 400], [930, 480]] },
+        ],
+      },
+    };
+
+    window.show = async (kind, at) => {
+      /* the face the names are written with is in before anything is drawn on the page (the worker waits for its own) */
+      await document.fonts.load("500 13px 'JetBrains Mono'");
+      openCompiles(); openChores();
+      await (kind === "docs" ? journey.warmDocs() : journey.warm());
+      if (kind === "up") journey.fly(UP, { at, title: "Test", subtitle: "draw" });
+      else if (kind === "demo") journey.fly(demoFlight(HOMES), { at, title: "Test", subtitle: "draw" });
+      else if (kind === "docs") journey.fly(docsFlight(CHART), { at, title: "Test", subtitle: "draw" });
+      else journey.descend({ at, title: "Test", subtitle: "draw" });
+    };
+    window.drawReady = true;
+  </script>
+</body>
+</html>
