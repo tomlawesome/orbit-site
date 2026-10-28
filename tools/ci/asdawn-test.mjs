@@ -32,22 +32,17 @@
  * for in real time.
  */
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
 const here = dirname(fileURLToPath(import.meta.url));
 
-const freePort = () => new Promise((ok, no) => {
-  const s = createServer();
-  s.once("error", no);
-  s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => ok(port)); });
-});
-const PORT = Number(process.env.ASDAWN_PORT) || await freePort();
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${Number(process.env.ASDAWN_PORT) || await freePort()}/`;
 
 /* the transitions settle (the gate's takes .9s after .6s) before geometry is read */
 const SETTLE = 2600;
@@ -55,7 +50,7 @@ const DESKTOP = { width: 1280, height: 800 };
 const PHONE = { width: 390, height: 844 };
 const EARTH = /\/assets\/door\/img\/dawn\/dawn(-pre)?\.webp(\?|$)/;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let failed = false;
 let browser = null;
 
@@ -238,7 +233,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
 
   for (const reduced of [false, true]) {
     const motion = reduced ? "reduced motion" : "motion on";
@@ -466,6 +461,6 @@ try {
   failed = true;
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 process.exit(failed ? 1 : 0);

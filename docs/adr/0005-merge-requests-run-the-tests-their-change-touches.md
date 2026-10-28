@@ -167,6 +167,57 @@ decide what to run inside (question 17).
 The `light` lane's concurrency decides whether shards queue; the estimates below assume they do not. If the lane
 runs fewer, promotion stretches toward 15 min and the shard counts come down.
 
+## 3a. Interfaces for batch 2
+
+Fixed here so the tests can be written before the code, and the code built to the tests.
+
+**`tools/ci/live-run.mjs BROWSER [--all | --changed | TEST...] [--base REF] [--dry-run]`** (BROWSER is `firefox` or
+`chromium`; the job's one entry point, and `journey-local.sh`'s).
+
+- Selection: `--all` is every map test that runs in BROWSER; `--changed` (the default) is `test-select.mjs`'s answer
+  for the same environment (`--base` handed on), kept to BROWSER's tests; TEST names run those tests (a name not in
+  the map: exit 2 naming it; a test that does not run in BROWSER: one line saying so, skipped).
+- Shard: `CI_NODE_INDEX` (1-based, as GitLab counts) of `CI_NODE_TOTAL`; neither set means one shard. Sort by
+  `seconds[BROWSER]` descending, ties by name, deal each test to the bin with the least planned time. Prints the
+  selection's account (as `test-select.mjs` prints it), then `shard I/N: <names in run order>, planned S s`; after
+  each test `<name>: ok|FAILED in S s` (`FAILED (not gating in BROWSER)` where its `gates` lacks BROWSER); at the end
+  `shard I/N: planned S s, took S s`. Nothing in this shard: `0 of N selected` (N the map's tests), exit 0.
+- `--dry-run`: the account and the plan, nothing started, exit 0.
+- Server: unless `SITE` is set, starts `serve.mjs` on `freePort()` and hands `SITE` to every test; stops it at the end.
+- Browser: unless `PW_WS_ENDPOINT` is set, `playwright[BROWSER].launchServer({ headless: false })` (Playwright from
+  `PLAYWRIGHT_ROOT`, found as the tests find it) and hands `PW_WS_ENDPOINT` on; closes it at the end. So a test of the
+  runner sets both and no server or browser is ever started.
+- Each test runs as `node <file>`, one after another, in the job's environment plus `BROWSER`, `SITE`,
+  `PW_WS_ENDPOINT`, `HEADED=1`, `WEBGL=required`, `LIBGL_ALWAYS_SOFTWARE=1`; a failure does not stop the rest. In
+  Chromium with `COVERAGE_DIR` set, `node --import tools/ci/coverage-hook.mjs <file>`, and the hook names its file
+  `browser-<test>-<CI_NODE_INDEX or 0>-<pid>.json`. The hook wraps `chromium.connect` as well as `chromium.launch`,
+  since the shared browser is reached by connecting; a connected page's `page.coverage` records as a launched one's does.
+- Exit 1 if any test whose `gates` names BROWSER failed; 0 otherwise; 2 for a usage error.
+
+**`tools/ci/live-lib.mjs`**: `freePort()` (bind 0, read the number back, close); `browserPlan(env, { own })` is
+`{ mode: "connect", endpoint }` when `env.PW_WS_ENDPOINT` is set and `own` is false, else `{ mode: "launch",
+headless: env.HEADED !== "1" }`; `openBrowser(playwright, name, { own, launch })` follows the plan,
+`playwright[name].connect(endpoint)` or `playwright[name].launch({ headless, ...launch })`. A test with its own flags
+(`freeze`, `docs-sky-portrait-live`, `upload`'s headless Chromium) passes `own: true`.
+
+**A push to `main`** (17a) selects nothing: `test-select.mjs` answers `{ all: false, tests: [] }` with the reason in its
+account, so the live jobs print `0 of N selected` and the lint jobs' guards print `no`; `LIVE_ALL=true` still wins.
+
+**`tools/ci/test-select.mjs --group NAME`**: prints `yes` when the selection is everything or NAME is among the matched
+groups, else `no`; exit 0 either way (an error exits non-zero and prints no `no`, so a job written as
+`[ "$(node tools/ci/test-select.mjs --group tooling)" = no ] || sh tools/ci/lint-test.sh` fails safe). For this the
+map's `tooling` group gains `tools/ci/lint-test.sh` and `import` gains `tools/ci/nightly-import-test.sh`,
+`tools/ci/import-docs-test.mjs` and `tools/ci/raw-heading-test.mjs`, listed before the `none` globs (a path may be in
+several groups).
+
+**`tools/ci/journey-local.sh [--browser firefox|chromium] [--all | --changed | TEST...]`**: finds Playwright as now
+(exit 2 naming the variables when none), then one `xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs
+BROWSER ARGS` with `BROWSER`, `HEADED=1`, `WEBGL=required`, `LIBGL_ALWAYS_SOFTWARE=1` and `PLAYWRIGHT_ROOT` set; no
+argument means `--changed --base dev`; an unknown option exits 64 with the usage.
+
+**The jobs** are section 3's; the `coverage` job is `allow_failure: true` until batch 3 gates it, so a floor it
+cannot judge from a partial run is visible and not a block.
+
 ## 4. Ports and browsers
 
 - **No fixed ports.** `journey` (8787), `upload` (8793), `pin` (8794), `dawn` (8795) and `site-browser` (8796) bind
@@ -181,7 +232,7 @@ runs fewer, promotion stretches toward 15 min and the shard counts come down.
   to it, or launches as today when the test asks for its own flags. Each test keeps `newContext()` per case, which is
   the freshness they rely on (localStorage, the probe's week-long key, routes). Tests that must launch their own:
   `freeze` (`--ignore-gpu-blocklist --enable-gpu`, the machine the bug is on), `docs-sky-portrait-live`
-  (`--use-angle=swiftshader`), `upload` (headless Chromium beside headed Firefox). The shared browser is launched
+  (`--use-angle=swiftshader`), `upload` (headless Chromium beside headed Firefox by hand; in the gate each browser's job runs its own half, by `BROWSER`). The shared browser is launched
   plain, as the rest launch today, so no test's conditions change. Saving: a browser launch (3-5 s) per test, about
   a minute per job; the real win of the item is that a crash in one test's browser no longer costs the next test its
   launch time, and the pattern is what Playwright documents for several browsers.

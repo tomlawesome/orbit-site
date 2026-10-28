@@ -6,6 +6,8 @@
       ".gitlab-ci.yml",
       "tools/ci/test-map.json",
       "tools/ci/test-select.mjs",
+      "tools/ci/live-run.mjs",
+      "tools/ci/live-lib.mjs",
       "tools/ci/serve.mjs",
       "tools/ci/coverage-hook.mjs",
       "tools/package.json",
@@ -60,7 +62,10 @@
       "tools/ci/nightly-import.sh",
       "tools/ci/nightly-publish.sh",
       "tools/ci/docs-shape.mjs",
-      "tools/ci/docs-markup.mjs"
+      "tools/ci/docs-markup.mjs",
+      "tools/ci/nightly-import-test.sh",
+      "tools/ci/import-docs-test.mjs",
+      "tools/ci/raw-heading-test.mjs"
     ],
     "tooling": [
       "tools/ci/lint.sh",
@@ -76,6 +81,7 @@
       "tools/ci/coverage*",
       "tools/ci/door-timing.mjs",
       "tools/fonts.mjs",
+      "tools/ci/lint-test.sh",
       "renovate.json"
     ],
     "none": [

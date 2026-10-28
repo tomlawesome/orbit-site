@@ -48,11 +48,12 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
-const PORT = 8795;
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 
 /* the light: the backstop is 13 s; the control is watched to 15 s, the cancelled one to 16 s, destroy() at 1 s */
@@ -76,7 +77,7 @@ const GLOW = /\/assets\/door\/img\/dawn\/glow-/;
 /* the pictures start() asks for, as a normal run's network log shows them */
 const EARTH = /\/assets\/door\/img\/dawn\/dawn(-pre)?\.webp(\?|$)/;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let failed = false;
 let browser = null;
 try {
@@ -86,7 +87,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   /* motion left on: reduced motion may take other paths through the light */
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
 
@@ -404,6 +405,6 @@ try {
   failed = true;
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 process.exit(failed ? 1 : 0);

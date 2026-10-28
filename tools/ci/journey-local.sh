@@ -1,29 +1,35 @@
 #!/bin/sh
-# Part of the gate's live check, run locally as `live:journey` runs it (#19):
-# Firefox headed under Xvfb with software GL, the only way it gets WebGL here
-# (headless it has none and never draws a world). It runs only the five checks
-# below. It does not run the site-browser, phone-door, dropped-warning,
-# door-lows, docs-planet, docs-sky-portrait-live, flight-context-loss and csp
-# checks, nor the Chromium coverage ratchet, which `live:journey` also runs.
+# The gate's live check, run locally as the live:firefox and live:chromium
+# jobs run it (#19, #95): tools/ci/live-run.mjs once, under one Xvfb, headed
+# with software GL (the only way Firefox gets WebGL here), one site server
+# and one browser for the whole run.
 #
-#   sh tools/ci/journey-local.sh [journey|upload|dawn|asdawn|freeze]   # no argument: all five
+#   sh tools/ci/journey-local.sh [--browser firefox|chromium] [--all | --changed | TEST...]
+#
+# No argument is --changed against dev (the selection is printed first);
+# --all is the gate's full run in that browser; TEST names are the map's
+# (tools/ci/test-map.json). Firefox by default.
 #
 # Playwright comes from $PLAYWRIGHT_ROOT, or else the newest copy in Orbit's
 # pnpm store ($ORBIT_DIR, default: the orbit checkout beside this one).
-# BROWSER=chromium for a second engine (`freeze` is Chromium whatever it says).
 set -eu
 
 usage() {
-  echo "usage: sh tools/ci/journey-local.sh [journey|upload|dawn|asdawn|freeze]" >&2
+  echo "usage: sh tools/ci/journey-local.sh [--browser firefox|chromium] [--all | --changed | TEST...]" >&2
   exit 64
 }
 
-[ "$#" -le 1 ] || usage
-case "${1-all}" in
-  all) runs="journey upload dawn asdawn freeze" ;;
-  journey|upload|dawn|asdawn|freeze) runs=$1 ;;
-  *) usage ;;
-esac
+browser=firefox
+if [ "${1-}" = --browser ]; then
+  [ "$#" -ge 2 ] || usage
+  case $2 in firefox|chromium) browser=$2 ;; *) usage ;; esac
+  shift 2
+fi
+for a in "$@"; do
+  case $a in --all|--changed) ;; -*) usage ;; esac
+done
+# --changed, said or not, is the change since dev
+case "$*" in ''|--changed) set -- --changed --base dev ;; esac
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
@@ -43,18 +49,10 @@ if ! command -v xvfb-run >/dev/null 2>&1; then
   exit 2
 fi
 
-BROWSER=${BROWSER:-firefox}
+BROWSER=$browser
 HEADED=1
 WEBGL=required
 LIBGL_ALWAYS_SOFTWARE=1
 export PLAYWRIGHT_ROOT BROWSER HEADED WEBGL LIBGL_ALWAYS_SOFTWARE
 
-for run in $runs; do
-  case $run in
-    journey) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs ;;
-    upload) xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs ;;
-    dawn) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs ;;
-    asdawn) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs ;;
-    freeze) xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs ;;
-  esac
-done
+exec xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs "$browser" "$@"
