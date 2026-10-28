@@ -1774,6 +1774,32 @@ site_ok "a local fetch in a site script" assets/js/sky.js 'export const IN2 = ()
 site_ok "a link to another site made by a site script" assets/js/sky.js 'export const IN3 = () => { const a = document.createElement("a"); a.href = "https://example.invalid/credit"; return a; };'
 site_ok "the SVG namespace in a site script" assets/js/sky.js 'export const IN4 = "http://www.w3.org/2000/svg";'
 
+# Cases (v1)-(v2), #99 (the vendored diagram script is pinned by its digest): assets/js/pads.js names the vendored
+# mermaid file with an integrity key, and section "loads" must refuse a vendored file that no longer matches it (v1) and a
+# pin that has lost its integrity key (v2). Both exit 1 naming assets/js/pads.js and the word integrity.
+vendor_case() {
+  commit_all "$1"
+  lint_to_out loads
+  if [ "$rc" -eq 1 ] && grep -q 'assets/js/pads\.js.*integrity\|integrity.*assets/js/pads\.js' "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/js/pads.js and integrity)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+node -e 'const fs=require("fs");const f=process.argv[1];const b=fs.readFileSync(f);b[b.length>>1]^=1;fs.writeFileSync(f,b)' assets/vendor/mermaid-12.2.0.min.js
+vendor_case "one changed byte in the vendored mermaid file"
+sed -i '/const MERMAID = /s/, integrity: "[^"]*"//' assets/js/pads.js
+if grep 'const MERMAID = ' assets/js/pads.js | grep -q integrity; then
+  echo "FAIL the mermaid pin without an integrity key (the planted change did not remove integrity)"
+  failed=1
+  git checkout -q -- assets/js/pads.js
+else
+  vendor_case "the mermaid pin without an integrity key"
+fi
+
 # Cases n1-n3: section "no real names, host logins or private addresses" (#56).
 # The private address is built from parts, so this file holds no literal one
 # and does not trip the guard it tests.

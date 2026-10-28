@@ -325,7 +325,8 @@ echo "== nothing the site loads comes from a third party (#92)"
 # @import; and, in a script, an address given to import, fetch(), new Worker() and the like, set as an element's src,
 # srcset or poster, or as the href of an element made with createElement("link") or given a rel. Anything else is a
 # link or text (<a href>, a.href, location, a credit, the install command) and passes. assets/door/ also has its own,
-# stricter rule (the door section). And the pinned Mermaid (assets/js/pads.js: MERMAID) is the one file in assets/vendor/.
+# stricter rule (the door section). And the pinned Mermaid (assets/js/pads.js: MERMAID) is the one file in assets/vendor/,
+# and its bytes match the sha384 integrity pinned beside its path (#99).
 node - <<'LOADS_EOF' || fail=1
 const fs = require("fs"), path = require("path");
 const { execFileSync } = require("child_process");
@@ -381,11 +382,19 @@ for (const f of ["sw.js", ...list("assets/js", /\.js$/), ...list("tests", /\.js$
   const t = fs.readFileSync(f, "utf8");
   tags(f, t); css(f, t, true); code(f, t);
 }
-const pin = /const MERMAID = \{ src: "([^"]+)"/.exec(fs.readFileSync("assets/js/pads.js", "utf8"));
+const pin = /const MERMAID = \{ src: "([^"]+)"(?:, integrity: "([^"]*)")?/.exec(fs.readFileSync("assets/js/pads.js", "utf8"));
 const vendored = execFileSync("git", ["ls-files", "-z", "--", "assets/vendor"]).toString("utf8").split("\0").filter((f) => /\/mermaid-[^/]*\.js$/.test(f));
 if (!pin) bad("assets/js/pads.js: no const MERMAID = { src: \"...\" } found");
 else {
   if (!vendored.includes(pin[1])) bad(`assets/js/pads.js: MERMAID names ${pin[1]}, which is not in the repository; add it (the command is beside MERMAID)`);
+  else {
+    // the file is collapsed in review, so its bytes are held to the digest pinned beside its path (the browser holds
+    // them to it too, as the script's integrity)
+    const want = `sha384-${require("crypto").createHash("sha384").update(fs.readFileSync(pin[1])).digest("base64")}`;
+    if (pin[2] === undefined) bad(`assets/js/pads.js: MERMAID has no integrity for ${pin[1]}; set integrity: "${want}" beside its src`);
+    else if (!pin[2].startsWith("sha384-")) bad(`assets/js/pads.js: MERMAID's integrity is not a sha384- digest; set integrity: "${want}"`);
+    else if (pin[2] !== want) bad(`assets/js/pads.js: MERMAID's integrity does not match ${pin[1]} (the file is ${want}); if the file is the release's own (the command is beside MERMAID), set integrity: "${want}"`);
+  }
   for (const f of vendored) if (f !== pin[1]) bad(`${f}: not the Mermaid assets/js/pads.js pins (${pin[1]}); remove it`);
 }
 LOADS_EOF

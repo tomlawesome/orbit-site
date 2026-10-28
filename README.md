@@ -45,7 +45,7 @@ Words used in the table:
 | `assets/site.css` | The site's own styles: the five theme packs (orbit `web/src/lib/packs.css`) and the rules that spend them, from `flight.css`, `home.css` and `design/v19/home.html` |
 | `assets/fonts/` | The three typefaces, served from the site (#92): Space Grotesk, Inter and JetBrains Mono, each its foundry's latest release trimmed by `tools/fonts.mjs` to one small variable woff2 (latin, the weights the pages use); `fonts.css` holds their `@font-face` rules, each naming its source release (`index.html` and `404.html` link it), and `OFL-*.txt` each family's licence. `jetbrains-mono-latin.woff2` is also the file the door's worker writes with (ADR-0004 6a, `settings.fonts`) |
 | `tools/fonts.mjs` | Writes `assets/fonts/` (`npm ci --prefix tools && node tools/fonts.mjs`; needs the network and `unzip`): downloads each family's release, checks its sha256, trims it the same way every time with HarfBuzz's subsetter (`harfbuzzjs`) and packs it with Google's woff2 encoder (`wawoff2`). Its table of releases is the fonts' one pin; Renovate watches the tags |
-| `assets/vendor/` | Mermaid's release file (`mermaid-<version>.min.js`, the npm package's `dist/mermaid.min.js`, unchanged) and its licence. `assets/js/pads.js` loads it when a docs page has a diagram; its path there (`MERMAID`) is the version's one pin, and the command to add a new one is beside it |
+| `assets/vendor/` | Mermaid's release file (`mermaid-<version>.min.js`, the npm package's `dist/mermaid.min.js`, unchanged) and its licence. `assets/js/pads.js` loads it when a docs page has a diagram; its path there (`MERMAID`) is the version's one pin, with the file's sha384 beside it as the script's integrity (the browser and the lint both refuse a file that does not match), and the commands to add a new one are beside it |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
 | `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today |
 | `assets/js/sky.js` | The home sky's star tiles, grain, packs |
@@ -125,7 +125,8 @@ Default pack: after dark. Links are relative; the `og:image` tags and the
   ISC (d3, cytoscape, KaTeX, lodash, dagre and others), BSD-3-Clause (parts of d3, d3-sankey), Apache-2.0
   (chevrotain), DOMPurify (Apache-2.0 or MPL-2.0), robust-predicates (Unlicense) and elkjs (Eclipse Public License
   2.0; its source: https://github.com/kieler/elkjs and the Eclipse ELK project). Pinned by its path in
-  `assets/js/pads.js` alone; Renovate watches it (`renovate.json`).
+  `assets/js/pads.js` alone, with its sha384 beside it; Renovate watches it (`renovate.json`), and a bump also sets the
+  integrity beside the path.
 - `marked` (MIT), `sharp` (Apache-2.0; the glow tool and its test only), `js-yaml`
   (MIT; the lint reads `.gitlab-ci.yml` with it), `typescript` (Apache-2.0; the lint's door
   type check only, #30), `harfbuzzjs` (MIT) and `wawoff2` (MIT; `tools/fonts.mjs` only, by hand, #92) and
