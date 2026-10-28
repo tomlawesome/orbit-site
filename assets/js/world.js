@@ -10,7 +10,11 @@
  * and the galaxy behind (drawn here, on the GPU, once). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
  *
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
- *   { gl, made, compileMs, bake(), baked, draw(view), finish(), resize(w, h, scale), lookOf(opts), lose() }
+ *   { gl, canvas, lost, made, compileMs, bake(), baked, draw(view, dt), onDrew(fn), finish(), resize(w, h, scale),
+ *     measure(sets), lookOf(opts), lose(), destroy() }
+ * opts beside the look's and the pictures': gated (the page's gate has already judged, so gpu() is not asked: a world
+ * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
+ * view can carry its look from wherever it is built (ADR-0004 6b.2).
  */
 import { fetchOnce, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
 
@@ -486,8 +490,9 @@ function ringProfile(n) {
   return px;
 }
 
-/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen) */
-function picturesOf(opts) {
+/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen); exported for the page
+   side of a world drawn in a worker, which resolves them on the page (remote-world.js) */
+export function picturesOf(opts) {
   const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
   return {
     small,
@@ -504,27 +509,32 @@ export function fetchWorld(opts = {}) {
   for (const url of [p.MAP, p.RINGS, p.MOON]) fetchOnce(url).catch(() => {});
 }
 
+/* a world's look: the map's hue turned by o.hue degrees (about the grey axis, in linear light), a little richer by
+   o.sat; rings unless o.ringsOn is false; the haze tinted o.haze; graded by o.grade. One world can wear several
+   (the install's and the information's are the same world, compiled and loaded once: draw's v.look). Plain data,
+   reading nothing of a context */
+function hueOf(opts) {
+  const a = ((opts.hue || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / 3, q = Math.sqrt(k);
+  const m = [c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k + q * sn, (1 - c) * k + q * sn, c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k - q * sn, (1 - c) * k + q * sn, c + (1 - c) * k];
+  const sat = opts.sat ?? 1, L = [0.2126, 0.7152, 0.0722];
+  const S = [0, 1, 2].flatMap((r) => [0, 1, 2].map((cc) => L[cc] * (1 - sat) + (r === cc ? sat : 0)));
+  const o = []; for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) o.push(S[r * 3] * m[cc] + S[r * 3 + 1] * m[3 + cc] + S[r * 3 + 2] * m[6 + cc]);
+  return new Float32Array([o[0], o[3], o[6], o[1], o[4], o[7], o[2], o[5], o[8]]);   /* column-major */
+}
+export const lookOf = (o = {}) => ({ HUE: hueOf(o), RING_K: o.ringsOn === false ? 0 : 1, HAZE: o.haze || [0.85, 0.82, 1.0], GRADE: o.grade || null });
+
 export function createWorld(canvas, opts = {}) {
-  /* the door's gate first (assets/door/fitness.js): a page it refused draws no world, and makes no context here */
-  if (!gpu()) return null;
+  /* the door's gate first (assets/door/fitness.js): a page it refused draws no world, and makes no context here. Gated:
+     the page's gate has judged already (a world made in a worker), so it is not asked again */
+  if (!opts.gated && !gpu()) return null;
+  /* (read when said, so a console replaced later is the one told) */
+  const warn = opts.warn || ((...a) => console.warn(...a));
   const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "high-performance" });
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   const { small, MAP, RINGS, MOON } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
-  /* a world's look: the map's hue turned by o.hue degrees (about the grey axis, in linear light), a little richer by
-     o.sat; rings unless o.ringsOn is false; the haze tinted o.haze; graded by o.grade. One world can wear several
-     (the install's and the information's are the same world, compiled and loaded once: draw's v.look) */
-  const lookOf = (o) => ({ HUE: hueOf(o), RING_K: o.ringsOn === false ? 0 : 1, HAZE: o.haze || [0.85, 0.82, 1.0], GRADE: o.grade || null });
-  const hueOf = (opts) => {
-    const a = ((opts.hue || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), k = 1 / 3, q = Math.sqrt(k);
-    const m = [c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k + q * sn, (1 - c) * k + q * sn, c + (1 - c) * k, (1 - c) * k - q * sn, (1 - c) * k - q * sn, (1 - c) * k + q * sn, c + (1 - c) * k];
-    const sat = opts.sat ?? 1, L = [0.2126, 0.7152, 0.0722];
-    const S = [0, 1, 2].flatMap((r) => [0, 1, 2].map((cc) => L[cc] * (1 - sat) + (r === cc ? sat : 0)));
-    const o = []; for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) o.push(S[r * 3] * m[cc] + S[r * 3 + 1] * m[3 + cc] + S[r * 3 + 2] * m[6 + cc]);
-    return new Float32Array([o[0], o[3], o[6], o[1], o[4], o[7], o[2], o[5], o[8]]);   /* column-major */
-  };
   const LOOK = lookOf(opts);
 
   /* the shaders are made in the background where the browser can (KHR_parallel_shader_compile), and looked at only
@@ -562,7 +572,7 @@ export function createWorld(canvas, opts = {}) {
         all.forEach(ready);
         took = performance.now() - t0;
         resolve(true);
-      } catch (e) { console.warn("orbit: the world could not be drawn", e); resolve(false); }
+      } catch (e) { warn("orbit: the world could not be drawn", e); resolve(false); }
     };
     if (!par) { done(); return; }
     /* a lost context never completes them, nor may a stuck compiler: past COMPILE_WAIT, give up rather than poll for ever */
@@ -630,12 +640,12 @@ export function createWorld(canvas, opts = {}) {
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
     /* (in a texture of its own, the drawn rings' let go once it is in) */
     .then((img) => banded(img, "rings", gl.CLAMP_TO_EDGE).then((t) => { gl.deleteTexture(ringT); ringT = t; }),
-      (e) => console.warn("orbit: the rings are drawn, not photographed", e));
+      (e) => warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
   const loadMoon = fetchOnce(MOON)
     .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
     .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
-      (e) => console.warn("orbit: the moon is drawn, not photographed", e));
+      (e) => warn("orbit: the moon is drawn, not photographed", e));
   /* the galaxy painted, a strip a frame */
   const jobs = [];
   const STRIPS = 4;
@@ -645,10 +655,10 @@ export function createWorld(canvas, opts = {}) {
     /* the link status is not read until the program is done (as made's poll does the others); called again next frame,
        until COMPILE_WAIT (as made's): past it the galaxy is not painted, as when it would not link */
     if (par && !gl.getProgramParameter(skyProgram.p, par.COMPLETION_STATUS_KHR)) {
-      if (performance.now() - skyAsked > COMPILE_WAIT) { console.warn("orbit: the world's galaxy did not compile in time"); skyDone = true; }
+      if (performance.now() - skyAsked > COMPILE_WAIT) { warn("orbit: the world's galaxy did not compile in time"); skyDone = true; }
       return;
     }
-    try { P.sky = ready(skyProgram); } catch (e) { console.warn(e); skyDone = true; return; }
+    try { P.sky = ready(skyProgram); } catch (e) { warn(e); skyDone = true; return; }
     skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
     for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
     jobs.push(() => mip(skyT));
@@ -669,7 +679,7 @@ export function createWorld(canvas, opts = {}) {
         if (!P.sky && !skyDone) paintSky();
         if (P.sky && !skyDone) bakeSome(1);
         if (!skyDone) requestAnimationFrame(step);
-        else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { console.warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
+        else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
       };
       made.then((ok) => (ok ? requestAnimationFrame(step) : res(false)));
     });
@@ -706,7 +716,7 @@ export function createWorld(canvas, opts = {}) {
   const m3 = (m) => new Float32Array(m);
   /* view: { cam, fwd, right, up, focal (px of the drawing), shift [x,y] (px, y up), sun, spin, tilt, sky (mat3, column-major),
      moon [x,y,z,r], time, bg, sunVis, sunPx [x,y], expo } */
-  function draw(v) {
+  function paint(v) {
     if (!baked) return;
     const L = v.look || LOOK;
     gl.disable(gl.BLEND);
@@ -746,12 +756,35 @@ export function createWorld(canvas, opts = {}) {
       gl.uniform1f(u.uBlur, v.blur || 0); gl.uniform2fv(u.uBlurC, v.blurC || [W / 2, H / 2]); gl.uniform1f(u.uFringe, v.fringe ?? 0.012); gl.uniform1f(u.uGrain, v.grain ?? 0.028);
     });
   }
+  /* each frame the camera's loop draws (draw given the loop's period, dt) is said to whoever asked (onDrew), with the
+     time its drawing took to issue (ms): the governor and the dive's count read the frames there, on the page as from
+     a worker (ADR-0004 6b.3). A frame drawn for a measure, a touch or a still is given no dt, and is not said */
+  const drew = new Set();
+  function draw(v, dt) {
+    if (dt === undefined || !drew.size || !baked) { paint(v); return; }
+    const t0 = performance.now(); paint(v); const ms = performance.now() - t0;
+    for (const fn of drew) fn(dt, ms);
+  }
+  const onDrew = (fn) => { drew.add(fn); return () => drew.delete(fn); };
   /* waits for everything asked of the GPU so far to be done: for timing frames */
   const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
+  /* each set of views timed as install.js calibrate times it: the first drawn and finished, then the rest drawn and
+     finished, timed; one ms a set, the time a draw took. Here at once; in a worker, the same, asked by message */
+  function measure(sets) {
+    return Promise.resolve(sets.map((set) => {
+      paint(set[0]); finish();
+      const rest = set.length > 1 ? set.slice(1) : [set[0], set[0], set[0]];
+      const t0 = performance.now();
+      for (const v of rest) paint(v);
+      finish();
+      return (performance.now() - t0) / rest.length;
+    }));
+  }
+  const lose = () => { gl.getExtension("WEBGL_lose_context")?.loseContext(); };
   return {
-    gl, bake, draw, resize, finish, made, lookOf,
+    gl, canvas, bake, draw, onDrew, resize, finish, measure, made, lookOf, lose, destroy: lose,
     get baked() { return baked; },
+    get lost() { return gl.isContextLost(); },
     get compileMs() { return took; },
-    lose() { gl.getExtension("WEBGL_lose_context")?.loseContext(); },
   };
 }

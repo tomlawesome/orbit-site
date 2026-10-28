@@ -124,7 +124,7 @@ removes the resize listeners.
 
 `canvas` is `#warp`, `name` is `#launchname`, the glyphs are functions
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
-destroy, later, reduced, warm, warmDocs, compiled }`. `journey()` takes no
+destroy, later, reduced, warm, warmDocs, compiled, aside }`. `journey()` takes no
 context of `canvas`: its 2D context is taken at the first `warm`, `warmDocs`,
 `fly` or `descend` (ADR-0004 6a.4: a canvas with a context can never be handed
 to a worker), and `destroy()` before any of them takes none. `compiled()`
@@ -352,6 +352,13 @@ The console says which, once, when the host gave a worker: `orbit · flight:
 drawn in a worker` or `orbit · flight: drawn on the page: <why>`. Every other
 line the flight prints is printed on the page as it would be there.
 
+`journey.aside()` → `Promise<boolean>`: true once the worker has said it is up,
+false once the flight is on the page (the page path, at the journey's first
+need; a fallback before the worker was up; `destroy()`). It settles at the
+first need. A host that draws its own worlds in a worker of its own reads it
+before letting the page's context go: a worker that fell back before it was up
+drew on the page, with that context.
+
 Any failure (the worker's `error`, its `up` not ok, a `dead`, and under the
 automatic rule no `up` within 5000 ms; under `draw: "worker"` there is no
 limit) falls back to the page: `#warp` is replaced by a fresh canvas with the
@@ -366,10 +373,16 @@ door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
 `noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
 `hurryChores`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
-`isSoftware`, `FIT_MS`, below), the capability probe
+`isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
+(`drawnAside()`, for a host that puts its own drawing beside it), the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+For a host's own worker, which must answer for the page and run its queue
+unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
+answers replaced by the worker's) and `pace("none")` (`chores.js`: the rests
+and the one-band-a-frame uploads dropped). All three are optional: a host that
+uses none of them has the door as before.
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the

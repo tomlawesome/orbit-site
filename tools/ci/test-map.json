@@ -19,6 +19,7 @@
       "404.html",
       "assets/site.css",
       "assets/js/main.js",
+      "assets/js/ring.js",
       "assets/js/tilt.js",
       "sw.js",
       "assets/img/door/**",
@@ -45,6 +46,8 @@
     "worlds": [
       "assets/js/install.js",
       "assets/js/world.js",
+      "assets/js/remote-world.js",
+      "assets/js/world-worker.js",
       "assets/js/planets3d.js",
       "assets/img/install/**"
     ],
@@ -105,7 +108,8 @@
       "tools/ci/*-test.mjs",
       "tools/ci/*-test.sh",
       "tools/ci/door-stub.mjs",
-      "tools/ci/fake-voyage*.mjs"
+      "tools/ci/fake-voyage*.mjs",
+      "tools/ci/world-spy*.mjs"
     ]
   },
   "tests": {
