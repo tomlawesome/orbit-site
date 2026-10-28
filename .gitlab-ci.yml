@@ -203,19 +203,27 @@ live:chromium:
 
 # --------------------------------------------------------------- check --
 # The coverage ratchet (#14) on the lint job's Node coverage and every
-# Chromium shard's: a file below its floor in tools/ci/coverage-floors.json
-# fails. Report-only (allow_failure) until it can tell a partial run from a
-# full one (ADR-0005 section 6).
+# Chromium shard's, held to tools/ci/coverage-floors.json (ADR-0005 section
+# 6). The job takes the live jobs' selection itself (same inputs, same
+# answer): a full run holds every file to its floor; a partial run only the
+# changed files. selection.json stays beside the records so --raise can
+# refuse a partial run, and the artifact lasts 7 days so
+# tools/ci/coverage-fetch.sh can take the last three full runs.
 coverage:
   stage: check
   image: $NODE_IMAGE
   needs: [lint, live:chromium]
-  allow_failure: true
   rules:
     - *not_scheduled
     - when: on_success
+  variables:
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
+  artifacts:
+    paths: [coverage/]
+    expire_in: 7 days
   script:
-    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh check
+    - node tools/ci/test-select.mjs --json > coverage/selection.json
+    - node tools/ci/coverage.mjs --selection coverage/selection.json coverage
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is

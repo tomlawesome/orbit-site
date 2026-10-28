@@ -13,7 +13,8 @@
 //   3. A changed path in group `all`, or matching no group and no test's own file: everything, reason printed.
 //   4. Otherwise the tests of every group a changed path matches, plus every test whose own file changed.
 //      `none` matches (so the path is mapped) and adds nothing.
-// --json prints {"all": <bool>, "tests": [<names>]} and nothing else; without it, the reasoning for a job's log.
+// --json prints {"all": <bool>, "tests": [<names>], "changed": [<paths>]} and nothing else: `changed` is the paths the
+// selection was made from, [] when no diff was taken (everything without a diff, a push to main, a git failure); without it, the reasoning for a job's log.
 // --group NAME prints `yes` when everything is selected or a changed path matched group NAME, else `no`, exit 0
 // either way: the lint:test and lint:import jobs run their tests unless it says `no`, so an error (non-zero, no
 // output) runs them. tools/ci/live-run.mjs imports selection() and account() for the same answer and log.
@@ -91,19 +92,19 @@ export function source(env, base) {
   return { everything: "no CI and no --base (give --base REF to select for a change)" };
 }
 
-/* the selection for this environment: { sel: { all, tests, reason, lines, matched }, label, names } */
+/* the selection for this environment: { sel: { all, tests, reason, lines, matched }, label, names, changed } */
 export function selection(env, base, root = ROOT) {
   const map = loadMap(root);
   const names = Object.keys(map.tests || {});
   const src = source(env, base);
-  if (src.everything) return { sel: { all: true, tests: names, reason: src.everything, lines: [], matched: new Set() }, label: "no diff taken", names };
-  if (src.nothing) return { sel: { all: false, tests: [], reason: src.nothing, lines: [], matched: new Set() }, label: "no diff taken", names };
+  if (src.everything) return { sel: { all: true, tests: names, reason: src.everything, lines: [], matched: new Set() }, label: "no diff taken", names, changed: [] };
+  if (src.nothing) return { sel: { all: false, tests: [], reason: src.nothing, lines: [], matched: new Set() }, label: "no diff taken", names, changed: [] };
   try {
     const from = src.mergeBase ? git(root, "merge-base", src.mergeBase, "HEAD").trim() : src.from;
     const changed = changedSince(root, from);
-    return { sel: selectFor(map, changed), label: `${src.label}: ${changed.length} changed path${changed.length === 1 ? "" : "s"}`, names };
+    return { sel: selectFor(map, changed), label: `${src.label}: ${changed.length} changed path${changed.length === 1 ? "" : "s"}`, names, changed };
   } catch (e) {
-    return { sel: { all: true, tests: names, reason: `the changed paths could not be read (${e.message})`, lines: [], matched: new Set() }, label: src.label, names };
+    return { sel: { all: true, tests: names, reason: `the changed paths could not be read (${e.message})`, lines: [], matched: new Set() }, label: src.label, names, changed: [] };
   }
 }
 
@@ -135,7 +136,7 @@ function main(argv, env) {
     return 0;
   }
   if (json) {
-    process.stdout.write(JSON.stringify({ all: found.sel.all, tests: found.sel.tests }) + "\n");
+    process.stdout.write(JSON.stringify({ all: found.sel.all, tests: found.sel.tests, changed: found.changed }) + "\n");
     return 0;
   }
   process.stdout.write(account(found).join("\n") + "\n");
