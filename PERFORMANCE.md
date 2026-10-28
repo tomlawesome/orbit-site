@@ -603,11 +603,27 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
 
 **Built (#85, ADR-0004 6a).** On Firefox the flight and the docs galaxy are now drawn in a module worker that owns both
 canvases (`?draw=worker|page`; otherwise the rule in `fitness.js` `drawnAside()`), the page keeping the clock, the beats
-and the 2D door; any failure falls back to the page. The install and info worlds still compile on the page (#93), so
-the ring's wait for them stays. Pixel-identical to the page path in Chromium (`tools/ci/draw-pixels-test.mjs`).
+and the 2D door; any failure falls back to the page. Pixel-identical to the page path in Chromium
+(`tools/ci/draw-pixels-test.mjs`). The install and info worlds follow it (#93, below).
 **Not yet measured:** nothing here is a number for the worker path. The owner's M3 run on a real desktop (ADR-0004
 6a.10: `?preview` against `?preview&draw=page`, the console lines of each) is still to come, and the targets above
 stand until it is in.
+
+**Built for the install and info worlds (#93, ADR-0004 6b).** On Firefox the install's and the information's planets
+are drawn in a second module worker (`assets/js/world-worker.js`) that owns the pad's canvas, by the flight's rule
+(`drawnAside()`; `?draw=worker|page` forces one), so the ring waits for their compiles only on a first visit (`ring.js` `ringWaits`) and the
+page's WebGL context is let go once both workers are up. Any failure (the worker missing, not answering, dying) falls
+back to the page world on a fresh canvas.
+**What CI proved:** the two paths draw the same picture, pixel for pixel, in Chromium (`tools/ci/world-pixels-test.mjs`,
+`tests/world.html`: the install's world at k 0.3 and 1, clock fixed at 7, the pixels compared once the canvas's
+`data-drawn` is set, which both paths now set); and, in Firefox under software GL (`tools/ci/world-live-test.mjs`), that
+a dive into the install's and the information's planet lands under both paths with the console lines and the canvas a
+placeholder as expected, and that a worker that answers 404 falls back to the page and the dive still lands.
+**Not yet measured (the owner's M4 run, ADR-0004 6b.10):** on a real desktop, Firefox, `?preview` against
+`?preview&draw=page`: `install: shaders compiled in N ms`, `reveal: … longest frame gap N ms`, the time each way in
+opens, `install: dive began: resize N ms, first frame N ms`, `install: first second N frames, worst N ms`, the ring's
+shape, and the eye on the ring, the reveal and the dives. The owner will run it together with the flight's M3. No
+number for the worlds' worker is claimed here until it is in.
 
 **The build, as it was planned:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
 state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;

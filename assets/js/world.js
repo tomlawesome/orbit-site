@@ -760,11 +760,18 @@ export function createWorld(canvas, opts = {}) {
      time its drawing took to issue (ms): the governor and the dive's count read the frames there, on the page as from
      a worker (ADR-0004 6b.3). A frame drawn for a measure, a touch or a still is given no dt, and is not said */
   const drew = new Set();
+  /* `data-drawn` on the canvas: the number of the last frame drawn to it, as remote-world.js sets it on `drew` from the
+     worker (a frame not drawn because the world is not baked is not marked). An OffscreenCanvas (the worker's own
+     world) has no dataset, and the page is told by message there */
+  let frames = 0;
   function draw(v, dt) {
-    if (dt === undefined || !drew.size || !baked) { paint(v); return; }
+    frames++;
+    if (dt === undefined || !drew.size || !baked) { paint(v); mark(); return; }
     const t0 = performance.now(); paint(v); const ms = performance.now() - t0;
+    mark();
     for (const fn of drew) fn(dt, ms);
   }
+  function mark() { if (baked && canvas.dataset) canvas.dataset.drawn = String(frames); }
   const onDrew = (fn) => { drew.add(fn); return () => drew.delete(fn); };
   /* waits for everything asked of the GPU so far to be done: for timing frames */
   const finish = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); };
