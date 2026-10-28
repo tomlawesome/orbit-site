@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>pending</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="../assets/fonts/fonts.css" />
+  <style>
+    html, body { margin: 0; background: #000; overflow: hidden; }
+    /* the pad fills the window and its canvas fills the pad, as the site's stylesheet lays #installpad out; the
+       canvas is judged as it is drawn, not as the stylesheet fades it in; nothing else is on the page */
+    #installpad { position: fixed; inset: 0; background: #000; }
+    #installpad .orbitgl { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 1 !important; transition: none !important; }
+  </style>
+</head>
+<body>
+  <!-- Driven by tools/ci/world-pixels-test.mjs (#93, ADR-0004 6b.7 PW2): the install's world made as the host makes it
+       (main.js: createInstall(pad) on a pad whose id is installpad, holding a .orbitgl canvas), with the flags the
+       address gives (?gpu=force&fit=skip&draw=worker|page, as the site reads them) and the host's door settings (the
+       door's worker and font, which the rule needs; the world's own worker is the site's file and is found by the
+       world itself). window.still(k, idle) asks the GPU gate first, as the site does before anything else needs it,
+       then runs the install's still(k, idle): one frame of the shot at k with the clock fixed at idle. The frame is
+       drawn once and the page waits for nothing more: the test waits for the canvas's data-drawn. Nothing else on
+       the page draws or moves. -->
+  <div class="pad" id="installpad">
+    <canvas class="orbitgl" aria-hidden="true"></canvas>
+  </div>
+  <script type="module">
+    import { createDoor, openChores, openCompiles, gpu } from "../assets/door/index.js";
+    import { createInstall } from "../assets/js/install.js";
+
+    /* the flags, read from the address as the site's main.js reads them */
+    const FLAGS = {
+      gpu: /[?&]gpu=force\b/.test(location.search) ? "force" : null,
+      fit: /[?&]fit=skip\b/.test(location.search) ? "skip" : null,
+      draw: location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null,
+    };
+    createDoor({
+      image: (path) => `../assets/door/img/${path}`, flags: FLAGS,
+      drawWorker: () => new Worker("../assets/door/draw-worker.js", { type: "module" }),
+      fonts: [{ family: "JetBrains Mono", weight: 500, url: "../assets/fonts/jetbrains-mono-latin.woff2" }],
+    });
+    const install = createInstall(document.getElementById("installpad"));
+
+    /* one frame of the install's shot at k (0 to 1), the clock fixed at idle: resolves true once it is asked to be
+       drawn (on the page path it is drawn; on the worker path the view is posted), false if there is no world */
+    window.still = async (k, idle) => {
+      gpu();
+      openCompiles(); openChores();
+      window.stillResult = await install.still(k, idle);
+      return window.stillResult;
+    };
+    window.worldReady = true;
+  </script>
+</body>
+</html>
