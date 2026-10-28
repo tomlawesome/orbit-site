@@ -1,0 +1,197 @@
+{
+  "hand": ["tools/ci/docsky-test.mjs"],
+  "groups": {
+    "all": [
+      "assets/door/**",
+      ".gitlab-ci.yml",
+      "tools/ci/test-map.json",
+      "tools/ci/test-select.mjs",
+      "tools/ci/serve.mjs",
+      "tools/ci/coverage-hook.mjs",
+      "tools/package.json",
+      "tools/package-lock.json"
+    ],
+    "page": [
+      "index.html",
+      "install.html",
+      "404.html",
+      "assets/site.css",
+      "assets/js/main.js",
+      "assets/js/tilt.js",
+      "sw.js",
+      "assets/img/door/**",
+      "assets/img/apple-touch-icon.png",
+      "assets/img/icon-192.png",
+      "assets/img/mark.svg",
+      "assets/img/og.png",
+      "assets/fonts/**",
+      "assets/vendor/**"
+    ],
+    "home": [
+      "assets/js/home.js",
+      "assets/js/sky.js",
+      "assets/js/tour.js",
+      "assets/js/data.js",
+      "assets/js/law.js",
+      "assets/js/lock.js"
+    ],
+    "docs": [
+      "assets/js/pads.js",
+      "assets/docs/**",
+      "tools/docs-sources.json"
+    ],
+    "worlds": [
+      "assets/js/install.js",
+      "assets/js/world.js",
+      "assets/js/planets3d.js",
+      "assets/img/install/**"
+    ],
+    "flight": [
+      "assets/js/journeys.js",
+      "assets/img/docs/**"
+    ],
+    "harness": [
+      "tests/*.html"
+    ],
+    "import": [
+      "tools/import-docs.mjs",
+      "tools/import-docs-lib.mjs",
+      "tools/sanitise-html.mjs",
+      "tools/ci/nightly-import.sh",
+      "tools/ci/nightly-publish.sh",
+      "tools/ci/docs-shape.mjs",
+      "tools/ci/docs-markup.mjs"
+    ],
+    "tooling": [
+      "tools/ci/lint.sh",
+      "tools/ci/ci-split.mjs",
+      "tools/ci/door-types.mjs",
+      "tools/ci/tsconfig.door.json",
+      "tools/ci/no-real-names.mjs",
+      "tools/ci/door-pow-lint.mjs",
+      "tools/door-markup.mjs",
+      "tools/ci/test-map-check.mjs",
+      "tools/ci/node-tests.sh",
+      "tools/ci/journey-local.sh",
+      "tools/ci/coverage*",
+      "tools/ci/door-timing.mjs",
+      "tools/fonts.mjs",
+      "renovate.json"
+    ],
+    "none": [
+      "docs/**",
+      "*.md",
+      "assets/door/README.md",
+      "LICENSE",
+      ".gitignore",
+      ".gitattributes",
+      ".gitleaksignore",
+      ".nojekyll",
+      ".github/**",
+      "tools/*.py",
+      "tools/*.cjs",
+      "tests/t-*.js",
+      "tests/common.js",
+      "tests/worker.js",
+      "tests/index.html",
+      "tests/gate.html",
+      "tools/ci/*-test.mjs",
+      "tools/ci/*-test.sh",
+      "tools/ci/door-stub.mjs",
+      "tools/ci/fake-voyage*.mjs"
+    ]
+  },
+  "tests": {
+    "journey": {
+      "file": "tools/ci/journey.mjs",
+      "groups": ["page", "home", "docs", "worlds", "flight"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 48, "chromium": 45 }
+    },
+    "csp": {
+      "file": "tools/ci/csp-test.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 67, "chromium": 60 }
+    },
+    "phone-door": {
+      "file": "tools/ci/phone-door-test.mjs",
+      "groups": ["page", "worlds"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 63, "chromium": 58 }
+    },
+    "site-browser": {
+      "file": "tools/ci/site-browser-test.mjs",
+      "groups": ["page", "home", "docs", "worlds"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox"],
+      "seconds": { "firefox": 85, "chromium": 118 }
+    },
+    "freeze": {
+      "file": "tools/ci/freeze.mjs",
+      "groups": ["page", "worlds"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 205 }
+    },
+    "flight-context-loss": {
+      "file": "tools/ci/flight-context-loss-test.mjs",
+      "groups": ["page", "flight"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 110, "chromium": 177 }
+    },
+    "docs-planet": {
+      "file": "tools/ci/docs-planet-test.mjs",
+      "groups": ["page", "worlds", "flight"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 135 }
+    },
+    "docs-sky-portrait-live": {
+      "file": "tools/ci/docs-sky-portrait-live-test.mjs",
+      "groups": ["page", "flight"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 457 }
+    },
+    "door-lows": {
+      "file": "tools/ci/door-lows-test.mjs",
+      "groups": ["page"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 172, "chromium": 275 }
+    },
+    "upload": {
+      "file": "tools/ci/upload-test.mjs",
+      "groups": ["harness"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 9, "chromium": 4 }
+    },
+    "dawn": {
+      "file": "tools/ci/dawn-test.mjs",
+      "groups": ["harness"],
+      "browsers": ["firefox"],
+      "gates": ["firefox"],
+      "seconds": { "firefox": 100 }
+    },
+    "asdawn": {
+      "file": "tools/ci/asdawn-test.mjs",
+      "groups": ["harness"],
+      "browsers": ["firefox"],
+      "gates": ["firefox"],
+      "seconds": { "firefox": 111 }
+    },
+    "dropped-warning": {
+      "file": "tools/ci/dropped-warning-test.mjs",
+      "groups": ["import"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 2 }
+    }
+  }
+}

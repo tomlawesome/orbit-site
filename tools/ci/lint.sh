@@ -10,7 +10,7 @@ fail=0
 # `sh tools/ci/lint.sh ci-split names` runs only those, in this order, so a test
 # that plants one fault pays for one section (#65); `--list` names them. An
 # unknown name runs nothing and exits 2, so a typo cannot pass.
-sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins"
+sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins test-map"
 if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
 for s in "$@"; do
   case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
@@ -445,6 +445,13 @@ node -e '
     for (const s of m.matchStrings || []) if (/\(\?(=|!|<=|<!)/.test(s)) bad(`renovate.json: a matchString has a look-around, which Renovate cannot compile: ${s}`);
   }
 ' || fail=1
+fi
+
+if on test-map; then
+echo "== the test map is complete: every file in a group, every pattern live, every test named once (#95)"
+# tools/ci/test-map.json says which browser tests a change runs (ADR-0005); a path it does not know runs
+# everything, and this refuses one before it merges. Reads .gitlab-ci.yml with js-yaml, as ci-split does.
+node tools/ci/test-map-check.mjs || fail=1
 fi
 
 [ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }

@@ -56,6 +56,9 @@
 # And #92 (nothing on the site loads from a third party): the pages' policy naming an outside host for scripts, styles or fonts
 # (cases c9-c14), and an outside address in a page's tags or styles, site.css or a site script (the site_case/site_ok cases,
 # each refusal paired with a local equivalent and with a link to another site, which pass).
+# And section test-map (ADR-0005, #95; cases t0-t16): an unmapped tracked file, a stale pattern, a test named
+# nowhere or twice, a test in all or none, and a map test that is missing, in no real group, without a browser, gating
+# outside its browsers or without seconds each fail and name it; the committed tree and the fixed forms pass.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
@@ -2245,6 +2248,69 @@ hist_case "a banned login as the local part of a Signed-off-by email" t t "messa
 hist_case "a banned login as the local part of a Co-authored-by email" t t "message probe" "Co-authored-by: Pat Example <$nl@anyhost.local>" "message" "author|committer" "" "$nl_d" "" "$nl"
 hist_case "a banned login as the name in a Reviewed-by trailer" t t "message probe" "Reviewed-by: $nl <t@t>" "message" "author|committer" "" "$nl_d" "" "$nl"
 rm -f "$names_out"
+
+# Cases (t0)-(t16) judge section test-map (ADR-0005 section 2, #95): tools/ci/test-map-check.mjs keeps
+# tools/ci/test-map.json honest. Every tracked file matches a group ("unmapped: <path>" otherwise), every pattern
+# matches a tracked file, every tools/ci/*-test.mjs, *-test.sh, journey.mjs and freeze.mjs is named in exactly one
+# place (the map's tests, node-tests.sh, or a lint job's script in .gitlab-ci.yml), and every map test exists, has
+# groups that exist (never all or none), a browser, gates within its browsers and seconds for each browser. Each
+# refusal is paired with the case it must accept. tm_case <label> ok|fail <named> <shell> <js>: <shell> changes the
+# tree, <js> edits m (the parsed map) and must change it; a refusal must exit 1 with <named> (an extended regular
+# expression) on a line of the section's output; an acceptance must exit 0.
+tm_map=tools/ci/test-map.json
+tm_base=$(git rev-parse HEAD)
+tm_back() { git add -A; git reset -q --hard "$tm_base"; }
+tm_node_test() { # tm_node_test NAME: add NAME to node-tests.sh's list
+  sed -i "s/; do\$/ $1; do/" tools/ci/node-tests.sh && grep -q " $1; do\$" tools/ci/node-tests.sh
+}
+tm_case() {
+  if [ ! -f "$tm_map" ]; then echo "FAIL $1 ($tm_map missing)"; failed=1; return; fi
+  eval "$4" || { echo "FAIL $1 (the test change did not apply)"; failed=1; tm_back; return; }
+  if [ -n "$5" ]; then
+    F="$tm_map" JS="$5" node -e '
+      const fs = require("fs");
+      const m = JSON.parse(fs.readFileSync(process.env.F, "utf8")); const before = JSON.stringify(m);
+      new Function("m", process.env.JS)(m);
+      if (JSON.stringify(m) === before) { console.error("the edit changed nothing"); process.exit(3); }
+      fs.writeFileSync(process.env.F, JSON.stringify(m, null, 2) + "\n");
+    ' || { echo "FAIL $1 (the map edit did not apply)"; failed=1; tm_back; return; }
+  fi
+  commit_all "$1"
+  lint_to_out test-map
+  if [ "$2" = ok ]; then
+    if [ "$rc" -eq 0 ]; then
+      echo "ok   $1 passes"
+    else
+      echo "FAIL $1 passes (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+    fi
+  elif [ "$rc" -eq 1 ] && grep -Eq -- "$3" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $3)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  tm_back
+}
+tm_new='printf "export {};\n" > assets/js/new.js'
+tm_zzz='printf "process.exit(0);\n" > tools/ci/zzz-test.mjs'
+tm_rename='git mv assets/js/law.js assets/js/rules.js'
+tm_swap='const g = Object.values(m.groups).find((a) => a.includes("assets/js/law.js")); g[g.indexOf("assets/js/law.js")] = "assets/js/rules.js";'
+tm_case "(t0) the committed tree: the map is complete" ok "" ":" ""
+tm_case "(t1) a new site module in no group" fail "unmapped.*assets/js/new\.js" "$tm_new" ""
+tm_case "(t2) the same module added to a group" ok "" "$tm_new" 'm.groups.home.push("assets/js/new.js");'
+tm_case "(t3) a pattern that matches no tracked file" fail "assets/js/gone\.js" ":" 'm.groups.home.push("assets/js/gone.js");'
+tm_case "(t4) a file renamed with its old pattern left behind" fail "assets/js/law\.js" "$tm_rename" ""
+tm_case "(t5) the same rename with the pattern renamed too" ok "" "$tm_rename" "$tm_swap"
+tm_case "(t6) a test file (mapped in none) named nowhere" fail "tools/ci/zzz-test\.mjs" "$tm_zzz" 'm.groups.none.push("tools/ci/zzz-test.mjs");'
+tm_case "(t7) the same test named once, in node-tests.sh" ok "" "$tm_zzz && tm_node_test zzz" 'm.groups.none.push("tools/ci/zzz-test.mjs");'
+tm_case "(t8) a test in a lint job's script and in node-tests.sh" fail "tools/ci/coverage-test\.mjs" "tm_node_test coverage" ""
+tm_case "(t9) a map test also in node-tests.sh" fail "tools/ci/csp-test\.mjs" "tm_node_test csp" ""
+tm_case "(t10) a test in all" fail "csp.*all|all.*csp" ":" 'm.tests.csp.groups.push("all");'
+tm_case "(t11) a test in none" fail "csp.*none|none.*csp" ":" 'm.tests.csp.groups.push("none");'
+tm_case "(t12) a map test whose file is not on disk" fail "nosuch-test\.mjs" ":" 'm.tests.csp.file = "tools/ci/nosuch-test.mjs";'
+tm_case "(t13) a map test in a group that does not exist" fail "nosuch" ":" 'm.tests.csp.groups.push("nosuch");'
+tm_case "(t14) a map test with no browser" fail "csp([^-]|$)" ":" 'm.tests.csp.browsers = []; m.tests.csp.gates = []; m.tests.csp.seconds = {};'
+tm_case "(t15) a map test gating in a browser it does not run in" fail "freeze" ":" 'm.tests.freeze.gates = ["chromium", "firefox"];'
+tm_case "(t16) a map test with no seconds for one of its browsers" fail "csp([^-]|$)" ":" 'delete m.tests.csp.seconds.firefox;'
 
 rm -f "$cspjs"
 

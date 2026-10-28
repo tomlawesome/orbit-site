@@ -105,6 +105,7 @@ lint:
     - node tools/ci/no-real-names-test.mjs
     - sh tools/ci/node-tests.sh
     - node tools/ci/coverage-test.mjs
+    - node tools/ci/test-select-test.mjs
     - node tools/ci/import-docs-test.mjs
     - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs
@@ -133,14 +134,14 @@ lint:test:
 # no WebGL and never draws a world, so Firefox-only GPU bugs passed (#4,
 # #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
 # band-upload test then compares banded and whole uploads byte for byte in
-# Chromium and Firefox, and the pin test checks a journey pinned at a moment
-# (`at`) starts there (#23); the dawn test checks that destroy() cancels a
+# Chromium and Firefox (the pin test, #23, is a Node test now, in the lint
+# job: ADR-0005); the dawn test checks that destroy() cancels a
 # first light (#27) and that the Earth's pictures are in before the door reads
 # drawn (#28); the asdawn test checks the goodbye wearing the sign-in's face and
 # households met again on the way down (#25, #26). The freeze check runs
 # Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
 # the GPU once, refuses a software renderer, and then freezes nothing (#2).
-# The last step is the coverage ratchet (#14): the journey, upload, pin,
+# The last step is the coverage ratchet (#14): the journey, upload,
 # site-browser, phone-door, door-lows, csp, docs-planet, flight-context-loss and
 # freeze checks run again in Chromium, which records which of the site's
 # JavaScript ran, and with the lint job's Node coverage that is checked against
@@ -165,7 +166,6 @@ live:journey:
     - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
     - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
     - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/phone-door-test.mjs
     - node tools/ci/dropped-warning-test.mjs
