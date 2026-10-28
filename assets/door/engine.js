@@ -1244,8 +1244,18 @@ export function createFlight(canvas, options = {}) {
     else if (active.n && !active.noted) { active.noted = true; note(`flight: first second ${active.n} frames, worst ${Math.round(/** @type {number} */ (active.worst))} ms`); }
     active.last = now;
     step(t, dt);
+    markDrawn();
     if (t < active.P.dur + 400) flightRaf = raf(frame);
     else { flightRaf = 0; flight = null; }
+  }
+
+  /* `data-drawn` on the canvas: the number of the start whose first frame is on it (the worker path's mark, remote-flight.js).
+     Cleared as a start begins; an OffscreenCanvas (the worker's) has no dataset, and the page is told by message there */
+  let starts = 0, marked = 0;
+  function markDrawn() {
+    if (marked === starts) return;
+    marked = starts;
+    if (canvas.dataset) canvas.dataset.drawn = String(starts);
   }
 
   /** @param {Profile} P */
@@ -1356,12 +1366,15 @@ export function createFlight(canvas, options = {}) {
      */
     start(P, { at } = {}) {
       this.stop();
+      starts++;
+      if (canvas.dataset) delete canvas.dataset.drawn;
       prime(P);
       if (typeof at === "number") {
         if (flight) flight.pinned = true;
         /* from where the live flight starts (P.skip, its own time: the stretch it skips is never integrated) */
         for (let t = Math.min(P.skip || 0, at); t <= at; t += PINNED_STEP) step(t, PINNED_STEP / 1000, t + PINNED_STEP > at);
         flight = null;
+        markDrawn();
         return;
       }
       flightRaf = raf(frame);

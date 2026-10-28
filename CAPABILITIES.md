@@ -195,8 +195,13 @@ same. What the page feels meanwhile differs by browser, and the answer settles t
   page's loop running), twice: 550 and 398 ms in the background, frame gaps 33 / 29 ms before and 34 / 34 after, the
   spinner turning throughout. So Safari has no compile freeze to fix, keeps the page path, and gets no worker
   pre-warm (ADR-0004).
-- *Chrome:* not measured on its own; it compiles in the background on the page like Edge, so the question is Firefox's
-  (its move is deferred to #85, ADR-0004).
+- *Chrome:* not measured on its own; it compiles in the background on the page like Edge, so the question is Firefox's.
+- *Built for Firefox (#85, ADR-0004 6a).* On Firefox the flight and the docs galaxy are drawn in a module worker that
+  owns both canvases (`?draw=worker|page` forces one; otherwise the rule in `fitness.js` `drawnAside()`), compiled
+  there, so the page draws no WebGL while they compile. The install and info worlds still compile on the page (#93).
+  The page path is unchanged and every other browser keeps it. Pixel identity of the two paths is tested
+  (`tools/ci/draw-pixels-test.mjs`); how much smoother it is on a real desktop is not yet measured (the owner's M3
+  run, ADR-0004 6a.10), so no number here is for the worker path.
 
 **Calibration from the probe:** lean ≈ 0.18-0.25 of the probe's ms per Mpx (the Safari laptop 0.20), rich ≈ 0.3-0.55 (the Safari laptop 0.32, the PCs 0.45-0.55); a compile ≈ the
 probe's compile time scaled by the shader's rolled size (the per-character rule from before the loops were rolled no
