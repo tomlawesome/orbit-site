@@ -447,4 +447,112 @@ await b.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+/* M. --selection FILE (#95, ADR-0005 sections 6 and 6a, batch 3), written from the ADR before the code: FILE is
+   test-select.mjs --json's answer, {"all", "tests", "changed"}. `all` true, or no --selection, is a full run (the
+   ratchet as today, first line `coverage: full run`). `all` false is a partial run (first line
+   `coverage: partial run (<n> changed paths)`): a gone floor still fails; a measured file in `changed` is held to its
+   floor, with a sentence saying the map, not the floor, is wrong; every other measured file is printed
+   `<file>: <percent>% (not measured in full; floor <floor>)` and never fails; a file with no floor fails only when
+   it is in `changed`, else `(new file not in this change)`. --raise refuses a directory whose selection.json says
+   `all` false (exit 2, `coverage: --raise needs full runs`). Paths in `changed` that are not measured files change
+   nothing. */
+{
+  const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
+  try {
+    /* a run that reaches part of lock.js and all of data.js */
+    let cut = 0;
+    for (let c = 10; c < lockSrc.length; c += 10) {
+      const p = measure([makeRun(join(dir, "probe"), [[LOCK, lockSrc, [[0, c]]]])]).files[LOCK].percent;
+      if (p > 0 && p < 100) { cut = c; if (p >= 40) break; }
+    }
+    const run = makeRun(join(dir, "run"), [[LOCK, lockSrc, [[0, cut]]], [DATA, dataSrc, [[0, dataSrc.length]]]]);
+    const measured = Object.fromEntries(Object.entries(measure([run]).files).map(([f, m]) => [f, m.percent]));
+    const p = measured[LOCK];
+    check("M0 (setup) the run reaches part of lock.js and all of data.js", p > 0 && p < 100 && measured[DATA] === 100, `lock.js ${p}%, data.js ${measured[DATA]}%`);
+    const floorsFile = join(dir, "floors.json");
+    const selFile = join(dir, "selection.json");
+    /* the check on `run` with these floors and, unless sel is null, --selection holding sel */
+    const cov = (floors, sel) => {
+      writeFileSync(floorsFile, JSON.stringify({ floors, reasons: {} }));
+      const args = ["--floors", floorsFile];
+      if (sel) { writeFileSync(selFile, JSON.stringify(sel)); args.push("--selection", selFile); }
+      return spawnSync(process.execPath, [coverageMjs, ...args, run], { encoding: "utf8", cwd: root });
+    };
+    const sel = (all, changed) => ({ all, tests: all ? ["journey", "csp"] : ["journey"], changed });
+    const first = (r) => (r.stdout || "").split("\n")[0];
+    const tell = (r) => `exit ${r.status}, first line ${JSON.stringify(first(r))}; ${JSON.stringify(out(r).split("\n").filter((l) => /lock\.js|data\.js|not-there|FLOOR|GONE|coverage:/.test(l)).slice(0, 8))}`;
+    const below = `${LOCK}: ${p}% < ${p + 1}%`;
+    const SENTENCE = "(changed in this merge request: its group ran in full; if a test outside its group covers it, the map is wrong, not the floor)";
+    const notInFull = (r, f, pct, floor) => linesOf(r).some((l) => l.includes(`${f}: ${pct}% (not measured in full; floor ${floor}`) && new RegExp(`floor ${floor}%?\\)`).test(l));
+    const lockHigh = { ...measured, [LOCK]: p + 1 };
+
+    /* (1), (2) full runs */
+    const plain = cov(lockHigh, null);
+    const allTrue = cov(lockHigh, sel(true, [DATA, "README.md"]));
+    check("M1 no --selection is a full run: the first line is `coverage: full run`", first(plain) === "coverage: full run", tell(plain));
+    check("M1 ... and the ratchet as today: a file below its floor fails with the full run's line", plain.status === 1 && /BELOW ITS FLOOR/.test(plain.stdout) && plain.stdout.includes(below), tell(plain));
+    check("M2 a selection with all true is a full run: first line `coverage: full run`, and it fails on lock.js though only data.js changed", allTrue.status === 1 && first(allTrue) === "coverage: full run" && allTrue.stdout.includes(below), tell(allTrue));
+    check("M2 ... and its report is the same as with no --selection", allTrue.stdout === plain.stdout && allTrue.status === plain.status, allTrue.stdout === plain.stdout ? "same" : "reports differ");
+    const okPlain = cov(measured, null);
+    check("M2 (control) a full run with floors at what was measured passes", okPlain.status === 0 && first(okPlain) === "coverage: full run" && /coverage: ok/.test(okPlain.stdout), tell(okPlain));
+    const { [DATA]: _d, ...noDataFloor } = measured;
+    const fullUnset = cov(noDataFloor, sel(true, []));
+    check("M2 a full run (all true, nothing changed) still fails a file with no floor", fullUnset.status === 1 && /NO FLOOR/.test(fullUnset.stdout) && fullUnset.stdout.includes(DATA), tell(fullUnset));
+
+    /* (3) partial: a changed file below its floor fails */
+    const changedBelow = cov(lockHigh, sel(false, [LOCK, "README.md"]));
+    check("M3 a partial run's first line is `coverage: partial run (<n> changed paths)`, n the length of changed", first(changedBelow) === "coverage: partial run (2 changed paths)", tell(changedBelow));
+    const at = linesOf(changedBelow).findIndex((l) => l.includes(below));
+    const lns = linesOf(changedBelow);
+    check("M3 a changed measured file below its floor fails (exit 1) with the full run's line", changedBelow.status === 1 && at >= 0, tell(changedBelow));
+    check("M3 ... and the sentence that the map is wrong, not the floor, with that line or the next", at >= 0 && (lns[at].includes(SENTENCE) || (lns[at + 1] || "").includes(SENTENCE)), JSON.stringify(lns.slice(Math.max(at, 0), at + 2)));
+    check("M3 ... and lock.js is not also reported as not measured in full", !linesOf(changedBelow).some((l) => l.includes(LOCK) && /not measured in full/.test(l)), JSON.stringify(linesOf(changedBelow).filter((l) => l.includes(LOCK))));
+
+    /* (4) partial: an untouched file below its floor passes */
+    const untouched = cov(lockHigh, sel(false, [DATA, "README.md"]));
+    check("M4 a partial run with an untouched measured file below its floor passes (exit 0)", untouched.status === 0 && first(untouched) === "coverage: partial run (2 changed paths)", tell(untouched));
+    check("M4 ... and prints `<file>: <percent>% (not measured in full; floor <floor>)` for it", notInFull(untouched, LOCK, p, p + 1), JSON.stringify(linesOf(untouched).filter((l) => l.includes(LOCK))));
+    check("M4 ... and does not print it as below its floor", !/BELOW ITS FLOOR/.test(untouched.stdout) && !untouched.stdout.includes(below), tell(untouched));
+    const others = Object.keys(measured).filter((f) => f !== DATA && f !== LOCK);
+    const unprinted = others.filter((f) => !notInFull(untouched, f, measured[f], measured[f]));
+    check("M4 ... every other measured file not in changed is printed not measured in full, with its floor", others.length > 0 && unprinted.length === 0, unprinted.length ? `not so printed: ${unprinted.slice(0, 3).join(", ")}` : `${others.length} files`);
+    check("M4 ... and data.js, which changed, is not", !linesOf(untouched).some((l) => l.includes(DATA) && /not measured in full/.test(l)), JSON.stringify(linesOf(untouched).filter((l) => l.includes(DATA))));
+
+    /* (5) partial: a gone floor still fails */
+    const GONE = "assets/js/not-there.js";
+    const gone = cov({ ...measured, [GONE]: 10 }, sel(false, ["README.md", "docs/adr/0001.md"]));
+    check("M5 a floor whose file is gone fails a partial run too, naming it", gone.status === 1 && first(gone) === "coverage: partial run (2 changed paths)" && /GONE/.test(gone.stdout) && gone.stdout.includes(GONE), tell(gone));
+
+    /* (6) partial: a file with no floor */
+    const unsetChanged = cov(noDataFloor, sel(false, [DATA, "README.md"]));
+    check("M6 a file with no floor, in changed, fails a partial run as NO FLOOR, naming it", unsetChanged.status === 1 && /NO FLOOR/.test(unsetChanged.stdout) && linesOf(unsetChanged).some((l) => l.includes(DATA)), tell(unsetChanged));
+    const unsetOther = cov(noDataFloor, sel(false, [LOCK, "README.md"]));
+    check("M6 a file with no floor, not in changed, passes a partial run", unsetOther.status === 0, tell(unsetOther));
+    check("M6 ... and is printed `(new file not in this change)`", linesOf(unsetOther).some((l) => l.includes(DATA) && l.includes("(new file not in this change)")), JSON.stringify(linesOf(unsetOther).filter((l) => l.includes(DATA))));
+
+    /* (8) a changed path that is not a measured file changes nothing */
+    const onlyData = cov(lockHigh, sel(false, [DATA]));
+    const plusReadme = cov(lockHigh, sel(false, [DATA, "README.md"]));
+    const rest = (r) => (r.stdout || "").split("\n").slice(1).join("\n");
+    check("M8 adding README.md (not a measured file) to changed changes nothing but the count", onlyData.status === plusReadme.status && rest(onlyData) === rest(plusReadme) && first(plusReadme) === "coverage: partial run (2 changed paths)", `exit ${onlyData.status} and ${plusReadme.status}; reports after the first line ${rest(onlyData) === rest(plusReadme) ? "the same" : "differ"}`);
+    const readmeOnly = cov(lockHigh, sel(false, ["README.md", "tools/ci/lint.sh"]));
+    check("M8 ... and changed holding only paths that are not measured files fails nothing", readmeOnly.status === 0 && notInFull(readmeOnly, LOCK, p, p + 1), tell(readmeOnly));
+
+    /* (7) --raise reads the mode from each DIR's selection.json */
+    const withSel = (name, s) => { const d = makeRun(join(dir, name), [[LOCK, lockSrc, [[0, lockSrc.length]]], [DATA, dataSrc, [[0, dataSrc.length]]]]); if (s) writeFileSync(join(d, "selection.json"), JSON.stringify(s)); return d; };
+    const fullDir = withSel("full-sel", sel(true, []));
+    const bareDir = withSel("bare", null);
+    const partDir = withSel("part-sel", sel(false, [LOCK]));
+    const zero = JSON.stringify({ floors: Object.fromEntries(Object.keys(measured).map((f) => [f, 0])), reasons: {} });
+    writeFileSync(floorsFile, zero);
+    let r = raise(floorsFile, [fullDir, bareDir, partDir]);
+    check("M7 --raise given a directory whose selection.json says all false exits 2 with `coverage: --raise needs full runs`", r.status === 2 && out(r).includes("coverage: --raise needs full runs"), `exit ${r.status}: ${JSON.stringify(out(r).split("\n").filter(Boolean).slice(0, 3))}`);
+    check("M7 ... and writes no floors", readFileSync(floorsFile, "utf8") === zero, "floors file compared");
+    r = raise(floorsFile, [partDir]);
+    check("M7 ... and alone, too", r.status === 2 && out(r).includes("coverage: --raise needs full runs") && readFileSync(floorsFile, "utf8") === zero, `exit ${r.status}`);
+    r = raise(floorsFile, [fullDir, bareDir]);
+    check("M7 --raise on a directory whose selection.json says all true and one with no selection.json raises as today", r.status === 0 && floorsOf(floorsFile)[LOCK] === 100 && floorsOf(floorsFile)[DATA] === 100, `exit ${r.status}, lock.js ${floorsOf(floorsFile)[LOCK]}, data.js ${floorsOf(floorsFile)[DATA]}: ${JSON.stringify(out(r).split("\n").filter(Boolean).slice(-2))}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
 process.exit(failed ? 1 : 0);

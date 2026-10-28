@@ -101,6 +101,8 @@ lint:
     - sh tools/ci/lint-types-test.sh
     - sh tools/ci/lint-parse-test.sh
     - sh tools/ci/journey-local-test.sh
+    - sh tools/ci/coverage-fetch-test.sh
+    - sh tools/ci/coverage-run-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
     - node tools/ci/no-real-names-test.mjs
     - sh tools/ci/node-tests.sh

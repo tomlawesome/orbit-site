@@ -19,6 +19,8 @@
  *   G   --group NAME (ADR-0005 section 3a): exactly `yes` when the selection is everything or NAME is among the matched
  *       groups, else exactly `no`, exit 0 either way; an error exits non-zero and prints no `no`; on the real map,
  *       the lint's own test selects `tooling` and the import's tests select `import`
+ *   C   --json's `changed` (ADR-0005 section 6a): exactly the changed paths the selection was made from, [] when no
+ *       diff was taken (LIVE_ALL, a push to main, no CI)
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -353,6 +355,53 @@ try {
     r("R12 a door file (assets/door/**): everything", "all", { write: { "assets/door/journey.js": "d2\n" } });
     r("R13 a new site module (assets/js/new.js, listed file by file on purpose): everything", "all", { write: { "assets/js/new.js": "n\n" } });
     r("R14 a test's own file (tools/ci/csp-test.mjs): csp alone", ["csp"], { write: { "tools/ci/csp-test.mjs": "c\n" } });
+  }
+
+  /* ---- C: --json also prints `changed` (ADR-0005 section 6a, batch 3): the changed paths the selection was made
+     from, both sides of a rename and deletions included; [] when no diff was taken (everything without a diff, or a
+     push to main) ---- */
+  {
+    const crepo = makeRepo(MAP, {
+      "src/a.js": "a\n", "src/b.js": "b\n", "src/s.js": "s\n", "img/a/p.png": "alpha picture\n", "core/door.js": "door\n",
+      "docs/guide.md": "g\n", "docs/notes.txt": "n\n", "README.md": "r\n",
+      "tools/ci/one-test.mjs": "1\n", "tools/ci/two-test.mjs": "2\n", "tools/ci/three.mjs": "3\n", "tools/ci/four-test.mjs": "4\n",
+    });
+    const CB = crepo.base;
+    const has = (r, want) => r.status === 0 && r.sel && Array.isArray(r.sel.changed) && sameSet(r.sel.changed, want) && r.sel.changed.length === want.length;
+    const told = (r, want) => `${r.sel ? `changed ${JSON.stringify(r.sel.changed)}` : said(r)} (want ${JSON.stringify(sorted(want))})`;
+    const c = (name, want, env, ...changes) => {
+      branch(crepo, name, CB, ...changes);
+      const r = select(crepo, env(crepo));
+      check(name, has(r, want), told(r, want));
+      return r;
+    };
+    c("C1 a merge request: changed is exactly the paths it changed", ["src/a.js", "README.md"], mr, { write: { "src/a.js": "a2\n", "README.md": "r2\n" } });
+    c("C2 ... a deletion is among them", ["src/b.js", "docs/guide.md"], mr, { rm: ["src/b.js"] }, { write: { "docs/guide.md": "g2\n" } });
+    c("C3 ... a rename gives both sides", ["img/a/p.png", "docs/p.png"], mr, { mv: [["img/a/p.png", "docs/p.png"]] });
+    c("C4 ... every commit of the merge request counts, once each", ["src/s.js", "src/a.js", "docs/notes.txt"], mr,
+      { write: { "src/s.js": "s2\n" } }, { write: { "src/a.js": "a2\n", "src/s.js": "s3\n" } }, { rm: ["docs/notes.txt"] });
+    {
+      /* the target moved on after the merge request's base: its change is not in changed */
+      const T = branch(crepo, "C5-target", CB, { write: { "src/b.js": "b on dev\n" } });
+      branch(crepo, "C5-feature", CB, { write: { "src/a.js": "a2\n" } });
+      const r = select(crepo, mr(crepo, { CI_MERGE_REQUEST_TARGET_BRANCH_SHA: T }));
+      check("C5 the target's own later change is not in changed", has(r, ["src/a.js"]), told(r, ["src/a.js"]));
+    }
+    c("C6 a merge request whose change selects nothing (docs only) still says what changed", ["docs/guide.md"], mr, { write: { "docs/guide.md": "g2\n" } });
+    c("C7 LIVE_ALL=true on a merge request: everything, without a diff, so changed is []", [], (r) => mr(r, { LIVE_ALL: "true" }), { write: { "src/a.js": "a2\n" } });
+    {
+      branch(crepo, "C8-dev", CB, { write: { "src/a.js": "a2\n" } }, { write: { "README.md": "r2\n" } });
+      const m = select(crepo, push(crepo, CB, { CI_COMMIT_BRANCH: "main" }));
+      check("C8 a push to main: changed is []", has(m, []), told(m, []));
+      const d = select(crepo, push(crepo, CB));
+      check("C9 a push to dev: changed is its range's paths", has(d, ["src/a.js", "README.md"]), told(d, ["src/a.js", "README.md"]));
+      const none = select(crepo, {});
+      check("C10 no CI and no --base: everything, without a diff, so changed is []", has(none, []), told(none, []));
+    }
+    {
+      const r = select(crepo, mr(crepo, { LIVE_ALL: "true" }));
+      check("C11 the answer is {all, tests, changed} and nothing more", r.sel && JSON.stringify(Object.keys(r.sel).sort()) === JSON.stringify(["all", "changed", "tests"]), r.sel ? JSON.stringify(Object.keys(r.sel)) : said(r));
+    }
   }
 } catch (e) {
   check("the test ran to the end", false, String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e));
