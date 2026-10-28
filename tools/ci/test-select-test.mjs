@@ -16,6 +16,9 @@
  *       on does not count), promotion (dev -> main), the nightly import's merge request, LIVE_ALL=true, a push's
  *       range, a push whose before-SHA is all zeros, no CI at all, --base REF
  *   R   the real map (tools/ci/test-map.json) against the ADR's tables: which tests each group selects
+ *   G   --group NAME (ADR-0005 section 3a): exactly `yes` when the selection is everything or NAME is among the matched
+ *       groups, else exactly `no`, exit 0 either way; an error exits non-zero and prints no `no`; on the real map,
+ *       the lint's own test selects `tooling` and the import's tests select `import`
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -211,6 +214,87 @@ try {
     check("P14 no CI, --base dev: the change since dev", picks(based, ["two", "three"]), `${said(based)} (want ["three","two"])`);
     const sha = select(repo, {}, ["--base", B, "--json"]);
     check("P15 --base takes a commit too", picks(sha, ["two", "three"]), said(sha));
+  }
+
+  /* ---- G: --group NAME, for the lint jobs that run only when their group is selected ---- */
+  {
+    const GMAP = {
+      groups: {
+        all: ["core/**", "tools/ci/test-map.json", "tools/ci/test-select.mjs"],
+        none: ["docs/**", "*.md"],
+        tooling: ["tools/ci/lint.sh", "tools/ci/lint-test.sh"],
+        other: ["src/o.js"],
+      },
+      tests: { web: entry("tools/ci/web-test.mjs", ["other"]) },
+    };
+    const grepo = makeRepo(GMAP, {
+      "core/door.js": "door\n", "tools/ci/lint.sh": "l\n", "tools/ci/lint-test.sh": "lt\n", "src/o.js": "o\n",
+      "docs/guide.md": "g\n", "tools/ci/web-test.mjs": "w\n",
+    });
+    const exactly = (r, word) => r.status === 0 && /^(yes|no)\n?$/.test(r.out) && r.out.trim() === word;
+    const told = (r) => `exit ${r.status}, stdout ${JSON.stringify(r.out)}${r.err ? `, stderr ${JSON.stringify(r.err.split("\n")[0])}` : ""}`;
+    const g = (name, word, write, env, args = ["--group", "tooling"]) => {
+      branch(grepo, name, grepo.base, ...(write ? [{ write }] : []));
+      const r = select(grepo, env ? env(grepo) : mr(grepo), args);
+      check(name, exactly(r, word), `${told(r)} (want exactly ${word}, exit 0)`);
+    };
+    g("G1 a change in `all`: everything, so --group tooling prints yes", "yes", { "core/door.js": "door2\n" });
+    g("G2 an unmapped path: everything, so yes", "yes", { "src/new.js": "n\n" });
+    g("G3 LIVE_ALL=true on a docs-only change: yes", "yes", { "docs/guide.md": "g2\n" }, (r) => mr(r, { LIVE_ALL: "true" }));
+    g("G4 promotion (dev -> main), docs-only: yes", "yes", { "docs/guide.md": "g2\n" }, (r) => mr(r, { CI_MERGE_REQUEST_SOURCE_BRANCH_NAME: "dev", CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "main" }));
+    g("G5 no CI and no --base: everything, so yes", "yes", { "src/o.js": "o2\n" }, () => ({}));
+    g("G6 a changed path matched tooling (tools/ci/lint.sh): yes", "yes", { "tools/ci/lint.sh": "l2\n" });
+    g("G7 the lint's own test matched tooling (tools/ci/lint-test.sh): yes", "yes", { "tools/ci/lint-test.sh": "lt2\n" });
+    g("G8 tooling beside another group: yes", "yes", { "tools/ci/lint.sh": "l2\n", "src/o.js": "o2\n" });
+    g("G9 only another group matched (src/o.js in other): no", "no", { "src/o.js": "o2\n" });
+    g("G10 only `none` matched (docs-only): no", "no", { "docs/guide.md": "g2\n" });
+    g("G11 only a test's own file changed: no", "no", { "tools/ci/web-test.mjs": "w2\n" });
+    g("G12 --group other where other matched: yes", "yes", { "src/o.js": "o2\n" }, null, ["--group", "other"]);
+    g("G13 --group other where only tooling matched: no", "no", { "tools/ci/lint.sh": "l2\n" }, null, ["--group", "other"]);
+    {
+      branch(grepo, "dev", grepo.base);
+      branch(grepo, "local-tooling", "dev", { write: { "tools/ci/lint.sh": "l2\n" } });
+      const y = select(grepo, {}, ["--base", "dev", "--group", "tooling"]);
+      check("G14 with --base dev, no CI: tooling changed, yes", exactly(y, "yes"), told(y));
+      const n = select(grepo, {}, ["--group", "other", "--base", "dev"]);
+      check("G15 ... and the options in either order: --group other prints no", exactly(n, "no"), told(n));
+    }
+    {
+      /* a map that cannot be read: an error, never a `no` that would skip the lint's test */
+      branch(grepo, "broken-map", grepo.base, { write: { "tools/ci/lint.sh": "l2\n", "tools/ci/test-map.json": "{ not json\n" } });
+      const r = select(grepo, mr(grepo), ["--group", "tooling"]);
+      check("G16 an error (the map unreadable) exits non-zero and does not print no", r.status !== 0 && !/^no$/m.test(r.out), told(r));
+    }
+  }
+  if (existsSync(REAL_MAP)) {
+    /* the real map: the lint's own test and the import's tests are in their groups (section 3a) */
+    const real = JSON.parse(readFileSync(REAL_MAP, "utf8"));
+    const names = Object.keys(real.tests || {});
+    const rr = makeRepo(real, {
+      "tools/ci/lint-test.sh": "lt\n", "tools/ci/import-docs-test.mjs": "it\n", "tools/ci/raw-heading-test.mjs": "rh\n",
+      "tools/ci/nightly-import-test.sh": "ni\n", "README.md": "r\n",
+    });
+    const told = (r) => `exit ${r.status}, stdout ${JSON.stringify(r.out.split("\n").slice(0, 2).join(" | "))}`;
+    const groupSays = (r, word) => r.status === 0 && r.out.trim() === word;
+    const realCase = (label, path, yesGroup, noGroup, wantTests) => {
+      branch(rr, label, rr.base, { write: { [path]: "changed\n" } });
+      const y = select(rr, mr(rr), ["--group", yesGroup]);
+      check(`${label} ${path} alone: --group ${yesGroup} prints yes`, groupSays(y, "yes"), told(y));
+      const n = select(rr, mr(rr), ["--group", noGroup]);
+      check(`${label} ... --group ${noGroup} prints no`, groupSays(n, "no"), told(n));
+      const j = select(rr, mr(rr));
+      check(`${label} ... and selects ${wantTests.length ? JSON.stringify(wantTests) : "no browser test"}, not everything`, picks(j, wantTests), `${said(j)} (of ${names.length})`);
+    };
+    realCase("G17", "tools/ci/lint-test.sh", "tooling", "import", []);
+    /* the import group holds the dropped-warning browser test (section 2's table), so the import's tests select it */
+    realCase("G18", "tools/ci/import-docs-test.mjs", "import", "tooling", ["dropped-warning"]);
+    realCase("G19", "tools/ci/raw-heading-test.mjs", "import", "tooling", ["dropped-warning"]);
+    realCase("G20", "tools/ci/nightly-import-test.sh", "import", "tooling", ["dropped-warning"]);
+    {
+      branch(rr, "G21", rr.base, { write: { "README.md": "r2\n" } });
+      const r = select(rr, mr(rr), ["--group", "tooling"]);
+      check("G21 README.md alone (none): --group tooling prints no", groupSays(r, "no"), told(r));
+    }
   }
 
   /* ---- R: the real map against the ADR's tables (section 2) ---- */

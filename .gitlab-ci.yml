@@ -106,6 +106,8 @@ lint:
     - sh tools/ci/node-tests.sh
     - node tools/ci/coverage-test.mjs
     - node tools/ci/test-select-test.mjs
+    - node tools/ci/live-run-test.mjs
+    - node tools/ci/live-lib-test.mjs
     - node tools/ci/import-docs-test.mjs
     - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs

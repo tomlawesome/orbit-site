@@ -5,7 +5,7 @@
  *
  *   node tools/ci/coverage-test.mjs
  *
- * No dependencies and no browser.
+ * No dependencies and no browser. Since #95 (ADR-0005), also: the recorder names its file by the shard.
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync, readdirSync, symlinkSync, lstatSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -358,6 +358,25 @@ await b.close();
     const nl = only(nosrc.r, DATA);
     check("... and the hook prints exactly one line for it, naming the path and that the source was not available to compare", nl.length === 1 && /not available|unavailable|no source/i.test(nl[0]), `${nl.length} lines: ${JSON.stringify(nl)}`);
     check("the two reasons are told apart", dl.length === 1 && nl.length === 1 && !/not available|unavailable/i.test(dl[0]) && !/differ/i.test(nl[0]), `${JSON.stringify([dl[0], nl[0]])}`);
+
+    /* the file's name carries the shard (#95, ADR-0005 sections 3 and 3a): browser-<test>-<CI_NODE_INDEX or 0>-<pid>.json,
+       so shards cannot overwrite each other in the merged artifact */
+    const named = (name, index) => {
+      const entriesFile = join(dir, name + ".json");
+      const cov = join(dir, "cov-" + name);
+      writeFileSync(entriesFile, JSON.stringify([{ path: "sw.js", source: sw }]));
+      const env = { ...process.env, FAKE_ENTRIES: entriesFile, PLAYWRIGHT_ROOT: pw, COVERAGE_DIR: cov };
+      delete env.CI_NODE_INDEX;
+      if (index !== undefined) env.CI_NODE_INDEX = index;
+      const r = spawnSync(process.execPath, ["--import", join(root, "tools/ci/coverage-hook.mjs"), join(dir, "driver.mjs")], { encoding: "utf8", cwd: root, env });
+      let files = [];
+      try { files = readdirSync(cov); } catch {}
+      return { r, files };
+    };
+    const s2 = named("shard2", "2");
+    check("with CI_NODE_INDEX=2 the hook names its file browser-<test>-2-<pid>.json", s2.r.status === 0 && same(s2.files, [`browser-driver-2-${s2.r.pid}.json`]), `exit ${s2.r.status}, files ${JSON.stringify(s2.files)} (want ${JSON.stringify([`browser-driver-2-${s2.r.pid}.json`])})`);
+    const s0 = named("shard0");
+    check("without CI_NODE_INDEX the hook names its file browser-<test>-0-<pid>.json", s0.r.status === 0 && same(s0.files, [`browser-driver-0-${s0.r.pid}.json`]), `exit ${s0.r.status}, files ${JSON.stringify(s0.files)} (want ${JSON.stringify([`browser-driver-0-${s0.r.pid}.json`])})`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

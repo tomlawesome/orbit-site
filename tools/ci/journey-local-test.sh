@@ -1,9 +1,15 @@
 #!/bin/sh
-# Test for tools/ci/journey-local.sh (issue #19, "Runbooks become scripts"),
-# written from the issue's specification alone: usage and exit 64, the
-# Playwright lookup (PLAYWRIGHT_ROOT, else the highest version under
-# ORBIT_DIR), the environment and the exact xvfb-run commands, exit 2 when
-# Playwright or xvfb-run is missing, stop at the first failing run.
+# Test for tools/ci/journey-local.sh, rewritten from ADR-0005 section 3a
+# (#95) alone, before the script changes: it now runs the gate's own runner,
+# tools/ci/live-run.mjs, once, under one Xvfb. Kept from the first version
+# (#19): the Playwright lookup (PLAYWRIGHT_ROOT, else the highest version
+# under ORBIT_DIR, default the orbit checkout beside this one), exit 2 when
+# Playwright or xvfb-run is missing, the run's status passed on, and the run
+# from the repository's top level. New: no argument runs
+#   xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs firefox --changed --base dev
+# with BROWSER, HEADED=1, WEBGL=required, LIBGL_ALWAYS_SOFTWARE=1 and
+# PLAYWRIGHT_ROOT set; --browser chromium; --all and TEST names handed on in
+# place of --changed --base dev; an unknown option exits 64 with the usage.
 #
 #   sh tools/ci/journey-local-test.sh        run from anywhere
 #
@@ -78,13 +84,7 @@ for u in sh git dirname basename sort head tail tr sed awk grep ls cat printf \
 done
 shpath=$(command -v sh)
 
-jsh=1280x800x24
-ush=1280x720x24
-jargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/journey.mjs"
-uargs="ARGS|-a|-s|-screen 0 $ush|node|tools/ci/upload-test.mjs"
-dargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/dawn-test.mjs"
-sargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/asdawn-test.mjs"
-fargs="ARGS|-a|-s|-screen 0 $jsh|node|tools/ci/freeze.mjs"
+pre="ARGS|-a|-s|-screen 0 1280x800x24|node|tools/ci/live-run.mjs"
 
 failed=0
 passed=0
@@ -134,120 +134,122 @@ verdict() {
   why=""
 }
 
-# Case 1: no argument runs journey, upload, dawn, asdawn, then freeze, with the gate's commands.
+# Case 1: no argument runs live-run.mjs once, in Firefox, on the change since dev.
 run
-want_rc 0; want_calls 5; want_args "$jargs" "$uargs" "$dargs" "$sargs" "$fargs"
-verdict "no argument runs journey, upload, dawn, asdawn, then freeze, with the gate's arguments"
+want_rc 0; want_calls 1; want_args "$pre|firefox|--changed|--base|dev"
+verdict "no argument runs one xvfb-run of live-run.mjs firefox --changed --base dev"
 
-# Case 2: journey runs only the journey.
-run journey
-want_rc 0; want_calls 1; want_args "$jargs"
-verdict "journey runs only the journey"
+# Case 2: the environment that run gets.
+run
+want_every "BROWSER=firefox" 1; want_every "HEADED=1" 1
+want_every "WEBGL=required" 1; want_every "LIBGL_ALWAYS_SOFTWARE=1" 1
+verdict "the run gets BROWSER=firefox HEADED=1 WEBGL=required LIBGL_ALWAYS_SOFTWARE=1"
 
-# Case 3: upload runs only the upload test.
-run upload
-want_rc 0; want_calls 1; want_args "$uargs"
-verdict "upload runs only the upload test"
+# Case 3: --browser chromium puts chromium in the argument and in BROWSER.
+run --browser chromium
+want_rc 0; want_calls 1; want_args "$pre|chromium|--changed|--base|dev"
+want_every "BROWSER=chromium" 1; want_every "HEADED=1" 1
+verdict "--browser chromium runs live-run.mjs chromium with BROWSER=chromium"
 
-# Case 3c (#27, #28): dawn runs only the dawn test.
-run dawn
-want_rc 0; want_calls 1; want_args "$dargs"
-verdict "dawn runs only the dawn test"
+# Case 4: --browser firefox, said outright, is the default.
+run --browser firefox
+want_rc 0; want_calls 1; want_args "$pre|firefox|--changed|--base|dev"
+want_every "BROWSER=firefox" 1
+verdict "--browser firefox is the same as no --browser"
 
-# Case 3d (#25, #26): asdawn runs only the goodbye test.
-run asdawn
-want_rc 0; want_calls 1; want_args "$sargs"
-verdict "asdawn runs only the asdawn test"
+# Case 5: --all is handed on in place of --changed --base dev.
+run --all
+want_rc 0; want_calls 1; want_args "$pre|firefox|--all"
+verdict "--all is handed on in place of --changed --base dev"
 
-# Case 3e (#2): freeze runs only the GPU gate's Chromium check.
-run freeze
-want_rc 0; want_calls 1; want_args "$fargs"
-verdict "freeze runs only the freeze check"
+# Case 6: --browser chromium --all.
+run --browser chromium --all
+want_rc 0; want_calls 1; want_args "$pre|chromium|--all"
+want_every "BROWSER=chromium" 1
+verdict "--browser chromium --all runs live-run.mjs chromium --all"
 
-# Case 4: an unknown argument -> usage on stderr, exit 64, nothing run.
-run bogus
+# Case 7: TEST names are handed on, in the order given.
+run journey csp
+want_rc 0; want_calls 1; want_args "$pre|firefox|journey|csp"
+verdict "TEST names are handed on in place of --changed --base dev"
+
+# Case 8: one TEST name, in Chromium.
+run --browser chromium freeze
+want_rc 0; want_calls 1; want_args "$pre|chromium|freeze"
+want_every "BROWSER=chromium" 1
+verdict "--browser chromium freeze runs live-run.mjs chromium freeze"
+
+# Case 9: an unknown option -> usage on stderr, exit 64, nothing run.
+run --bogus
 want_rc 64; want_calls 0
 [ -s "$err" ] || why="$why no usage on stderr;"
 [ ! -s "$out" ] || why="$why usage went to stdout;"
-verdict "an unknown argument prints usage on stderr and exits 64"
+verdict "an unknown option prints usage on stderr and exits 64, running nothing"
 
-# Case 5: two arguments -> exit 64, nothing run.
-run journey upload
+# Case 10: an unknown option after a good one -> exit 64, nothing run.
+run --browser chromium --bogus
 want_rc 64; want_calls 0
 [ -s "$err" ] || why="$why no usage on stderr;"
-verdict "two arguments exit 64"
+verdict "an unknown option after --browser exits 64, running nothing"
 
-# Case 6: the environment both runs get, with BROWSER defaulting to firefox.
-run
-want_every "BROWSER=firefox" 5; want_every "HEADED=1" 5
-want_every "WEBGL=required" 5; want_every "LIBGL_ALWAYS_SOFTWARE=1" 5
-verdict "every run gets BROWSER=firefox HEADED=1 WEBGL=required LIBGL_ALWAYS_SOFTWARE=1"
-
-# Case 7: the caller's BROWSER wins.
-extra="ORBIT_DIR=$orbit BROWSER=chromium"
-run
-want_every "BROWSER=chromium" 5; want_every "HEADED=1" 5
-verdict "a caller's BROWSER overrides the firefox default"
-
-# Case 8: PLAYWRIGHT_ROOT, when set, is used as it is.
+# Case 11: PLAYWRIGHT_ROOT, when set, is used as it is.
 mkdir -p "$tmp/custom"
 extra="ORBIT_DIR=$orbit PLAYWRIGHT_ROOT=$tmp/custom"
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$tmp/custom" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$tmp/custom" 1
 verdict "PLAYWRIGHT_ROOT is honoured when set"
 
-# Case 9: otherwise the highest version wins (1.52.0 over 1.40.0 and 1.9.0)
+# Case 12: otherwise the highest version wins (1.52.0 over 1.40.0 and 1.9.0)
 # and is exported as PLAYWRIGHT_ROOT.
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$orbit" 1.52.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$orbit" 1.52.0)" 1
 verdict "the highest Playwright version is chosen and exported"
 
-# Case 10: version order, not string order (1.40.0 over 1.9.0).
+# Case 13: version order, not string order (1.40.0 over 1.9.0).
 extra="ORBIT_DIR=$tmp/old"
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/old" 1.40.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/old" 1.40.0)" 1
 verdict "1.40.0 beats 1.9.0 (version order, not string order)"
 
-# Case 11: ORBIT_DIR defaults to the orbit directory beside the top level.
+# Case 14: ORBIT_DIR defaults to the orbit directory beside the top level.
 extra=""; sc=$tmp/work/site/tools/ci/journey-local.sh
 run
-want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/work/orbit" 1.20.0)" 5
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/work/orbit" 1.20.0)" 1
 verdict "ORBIT_DIR defaults to the orbit directory beside the repository"
 
-# Case 12: no Playwright anywhere -> exit 2 naming the variables, no run.
+# Case 15: no Playwright anywhere -> exit 2 naming the variables, no run.
 extra="ORBIT_DIR=$tmp/empty"
 run
 want_rc 2; want_calls 0
 cat "$out" "$err" | grep -Eq 'PLAYWRIGHT_ROOT|ORBIT_DIR' || why="$why message names neither variable;"
 verdict "no Playwright found exits 2 saying to set PLAYWRIGHT_ROOT or ORBIT_DIR"
 
-# Case 13: xvfb-run not on PATH -> exit 2 saying so.
+# Case 16: xvfb-run not on PATH -> exit 2 saying so.
 path=$nox
 run
 want_rc 2
 cat "$out" "$err" | grep -q 'xvfb-run' || why="$why message does not name xvfb-run;"
 verdict "xvfb-run missing from PATH exits 2 saying so"
 
-# Case 14: the first run fails -> its status, and the upload run is skipped.
-exits="3 0"
+# Case 17: the run's status is the script's (live-run.mjs exits 1 when a gating test failed).
+exits="1"
 run
-want_rc 3; want_calls 1; want_args "$jargs"
-verdict "a failing journey exits 3 and the upload run is not started"
+want_rc 1; want_calls 1
+verdict "a failing run exits with its status (1)"
+exits="2"
+run --all
+want_rc 2; want_calls 1
+verdict "a failing run exits with its status (2)"
 
-# Case 15: the second run fails -> its status.
-exits="0 5"
-run
-want_rc 5; want_calls 2
-verdict "a failing upload run exits with its status"
-
-# Case 16: runs from the repository's top level, whatever the current directory.
+# Case 18: runs from the repository's top level, whatever the current
+# directory (live-run.mjs is named relative to it).
 want=$(cd "$site" && pwd -P)
 mkdir -p "$site/tools/ci/deep"
 cwd=$site/tools/ci/deep
-run journey
+run --all
 want_rc 0; want_every "PWD=$want" 1
 verdict "runs from the top level when started in a subdirectory"
-run journey
+run --all
 want_rc 0; want_every "PWD=$want" 1
 verdict "runs from the top level when started outside the repository"
 
