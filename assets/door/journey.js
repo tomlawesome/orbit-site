@@ -134,8 +134,17 @@ const gone = (beats, at, act) => typeof at === "number" && beats.some((b) => b.a
 /** @param {{ canvas: HTMLCanvasElement, name: HTMLElement, dawnGlyph: () => HTMLElement | SVGElement | null, duskGlyph: () => HTMLElement | SVGElement | null, on?: Hooks }} options @returns {Journey} */
 export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const clock = journeyClock();
-  const engine = createFlight(canvas, { now: clock.now });
-  const onResize = () => engine.resize();
+  /* the engine, made at the first need (warm, warmDocs, fly, descend), never at mount: it takes the canvas's 2D
+     context, and a canvas with a context can never be handed to a worker (ADR-0004 6a.4). One asked for after
+     destroy() is made destroyed, as the one destroy() would have taken down */
+  /** @type {ReturnType<typeof createFlight> | null} */
+  let made = null;
+  let destroyed = false;
+  const need = () => {
+    if (!made) { made = createFlight(canvas, { now: clock.now }); if (destroyed) made.destroy(); }
+    return made;
+  };
+  const onResize = () => made?.resize();
   addEventListener("resize", onResize);
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const body = document.body;
@@ -164,7 +173,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const ascentStep = (act, beat) => {
     switch (act) {
       case "arming": body.classList.add("arming"); break;
-      case "warp": body.classList.add("showwarp"); if (flight.gone) { engine.clear(); clock.stalls(false); } else { engine.start(flight.profile, pinnedFlight(flight.profile, flight.at, beat.at)); clock.stalls(engine.drawingWorld); } break;
+      case "warp": body.classList.add("showwarp"); if (flight.gone) { need().clear(); clock.stalls(false); } else { need().start(flight.profile, pinnedFlight(flight.profile, flight.at, beat.at)); clock.stalls(need().drawingWorld); } break;
       /* the door's ring is not lifted out of it: it goes as the door goes, as on the install's and the information's shots */
       case "mark": body.classList.remove("arming"); break;
       case "release": body.classList.remove("showdawn"); (flight.on.release ?? on.release)?.(); break;
@@ -183,7 +192,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       case "disperse": body.classList.add("dispersing"); break;
       case "warp": {
         const P = descentProfile(descent);
-        body.classList.add("showwarp"); if (descent.gone) { engine.clear(); clock.stalls(false); } else engine.start(P, pinnedFlight(P, descent.at, beat.at)); break;
+        body.classList.add("showwarp"); if (descent.gone) { need().clear(); clock.stalls(false); } else need().start(P, pinnedFlight(P, descent.at, beat.at)); break;
       }
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
@@ -195,7 +204,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   };
   function reset() {
     cancelTimeline(); cancelTimeline = () => {};
-    engine.clear(); clock.stalls(false); clock.release();
+    made?.clear(); clock.stalls(false); clock.release();
     body.classList.remove(...CLASSES);
     name.classList.remove("on");
     for (const el of [dawnGlyph(), duskGlyph()]) if (el) el.style.visibility = "";
@@ -206,6 +215,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
      the beats up to `at` are applied at once, the flight drawn as it stands then, and nothing after is scheduled */
   /** @param {Profile} profile @param {FlyOptions} [options] */
   function fly(profile, { title = "", subtitle = "", on: hooks = {}, ready = null, at } = {}) {
+    need();
     dropLeisure();
     cancelTimeline(); clock.release();
     body.classList.remove(...CLASSES, "holding");
@@ -232,6 +242,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   /* `at` as for fly(): ms into the descent's own (quickened) time */
   /** @param {DescendOptions} [options] */
   function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, homes = [], on: hooks = {}, at } = {}) {
+    need();
     dropLeisure();
     cancelTimeline();
     /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
@@ -254,6 +265,8 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
-  function destroy() { dropLeisure(); reset(); engine.destroy(); clock.dispose(); removeEventListener("resize", onResize); }
-  return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => engine.warm(how), warmDocs: (how) => engine.warmDocs(how), compiled: () => engine.compiled() };
+  /* (before any need there is no engine, and nothing of it to take down) */
+  function destroy() { dropLeisure(); reset(); made?.destroy(); destroyed = true; clock.dispose(); removeEventListener("resize", onResize); }
+  return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => need().warm(how), warmDocs: (how) => need().warmDocs(how),
+    compiled: () => (made ? made.compiled() : Promise.resolve()) };
 }

@@ -26,6 +26,7 @@ import { probe } from "./capability.js";
 import { chore, note, noteChores, compilesAside, PICTURE_WAIT } from "./chores.js";
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
+import { page } from "./page.js";
 
 /**
  * @typedef {object} Atmosphere
@@ -335,6 +336,39 @@ export const DOWN = {
   duskMix(t) { return Math.max(0, Math.min(1, (t / DOWNDUR - 0.64) / 0.36)); },
 };
 
+/* ── A PROFILE SENT TO A WORKER (ADR-0004 6a.3) ─────────────────────────────
+   A message cannot carry a function, so a profile's curves go by name: every flight is the climb's or the descent's,
+   whatever else it changes, so `base` says which, and the rest is data, sent as it is. A curve the base has and the
+   profile does not (DOWN_DAWN's duskMix) goes as undefined, so it is still missing at the other end; the chart's parts,
+   getters on the site, are read now. A curve of the profile's own cannot be sent: it throws, rather than the worker
+   drawing something else. */
+/** @typedef {"speed" | "atm" | "duskMix"} Curve */
+/** @type {Curve[]} */
+const CURVES = ["speed", "atm", "duskMix"];
+/** @typedef {Omit<Profile, Curve> & { base: "UP" | "DOWN", duskMix?: undefined }} WireProfile */
+/** @param {Profile} P @returns {WireProfile} */
+export function wireProfile(P) {
+  const base = P.speed === DOWN.speed ? "DOWN" : "UP", B = base === "DOWN" ? DOWN : UP;
+  /** @type {Record<string, unknown>} */
+  const w = { base };
+  for (const [k, v] of Object.entries(P)) if (!(/** @type {string[]} */ (CURVES)).includes(k)) w[k] = v;
+  for (const k of CURVES) {
+    if (typeof P[k] === "function" && P[k] !== B[k]) {
+      const e = new Error(`a flight's ${k} must be UP's or DOWN's own: a curve of its own cannot be drawn in a worker`);
+      e.name = "ProfileCurveError";
+      throw e;
+    }
+    if (typeof P[k] !== "function" && B[k]) w[k] = undefined;
+  }
+  if (P.chart) w.chart = { rect: P.chart.rect, geometry: P.chart.geometry };
+  return /** @type {WireProfile} */ (w);
+}
+/** the profile again, from its wire form: the base's very curves, and the data as sent @param {WireProfile} w @returns {Profile} */
+export function unwireProfile(w) {
+  const { base, ...data } = w, B = base === "DOWN" ? DOWN : UP;
+  return /** @type {Profile} */ ({ ...Object.fromEntries(CURVES.filter((k) => B[k]).map((k) => [k, B[k]])), ...data });
+}
+
 /* ── THE REVEAL (§15 second pass, ruling 2) ───────────────────────────────
    The first pass ran 2760→3360 and read as a flash; this runs 3200→4500 (and
    then holds, so the handoff happens in full light) and is built to be slow on
@@ -380,14 +414,14 @@ export function createFlight(canvas, options = {}) {
      DOM type is for an already-spent contextType mismatch, which cannot
      happen here. */
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
-  const raf = options.requestFrame ?? ((fn) => requestAnimationFrame(fn));
-  const cancel = options.cancelFrame ?? ((id) => cancelAnimationFrame(id));
+  const raf = options.requestFrame ?? ((fn) => page.frame(fn));
+  const cancel = options.cancelFrame ?? ((id) => page.cancelFrame(id));
   const clock = options.now ?? (() => performance.now());
   /* the Earth the door shows under its dawn (tools/dawn.py): the flight starts on that very picture and
      lets it go into its own plainer world as the climb gets under way. The door has already asked for it. */
   /* (asked for by warm(), below, with the rest of what the flight draws; asked again, as a new request, by a later
      warm if it did not come in time: a stalled request is not restarted by setting the same address again) */
-  /** @type {HTMLImageElement | null} */
+  /** @type {import("./page.js").Picture | null} */
   let earth = null;
   /** @type {Promise<unknown>} */
   let earthReady = Promise.resolve();
@@ -395,22 +429,20 @@ export function createFlight(canvas, options = {}) {
   /** @type {HTMLCanvasElement | null} */
   let earthF = null;
   const askEarth = () => {
-    if (typeof Image === "undefined") return;
-    const img = new Image();
-    earth = img;
-    earthReady = new Promise((r) => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); });
-    img.addEventListener("load", () => {
-      if (img !== earth) return;
+    const pic = page.picture(image("dawn/dawn.webp"), (img, w, h) => {
+      if (pic !== earth) return;
       try {
-        const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const c = page.canvas(w, h);
         const x = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
         x.drawImage(img, 0, 0); x.globalCompositeOperation = "destination-in";
         const g = x.createLinearGradient(0, 0, c.width, 0);
         g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.025, "#000"); g.addColorStop(0.975, "#000"); g.addColorStop(1, "rgba(0,0,0,0)");
         x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); earthF = c;
       } catch { /* the plain picture, then */ }
-    }, { once: true });
-    img.src = image("dawn/dawn.webp");
+    });
+    if (!pic) return;
+    earth = pic;
+    earthReady = pic.settled;
   };
   /* … waited for no longer than any picture (PICTURE_WAIT, chores.js): true once it has come (or failed), false if the
      wait ran out, so a stalled request never holds the flight flat */
@@ -525,10 +557,11 @@ export function createFlight(canvas, options = {}) {
   let flightRaf = 0;
 
   function sizeCanvas() {
-    const dpr = Math.min(2, options.devicePixelRatio ?? window.devicePixelRatio ?? 1);
-    W = window.innerWidth; H = window.innerHeight; DIAG = Math.hypot(W, H);
+    const screen = page.size();
+    const dpr = Math.min(2, options.devicePixelRatio ?? screen.dpr ?? 1);
+    W = screen.W; H = screen.H; DIAG = Math.hypot(W, H);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    page.css(canvas, W, H);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     voyage?.resize(W, H);
     return dpr;
@@ -813,16 +846,17 @@ export function createFlight(canvas, options = {}) {
     /* how much of the door's own Earth is still in the picture: all of it at the start, gone before the world has
        shrunk enough to show the picture's edges */
     /* (none when the door's Earth is live, door3d.js: the voyage's is then that very Earth, turned as the door left it) */
-    const ea = pal.hasSun && earth && earth.complete && earth.naturalWidth && !(voyage && doorIsLive()) ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
+    const pic = earth?.drawable() ?? null;
+    const ea = pal.hasSun && pic && !(voyage && doorIsLive()) ? Math.max(0, Math.min(1, (R / R0 - 0.93) / 0.07)) : 0;
 
     /* with the voyage, the Earth, its air and its limb are drawn there, on this same circle; only the door's
        picture is laid over it here, while it lasts */
     if (voyage && pal.hasSun) {
       worldGL = { cx, cy, R, alpha, c };
-      if (ea > 0.002 && earth) {
+      if (ea > 0.002 && pic) {
         const u = s * (R / R0);
         ctx.save(); ctx.globalAlpha = alpha * ea;
-        ctx.drawImage(earthF || earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
+        ctx.drawImage(earthF || pic, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
         ctx.restore();
       }
       return;
@@ -854,10 +888,10 @@ export function createFlight(canvas, options = {}) {
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.284); ctx.stroke();
     ctx.restore();
     /* the picture: the frame's rows 640..1000, scaled about the world's centre as the world falls away */
-    if (ea > 0.002 && earth) {
+    if (ea > 0.002 && pic) {
       const u = s * (R / R0);
       ctx.save(); ctx.globalAlpha = alpha * ea;
-      ctx.drawImage(earthF || earth, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
+      ctx.drawImage(earthF || pic, cx - 800 * u, cy + (640 - 3920) * u, 1600 * u, 360 * u);
       ctx.restore();
     }
   }
@@ -1269,7 +1303,7 @@ export function createFlight(canvas, options = {}) {
          the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
       if (world3d?.dead && !destroyed) { round++; letGo(); warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; }
       /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
-      else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.complete) askEarth(); warmed = settle(made); }
+      else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.done()) askEarth(); warmed = settle(made); }
       if (!warmed) {
         if (!earth) askEarth();
         /* its pictures asked for (only if the GPU gate lets the page have a world: voyage.js), and its world made (its
@@ -1280,7 +1314,7 @@ export function createFlight(canvas, options = {}) {
         if (!options.plain) fetchVoyage();
         const make = () => {
           if (destroyed) return undefined;
-          try { world3d = createVoyage(canvas, { restFor: (w, h) => (tallScreen(w, h) ? PATH_TALL : PATH)[3] }); world3d?.resize(W || innerWidth, H || innerHeight); } catch (e) { world3d = null; }
+          try { world3d = createVoyage(canvas, { restFor: (w, h) => (tallScreen(w, h) ? PATH_TALL : PATH)[3] }); const screen = page.size(); world3d?.resize(W || screen.W, H || screen.H); } catch (e) { world3d = null; }
           return world3d?.made;
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,

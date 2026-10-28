@@ -36,12 +36,19 @@
       "datasourceTemplate": "npm"
     },
     {
-      "description": "Mermaid, which the docs load from jsDelivr for their diagrams (assets/js/pads.js: MERMAID). Renovate bumps the version but cannot recompute the integrity hash beside it, so the bump's merge request fails the journey's diagram step until the hash is updated by hand (the command is in pads.js).",
+      "description": "Mermaid, which the docs draw their diagrams with: its release file is kept on the site (#92), and its path in assets/js/pads.js (MERMAID) is the version's one pin. Renovate bumps the path but cannot add the file, so the bump's merge request fails the lint and the diagram checks until the file is added by hand (the command is in pads.js).",
       "customType": "regex",
       "managerFilePatterns": ["/^assets/js/pads\\.js$/"],
-      "matchStrings": ["cdn\\.jsdelivr\\.net/npm/(?<depName>mermaid)@(?<currentValue>[0-9.]+)/"],
+      "matchStrings": ["assets/vendor/(?<depName>mermaid)-(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\.min\\.js"],
       "datasourceTemplate": "npm",
       "versioningTemplate": "npm"
+    },
+    {
+      "description": "The site's typefaces (#92): tools/fonts.mjs names each family's upstream release by its GitHub tag. Renovate bumps the tag; the sha256 beside it then refuses the new download until it is set to the new file's, and the fonts are written again with node tools/fonts.mjs (the command is at the top of the script).",
+      "customType": "regex",
+      "managerFilePatterns": ["/^tools/fonts\\.mjs$/"],
+      "matchStrings": ["repo: \"(?<depName>[^\"]+)\", tag: \"(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "github-releases"
     }
   ],
   "lockFileMaintenance": { "enabled": true, "schedule": ["after 5:00am and before 6:15am on monday"] },

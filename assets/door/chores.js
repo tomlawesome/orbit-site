@@ -42,12 +42,21 @@ let frameAt = 0;
 const SHARE = 8, REVEAL_SHARE = 4;
 /* the longest a chore may hold the queue (ms): the longest real one is a texture upload or a compile, seconds on a slow GPU */
 const CAP = 15000;
+/* the queue's pace (pace): "page", every hold and rest here, so whatever moves on the page keeps moving; "none", a
+   queue with no page to keep moving (a worker's, ADR-0004 6a.5): a chore runs the moment the last ends, whether or not
+   the queue is open, a journey's opening is over or someone is typing, and a picture goes on the GPU whole (upload.js).
+   The measures keep their rest: a chore beside one is still not the drawing's time */
+let paced = true;
+/** @param {"page" | "none"} how */
+export function pace(how) { paced = how !== "none"; }
+export const unpaced = () => !paced;
 /* ?holdreveal: nothing during the reveal, as before (openSoft is never called, and upload.js puts each picture on the
    GPU whole): for the owner's A/B */
 export const holdReveal = () => !!flag("holdreveal");
 
 import { settings, flag } from "./settings.js";
 import { gpu } from "./fitness.js";
+import { page } from "./page.js";
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
    is a chore tagged "compile", all of them done while the first light's ring runs, before the door is lit
@@ -89,16 +98,16 @@ function pump() {
   if (want && i < 0 && now >= until) want = null;
   const hurried = i >= 0;
   if (!hurried) {
-    if (!open && !compiling && !soft) { if (!heldAt) heldAt = now; return; }
+    if (paced && !open && !compiling && !soft) { if (!heldAt) heldAt = now; return; }
     /* the rest waits until the journey has had its opening */
-    if (now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
+    if (paced && now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     /* and while someone is typing, until they pause */
-    const typing = settings.typingWait - (now - lastInput);
+    const typing = paced ? settings.typingWait - (now - lastInput) : 0;
     if (typing > 0) { clearTimeout(wake); wake = setTimeout(pump, typing + 20); return; }
     /* before open, only a compile (while they may run) or a soft chore (once the door is lit), or nothing ("compile"
        ranks first, so if there is one, it is this) */
     /** @param {Job} j */
-    const may = (j) => open || (compiling && tags(j.tag)[0] === "compile") || (soft && j.soft);
+    const may = (j) => !paced || open || (compiling && tags(j.tag)[0] === "compile") || (soft && j.soft);
     i = -1;
     for (let k = 0; k < queue.length; k++) if (may(queue[k]) && (i < 0 || rank(queue[k].tag) < rank(queue[i].tag))) i = k;
     if (i < 0) { if (!heldAt) heldAt = now; return; }
@@ -130,9 +139,11 @@ function pump() {
       /* (the rest is kept whoever asks next: a chore queued, or a journey hurried, during it waits for its end) */
       const next = () => { resting = false; pump(); };
       /** @param {number} ms */
-      const frame = (ms) => requestAnimationFrame(() => { frameAt = performance.now(); setTimeout(next, ms); });
+      const frame = (ms) => page.frame(() => { frameAt = performance.now(); setTimeout(next, ms); });
       /* (during the reveal a smaller share, 4 ms: a second band in the frame when the first was quick) */
-      if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(next, 0);
+      /* (unpaced: the next at once, and nothing but a measure rests) */
+      if (!paced) setTimeout(next, job.tag === "measure" ? job.rest : 0);
+      else if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(next, 0);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
     };
@@ -224,9 +235,9 @@ export function quiet() {
       if (running || queue.length) { at = -1; frames = 0; }
       else if (at !== started) { at = started; frames = 0; }
       else if (++frames >= 2) { const was = started; resolve(() => !running && !queue.length && started === was); return; }
-      requestAnimationFrame(look);
+      page.frame(look);
     };
-    requestAnimationFrame(look);
+    page.frame(look);
   });
 }
 /** for the test only (?door3d, index.js: window.__chores; tools/ci/freeze.mjs): the queue as it is now (queuedSoft:
@@ -239,7 +250,7 @@ export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")
 /** @type {Map<string, Promise<Blob>>} */
 const fetched = new Map();
 /** @param {string} url */
-const keyOf = (url) => { try { return new URL(url, document.baseURI).href; } catch { return url; } };
+const keyOf = (url) => { try { return new URL(url, page.baseURI()).href; } catch { return url; } };
 /* the longest a picture is waited for (its answer and its body both): a download that opens and never delivers is
    given up on and forgotten like a failed one, so the flight is never held flat by it and the next ask tries again.
    Longer than the journey's own hold (8 s), as COMPILE_WAIT, below, bounds a compile */
@@ -277,7 +288,7 @@ export function noteChores(when) {
    browsers: this says where the time went)
    @param {string} what @param {number} [since] */
 export function note(what, since = 0) {
-  try { console.info(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
+  try { page.note(`orbit · ${what}: ${Math.round(performance.now() - since)} ms${since ? "" : " after opening"}`); } catch { /* fine */ }
 }
 /* the longest a compile in the background is waited for (KHR_parallel_shader_compile's COMPLETION_STATUS_KHR, polled):
    past it, as on a lost context, the compile is taken as never coming and its part goes on without it (#49: a status
@@ -300,7 +311,7 @@ export const compiledWithin = (gl, par, list, every = 40, stop = () => false) =>
   let seen = 0, last = performance.now();
   const poll = () => {
     const now = performance.now();
-    if (typeof document === "undefined" || !document.hidden) seen += now - last;
+    if (!page.hidden()) seen += now - last;
     last = now;
     if (gl.isContextLost() || stop()) resolve(false);
     else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) resolve(true);

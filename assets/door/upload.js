@@ -7,11 +7,11 @@
  * chore (chores.js: one a frame, from the moment the door is lit), each band's own small bitmap cut from the picture
  * off the page's thread while the one before waits its turn (never more than two at a time). The mipmaps come after
  * the last band, as an ordinary chore (after the reveal): until then the texture is drawable, its first level alone
- * (LINEAR). With ?holdreveal, or where the browser ignores a cut picture's crop (cropHonoured, below), the picture
- * is put on the GPU whole in one chore, its mipmaps with it, as before.
+ * (LINEAR). With ?holdreveal, where the browser ignores a cut picture's crop (cropHonoured, below), or off the page's
+ * thread (chores.js: pace "none"), the picture is put on the GPU whole in one chore, its mipmaps with it, as before.
  */
 /** @import { Tag } from "./chores.js" */
-import { chore, note, holdReveal } from "./chores.js";
+import { chore, note, holdReveal, unpaced } from "./chores.js";
 import { flag } from "./settings.js";
 
 /* a band to start from: about a megabyte (4096 wide: 64 rows; 2048: 128; 1024: 256), never under 16 rows; every band
@@ -169,7 +169,8 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
      for a picture that will never be drawn (a lost context: nothing to delete) */
   /** @param {WebGLTexture | null} t */
   const drop = (t) => { if (t) try { gl.deleteTexture(t); } catch { /* fine */ } };
-  /* whole, in one ordinary chore, its mipmaps with it: with ?holdreveal, or where a cut picture's crop is not honoured */
+  /* whole, in one ordinary chore, its mipmaps with it: with ?holdreveal, where a cut picture's crop is not honoured, or
+     in a queue with no page to keep moving (chores.js: pace) */
   const whole = () => chore(() => {
     const t = gl.createTexture(); gl.bindTexture(T, t);
     try {
@@ -181,7 +182,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     drawable?.(t);
     return t;
   }, 60, tag);
-  if (holdReveal()) return whole();
+  if (holdReveal() || unpaced()) return whole();
   /* (the probe's GPU part is a chore of its own, once a context: it takes its turn like a band, and not before the chores may run) */
   return cropHonoured(gl, (fn) => chore(fn, 0, tag, { soft: true })).then((ok) => (ok ? inBands() : whole()));
   function inBands() {

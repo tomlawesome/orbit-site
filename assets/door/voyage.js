@@ -24,6 +24,7 @@ import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
 import { frameCost, gpu, sayVerdict } from "./fitness.js";
+import { page } from "./page.js";
 
 /** @typedef {[number, number, number, number]} Box a lon/lat box: west, east, south, north */
 /** @typedef {Record<string, string>} Pictures picture name to URL */
@@ -73,7 +74,7 @@ let strip = null;
 /** @returns {Strip} */
 export function theStrip() {
   /* (what is loaded first is the smallest, whatever the device's: sharpStrip, below) */
-  if (!strip) { strip = lightsStrip(innerWidth, devicePixelRatio || 1); pictures().lightsS = strip0(); }
+  if (!strip) { const screen = page.size(); strip = lightsStrip(screen.W, screen.dpr || 1); pictures().lightsS = strip0(); }
   return strip;
 }
 /* the strip comes small first (120 px a degree, 0.6 MB: all the flight waits for), and the device's own (theStrip),
@@ -1094,14 +1095,13 @@ export function doorCamera(sunUnder = SUN_UNDER) {
     @param {{ restFor: (w: number, h: number) => number[] }} where restFor: where the flight comes to rest on a screen of this size (the engine's, for its shape)
     @returns {Voyage | null} */
 export function createVoyage(under, { restFor }) {
-  if (typeof document === "undefined" || !under?.parentNode) return null;
+  if (!page.canPlace(under)) return null;
   const g = gpu();
   if (!g || g.gl.isContextLost()) return null;
   if (!g.gl.getExtension("EXT_color_buffer_float")) { sayVerdict("off: no float colour buffers (EXT_color_buffer_float)"); return null; }
   const { canvas, gl } = g;
-  canvas.id = "warpgl"; canvas.setAttribute("aria-hidden", "true");
   gl.getExtension("OES_texture_float_linear");
-  under.parentNode.insertBefore(canvas, under);
+  page.mount(canvas, /** @type {HTMLElement} */ (under));
   /* dead: it can no longer be drawn (a lost context, shaders that would not link, a machine too slow for it); ready: it
      has been proved fit and may be drawn (warm); the flight draws on its own canvas without it */
   let ok = false, dead = false, ready = false, fit = false;
@@ -1162,8 +1162,8 @@ export function createVoyage(under, { restFor }) {
   const core = /** @type {Linked[]} */ (Object.values(P).filter(Boolean));
   const made = compiled(core).then((done) => {
     if (dead) return false;
-    if (!done) { dead = true; canvas.remove(); sayOff("its shaders did not compile in time"); return false; }
-    try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; canvas.remove(); sayOff("its shaders would not link"); }
+    if (!done) { dead = true; page.unmount(canvas); sayOff("its shaders did not compile in time"); return false; }
+    try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; page.unmount(canvas); sayOff("its shaders would not link"); }
     if (ok && richOnly) P.overRich = P.over;
     if (ok) note(`flight: shaders compiled in ${Math.round(performance.now() - t0)} ms${counted("flight")}`);
     return ok;
@@ -1339,11 +1339,10 @@ export function createVoyage(under, { restFor }) {
   /* resolves when the tab is shown, or at once if it is, or if the world has stopped (stop() ends a wait; no listener is
      left registered either way) */
   /** @returns {Promise<void> | undefined} */
-  const whenVisible = () => (!document.hidden || gone ? undefined : /** @type {Promise<void>} */ (new Promise((resolve) => {
-    const on = () => { if (!document.hidden) done(); };
-    const done = () => { document.removeEventListener("visibilitychange", on); unhide = null; resolve(); };
+  const whenVisible = () => (!page.hidden() || gone ? undefined : /** @type {Promise<void>} */ (new Promise((resolve) => {
+    const off = page.onVisible(() => done());
+    const done = () => { off(); unhide = null; resolve(); };
     unhide = done;
-    document.addEventListener("visibilitychange", on);
   })));
   /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed
      frames (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and asks again */
@@ -1352,7 +1351,7 @@ export function createVoyage(under, { restFor }) {
     for (;;) {
       await whenVisible();
       if (gone) return { fit: false, ms: Infinity };
-      const verdict = await chore(() => (document.hidden ? null : fitness()), 60, "flight");
+      const verdict = await chore(() => (page.hidden() ? null : fitness()), 60, "flight");
       if (verdict) return verdict;
     }
   };
@@ -1444,7 +1443,7 @@ export function createVoyage(under, { restFor }) {
   /** @param {Frame} st */
   function touch(st) {
     if (!ok) return;
-    if (W < 2) resize(innerWidth, innerHeight);
+    if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
     gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 4, 4);
     try { draw(st); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); } catch { /* fine */ }
     gl.disable(gl.SCISSOR_TEST); lastDraw = 0;
@@ -1457,7 +1456,7 @@ export function createVoyage(under, { restFor }) {
     if (!ok) return { fit: false, ms: Infinity };
     /* the host's flag `fit: "skip" (a tool that draws pictures on software GL): the world is taken as fit, no frame timed */
     if (flag("fit") === "skip") return { fit: true, ms: 0, skipped: true };
-    if (W < 2) resize(innerWidth, innerHeight);
+    if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
     const was = part;
     part = 0.4; CW = 0; resize(W, H);
     const { fit: fits, ms } = frameCost(gl, () => draw(ST()));
@@ -1469,14 +1468,14 @@ export function createVoyage(under, { restFor }) {
   function retire() {
     if (gone) return;
     dead = true; ok = false; ready = false;
-    canvas.remove();
+    page.unmount(canvas);
     try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* fine */ }
   }
   /* then the measure: a few whole frames at the heaviest point of the flight (the nebula, the streaks at full speed),
      timed, and the drawing's size chosen so a frame takes about 11 ms here; the galaxy's own drawing in proportion */
   function calibrate() {
-    if (!ok || !fit || document.hidden || (lastDraw && performance.now() - lastDraw < 5000)) return;
-    if (W < 2) resize(innerWidth, innerHeight);
+    if (!ok || !fit || page.hidden() || (lastDraw && performance.now() - lastDraw < 5000)) return;
+    if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
     const st = { t: 1900, v: 1, K: 7.4, vp: [W / 2, -0.55 * H], rmax: Math.hypot(W, H) * 1.55, tint: [1, 0.8, 0.4],
       progress: 0.4, world: null, bloom: 0, tu: 1900, star: true, dt: 0 };
     const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -1530,11 +1529,11 @@ export function createVoyage(under, { restFor }) {
     W = w; H = h;
     if (starVao && starRest) { const r = restFor(W, H); starsStale = r[0] !== starRest[0] || r[1] !== starRest[1] || r[2] !== starRest[2]; }
     if (dead) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(page.size().dpr || 1, 2);
     /* the whole frame is moving: drawn at a part of the screen's density, no more than about 1.6 million pixels */
     const px = Math.min(dpr * part, Math.sqrt(1.6e6 / Math.max(1, W * H)));
     const cw = Math.max(1, Math.round(W * px)), ch = Math.max(1, Math.round(H * px));
-    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    page.css(canvas, W, H);
     if (cw === CW && ch === CH) return;
     CW = cw; CH = ch; canvas.width = cw; canvas.height = ch;
     for (const c of [hdr, ...chain]) if (c) { gl.deleteTexture(c.t); gl.deleteFramebuffer(c.f); }
