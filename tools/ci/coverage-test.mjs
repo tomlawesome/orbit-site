@@ -7,7 +7,7 @@
  *
  * No dependencies and no browser. Since #95 (ADR-0005), also: the recorder names its file by the shard.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync, readdirSync, symlinkSync, lstatSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -380,43 +380,18 @@ await b.close();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-/* 4. coverage-run.sh: no stale browser runs, and a clear stop when the Node coverage is missing. `node` and `xvfb-run` are stand-ins that
-   fail at once (so no test or browser runs) and leave a mark if anything calls it; PLAYWRIGHT_ROOT is a bare directory. */
+/* 4. coverage-run.sh check: a clear stop when the Node coverage is missing. `node` is a stand-in that fails at once (so no
+   check runs) and leaves a mark if anything calls it. (`coverage-run.sh browser` and its cases went with #95: Chromium's
+   coverage now comes from live-run.mjs, ADR-0005 section 6.) */
 {
   const dir = mkdtempSync(join(tmpdir(), "coverage-test-"));
   try {
     const bin = join(dir, "bin");
     mkdirSync(bin);
     writeFileSync(join(bin, "node"), '#!/bin/sh\necho called >> "$FAKE_NODE_MARK"\nexit 1\n', { mode: 0o755 });
-    /* the real xvfb-run starts an X server that outlives the stand-in node; this one starts nothing */
-    writeFileSync(join(bin, "xvfb-run"), '#!/bin/sh\necho called >> "$FAKE_NODE_MARK"\nexit 1\n', { mode: 0o755 });
-    const pw = join(dir, "pw");
-    mkdirSync(join(pw, "node_modules/playwright"), { recursive: true });
-    writeFileSync(join(pw, "node_modules/playwright/package.json"), "{}");
-    const runSh = (mode, cov) => spawnSync("sh", [join(root, "tools/ci/coverage-run.sh"), mode], { encoding: "utf8", cwd: root, timeout: 60000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, COVERAGE_DIR: cov, PLAYWRIGHT_ROOT: pw, FAKE_NODE_MARK: join(dir, "mark") } });
+    const runSh = (mode, cov) => spawnSync("sh", [join(root, "tools/ci/coverage-run.sh"), mode], { encoding: "utf8", cwd: root, timeout: 60000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, COVERAGE_DIR: cov, FAKE_NODE_MARK: join(dir, "mark") } });
 
-    const stale = join(dir, "stale");
-    mkdirSync(join(stale, "node"), { recursive: true });
-    writeFileSync(join(stale, "browser-old-1.json"), "{}");
-    writeFileSync(join(stale, "browser-journey-99.json"), "{}");
-    writeFileSync(join(stale, "node", "coverage-1.json"), "{}");
-    runSh("browser", stale);
-    check("coverage-run.sh browser removes the earlier browser records before its runs", !existsSync(join(stale, "browser-old-1.json")) && !existsSync(join(stale, "browser-journey-99.json")), `left: ${JSON.stringify(readdirSync(stale))}`);
-    check("... and keeps Node's records", existsSync(join(stale, "node", "coverage-1.json")), `left: ${JSON.stringify(readdirSync(join(stale, "node")))}`);
-
-    /* $COVERAGE_DIR may be a symbolic link to a directory (CI artifacts, a shared scratch): the records behind it go too */
-    const target = join(dir, "target");
-    mkdirSync(join(target, "node"), { recursive: true });
-    writeFileSync(join(target, "browser-old-1.json"), "{}");
-    writeFileSync(join(target, "browser-journey-99.json"), "{}");
-    writeFileSync(join(target, "node", "coverage-1.json"), "{}");
-    const link = join(dir, "link");
-    symlinkSync(target, link);
-    runSh("browser", link);
-    check("coverage-run.sh browser removes the earlier browser records when $COVERAGE_DIR is a symbolic link to a directory", !existsSync(join(target, "browser-old-1.json")) && !existsSync(join(target, "browser-journey-99.json")), `left in the target: ${JSON.stringify(readdirSync(target))}`);
-    check("... keeps Node's records behind the link, and the link itself", existsSync(join(target, "node", "coverage-1.json")) && lstatSync(link).isSymbolicLink(), `node records ${existsSync(join(target, "node", "coverage-1.json")) ? "kept" : "gone"}`);
-
-    for (const mode of ["browser", "check"]) {
+    for (const mode of ["check"]) {
       const nonode = join(dir, "nonode-" + mode);
       mkdirSync(nonode);
       writeFileSync(join(nonode, "browser-old-1.json"), "{}");
@@ -426,9 +401,6 @@ await b.close();
     }
     const withNode = join(dir, "withnode");
     mkdirSync(join(withNode, "node"), { recursive: true });
-    /* every stand-in run fails, and so does the check: the failure is said to cut the coverage short, and the check's own exit stays */
-    const failedRuns = runSh("browser", withNode);
-    check("coverage-run.sh browser says a failed Chromium run left coverage incomplete when the check fails, and still exits non-zero", failedRuns.status !== 0 && /failed in Chromium: journey/.test(out(failedRuns)) && /incomplete because the Chromium run failed/.test(out(failedRuns)), `exit ${failedRuns.status}: ${JSON.stringify(out(failedRuns).split("\n").filter(Boolean).slice(-2))}`);
     check("(control) with a node directory, check does not say the Node coverage is missing", !/no Node coverage/.test(out(runSh("check", withNode))), "no message");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
