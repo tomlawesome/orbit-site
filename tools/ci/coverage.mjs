@@ -27,7 +27,7 @@
  * fails the check (with or without --raise), and a person moves it to the new name or removes it, by hand.
  */
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { coveredRanges, lineStats, wholePercent } from "./coverage-lib.mjs";
 
@@ -75,7 +75,10 @@ export function merge(dirs, sources, base = root) {
         inputs++;
         for (const s of j.result) {
           if (!s.url?.startsWith("file://")) continue;
-          const file = relative(base, fileURLToPath(s.url)).split("\\").join("/");
+          const abs = fileURLToPath(s.url).split("\\").join("/");
+          let file = relative(base, abs).split("\\").join("/");
+          /* (a run from another checkout, CI's /builds/…: the site file its path ends with, after a "/", #97) */
+          if (file.startsWith("../") || isAbsolute(file)) file = Object.keys(sources).filter((f) => abs.endsWith(`/${f}`)).sort((a, b) => b.length - a.length)[0] ?? "";
           if (!SITE_FILE.test(file) || !(file in sources)) continue;
           add(file, coveredRanges(s.functions, sources[file].length));
         }
