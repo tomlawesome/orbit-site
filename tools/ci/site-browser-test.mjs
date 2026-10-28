@@ -45,14 +45,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
-const PORT = 8796;
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 const results = [];
 let browser = null;
 
@@ -650,7 +651,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   /* motion left on: the walk and its flights are what is under test */
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
   /* B2 and B3 use pages of their own and are started once B1 has had the machine to itself; the walk's cases wait
@@ -665,7 +666,7 @@ try {
   results.push({ id: "setup", problems: [e.message] });
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 
 const bad = results.filter((r) => r.problems.length);

@@ -60,24 +60,20 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
 const DEADLINE_MS = Number(process.env.DEADLINE_MS || 8 * 60e3);
 const ONLY = process.argv.slice(2);
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 const MESSAGE = "needs JavaScript to draw its sky";
 const MESSAGE_TAIL = "install steps are on GitHub";
 const SHOWN_BY_MS = 5000;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 const results = [];
 let browser = null;
 const t0 = Date.now();
@@ -86,7 +82,7 @@ const progress = (msg) => console.log(`  .. ${((Date.now() - t0) / 1000).toFixed
 const deadline = setTimeout(() => {
   console.log(`FAIL csp-test: the run's deadline (${DEADLINE_MS / 1000} s) passed`);
   browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
   process.exit(1);
 }, DEADLINE_MS);
 
@@ -456,7 +452,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - start > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   await policyCase();
   await staticLoadsCase();
   await walkAll();
@@ -470,7 +466,7 @@ try {
 } finally {
   clearTimeout(deadline);
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 
 const bad = results.filter((r) => r.problems.length);

@@ -57,16 +57,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
-/* a port nobody holds: the other live tests and other checkouts on a shared host have their own */
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 let maintenance = false;
 /* the page with its query: while index.html carries data-maintenance the door stands alone and the gate does nothing,
@@ -77,7 +72,7 @@ const at = (params = [], hash = "") => {
 };
 const SOFTWARE = /llvmpipe|softpipe|swiftshader|microsoft basic render/i;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let failed = false;
 let browser = null;
 
@@ -231,7 +226,7 @@ try {
   maintenance = /<html[^>]*\sdata-maintenance/.test(await (await fetch(SITE)).text());
   if (maintenance) console.log("     (maintenance mode: the pages below are visited with ?preview, past the notice)");
   /* software GL, the blocklist ignored: Chromium then offers a software WebGL2 context rather than none */
-  browser = await playwright.chromium.launch({ headless: false, args: ["--ignore-gpu-blocklist", "--enable-gpu"] });
+  browser = await openBrowser(playwright, "chromium", { own: true, launch: { headless: false, args: ["--ignore-gpu-blocklist", "--enable-gpu"] } });
 
   /* ---- is this machine the one the bug is on? Read it, say it, and refuse to run if not ---- */
   {
@@ -556,7 +551,7 @@ try {
   failed = true;
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 console.log(failed ? "\nfreeze: failed" : "\nfreeze: ok");
 process.exit(failed ? 1 : 0);

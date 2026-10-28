@@ -56,7 +56,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
@@ -82,17 +82,12 @@ const MIN_JUDGED = 6;
 const STEP_CHUNK = 4;
 /* each loss case's frames of the flight: the loss's own, then its samples */
 const lossSamples = Object.values(LOSS_AFTER).map((l) => [l, ...SAMPLE_AT.map((k) => l + k)]);
-/* a port nobody holds: other live tests and other checkouts share this host */
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const LIVE = "preview&door3d&gpu=force&level=2";
 const here = dirname(fileURLToPath(import.meta.url));
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let browser = null;
 const t0 = Date.now();
 const secs = () => ((Date.now() - t0) / 1000).toFixed(0);
@@ -101,7 +96,7 @@ const progress = (msg) => console.log(`  .. ${secs()}s ${msg}`);
 const deadline = setTimeout(() => {
   console.log(`FAIL flight-context-loss-test: the run's deadline (${DEADLINE_MS / 1000} s) passed`);
   browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
   process.exit(1);
 }, DEADLINE_MS);
 
@@ -421,7 +416,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - start > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   console.log("---- F1 a flight whose WebGL context is lost part way up is finished in 2D");
   const control = await webglControl();
   notes.push(`F0w undisturbed WebGL flight, started at frame ${control.start} after the click, at its frame ${LOSS_AFTER.early}: ${show(control)}, ${control.draws} WebGL draw call(s) on #warpgl; ${control.parts}`);
@@ -478,7 +473,7 @@ try {
 } finally {
   clearTimeout(deadline);
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 console.log(`${problems.length ? "FAIL" : "ok  "} F1`);
 for (const n of notes) console.log(`       F1: (${n})`);

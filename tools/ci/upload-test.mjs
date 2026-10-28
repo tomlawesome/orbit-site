@@ -12,13 +12,14 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
-const PORT = 8793;
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let failed = false;
 try {
   await new Promise((ok, no) => {
@@ -28,13 +29,16 @@ try {
     })();
   });
 
-  /* ENGINES=chromium runs only the first: the coverage run (tools/ci/coverage-run.sh) wants Chromium's V8 only */
-  for (const [name, headless] of [["chromium", true], ["firefox", false]].filter(([n]) => !process.env.ENGINES || process.env.ENGINES.split(",").includes(n))) {
+  /* ENGINES=chromium runs only the first: the coverage run (tools/ci/coverage-run.sh) wants Chromium's V8 only; else
+     BROWSER, as tools/ci/live-run.mjs sets it, runs that engine's half; neither runs both */
+  const engines = process.env.ENGINES || process.env.BROWSER;
+  for (const [name, headless] of [["chromium", true], ["firefox", false]].filter(([n]) => !engines || engines.split(",").includes(n))) {
     const problems = [];
     let result = null;
     let browser = null;
     try {
-      browser = await playwright[name].launch({ headless });
+      /* headless Chromium is its own launch; headed Firefox is the job's shared one when there is one */
+      browser = await openBrowser(playwright, name, { own: headless, launch: { headless } });
       const page = await (await browser.newContext()).newPage();
       page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
       await page.goto(`${SITE}tests/crop.html`, { waitUntil: "load" });
@@ -60,6 +64,6 @@ try {
     if (problems.length) failed = true;
   }
 } finally {
-  server.kill();
+  server?.kill();
 }
 process.exit(failed ? 1 : 0);

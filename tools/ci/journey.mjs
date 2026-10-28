@@ -3,7 +3,7 @@
  * browser (Firefox by default), each landing reached, and nothing thrown.
  * This is the gate's live check; it is never optional (new-project skill).
  *
- *   node tools/ci/journey.mjs                 Firefox, site on :8787
+ *   node tools/ci/journey.mjs                 Firefox, site on a free port
  *   BROWSER=chromium node tools/ci/journey.mjs
  *   HEADED=1 (headed, for Xvfb + software GL), WEBGL=required (no WebGL2 fails)
  *   SITE=http://127.0.0.1:8787/ node tools/ci/journey.mjs
@@ -18,12 +18,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 /* playwright: from the image's global install in CI, or from the checkout
    PLAYWRIGHT_ROOT names (a sibling project's node_modules) locally */
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 
-const SITE = process.env.SITE || "http://127.0.0.1:8787/";
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const BROWSER = process.env.BROWSER || "firefox";
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -34,7 +35,7 @@ const problems = [];
 let server = null, browser = null;
 try {
 if (!process.env.SITE) {
-  server = spawn(process.execPath, [join(here, "serve.mjs"), "8787"], { stdio: ["ignore", "inherit", "inherit"] });
+  server = spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "inherit", "inherit"] });
   await new Promise((ok, no) => {
     const t0 = Date.now();
     (async function poll() {
@@ -45,7 +46,7 @@ if (!process.env.SITE) {
 
 /* HEADED=1 runs the browser headed (the gate does so under Xvfb with software
    GL, so Firefox has a WebGL2 to draw the worlds with) */
-browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+browser = await openBrowser(playwright, BROWSER);
 /* Each step opens its own tab, as a visitor arriving from a link does: a
    hash change inside one tab is a different path (the site flies between
    landings on a click, not on the address alone). */

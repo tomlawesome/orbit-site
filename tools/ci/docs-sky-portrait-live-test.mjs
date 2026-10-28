@@ -81,25 +81,21 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "chromium";
 const DEADLINE_MS = Number(process.env.DEADLINE_MS || 15 * 60e3);
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let browser = null, failed = false;
 const deadline = setTimeout(() => {
   console.log(`FAIL docs-sky-portrait-live-test: the run's deadline (${DEADLINE_MS / 1000} s) passed`);
   browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
   process.exit(1);
 }, DEADLINE_MS);
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -407,9 +403,9 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - start > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch({
-    ...(process.env.HEADED === "1" ? { headless: false } : {}),
-    ...(BROWSER === "chromium" ? { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] } : {}),
+  browser = await openBrowser(playwright, BROWSER, {
+    own: true,
+    launch: BROWSER === "chromium" ? { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] } : {},
   });
   for (const [i, shape] of SHAPES.entries()) await pictureCase(shape, i + 1);
   await frameCase();
@@ -420,7 +416,7 @@ try {
 } finally {
   clearTimeout(deadline);
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 console.log(failed ? "\ndocs-sky-portrait-live-test: failed" : "\ndocs-sky-portrait-live-test: ok");
 process.exit(failed ? 1 : 0);
