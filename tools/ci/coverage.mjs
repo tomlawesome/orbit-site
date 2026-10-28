@@ -5,6 +5,13 @@
  *   node tools/ci/coverage.mjs --raise DIR DIR DIR  also raise tools/ci/coverage-floors.json: each DIR is one full run (pass
  *                                                three), and a file is raised to the lowest percent it reached in any run
  *   node tools/ci/coverage.mjs --floors FILE ... a different floors file (the tests use it)
+ *   node tools/ci/coverage.mjs --selection FILE DIR  FILE is test-select.mjs --json's answer (#95, ADR-0005 section 6a)
+ *
+ * The report's first line says the mode. A full run (no --selection, or the selection's `all` is true) is the ratchet
+ * below. A partial run (`all` false: only the tests the change touches ran) holds to its floor only a file named in the
+ * selection's `changed`, since its whole group ran; every other file is reported "not measured in full" and never
+ * fails, and a file with no floor fails only if it changed. A floor whose file is gone fails in either mode. --raise
+ * refuses a partial run: a DIR whose selection.json (the coverage job saves it beside the records) says `all` false.
  *
  * Each DIR holds V8 coverage, found by looking for *.json under it: the files tools/ci/coverage-hook.mjs writes for a
  * Chromium test, and/or Node's own (NODE_V8_COVERAGE=DIR node test.mjs). Their ranges are merged by union. A file
@@ -117,16 +124,47 @@ export function measureWorst(runs, base = root) {
   return { files, empty };
 }
 
+/* test-select.mjs --json's answer read from `file`: { all, changed }, or { error } if it is not one */
+export function readSelection(file) {
+  let j;
+  try { j = JSON.parse(readFileSync(file, "utf8")); } catch (e) { return { error: `${file}: ${e.message}` }; }
+  if (typeof j?.all !== "boolean" || (!j.all && !(Array.isArray(j.changed) && j.changed.every((c) => typeof c === "string")))) {
+    return { error: `${file} is not test-select.mjs --json's answer ({"all", "tests", "changed"})` };
+  }
+  return { all: j.all, changed: j.all ? [] : j.changed };
+}
+
 function main(argv) {
   let floorsFile = join(root, "tools/ci/coverage-floors.json");
-  let raise = false;
+  let raise = false, selectionFile = null;
   const dirs = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--raise") raise = true;
     else if (argv[i] === "--floors") floorsFile = resolve(argv[++i]);
+    else if (argv[i] === "--selection") selectionFile = argv[++i];
     else dirs.push(argv[i]);
   }
-  if (!dirs.length) { console.error("usage: node tools/ci/coverage.mjs [--raise] [--floors FILE] DIR...\n  --raise: pass three full runs, each its own DIR; a floor is raised to the lowest percent its file reached in any of them"); return 64; }
+  if (!dirs.length || (selectionFile !== null && !selectionFile)) { console.error("usage: node tools/ci/coverage.mjs [--raise] [--floors FILE] [--selection FILE] DIR...\n  --raise: pass three full runs, each its own DIR; a floor is raised to the lowest percent its file reached in any of them\n  --selection: test-select.mjs --json's answer; `all` false is a partial run"); return 64; }
+  let sel = { all: true, changed: [] };
+  if (selectionFile) {
+    sel = readSelection(selectionFile);
+    if (sel.error) { console.error(`coverage: ${sel.error}`); return 2; }
+  }
+  if (raise) {
+    /* a floor must hold on a full run: refuse a partial one, named on the command line or saved beside its records */
+    const partial = sel.all ? [] : [selectionFile];
+    for (const d of dirs) {
+      const f = join(d, "selection.json");
+      if (!existsSync(f)) continue;
+      const s = readSelection(f);
+      if (s.error) { console.error(`coverage: ${s.error}`); return 2; }
+      if (!s.all) partial.push(f);
+    }
+    if (partial.length) { console.error(`coverage: --raise needs full runs (a partial run's selection: ${partial.join(", ")})`); return 2; }
+  }
+  const partial = !sel.all;
+  const changed = new Set(sel.changed);
+  console.log(partial ? `coverage: partial run (${sel.changed.length} changed path${sel.changed.length === 1 ? "" : "s"})` : "coverage: full run");
   let files;
   if (raise) {
     const w = measureWorst(dirs);
@@ -151,7 +189,7 @@ function main(argv) {
   }
   console.log(`${"all".padEnd(width)}  ${String(total).padStart(5)}  ${String(covered).padStart(3)}  ${String(wholePercent(covered, total)).padStart(6)}%`);
 
-  if (raisable.length) {
+  if (raisable.length && !partial) {
     console.log("\ncan be raised (the same merge request raises them: node tools/ci/coverage.mjs --raise DIR DIR DIR, three full runs):");
     for (const r of raisable) console.log(`  ${r.file}: ${r.floor}% -> ${r.percent}%`);
   }
@@ -166,15 +204,26 @@ function main(argv) {
   }
 
   let bad = false;
-  if (below.length) {
+  /* a partial run holds only the changed files: their whole group ran */
+  const held = partial ? below.filter((b) => changed.has(b.file)) : below;
+  if (held.length) {
     bad = true;
     console.log("\nBELOW ITS FLOOR (a change lost coverage; cover it, never lower the floor):");
-    for (const b of below) console.log(`  ${b.file}: ${b.percent}% < ${b.floor}%`);
+    const why = partial ? " (changed in this merge request: its group ran in full; if a test outside its group covers it, the map is wrong, not the floor)" : "";
+    for (const b of held) console.log(`  ${b.file}: ${b.percent}% < ${b.floor}%${why}`);
+  }
+  if (partial) {
+    const rest = Object.keys(files).filter((f) => f in doc.floors && !changed.has(f));
+    if (rest.length) {
+      console.log("\nNOT MEASURED IN FULL (a partial run: only the changed files are held to their floors; promotion holds the rest):");
+      for (const f of rest) console.log(`  ${f}: ${files[f].percent}% (not measured in full; floor ${doc.floors[f]}%)`);
+    }
   }
   if (unset.length && !raise) {
-    bad = true;
+    const failing = partial ? unset.filter((f) => changed.has(f)) : unset;
+    if (failing.length) bad = true;
     console.log("\nNO FLOOR (new file: node tools/ci/coverage.mjs --raise DIR DIR DIR, and commit the result):");
-    for (const f of unset) console.log(`  ${f}: ${files[f].percent}%`);
+    for (const f of unset) console.log(`  ${f}: ${files[f].percent}%${failing.includes(f) ? "" : " (new file not in this change)"}`);
   }
   if (gone.length) {
     bad = true;
