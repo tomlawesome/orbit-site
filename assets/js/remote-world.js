@@ -96,7 +96,9 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     /* (on the page as it always was: the gate has judged, and the page world compiles here, the fallback's cost) */
     let w = null;
     try { w = createWorld(el, opts); } catch (e) { console.warn(e); }
-    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), measure: (s) => Promise.resolve(s.map(() => NaN)), made: Promise.resolve(false), baked: false, lost: false, compileMs: 0, onDrew() {}, destroy() {} };
+    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), measure: (s) => Promise.resolve(s.map(() => NaN)), made: Promise.resolve(false), baked: false, lost: true, compileMs: 0, onDrew() {}, destroy() {} };
+    /* (no world on the page either: the pad goes flat, as a page world that could not be made does, inline review) */
+    if (!w) el.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
     asideIs(false);
     note(`install: drawn on the page: ${why}`);
     if (size) page.resize(...size);

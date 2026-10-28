@@ -149,7 +149,7 @@ export function createInstall(pad, opts = {}) {
   }
   /* lost: whatever shot was under way is ended where it is, so the journey still arrives */
   const onLost = (e) => {
-    e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat");
+    e.preventDefault(); shared.lost = true; world = null; failed = true; pad.classList.add("flat"); shared.world?.run?.(false);
     if (motion) { const m = motion; motion = null; canvas.style.opacity = ""; m.resolve(); }
   };
   /* (heard on the world's own canvas, the element it draws to, whichever that is: a world drawn in a worker that fell
@@ -390,7 +390,7 @@ export function createInstall(pad, opts = {}) {
     listen();
     /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
        tried again on the next start (prepare), so its flat is not final and does not stop the loop */
-    if (failed) { running = false; return; }
+    if (failed) { running = false; shared?.world?.run?.(false); return; }
     raf = requestAnimationFrame(frame);
     /* (period: the loop's own, for the frame drawn below; dt: the same, a stall counted as no more than 100 ms) */
     const period = last ? now - last : 16, dt = Math.min(100, period); last = now;
@@ -564,7 +564,7 @@ export function createInstall(pad, opts = {}) {
       });
     },
     stop() {
-      if (running) shared?.world?.run?.(false);
+      shared?.world?.run?.(false);
       running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer); untilt(); untilt = () => {};
       /* the world is free again: the door's planets may be drawn by it */
