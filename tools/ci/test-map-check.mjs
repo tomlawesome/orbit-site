@@ -3,8 +3,9 @@
 //   1. every tracked path matches a group, or is a map test's own file;
 //   2. every pattern matches a tracked file (a renamed file leaves no hole behind it);
 //   3. every tools/ci/*-test.mjs, *-test.sh, journey.mjs and freeze.mjs is named in exactly one place: the map's
-//      tests (browser), tools/ci/node-tests.sh (Node) or a lint job's script in .gitlab-ci.yml (read with js-yaml
-//      from tools/node_modules, as ci-split.mjs reads it);
+//      tests (browser), tools/ci/node-tests.sh (Node), a lint job's script in .gitlab-ci.yml (read with js-yaml
+//      from tools/node_modules, as ci-split.mjs reads it) or the map's hand list (a test run by hand); every hand
+//      entry is on disk and is such a test file;
 //   4. every map test's file is on disk, its groups exist and are neither all nor none, it runs in a browser,
 //      gates only where it runs, and has seconds for each browser.
 //   node tools/ci/test-map-check.mjs        exit 0 ok, 1 refused
@@ -45,8 +46,16 @@ for (const [g, pats] of Object.entries(groups)) {
 }
 
 // 3. every test file is named in exactly one place
+const isTest = (p) => ["tools/ci/*-test.mjs", "tools/ci/*-test.sh", "tools/ci/journey.mjs", "tools/ci/freeze.mjs"].some((g) => path.matchesGlob(p, g));
 const places = new Map();
 const named = (f, where) => { if (!places.has(f)) places.set(f, []); places.get(f).push(where); };
+const hand = map.hand === undefined ? [] : map.hand;
+if (!Array.isArray(hand) || hand.some((h) => typeof h !== "string")) stop(`${MAP_PATH}: hand is not a list of test files`);
+for (const h of hand) {
+  named(h, "hand");
+  if (!existsSync(at(h))) bad(`${MAP_PATH}: hand: ${h} is not on disk`);
+  if (!isTest(h)) bad(`${MAP_PATH}: hand: ${h} is not a test file (tools/ci/*-test.mjs, *-test.sh, journey.mjs or freeze.mjs)`);
+}
 for (const [n, t] of Object.entries(tests)) if (t && typeof t.file === "string") named(t.file, `the map's test ${n}`);
 
 const nodeTests = "tools/ci/node-tests.sh";
@@ -89,10 +98,9 @@ for (const job of Object.keys(ci)) {
   for (const line of lines(inherited(job, "script"))) for (const [f] of line.matchAll(/tools\/ci\/[A-Za-z0-9._-]+/g)) named(f, `job ${job}'s script`);
 }
 
-const isTest = (p) => ["tools/ci/*-test.mjs", "tools/ci/*-test.sh", "tools/ci/journey.mjs", "tools/ci/freeze.mjs"].some((g) => path.matchesGlob(p, g));
 for (const f of tracked.filter(isTest)) {
   const w = places.get(f) || [];
-  if (w.length === 0) bad(`${f} is named nowhere: name it once, in ${nodeTests} (a Node test), a lint job's script in .gitlab-ci.yml, or the map's tests (a browser test)`);
+  if (w.length === 0) bad(`${f} is named nowhere: name it once, in ${nodeTests} (a Node test), a lint job's script in .gitlab-ci.yml, the map's tests (a browser test) or the map's hand list (run by hand)`);
   else if (w.length > 1) bad(`${f} is named in ${w.length} places (${w.join("; ")}): name it in exactly one`);
 }
 

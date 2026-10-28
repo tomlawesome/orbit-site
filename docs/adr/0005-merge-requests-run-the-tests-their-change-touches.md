@@ -115,8 +115,9 @@ pipeline:
   `tools/ci/test-map.json`, `none` if no test can see it"); and every pattern matches at least one tracked file, so a
   renamed file cannot leave a hole behind it;
 - every `tools/ci/*-test.mjs`, `*-test.sh`, `journey.mjs` and `freeze.mjs` is named in exactly one place: the map's
-  tests (browser), `node-tests.sh` (Node) or a lint job's script in `.gitlab-ci.yml` (read with js-yaml, as
-  `ci-split.mjs` reads it);
+  tests (browser), `node-tests.sh` (Node), a lint job's script in `.gitlab-ci.yml` (read with js-yaml, as
+  `ci-split.mjs` reads it) or the map's `hand` list, for a test run by hand (`docsky-test.mjs` renders pictures with
+  Playwright);
 - every map test exists on disk, has a group that exists, a browser, a `gates` subset of its browsers, and seconds
   for each browser; `all` and `none` name no test.
 
