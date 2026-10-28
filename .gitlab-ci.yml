@@ -194,7 +194,9 @@ live:chromium:
     GIT_DEPTH: 0 # the selection reads both ends of the change's range
     COVERAGE_DIR: coverage
   artifacts:
-    paths: [coverage/]
+    # shots/ holds a failing pixel comparison's pictures (draw-pixels-test: the count, both flights and a diff)
+    when: always
+    paths: [coverage/, shots/]
     expire_in: 24 hours
   script:
     - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
