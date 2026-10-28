@@ -3,9 +3,11 @@
 **Status:** Accepted (2026-10-22). Questions 1 and 2 answered 1a and 2a; measurement M1 taken: no Safari stall, so
 section 4's pre-warm is not built, and the door folder's interface is unchanged.
 **Amended:** 2026-10-27, section 6a: the detailed design of section 6 (#85), for the owner's review before any code;
-questions 3 to 6 open.
+questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds in a worker (#93), the detailed design
+for the owner's review before any code; questions 6b-1 to 6b-4 open.
 **Date:** 2026-10-22
-**Relates to:** #43 (with #74 folded in: the portrait star cloud); ADR-0001 (the folder Orbit copies); ADR-0002
+**Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
+worlds in a worker); ADR-0001 (the folder Orbit copies); ADR-0002
 (decision 12d, the leisure proof; decision 7, nothing remembered); #76 (memory on a phone); PERFORMANCE.md "The
 worker, measured"; CAPABILITIES.md "A worker's compile"; `tests/worker.js`, `tests/t-worker.js`, `tests/t-stall.js`.
 
@@ -605,6 +607,394 @@ follow-up loses it.*
   ADR-0002 keeps one: **6a** (recommended) accept, recorded here, the page path unchanged; **6b** lose the gate's
   context (`WEBGL_lose_context`) once the worker says `up`, which frees one idle context and makes `gpu()` report a
   lost context to the site's own worlds for the rest of the visit, so they would need their own check.
+
+## 6b. Detailed design: the install and info worlds drawn in a worker on Firefox (#93)
+
+Written 2026-10-28, against what #85's batches 1 and 2 built on `dev` (`assets/door/page.js`, `remote-flight.js`,
+`draw-worker.js`, `fitness.js` `drawnAside()`, `settings.drawWorker` and `fonts`; batch 3, the proof, was being
+built as this was written). The measurement that funds it is 6a's: on the owner's desktop Firefox the page thread
+compiles the install/info world in 956 ms (one world worn two ways: `install.js` `shared`) and then bakes its galaxy
+and uploads its maps as page chores, so after #85 alone `compilesAside()` still reads false there, every `"compile"`
+chore and the ring's wait for `compiledAll` stay on every visit, and the 4 s target is out of reach (6a.1's "honest
+consequence"). Owner decisions on #93 before this was written: reuse 6a's seam (the adapter, the message pattern, the
+fallback); the worker file under `assets/js/`; Firefox only, behind the same `?draw=worker|page`; Chrome, Edge and
+Safari keep the page path; lose the page's WebGL context once nothing on the page draws with it (question 6
+answered 6a, with 7a on #93: "lose a context eagerly once you're definitely done with it", MDN's WebGL best
+practices). Browser facts are 6a's unless a version is quoted here.
+
+**The standard pattern** is 6a's, the render thread off the UI thread, in its other common shape: the camera stays
+on the UI thread and posts a view every frame, and the render thread draws the latest view it holds (the
+frame-coalescing, latest-wins feed that PERFORMANCE.md's sketch describes: "the page posting the state each frame
+and the worker drawing"), with 6a's worker RPC for the asks (correlation ids, a sequence number on the frames). 6a
+moved the flight's clock and camera into the worker because `engine.js` reads nothing of the page mid-flight. The
+install's camera (`install.js`) reads the page every frame (the pointer, the phone's tilt, the pad's size, the door
+planet's rectangle and computed styles for a dive's start, `document.hidden`, the body's classes) and writes to it
+(the canvas's opacity, the pad's classes), so moving it would put some twenty page touches behind an adapter for
+no gain, while the view it produces is forty-odd numbers of plain data (`install.js` `draw`: `w.draw({ cam, fwd,
+… })`). So the seam is `world.js`'s one drawing call, and `world.js` moves whole. One bespoke choice, said in
+6b.3 with its reason: the worker measures its own frame period for the governor, because the page's period can no
+longer see the drawing's cost.
+
+### 6b.1 What moves, what stays, and whose worker
+
+Moves into the worker: `assets/js/world.js` whole (the shaders and their compile, the textures and their banded
+uploads, the galaxy's bake, `draw(view)`, the render targets, `resize`, `finish`), and with it the door modules it
+leans on, running there as the modules they are: `chores.js` (`fetchOnce`, `linked`, `compiledWithin`, a second
+queue, unpaced), `upload.js` (`uploadBanded`), `page.js`, `settings.js`. `fitness.js` is imported (by `chores.js`)
+but `gpu()` is never asked in this worker: the page's gate has judged (6b.2).
+
+Stays on the page: `install.js` entire (the camera, the shot's clock, the pointer and tilt, `size()`, `govern`,
+`calibrate`'s arithmetic, the pad's classes and the canvas's opacity, the `shared` object), `main.js`, `pads.js`
+(`createInfo` takes the same world), `planets3d.js`, and the door-planets loop (`install.js` `startDoor`, `?door3d`
+only): not carried, as 6a left the live door. On the worker path `startDoor` returns null before making anything,
+so the install's and the information's planets stay the door's pictures (`planets3d.js` never draws those two),
+`html[data-worldplanets]` is never set, and a dive goes on from the picture as it does without the flag. The
+posters' `still()` runs in Chromium, on the page path, unchanged.
+
+**Its own worker, not #85's.** Weighed: one worker owning three canvases against two workers, one a world.
+
+- *ADR-0001 decides it.* `draw-worker.js` is in the folder Orbit copies, and the lint keeps the folder
+  self-contained: it cannot import `../js/world.js`. The only way one worker could draw the site's world is a slot,
+  the host naming a module for the worker to `import()` at `hello`, which then takes extra canvases and its own
+  messages. That is an interface change to the folder (a slot and a second protocol inside `draw-worker.js`) for a
+  world Orbit does not have: a feature the door would carry for the site alone, which is what ADR-0001 says the
+  site may not do. The site and Orbit differ by a setting or slot the door already offers, never by an edit to the
+  folder made for one of them.
+- *Failure isolation.* One fallback for both would fall the flight back to the page because a world could not be
+  made (no float colour buffers in the worker, a thrown shader), and the other way about. Two workers fall back one
+  at a time (6b.4), and one on the page beside one in a worker is a legal state.
+- *Time.* On two threads the flight's 1.8 s and the world's 1.0 s compile at once rather than in turn; on one
+  thread the ring's lap would be waiting on 3 s again. Firefox's measured stall is of a *drawing* context during
+  another context's compile (section 1); at first light neither worker draws, so the two compiles do not stall each
+  other's frames.
+- *Cost.* A second thread (a few MB of heap, Firefox's per-worker overhead), the door's modules parsed twice (about
+  60 KB), the moon's picture fetched by both workers (`voyage.js` `pictures()` and `world.js` `MOON` name the same
+  file; the second fetch is answered by the service worker's media cache). Accepted.
+
+So: `assets/js/world-worker.js` (the worker's entry) and `assets/js/remote-world.js` (the page side: the surface
+`createWorld` returns, remotely), both the site's files, importing the door through `assets/door/index.js` alone as
+the lint requires of a site module (6b.6 names the three exports that needs). `install.js` imports `createWorld` and
+`createRemoteWorld` and chooses between them in `ensure()`.
+
+### 6b.2 The page adapter, and `world.js`'s own page touches
+
+`page.js` is reused as it is: the worker calls `setPage(...)` from `hello` with the answers `draw-worker.js` gives
+(`shared: () => false`, so `compilesAside()` reads true there; `note`/`verdict` posted to the page as `note`, so
+every console line still reads on the page; `baseURI` the page's; `frame` the worker's own `requestAnimationFrame`;
+`canvas` an `OffscreenCanvas`), then `pace("none")` and `openChores()` as 6a.5 has them. `createDoor({ flags,
+image, typingWait: 0 })` configures `settings.js` there (the entry's own function; `watchTyping` is skipped at
+`typingWait: 0`). Found by reading `world.js` for `window`, `document`, `matchMedia`, `screen`,
+`requestAnimationFrame`, `console`, `performance`, `createImageBitmap`, `import.meta.url` and `gpu`:
+
+| `world.js` touches | On the page | In the worker |
+| --- | --- | --- |
+| `picturesOf`: `matchMedia("(pointer: coarse)")`, `screen.width`/`height`, for `small` | as today | `opts.small`, carried in `hello` (the option exists; the page decides) |
+| `picturesOf`: `new URL(…, import.meta.url)` | the module's own folder | the same file from the same folder resolves the same; the `import.meta.url` rule is the door's, not the site's |
+| `createWorld`: `if (!gpu()) return null` | the gate, as today | `opts.gated: true` from `hello`: the page's gate judged, and `gpu()` is never asked in this worker, so no second context is made with the gate's attributes (`alpha: false`, which is not the world's) |
+| `canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, … })` | the page's canvas | the transferred `OffscreenCanvas`, the same attributes (a `webgl2` context on an `OffscreenCanvas`: Firefox 105, 6a) |
+| `bake`'s `requestAnimationFrame(step)` (a galaxy strip a frame) | the page's | the worker's own (a dedicated worker's `requestAnimationFrame`: Firefox 99, 6a); still a strip a frame: the strips are GPU time, nothing in the worker waits on them, and running them back to back gains nothing |
+| `console.warn(…)`, six places (the world could not be drawn, no map, the rings or the moon drawn not photographed, the galaxy did not compile in time) | as today | `opts.warn`, default `console.warn`; the worker posts it as `note { kind: "warn" }` and the page `console.warn`s it, so the lines read as today |
+| `createImageBitmap(blob, …)` | as today | the same call (available in workers since Firefox 42, `mdn/browser-compat-data`) |
+| `performance.now()` | as today | the worker's clock: `compileMs` is the worker's time, said by `install.js`'s `shaders compiled in N ms` line as today |
+| `fetchOnce`, `uploadBanded`, `linked`, `compiledWithin`, `COMPILE_WAIT` (the door's) | the page's queue | the worker's queue, unpaced: a picture goes on whole (6a.5) |
+
+Three small changes to `world.js` carry all of it: the two new options (`gated`, `warn`; `small` is there);
+`lookOf` lifted out as a pure export (it is arithmetic on the look's options and reads nothing of the context;
+`install.js` calls it on the page and the view carries the result, so the worker needs no `look` message); and
+`get lost()` beside `gl` (`install.js` reads `world.gl.isContextLost()` today; the remote world has no `gl`).
+`createWorld`'s returned surface otherwise stands, with `canvas` added (6b.4: a fallback replaces the element, so
+`install.js`'s `shared.canvas` becomes `shared.world.canvas`) and `onDrew(fn)` (6b.3).
+
+### 6b.3 The messages
+
+6a.3's rules hold: plain objects with a `type`; asks that expect an answer carry an `id`; the frames carry `seq`;
+a reply whose id is not pending is dropped; after `destroy()` or a fallback the adapter is `gone` and drops
+everything; transferables are marked. Reused with 6a.3's meaning: `hello`, `up`, `note`, `compiled`, `lost`,
+`dead`, `destroy`. New, because this worker draws a camera's frames rather than running a clock: `canvas`,
+`resize`, `bake`/`baked`, `run`, `view`/`drew`, `finish`, `measure`/`measured`.
+
+Page to worker:
+
+| Message | Fields | When |
+| --- | --- | --- |
+| `hello` | `flags` (the host's, without `door3d`), `baseURI`, `world`: `{ small, map, rings, moon }` (absolute URLs, resolved on the page as 6a.3 resolves the flight's), `sky`, `tag`, and the look's options (`hue`, `sat`, `ringsOn`, `haze`, `grade`: plain data) | first |
+| `canvas` | `canvas` (the transferred `OffscreenCanvas`) | after `hello`; `createWorld` runs in the worker on it at once (6b.5) |
+| `resize` | `w`, `h`, `scale` | `install.js` `size()` and `govern`: the camera's size, not the window's (`world.resize(w, h, scale)` as today) |
+| `bake` | `id` | `world.bake()`; answered by `baked` |
+| `run` | `on` | `install.js` `start()` / `stop()`: the worker's frame loop runs while a pad is drawing (below) |
+| `view` | `seq`, `view` (the object `install.js` `draw` builds: numbers, arrays, `look.HUE` a `Float32Array`; structured clone keeps all of it, and nothing in it is a function) | every page frame the camera draws |
+| `finish` | none | `install.js` `touch`: the GPU made to finish what was asked (`readPixels` 1x1), so a driver's first-draw work is done before the dive, as today |
+| `measure` | `id`, `sets` (an array of view arrays) | `install.js` `calibrate`: each set drawn in turn and timed as `calibrate` times it today (a draw and a finish, then three timed draws and a finish), one ms a set returned |
+| `destroy` | none | the surface has it for the tests and the fallback (`install.js` never destroys the shared world: it lives the page's life) |
+
+Worker to page:
+
+| Message | Fields | When |
+| --- | --- | --- |
+| `up` | `ok`; `why` when not (`no WebGL2 in a worker here`, `the world could not be made`) | after `canvas`, once `createWorld` returned a world |
+| `compiled` | `ok`, `ms` (`compileMs`) | `made` settled: `install.js`'s `shaders compiled in N ms` line, and `compiled` for the ring |
+| `baked` | `id`, `ok` | the bake with that id settled |
+| `drew` | `seq`, `dt`, `ms` | a view drawn: `seq` the view's, `dt` the worker's time since its previous frame callback, `ms` the time `draw` took to issue. The page sets the canvas's `data-drawn` to `seq`, which the tests wait on |
+| `measured` | `id`, `ms` (one a set) | the measure done |
+| `note` | `line`, `kind` (`note`, `verdict`, `warn`) | every console line the moved modules would have printed |
+| `lost` | none | the context lost in the worker (`webglcontextlost` on the `OffscreenCanvas`, Firefox 125, with `isContextLost()` read before every frame and message as 6a's backstop); the page dispatches `webglcontextlost` on the placeholder canvas, so `install.js`'s listener (flat, the shot ended where it is) is unchanged |
+| `dead` | `why` | an exception handling a message: the page falls back (6b.4) |
+
+**The frame feed, latest-wins.** The worker holds at most one view. Each `view` replaces it; the worker draws the
+one it holds in its next `requestAnimationFrame` callback and posts `drew`. So there is at most one draw a display
+frame, with the commit landing on the compositor's next frame (the usual shape for an `OffscreenCanvas` drawn in a
+worker); a camera posting faster than the worker draws loses intermediate views and never queues them; and a worker
+held in the driver for a moment draws the newest view when it returns. The page never waits for `drew` before
+posting the next view (no ack-gating: coalescing alone bounds the queue). The shot's clock, its easing and the
+canvas's opacity stay the page's, so the picture is at most one frame behind the fade the page sets
+(`canvas.style.opacity` from the shot's `t`): 16 ms under a 340 ms hold.
+
+**The governor's measure: the one bespoke choice.** `install.js` `govern(dt)` keeps the frame rate by the page's
+own frame period, which on the page path lengthens when the GPU is behind (the compositor waits, so
+`requestAnimationFrame` does). In a worker the page's period never sees the drawing, so `govern` would never give
+way and a slow machine would draw the world at full density for the whole visit. The standard answers do not fit: a
+GPU timer query (`EXT_disjoint_timer_query_webgl2`) is Chromium's alone, which is not on this path; finishing every
+frame (`readPixels`, what `calibrate` and `fitness.js` do for a few frames) would serialise every frame of a dive.
+So the worker runs its own frame loop while `run` is on, measures its own period between callbacks exactly as
+`install.js`'s loop measures the page's, and sends it as `drew.dt`; on the page the world reports each frame through
+`onDrew(fn)` (on the page path at once, with the loop's own `dt`; from the worker on `drew`), and `govern`,
+`mframes` and the `first second N frames, worst N ms` count move behind it. At rest the camera draws one frame in
+four (`tick & 3`) and `govern` is called for the drawn ones with the loop's period, as today. The `dive began: …
+first frame N ms` line takes the first `drew.ms`. Whether a worker's `requestAnimationFrame` in Firefox lengthens
+under GPU load as the page's does is an expectation M4 looks at by eye (6b.10), not a test.
+
+### 6b.4 When the worker path is taken, and the fallback
+
+**One rule, the flight's.** The site's worlds take the worker exactly when the flight does: `drawnAside()`
+(`fitness.js`, 6a.4: `?draw=page|worker`; else the host's worker and fonts given, the gate accepted and `parallel`
+false, no `userAgentData`, the gate not forced, `Worker`, `OffscreenCanvas` and a canvas that can be handed over,
+not under save-data), exported through the entry for the host (6b.6). Chrome, Edge and Safari keep the page path by
+the same tells; the live tests' `gpu=force` keeps it too; `draw=worker` forces it for the pixel test. Decided at
+`install.js` `ensure()`, the shared world's first making (`prepare()` at `warmJourneys`, or `start()`), after the
+gate has run; and read once more by `main.js` at first light for the ring (6b.5), which prints the flight's
+`drawn in a worker` line there rather than at the journey's first need (the same verdict, a moment earlier). Said
+once, through `note`: `install: drawn in a worker` / `install: drawn on the page: <why>`.
+
+`remote-world.js` `createRemoteWorld(canvas, opts, { worker })` returns `createWorld`'s surface (`made`,
+`compileMs`, `bake`, `baked`, `draw`, `resize`, `finish`, `lost`, `canvas`, `onDrew`, `measure`, `destroy`, and
+`aside()`, a promise of whether it came up, for 6b.6), so `install.js` holds one world whichever it is. It makes the
+worker (`worker`, default `() => new Worker(new URL("./world-worker.js", import.meta.url), { type: "module" })`: a
+site file may read its own address; the tests pass a fake), posts `hello`, transfers the canvas
+(`transferControlToOffscreen()`), posts `canvas`, and waits for `up`. `install.js`'s changes: `ensure()` chooses;
+`make` is not a `"compile"` chore on the worker path (6b.5); `calibrate` returns a promise on both paths (the
+`"measure"` chore already takes one); `touch` posts two views and `finish`; `startDoor` declines a remote world.
+
+**Fallback**, 6a.4's mechanism with 6a.4's triggers, one function, tested once: `fallBack(why)` replaces the
+placeholder `.orbitgl` with a fresh `<canvas>` carrying its attributes (a transferred element can never again give
+the page a context: `getContext` throws `InvalidStateError` on a placeholder, HTML Standard), terminates the worker,
+makes `createWorld` on the fresh canvas on the page (which compiles there, 956 ms: the fallback's cost, as 6a.4's
+compiles as today), replays the pending `bake` and `measure` asks on it, points `made` and `compiled` at the page
+world's, and says `install: drawn on the page: <why>`. A dive under way needs no replay: the camera posts a fresh
+view every frame, and the next one is drawn on the page. `adopt()` moves the canvas after the pad's `slot` (the
+comment `install.js` keeps beside it), so a replaced element is adopted as the old one was, and `shared.canvas`
+becomes `shared.world.canvas` so nothing holds the old element. Triggers: the worker's `error` event; `up` with
+`ok: false`; `dead`; and under the automatic rule no `up` within `COMPILE_WAIT` (5000 ms, the entry's export, the
+figure 6a.4 chose; under `draw=worker` there is no cap, as 6a.4). `lost` is not a fallback: flat, as today. The
+flight's and the world's fallbacks are independent, and the ring's rule (6b.5), decided before either was up, is
+not revisited: a fallback after it compiles on the page after the ring, a freeze the fallback accepts.
+
+**The one shared canvas.** The install's and the information's worlds are one world (`install.js` `shared`), its
+canvas moved between the pads by `adopt()` (`slot.after(canvas)`). A placeholder canvas is an element like any
+other: it may be moved in the DOM and styled, and shows the bitmap last committed from the worker (HTML Standard,
+placeholder canvas element), so `adopt()` is unchanged. Both pads post `view`s to the one worker, each with its own
+`look` from `lookOf` on the page. `install.js`'s `busy`/`owner` rules, which keep the other pad from drawing into it,
+are unchanged.
+
+### 6b.5 Holds and rests on the worker path; the ring
+
+The page path keeps every one as it is. On the worker path:
+
+| Hold or rest (where) | Why it exists | Worker path |
+| --- | --- | --- |
+| The world made as a `"compile"` chore, a frame plus 20 ms after the last (`install.js` `prepare`: `chore(make, 20, ["compile", TAG])` where `compilesAside()` is false) | the compile freezes the page, so it is spaced and put under the ring | **dropped**: `make()` at once at `prepare()`, so the worker is made and the compile starts there, as on the Chromium path today |
+| The reveal hold for the world's GPU work (its uploads, its bake, `touch` and `calibrate` wait for `openChores`) | they touch the page's thread and the GPU under a reveal still being painted | **dropped for what moved**: the worker's queue is open from `hello`, the maps go on whole, the galaxy bakes a strip a frame from `up`. `touch` (60) and the `"measure"` chore (200) stay on the page's queue, because they schedule GPU work beside the page's other chores and the measure's rest is still "not the drawing's time"; their work is done in the worker |
+| The rests between chores and the one-band-a-frame uploads (`upload.js`) | whatever moves on the page keeps moving | **dropped** in the worker (`pace("none")`, 6a.5); the page's queue keeps them for what stays |
+| The ring's wait for `compiledAll`, 9 s cap, at least a lap, on every visit where compiles stall the page (`main.js` `waitCompiled`, `asideHere`; `dawn.js` `minLaps`) | the compiles stall the page, better under the ring | **becomes the Chromium shape** when nothing compiles on the page: `asideHere = MAINTENANCE || saveData() || compilesAside() || (drawnAside() && !DOOR3D)`, so `waitCompiled` is a first visit only, with the 8 s cap, and `openCompiles()` and `compileFirst()` are not called. `compiledAll` still carries the remote worlds' `compiled` (the message) and the flight's, so a first visit's ring runs until both workers have compiled or 8 s. Said through `note`, for the tests: `first light: compiles aside` / `first light: the ring waits for the compiles`. Under `?door3d` today's shape stands: the live door and `planets3d.js` compile on the page's context (`capability.js` `level()` gives level 1 where `background` is false; the worker path does not force level 0) |
+| The leisure proof (`proveLater`), the climb's 8 s hold, `WAIT` (6 s for the bake at `form`) | timing policies, not compile freezes | **kept**, unchanged |
+
+Expected on the owner's machine, said as an expectation and not a promise: no shader compiles on the page's thread
+on a Firefox visit (the gate's context creation remains, under the ring); the worlds' share of `chores at … held,
+resting, waited` near zero; on a later visit the ring runs its one lap and the door lights with no wait (`dawn.js`:
+"on a later visit, with everything kept, it comes straight up"); the first dive finds the world baked if the visit
+is a few seconds old, and `WAIT`s otherwise as today. M4 measures it (6b.10).
+
+### 6b.6 The page's WebGL context let go (7a); the interface change, deliberate
+
+**Letting go.** Once the flight's worker and the world's worker have both said `up`, nothing on the page draws
+with the gate's context: the flight's world and the galaxy are in one worker, the site's world in the other. `main.js`
+then loses it, `gpu().gl.getExtension("WEBGL_lose_context").loseContext()` (`WEBGL_lose_context`: Firefox 22,
+`mdn/browser-compat-data`; `world.js` `lose()` already uses it), and says `gpu: the page's context let go`.
+Conditions, all of: `journey.aside()` resolved true (the flight's worker up: the new call below), the world's
+`aside()` resolved true, not `?door3d` (the live door and `planets3d.js` draw with it). After it, `gpu()` still
+returns the verdict (truthy), so `fetchWorld`, `compilesAside()` and `drawnAside()` read as before (their fields
+were stored at the gate); `fitness.js`'s `webglcontextlost` listener runs `preventDefault()` as for any loss, and
+a loss by the extension is undone only by `restoreContext()`, which nothing calls. The cost, said plainly: a flight
+worker that dies *after* `up` (`dead`, `error`) falls back to a page engine whose `createVoyage` finds the gate's
+context lost and flies painted for the rest of the visit (`voyage.js` makes no world on a lost context, ADR-0002);
+a world worker that dies after `up` is unaffected (`createWorld` makes its own context on the fresh canvas, as
+today). Question 6b-2 offers the restore. Until both are up there are three contexts (the gate's, idle, and one in
+each worker); after, two, both drawing.
+
+**The interface change (README, `assets/door/`)**, additive and optional, said so because Orbit copies the folder
+unchanged: a host that uses none of it has the door exactly as today, and Orbit's import merge request needs no
+change.
+
+- `index.js` exports `setPage` (`page.js`) and `pace` (`chores.js`), "for a host's own worker": a site module may
+  import the entry alone (the lint), and a host's worker must answer for the page and run its queue unpaced as
+  `draw-worker.js` does. And `drawnAside` (`fitness.js`), "whether the flight is drawn in a worker, for a host that
+  puts its own drawing beside it".
+- `journey.aside()`: `Promise<boolean>`, true once the worker said `up`, false once the flight is on the page (the
+  page path at the first need; a fallback before `up`). `remote-flight.js` settles it from `up` and `fallBack`;
+  `journey.js` carries it as it carries `compiled()`, settled at the first need. Without it a host cannot tell a
+  worker that came up from one that fell back before `up` and compiled on the page, and would lose the very context
+  that page engine's world draws with.
+- README: the entry's table gains the three exports and the journey's surface `aside`. Nothing else of the folder
+  changes: no setting, no slot, no markup, no stylesheet, no message of `draw-worker.js`'s; the CSP paragraph
+  stands (6b.8).
+
+### 6b.7 Tests: behaviour, never timings; the paths forced by flags
+
+Node, one fresh process per case (as `draw-*-test.mjs`), `install.js` and `world.js` on the stub page
+(`tools/ci/door-stub.mjs`, with a `.orbitgl` canvas whose `transferControlToOffscreen` returns a token and whose
+contexts are the stub's recording gl and 2D), the worker a fake class passed as `worker` (recording what it is
+posted and answering what the case says), the clock virtual where a wait would otherwise be real
+(`stale-prove-test.mjs`):
+
+- W1 no worker chosen (`draw: "page"`, or `drawnAside()` false on the stub): `createWorld` on the page as today, the
+  `.orbitgl` keeps its context, no worker made; `lookOf(opts)` equals the old world's `lookOf(opts)` for the
+  install's and the information's options (`main.js` `INFO_WORLD`). Control for everything below.
+- W2 `draw: "worker"`: the fake is posted `hello` first (flags without `door3d`; `world.map`/`rings`/`moon` absolute,
+  the `planet-2k` map when `small`; `sky`; `tag`; `hue`, `sat`, `ringsOn`, `haze`, `grade` as given), then `canvas`
+  with one transferable; `bake()` posts `bake` with an id and resolves only on `baked` with that id (another id
+  resolves nothing); `start()` posts `run { on: true }` and `stop()` `run { on: false }`; a page frame posts one
+  `view` whose `view` deep-equals the object `draw` built after `structuredClone` (no function in it); `drew { seq }`
+  sets `data-drawn` and calls `onDrew` with its `dt`; `calibrate` posts `measure` with two sets and sets `mq` from
+  `measured`; `install: drawn in a worker` is said.
+- W3 the rule follows the flight's: `drawnAside()` true on the stub (6a's D3 bed: `parallel` false, no
+  `userAgentData`, `Worker` and `OffscreenCanvas` given) makes a worker; then one at a time `draw: "page"`,
+  `parallel` true, `userAgentData` defined, `gpu: "force"`, no `drawWorker`: none, and the line names the reason
+  where a worker was given. `startDoor` returns null with a remote world.
+- W4 the fallback: `error` before `up`: `.orbitgl` is a fresh element with the same class and attributes, the
+  `slot` still before it, `terminate()` called, the pending `bake()` resolves after the page world's own bake, the
+  next `draw` draws on the fresh canvas's context (the stub records it), `install: drawn on the page: the worker
+  failed to load`. `up { ok: false, why }`: the same, `why` in the line. `dead` mid-dive on the virtual clock: the
+  page world draws the next frame and the shot's `settled` still resolves. No `up` within 5000 ms under the
+  automatic rule: the fallback; under `draw: "worker"`: still waiting at 20 s. `lost` after `up`:
+  `webglcontextlost` dispatched on the placeholder, the pad `flat`, no fallback.
+- W5 the worker side: `world-worker.js` imported in a child with a stub `self` (`postMessage`, `onmessage`,
+  `close`) and a fake `OffscreenCanvas` whose context is the stub's recording gl: `hello` then `canvas` posts
+  `up { ok: true }`, the shaders compiled with no `"compile"` chore queued, and `compiled { ok, ms }`; a canvas with
+  no WebGL2 posts `up { ok: false, why: "no WebGL2 in a worker here" }`; the pictures are fetched from the absolute
+  URLs given and no other; `uploadBanded` puts the map on in one `texImage2D` of its full height; `bake { id }` is
+  answered by `baked { id }` after the galaxy's four strips, one a frame (the stub counts `requestAnimationFrame`);
+  three `view`s in one frame draw once, the last, and post one `drew` with its `seq`; `run { on: false }` stops the
+  frame callbacks; `measure` with two sets posts `measured` with two numbers; `resize` sets the canvas's bitmap
+  size; a `warn` from `world.js` is posted as `note { kind: "warn" }`; `destroy` calls `close()`.
+- W6 the view's wire form: for the install's and the information's options, at `k` 0, 0.5 and 1, with and without
+  a `dot0`, the view `draw` builds survives `structuredClone` deep-equal (`look.HUE` still a `Float32Array`), and
+  `createWorld`'s `draw` on the stub gl sets the same uniforms from the cloned view as from the original.
+- W7 `main.js`'s rule, lifted out as a pure function `ringWaits({ maintenance, saveData, aside, drawnAside, door3d,
+  firstVisit })` for the test: `drawnAside` true, `aside` false, `door3d` false, not a first visit: no wait; a first
+  visit: wait, 8 s; `door3d` true: wait, 9 s, as today; `drawnAside` false: as today in every case.
+
+Browser (Playwright; the live job's Firefox under Xvfb on software GL, the Chromium shard for coverage and pixels),
+joining `tools/ci/test-map.json`'s `worlds` group with the two new files:
+
+- PW1 Firefox, the gate's own browser: `/?preview&gpu=force&fit=skip&draw=worker`, then a click on the install's
+  planet: the console carries `install: drawn in a worker`, `install: shaders compiled in N ms`, `install: ready`,
+  `first light: compiles aside`, `gpu: the page's context let go`; `#installpad` gains `lit` and the body
+  `arrived`; the `.orbitgl`'s `getContext("2d")` throws on the page (a placeholder); back to the door and into the
+  information's: `#infopad` gains `lit` and holds the same element. The same with `draw=page`: `install: drawn on
+  the page: asked for (draw=page)`, `first light: the ring waits for the compiles`, and the dive lands.
+- PW2 pixel identity, Chromium (SwiftShader, `?gpu=force&fit=skip`, 1280x800): a new `tests/world.html` on
+  `tests/draw.html`'s shape (#85 batch 3): `still(k, idle)` at `k` 0.3 and 1 with `idle` 7, under `draw=page` and
+  `draw=worker` on fresh pages, a screenshot of the canvas's box once `data-drawn` is set, compared pixel for pixel:
+  zero differing pixels. Control: `k` 0.3 against 0.6 differs. The grain and the motes are `uTime`'s and `still`
+  fixes the clock, so the frame is deterministic; if the two contexts ever differ the test reports the count and a
+  diff picture and the owner decides a tolerance (never loosened silently). Edge by hand, `?draw=worker`, once.
+- PW3 fallback, live: `world-worker.js` served 404 (as `csp-test`'s F1 serves `main.js` 404) under `draw=worker`:
+  `install: drawn on the page: the worker failed to load`, the dive still lands, and `gpu: the page's context let
+  go` is not said.
+- Every existing live test keeps the page path (`gpu=force` without `draw=worker`), so what they prove is what they
+  proved.
+
+### 6b.8 Coverage, CSP, the service worker, the lint and the type check
+
+- Coverage: `world.js` and `install.js` keep their floors from the page-path runs (every existing suite; lines run
+  in a worker are never recorded, 6a.8). `remote-world.js` is covered in Chromium by PW2's `draw=worker` page and in
+  Node by W2 to W4; `world-worker.js` in Node alone, by W5 (`node-tests.sh`'s V8 coverage; the hook keeps
+  `assets/js/*.js`). Batch 2 adds the two floors from three full runs (`coverage.mjs --raise`).
+- CSP: nothing to add. Every page carries `worker-src 'self'`; the worker's picture fetches are same-origin
+  (`connect-src 'self'`); the worker runs under the page's policy where Firefox carries it into a dedicated worker
+  (6a.6).
+- `sw.js`: nothing to change. A dedicated worker's fetches go to the service worker controlling the document that
+  made it (6a.8); the worker's files are code (`fresh()`), its pictures media (the 36-hour cache), the moon shared
+  with the flight's worker.
+- The lint: `world-worker.js` and `remote-world.js` import `../door/index.js` alone (the site's rule), hence 6b.6's
+  exports; `import.meta.url` is allowed in `assets/js/`; no outside address. `tools/door-markup.mjs` is untouched
+  (no markup change). `tools/ci/lint.sh` gains nothing.
+- The type check: `index.js` re-exports only; the folder's one `tsconfig` stands.
+
+### 6b.9 Build: three batches, after #85's three
+
+Each a pipeline, reviewed inline as written; tests first, from this section, by an agent that has not seen the
+code (the house order of work). Line counts are estimates of new and changed lines, tests included.
+
+1. **The seam** (~350 lines): `world.js`'s `gated`, `warn`, `lookOf` as a pure export, `lost`, `canvas`, `onDrew`;
+   `install.js`'s `govern` and the stat behind `onDrew`, `calibrate` as a promise, `shared.world.canvas`,
+   `world.lost`; `main.js`'s `ringWaits` lifted out (no behaviour change yet: `drawnAside()` is false until batch 2
+   gives `ensure()` a worker to choose); `index.js`'s three exports, `journey.aside()`, the README (6b.6). Tests W1,
+   W6, W7. The page path is unchanged throughout: the existing suites prove it.
+2. **The worker** (~550 lines): `world-worker.js`, `remote-world.js`, `ensure()`'s choice and `install: drawn …`,
+   the fallback, `make` unchored on the worker path, `startDoor`'s refusal, the ring's rule and its line, the
+   context let go, the two coverage floors, `test-map.json`. Tests W2 to W5.
+3. **The proof** (~300 lines): `tests/world.html`, PW1 to PW3, PERFORMANCE.md "The worker, measured" and
+   CAPABILITIES.md brought up to date, M4's numbers when the owner has them.
+
+About 1,200 lines in all: the unaudited count stood at about 6,500 as this was written (the commit hook's figure
+since a621f59, #85's batches 1 and 2 in) and would reach about 7,700, under the 10,000 trigger.
+**#93's "about 900" (6a.1, question 4b) is low by about a third**, for three reasons the outline did not see: the
+per-frame view feed and the governor's measure (6b.3), which the flight did not need because its clock went with it;
+the ring's rule and the context let go, which #85 left to this issue; and a browser proof of its own (the flight's
+`tests/draw.html` draws no world).
+
+### 6b.10 What the owner measures on a real desktop (M4)
+
+After batch 2, Firefox, private window, `?preview`, then `?preview&draw=page`, the console lines of each: `flight:
+drawn in a worker`, `install: drawn in a worker`, `first light: …` (which shape the ring took), `install: shaders
+compiled in N ms` (now the worker's time), `gpu: the page's context let go`, `reveal: … longest frame gap N ms`,
+`chores at flight ready: …` (held, resting, waited: the page's queue, which should now hold the measure and `touch`
+alone), the time at which each way in opens; and on a dive, `install: dive began: resize N ms, first frame N ms`
+and `install: first second N frames, worst N ms` (now the worker's count). The eye on the ring, the reveal, the
+dive into the install and into the information, and the return, both ways; and whether the world gives way to a
+softer picture on a slow frame as it does on the page path (6b.3's expectation). Then a second visit in the same
+window (not private): the ring's laps before the door lights. Edge with `?draw=worker` once, for PW2's by-hand half.
+
+### Questions for the owner (#93)
+
+**6b-1** The worker's identity (6b.1): **6b-1a** (recommended) the site's own `assets/js/world-worker.js`, because
+  the door's worker cannot import the site's world without a slot in a folder Orbit copies, and two workers fall
+  back one at a time; **6b-1b** one worker: `draw-worker.js` gains a host-module slot (`hello.modules`, `import()`ed
+  there and given the extra canvases and messages), an interface change for Orbit's import to carry.
+**6b-2** The page's context after it is let go (6b.6): **6b-2a** (recommended) lose it once both workers are up and
+  accept that a flight worker dying after `up` flies painted for the rest of the visit, because a crash after `up`
+  is a fault the console reports and the restore is more door surface for it; **6b-2b** lose it, and on a late
+  fallback `remote-flight.js` restores it (`fitness.js` `regainGate()`: `restoreContext()`, on which `voyage.js`
+  already builds afresh); **6b-2c** keep it, three contexts, against 7a.
+**6b-3** The governor's measure on the worker path (6b.3): **6b-3a** (recommended) the worker's own frame period
+  (`drew.dt`), the same measure taken on the thread that draws, checked by eye in M4; **6b-3b** the page's own
+  period as today, so the governor never gives way on the worker path and a slow machine draws at full density;
+  **6b-3c** finish every frame in the worker and time it, a true cost at the price of serialising the dive's
+  frames.
+**6b-4** A first visit's ring on the worker path (6b.5): **6b-4a** (recommended) the Chromium shape, at least a lap
+  and until both workers have compiled or 8 s, because the first dive then finds its world compiled and the lap is
+  the ring's anyway; **6b-4b** no wait at all, the compiles finishing behind the lit door and each way in opening as
+  its world bakes.
 
 ## 7. Rejected
 
