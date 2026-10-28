@@ -92,6 +92,7 @@
       ".gitignore",
       ".gitattributes",
       ".gitleaksignore",
+      ".private-details-allow.toml",
       ".nojekyll",
       ".github/**",
       "tools/*.py",
