@@ -52,7 +52,7 @@
  *   PLAYWRIGHT_ROOT=<playwright package dir> BROWSER=firefox HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/csp-test.mjs [W P0 F ...]
  *
- * Firefox headed under Xvfb with software GL, as live:journey runs it. A case that cannot be judged says so and fails,
+ * Firefox headed under Xvfb with software GL, as the live jobs run it. A case that cannot be judged says so and fails,
  * rather than passing for nothing. The run has its own deadline (DEADLINE_MS, default 8 minutes).
  */
 import { spawn } from "node:child_process";

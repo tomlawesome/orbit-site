@@ -12,6 +12,7 @@
 stages:
   - lint
   - live
+  - check
   - maintenance
   - publish
 
@@ -85,7 +86,7 @@ lint:
   variables:
     GIT_DEPTH: 0 # the names guard reads every commit's emails (#56)
     # Node records which lines of the site its tests ran (tools/ci/node-tests.sh);
-    # `live:journey` adds Chromium's and checks them against the floors (#14).
+    # `live:chromium` adds Chromium's and `coverage` checks them against the floors (#14).
     COVERAGE_DIR: coverage
   rules:
     - *not_scheduled
@@ -99,7 +100,6 @@ lint:
     - sh tools/ci/lint-sections-test.sh
     - sh tools/ci/lint-types-test.sh
     - sh tools/ci/lint-parse-test.sh
-    - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
     - node tools/ci/no-real-names-test.mjs
@@ -108,83 +108,117 @@ lint:
     - node tools/ci/test-select-test.mjs
     - node tools/ci/live-run-test.mjs
     - node tools/ci/live-lib-test.mjs
-    - node tools/ci/import-docs-test.mjs
-    - node tools/ci/raw-heading-test.mjs
     - node tools/ci/glow-banding-test.mjs
 
 # The lint's own test: each case plants one fault in a scratch copy and runs
 # the whole lint, so it takes about 6 minutes alone. Its own job, beside
 # `lint`, so neither runs into the lane's one-hour limit (#62). The gate
-# still needs it: the pipeline fails if it does. `live:journey` does not
-# wait for it.
+# still needs it: the pipeline fails if it does. It runs when the change
+# touches the `tooling` group of tools/ci/test-map.json (or everything is
+# selected), and otherwise passes in seconds; an error in the selection
+# prints no `no`, so the test runs (ADR-0005 section 3a). The live jobs do
+# not wait for it. GIT_DEPTH: 0, as `lint`: the selection reads the change's
+# range, and a shallow clone without its base would run everything.
 lint:test:
   stage: lint
   image: $NODE_IMAGE
   rules:
     - *not_scheduled
     - when: on_success
+  variables:
+    GIT_DEPTH: 0
   script:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
-    - sh tools/ci/lint-test.sh
+    - node tools/ci/test-select.mjs
+    - '[ "$(node tools/ci/test-select.mjs --group tooling)" = no ] || sh tools/ci/lint-test.sh'
 
-# ---------------------------------------------------------------- live --
-# The site served as Pages serves it, visited in Firefox: the door, each
-# landing, a docs page, the 404; nothing thrown, nothing missing. This is
-# the gate's live check and is never optional, manual or allowed to fail
-# (new-project skill: live testing is not optional, owner 2026-09-19).
-# Firefox runs headed under Xvfb with Mesa's software GL: headless, it has
-# no WebGL and never draws a world, so Firefox-only GPU bugs passed (#4,
-# #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
-# band-upload test then compares banded and whole uploads byte for byte in
-# Chromium and Firefox (the pin test, #23, is a Node test now, in the lint
-# job: ADR-0005); the dawn test checks that destroy() cancels a
-# first light (#27) and that the Earth's pictures are in before the door reads
-# drawn (#28); the asdawn test checks the goodbye wearing the sign-in's face and
-# households met again on the way down (#25, #26). The freeze check runs
-# Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
-# the GPU once, refuses a software renderer, and then freezes nothing (#2).
-# The last step is the coverage ratchet (#14): the journey, upload,
-# site-browser, phone-door, door-lows, csp, docs-planet, flight-context-loss and
-# freeze checks run again in Chromium, which records which of the site's
-# JavaScript ran, and with the lint job's Node coverage that is checked against
-# tools/ci/coverage-floors.json: a file below its floor fails the job. The
-# Chromium runs themselves are not the gate (Firefox's are): one that fails is
-# reported and its coverage still counted.
-live:journey:
-  stage: live
-  image:
-    name: $PLAYWRIGHT_IMAGE
-  needs: [lint]
+# The import's own tests, the same way, when the change touches the `import`
+# group: the nightly import's scripts against stubs, the import itself, and
+# the raw-heading guard (about 2.5 minutes).
+lint:import:
+  stage: lint
+  image: $NODE_IMAGE
   rules:
     - *not_scheduled
     - when: on_success
   variables:
-    BROWSER: firefox
-    HEADED: "1"
-    WEBGL: required
-    LIBGL_ALWAYS_SOFTWARE: "1"
+    GIT_DEPTH: 0
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/ci/test-select.mjs
+    - '[ "$(node tools/ci/test-select.mjs --group import)" = no ] || { sh tools/ci/nightly-import-test.sh && node tools/ci/import-docs-test.mjs && node tools/ci/raw-heading-test.mjs; }'
+
+# ---------------------------------------------------------------- live --
+# The site served as Pages serves it, visited in real browsers: the door,
+# each landing, the docs, the worlds, the 404; nothing thrown, nothing
+# missing. This is the gate's live check and is never optional on
+# promotion, manual or allowed to fail (new-project skill, owner
+# 2026-09-19; ADR-0005: a merge request runs the tests its change touches).
+# One job per browser, side by side, each split into shards
+# (`parallel`): tools/ci/live-run.mjs selects from tools/ci/test-map.json
+# (everything on promotion, with LIVE_ALL=true, or for a door or unmapped
+# change), deals the tests to the shards by their recorded seconds, and
+# runs this shard's one after another against one site server and one
+# browser under one Xvfb, headed with Mesa's software GL (headless Firefox
+# has no WebGL: #4, #8). A test whose `gates` names the browser fails the
+# job. Chromium records which of the site's JavaScript ran (#14) for the
+# `coverage` job. Neither waits for `lint`.
+live:firefox:
+  stage: live
+  image:
+    name: $PLAYWRIGHT_IMAGE
+  needs: []
+  parallel: 2
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
   script:
     - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
     - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
-    - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/phone-door-test.mjs
-    - node tools/ci/dropped-warning-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/door-lows-test.mjs
-    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-planet-test.mjs
-    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-sky-portrait-live-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/flight-context-loss-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/csp-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
-    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh browser
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs firefox --changed
+
+live:chromium:
+  stage: live
+  image:
+    name: $PLAYWRIGHT_IMAGE
+  needs: []
+  parallel: 3
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
+    COVERAGE_DIR: coverage
+  artifacts:
+    paths: [coverage/]
+    expire_in: 24 hours
+  script:
+    - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
+    - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs chromium --changed
+
+# --------------------------------------------------------------- check --
+# The coverage ratchet (#14) on the lint job's Node coverage and every
+# Chromium shard's: a file below its floor in tools/ci/coverage-floors.json
+# fails. Report-only (allow_failure) until it can tell a partial run from a
+# full one (ADR-0005 section 6).
+coverage:
+  stage: check
+  image: $NODE_IMAGE
+  needs: [lint, live:chromium]
+  allow_failure: true
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh check
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
 # fetched and set as the site's own pages. What changed goes to `main` as a
-# merge request that merges itself once `lint`, `lint:test` and `live:journey` pass, so
+# merge request that merges itself once the lint and live jobs pass, so
 # nobody pushes to `main` and every import is tested before Pages serves
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
