@@ -289,6 +289,45 @@ past a partial run (a file whose coverage came from a test outside its group) re
 promotion, which then fails and sends the fix back to `dev`; `main` never takes it. The risk is accepted by the
 owner's decision; question 18 is how much of it the changed-file rule takes back.
 
+## 6a. Interfaces for batch 3
+
+**`tools/ci/test-select.mjs --json`** also prints `changed`: the changed paths the selection was made from (`[]` when
+no diff was taken: everything, or a push to `main`). So the output is `{"all": <bool>, "tests": [...], "changed": [...]}`.
+
+**`node tools/ci/coverage.mjs [--selection FILE] [DIR]`** (FILE is `--json`'s output saved to a file; without
+`--selection`, as today: a full run):
+
+- Full run (`all` is true, or no `--selection`): the ratchet as today; the report's first line says `coverage: full
+  run`.
+- Partial run (`all` is false): first line `coverage: partial run (<n> changed paths)`. A floor whose file is gone
+  fails as today. A measured file named in `changed` is held to its floor: below it fails with the line the full run
+  prints, plus `(changed in this merge request: its group ran in full; if a test outside its group covers it, the map
+  is wrong, not the floor)`. Every other measured file is printed `<file>: <percent>% (not measured in full; floor
+  <floor>)` and never fails. A file with no floor is reported `NO FLOOR` and fails only when it is in `changed`;
+  otherwise `(new file not in this change)` and it passes. `--raise` refuses a partial run's directory (exit 2:
+  `coverage: --raise needs full runs`), reading the mode from a `selection.json` the `coverage` job saves beside the
+  records.
+- Exit codes as today: 0 pass, 1 a floor broken, 2 usage.
+
+**`sh tools/ci/coverage-fetch.sh JOB_ID...`**: for each id, `${GLAB:-glab} api projects/ai%2Forbit-site/jobs/<id>/artifacts`
+to a temporary zip, unpacked into `coverage/ci-<id>/` (emptied first); the job must be a `coverage` job's: its
+archive holds `coverage/node/` and `coverage/selection.json` saying `all` true, else the script fails naming the id
+and what was missing (`not a full run` / `no node coverage`). `GLAB` names the command for a test's stub. Prints the
+folders made, then the `--raise` command to run on them. Uses the agent's own `GLAB_CONFIG_DIR` as the environment
+has it; never a token argument.
+
+**`sh tools/ci/coverage-run.sh [check]`**: no argument is the full local run: `node-tests.sh` with Node coverage into
+`$COVERAGE_DIR/node`, then `live-run.mjs chromium --all` with `COVERAGE_DIR`, then the check as a full run;
+`check` as today; `browser` is gone (exit 64 with the usage).
+
+**The `coverage` job** (stage check): `node tools/ci/test-select.mjs --json > coverage/selection.json`, then
+`node tools/ci/coverage.mjs --selection coverage/selection.json coverage`; `allow_failure` removed; artifacts
+`coverage/`, 7 days, so `coverage-fetch.sh` can take the last three full runs.
+
+**Docs**: README's layout rows for `tools/ci/` and the coverage row, and AGENTS.md's coverage and journey rules, say
+what this ADR says: merge requests run what changed, the journey is never optional on promotion, floors come from
+three full CI runs fetched by `coverage-fetch.sh`, `journey-local.sh --all` is the full local run.
+
 ## 7. Local commands
 
 - `sh tools/ci/journey-local.sh [--browser firefox|chromium] [--changed | --all | TEST...]`: the same
