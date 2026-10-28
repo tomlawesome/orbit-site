@@ -10,10 +10,15 @@
  *                  holdreveal, mainthread, ring ("stop" | "rush"), open ("late"), gpu ("force": take the GPU
  *                  gate's context although the renderer is software; fitness.js), fit ("skip": the flight world's speed test is not run
  *                  and the world is taken as fit: for a tool that draws pictures on software GL; it grants no GPU, which
- *                  gpu: "force" does; voyage.js)
+ *                  gpu: "force" does; voyage.js), draw ("worker" | "page": where the flight is drawn, whatever the rule
+                 says; fitness.js: drawnAside)
  *   storagePrefix  the first word of every localStorage key the folder writes ("orbit": "orbit-probe …")
  *   settle         timeline.js: ms after the landing at which the instrument arrives (the site's own amendment)
  *   typingWait     chores.js: an unhurried chore waits while someone is typing, this long after the last key (0: never)
+ *   drawWorker     () => a new module Worker running draw-worker.js, made by the host (the folder never reads its own
+ *                  address); absent, no worker is ever made and the flight is drawn on the page (ADR-0004 6a.6)
+ *   fonts          [{ family, weight, url }]: the faces the flight's pens write with, loadable from the page's own
+ *                  origin, the very files the page uses; required with drawWorker (the worker has no font of its own)
  */
 /**
  * @typedef {Record<string, string | boolean | null | undefined>} Flags the debug switches by name
@@ -23,7 +28,10 @@
  * @property {string} storagePrefix
  * @property {number} settle
  * @property {number} typingWait
+ * @property {(() => Worker | null) | undefined} [drawWorker]
+ * @property {Font[] | undefined} [fonts]
  */
+/** @typedef {{ family: string, weight: number | string, url: string }} Font a face the flight writes with, as the host gives it */
 
 /** @type {Settings} */
 export const settings = {

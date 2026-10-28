@@ -18,7 +18,7 @@
  * a real GPU. So a couple of frames are drawn untimed first, and then a few are timed one by one and judged on their
  * median: one hitch is not a slow machine. It stops as soon as most of the timed frames have agreed.
  */
-import { flag } from "./settings.js";
+import { flag, settings } from "./settings.js";
 import { page } from "./page.js";
 
 /** the most one frame may take, in milliseconds */
@@ -126,3 +126,43 @@ export function gpu() {
 
 /** the renderer names that are refused, for tests @param {string} renderer */
 export const isSoftware = (renderer) => SOFTWARE.test(renderer);
+
+/*
+ * WHERE THE FLIGHT IS DRAWN (ADR-0004 6a.4): in a worker (draw-worker.js, through remote-flight.js) or on the page.
+ * Decided once a page, at the journey's first need (after the gate has run), and said once when the host gave a
+ * worker: `flight: drawn in a worker` / `flight: drawn on the page: <why>`. `draw: "page"` keeps the page;
+ * `draw: "worker"` takes the worker wherever the host gave drawWorker and fonts, whatever the rest says. Otherwise all
+ * of: the gate accepted the page and compiles on its thread (parallel false: the measured Firefox tell); no
+ * navigator.userAgentData (Chromium on a software renderer reports no parallel compile too, and Chromium keeps the page
+ * by decision); the gate not forced (gpu: "force" is the live tests' bed: they keep the page path); a Worker, an
+ * OffscreenCanvas and a canvas that can be handed over; not under save-data.
+ */
+/** @type {boolean | undefined} */
+let drawn;
+/** @returns {string | null} why the page draws it, or null for the worker */
+function drawnWhy() {
+  if (!settings.fonts?.length) return "the host gave the worker no fonts to write with";
+  const asked = flag("draw");
+  if (asked === "page") return "asked for (draw=page)";
+  if (asked === "worker") return null;
+  const g = gpu();
+  if (!g) return "the GPU gate refused this page";
+  if (g.parallel) return "this browser compiles shaders in the background (parallel)";
+  const nav = /** @type {Navigator & { connection?: { saveData?: boolean } }} */ (globalThis.navigator ?? {});
+  if ("userAgentData" in nav) return "a Chromium browser (navigator.userAgentData), which keeps the page";
+  if (flag("gpu") === "force") return "the GPU gate was forced (gpu=force)";
+  if (typeof Worker === "undefined") return "no Worker here";
+  if (typeof OffscreenCanvas === "undefined") return "no OffscreenCanvas here";
+  if (typeof HTMLCanvasElement === "undefined" || !("transferControlToOffscreen" in HTMLCanvasElement.prototype)) return "a canvas cannot be handed to a worker here";
+  if (nav.connection?.saveData) return "save-data is on";
+  return null;
+}
+/** whether the flight is drawn in a worker @returns {boolean} */
+export function drawnAside() {
+  if (drawn !== undefined) return drawn;
+  if (!settings.drawWorker) return (drawn = false);
+  const why = drawnWhy();
+  drawn = why === null;
+  page.note(drawn ? "orbit · flight: drawn in a worker" : `orbit · flight: drawn on the page: ${why}`);
+  return drawn;
+}

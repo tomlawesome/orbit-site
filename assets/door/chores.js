@@ -69,6 +69,8 @@ let aside = null;
 export function compilesAside() {
   if (aside !== null) return aside;
   try {
+    /* (no page on this thread, the worker's: nothing a compile can freeze, ADR-0004 6a.5) */
+    if (!page.shared()) return (aside = true);
     if (flag("mainthread")) return (aside = false);
     const g = gpu();
     return (aside = g ? g.parallel : true);

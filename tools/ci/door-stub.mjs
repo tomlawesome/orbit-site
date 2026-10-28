@@ -507,6 +507,7 @@ export function installDom(page, { baseURI = BASE } = {}) {
     getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
     hasAttribute(k) { return this.attrs.has(k); }
     removeAttribute(k) { this.attrs.delete(k); }
+    getAttributeNames() { return [...this.attrs.keys()]; }
     addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
     removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn); }
     getContext(kind) {
