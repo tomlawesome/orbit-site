@@ -726,3 +726,110 @@ export function chk(name, r, fn) {
   try { [ok, detail] = fn(r); } catch (e) { detail = `the result could not be read (${e && e.message}): ${JSON.stringify(r).slice(0, 240)}`; }
   check(name, !!ok, detail);
 }
+
+/*
+ * ===== The install and information worlds (ADR-0004 6b, tests W1 and W6; batch 2 builds on them) =====
+ * Everything below is new for those tests and changes nothing above it. install.js and world.js run on the stub page
+ * as they do on the site: a pad whose `.orbitgl` canvas can be handed over (transferControlToOffscreen returns a token,
+ * and a handed-over canvas gives no context again) and whose contexts are the stub's recording gl, a `Worker` that is
+ * only counted, and a gl whose uniforms are named and recorded.
+ */
+
+/* a node that can sit among a pad's children (the comment install.js leaves where the world's canvas was) */
+class Marker {
+  constructor() { this.parentNode = null; }
+  before(n) { this.parentNode?.insertBefore(n, this); }
+  after(n) { const p = this.parentNode; if (p) p.insertBefore(n, p.children[p.children.indexOf(this) + 1] ?? null); }
+}
+
+/*
+ * bootInstallPage(o) -> b: bootWorkerPage(o) (the worker path possible: a gate that reports no background compile, no
+ * userAgentData, Worker, OffscreenCanvas and a canvas that can be handed over; the door made with a drawWorker and fonts
+ * unless o.worker / o.fonts are false), plus:
+ *   b.workers       every `new Worker(...)` the page made after the boot (the arguments of each)
+ *   b.fetched       every url fetched; o.failMap makes the planet's map (a url with "map") answer 503
+ *   b.pad(id)       a pad element for createInstall: its `.orbitgl` canvas is pad.canvas
+ *   o.renderer      the name the gl gives for RENDERER (default an ordinary GPU's)
+ * The page's fetch answers every picture with a 1-byte blob; screen is 1280 x 800.
+ */
+export async function bootInstallPage(o = {}) {
+  const b = await bootWorkerPage(o);
+  const { page, dom } = b;
+  b.workers = []; b.fetched = [];
+  globalThis.Worker = class Worker {
+    constructor(...a) { b.workers.push(a); this.terminated = 0; }
+    postMessage() {} addEventListener() {} removeEventListener() {} terminate() { this.terminated++; }
+  };
+  globalThis.screen = { width: 1280, height: 800 };
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    b.fetched.push(u);
+    if (o.failMap && /map/.test(u)) return { ok: false, status: 503 };
+    return { ok: true, status: 200, blob: async () => ({ size: 1, type: "image/webp" }) };
+  };
+  if (o.renderer) page.glBase.getParameter = () => o.renderer;
+  page.document.createComment = () => new Marker();
+  const Parent = dom.parent.constructor;
+  b.pad = (id = "installpad") => {
+    const pad = new Parent();
+    const canvas = new dom.Canvas();
+    canvas.className = "orbitgl"; canvas.setAttribute("aria-hidden", "true");
+    pad.appendChild(canvas);
+    const classes = new Set();
+    Object.assign(pad, {
+      id, hidden: false, clientWidth: 1280, clientHeight: 800, canvas, classes,
+      classList: {
+        add: (...n) => n.forEach((x) => classes.add(x)), remove: (...n) => n.forEach((x) => classes.delete(x)),
+        contains: (x) => classes.has(x), toggle: (x, f) => { const on = f === undefined ? !classes.has(x) : !!f; (on ? classes.add(x) : classes.delete(x)); return on; },
+      },
+      querySelector: (sel) => (/\.orbitgl\b/.test(sel) ? (pad.children.find((c) => c.className === "orbitgl" || /\borbitgl\b/.test(c.className ?? "")) ?? null) : null),
+    });
+    return pad;
+  };
+  return b;
+}
+
+/* settled(promise, clock, ms) -> { state: "resolved" | "rejected" | "pending", value | error }: the promise's outcome after
+   at most ms of virtual time (the clock runs on only until it is settled) */
+export async function settled(p, clock, ms = 30000) {
+  let out = { state: "pending" };
+  Promise.resolve(p).then((value) => { out = { state: "resolved", value }; }, (error) => { out = { state: "rejected", error }; });
+  await clock.advance(ms, () => out.state !== "pending");
+  return out;
+}
+
+/*
+ * namedUniforms(page) -> log: the stub gl gives each program the uniforms its shaders declare (in order, once each), so
+ * a program's `u.uHue` is a location named "uHue", and every uniform call is appended to `log` as [function, name, ...values]
+ * (typed arrays as plain arrays). Call before the world is made.
+ */
+export function namedUniforms(page) {
+  const log = [];
+  const names = (p) => {
+    const out = [];
+    for (const s of p?.shaders ?? []) {
+      for (const m of String(s.src).matchAll(/\buniform\s+(?:(?:highp|mediump|lowp)\s+)?\w+\s+([^;]+);/g)) {
+        for (const n of m[1].split(",")) { const name = /^\s*(\w+)/.exec(n)?.[1]; if (name && !out.includes(name)) out.push(name); }
+      }
+    }
+    return out;
+  };
+  page.glBase.getProgramParameter = (p) => Math.max(1, names(p).length);
+  page.glBase.getActiveUniform = (p, i) => ({ name: names(p)[i] ?? `u${i}` });
+  const plain = (x) => (ArrayBuffer.isView(x) ? Array.from(x) : Array.isArray(x) ? x.slice() : x);
+  for (const fn of ["uniform1f", "uniform1i", "uniform2f", "uniform2i", "uniform3f", "uniform4f", "uniform1fv", "uniform2fv", "uniform3fv", "uniform4fv", "uniform1iv", "uniformMatrix3fv", "uniformMatrix4fv"]) {
+    page.glBase[fn] = (loc, ...a) => { log.push([fn, loc?.n ?? null, ...a.map(plain)]); };
+  }
+  return log;
+}
+
+/* the information's world as main.js writes it (INFO_WORLD), read from main.js itself so the test cannot drift from it:
+   main.js starts the page when imported, so it is not imported. Returns the object, or throws saying why not. */
+export async function infoWorld() {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../assets/js/main.js", import.meta.url), "utf8");
+  const start = src.indexOf("const INFO_WORLD = {");
+  const end = src.indexOf("\n};", start);
+  if (start < 0 || end < 0) throw new Error("INFO_WORLD was not found in assets/js/main.js (this test reads it from there)");
+  return new Function(`return ${src.slice(start + "const INFO_WORLD = ".length, end + 2)}`)();
+}
