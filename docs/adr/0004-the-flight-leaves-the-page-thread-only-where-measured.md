@@ -788,7 +788,8 @@ site file may read its own address; the tests pass a fake), posts `hello`, trans
 placeholder `.orbitgl` with a fresh `<canvas>` carrying its attributes (a transferred element can never again give
 the page a context: `getContext` throws `InvalidStateError` on a placeholder, HTML Standard), terminates the worker,
 makes `createWorld` on the fresh canvas on the page (which compiles there, 956 ms: the fallback's cost, as 6a.4's
-compiles as today), replays the pending `bake` and `measure` asks on it, points `made` and `compiled` at the page
+compiles as today), replays the pending `bake` and `measure` asks on it, bakes it afresh if the worker's world had already answered
+`baked` (else a dive under way, or the next, would never settle: found by batch 2's tests, W4), points `made` and `compiled` at the page
 world's, and says `install: drawn on the page: <why>`. A dive under way needs no replay: the camera posts a fresh
 view every frame, and the next one is drawn on the page. `adopt()` moves the canvas after the pad's `slot` (the
 comment `install.js` keeps beside it), so a replaced element is adopted as the old one was, and `shared.canvas`
