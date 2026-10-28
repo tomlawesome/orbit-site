@@ -200,6 +200,9 @@ headless: env.HEADED !== "1" }`; `openBrowser(playwright, name, { own, launch })
 `playwright[name].connect(endpoint)` or `playwright[name].launch({ headless, ...launch })`. A test with its own flags
 (`freeze`, `docs-sky-portrait-live`, `upload`'s headless Chromium) passes `own: true`.
 
+**A push to `main`** (17a) selects nothing: `test-select.mjs` answers `{ all: false, tests: [] }` with the reason in its
+account, so the live jobs print `0 of N selected` and the lint jobs' guards print `no`; `LIVE_ALL=true` still wins.
+
 **`tools/ci/test-select.mjs --group NAME`**: prints `yes` when the selection is everything or NAME is among the matched
 groups, else `no`; exit 0 either way (an error exits non-zero and prints no `no`, so a job written as
 `[ "$(node tools/ci/test-select.mjs --group tooling)" = no ] || sh tools/ci/lint-test.sh` fails safe). For this the

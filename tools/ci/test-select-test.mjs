@@ -204,6 +204,13 @@ try {
     check("P11 a push whose CI_COMMIT_BEFORE_SHA is all zeros (a branch's first push): everything", everything(z, ALL), said(z));
     const la = select(repo, push(repo, mid, { LIVE_ALL: "true" }));
     check("P12 LIVE_ALL=true on a push: everything", everything(la, ALL), said(la));
+    /* a push to main: the promotion just ran everything on dev's head, so main runs lint only (ADR-0005, 17a) */
+    const m = select(repo, push(repo, B, { CI_COMMIT_BRANCH: "main" }));
+    check("P16 a push to main selects nothing, whatever changed (17a: lint only)", picks(m, []), said(m));
+    const mText = select(repo, push(repo, B, { CI_COMMIT_BRANCH: "main" }), []);
+    check("P16 ... and the account says why: lint only", mText.status === 0 && /lint only/.test(mText.out), `exit ${mText.status}; ${mText.out.split("\n").slice(-2).join(" | ")}`);
+    const ml = select(repo, push(repo, B, { CI_COMMIT_BRANCH: "main", LIVE_ALL: "true" }));
+    check("P17 LIVE_ALL=true on a push to main: everything", everything(ml, ALL), said(ml));
   }
   {
     branch(repo, "dev", B);
@@ -243,6 +250,7 @@ try {
     g("G3 LIVE_ALL=true on a docs-only change: yes", "yes", { "docs/guide.md": "g2\n" }, (r) => mr(r, { LIVE_ALL: "true" }));
     g("G4 promotion (dev -> main), docs-only: yes", "yes", { "docs/guide.md": "g2\n" }, (r) => mr(r, { CI_MERGE_REQUEST_SOURCE_BRANCH_NAME: "dev", CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "main" }));
     g("G5 no CI and no --base: everything, so yes", "yes", { "src/o.js": "o2\n" }, () => ({}));
+    g("G5b a push to main (17a: lint only): no, even for a tooling change", "no", { "tools/ci/lint.sh": "l2\n" }, (r) => push(r, r.base, { CI_COMMIT_BRANCH: "main" }));
     g("G6 a changed path matched tooling (tools/ci/lint.sh): yes", "yes", { "tools/ci/lint.sh": "l2\n" });
     g("G7 the lint's own test matched tooling (tools/ci/lint-test.sh): yes", "yes", { "tools/ci/lint-test.sh": "lt2\n" });
     g("G8 tooling beside another group: yes", "yes", { "tools/ci/lint.sh": "l2\n", "src/o.js": "o2\n" });

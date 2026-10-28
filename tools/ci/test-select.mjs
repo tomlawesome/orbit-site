@@ -7,6 +7,7 @@
 // The rule, in order:
 //   1. LIVE_ALL=true, promotion (a merge request from dev into main), a push whose CI_COMMIT_BEFORE_SHA is all
 //      zeros or empty, or no CI and no --base: everything.
+//   1b. A push to main: nothing (the promotion ran everything on dev's head; main runs lint only, 17a).
 //   2. The changed paths, deletions and both sides of a rename: --base REF diffs from the merge base of REF and
 //      HEAD; a merge request diffs CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD; a push CI_COMMIT_BEFORE_SHA..HEAD.
 //   3. A changed path in group `all`, or matching no group and no test's own file: everything, reason printed.
@@ -70,7 +71,7 @@ function git(root, ...args) {
 const changedSince = (root, from) =>
   [...new Set(git(root, "diff", "--name-only", "--no-renames", "-z", from, "HEAD").split("\0").filter(Boolean))];
 
-/* where the change comes from: { everything: reason } or { from, label } */
+/* where the change comes from: { everything: reason }, { nothing: reason } (a push to main: lint only, 17a) or { from, label } */
 export function source(env, base) {
   if (env.LIVE_ALL === "true") return { everything: "LIVE_ALL=true" };
   if (base) return { mergeBase: base, label: `--base ${base}` };
@@ -84,6 +85,7 @@ export function source(env, base) {
   if (env.CI === "true" || env.GITLAB_CI === "true") {
     const before = env.CI_COMMIT_BEFORE_SHA || "";
     if (!before || ZEROS.test(before)) return { everything: "a push with no before-SHA (a branch's first push)" };
+    if ((env.CI_COMMIT_BRANCH || "") === "main") return { nothing: "a push to main: the promotion ran everything on dev's head, so main runs lint only (ADR-0005, 17a)" };
     return { from: before, label: `push to ${env.CI_COMMIT_BRANCH || env.CI_COMMIT_REF_NAME || "?"}, since ${before.slice(0, 12)}` };
   }
   return { everything: "no CI and no --base (give --base REF to select for a change)" };
@@ -95,6 +97,7 @@ export function selection(env, base, root = ROOT) {
   const names = Object.keys(map.tests || {});
   const src = source(env, base);
   if (src.everything) return { sel: { all: true, tests: names, reason: src.everything, lines: [], matched: new Set() }, label: "no diff taken", names };
+  if (src.nothing) return { sel: { all: false, tests: [], reason: src.nothing, lines: [], matched: new Set() }, label: "no diff taken", names };
   try {
     const from = src.mergeBase ? git(root, "merge-base", src.mergeBase, "HEAD").trim() : src.from;
     const changed = changedSince(root, from);
@@ -110,6 +113,7 @@ export function account({ sel, label, names }) {
   const groups = [...sel.matched];
   out.push(`groups matched: ${groups.length ? groups.join(", ") : "(no group)"}`);
   if (sel.all) out.push(`everything: ${sel.reason}`);
+  else if (sel.reason) out.push(`nothing: ${sel.reason}`);
   out.push(`selected ${sel.tests.length} of ${names.length}${sel.tests.length ? `: ${sel.tests.join(", ")}` : ""}`);
   return out;
 }
