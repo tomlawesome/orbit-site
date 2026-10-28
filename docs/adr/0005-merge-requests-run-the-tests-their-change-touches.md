@@ -1,6 +1,6 @@
 # ADR-0005: Merge requests run the tests their change touches; promotion runs everything
 
-**Status:** Proposed (design for the owner's review; nothing built)
+**Status:** Accepted 2026-10-28 (the owner's answers 16a-20a are recorded below)
 **Date:** 2026-10-27
 **Relates to:** #95 (cut the test gate's time); ADR-0001 (the door folder is one interface: a change there runs
 everything); #14 (the coverage ratchet); #62 (`lint:test` in its own job); AGENTS.md "no test depends on how fast
