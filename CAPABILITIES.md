@@ -210,8 +210,9 @@ longer holds; to be re-fitted from the next laptop run). Firefox's GPU name is m
 
 ## Open questions
 
-- Whether the worker design (everything WebGL compiled and drawn in a worker on Firefox, the live door after the
-  last compile) is built; the test says it would make the ring and the reveal smooth through every compile there.
+- Whether the worker path makes the ring and the reveal smooth on a real Firefox: the flight and the docs galaxy are
+  drawn in a worker there now (#85), the install and info worlds not yet (#93); the owner's run is to come
+  (ADR-0004 6a.10).
 - Whether level 1 on a weak GPU keeps the world planets (two world draws a frame) or only the spheres.
 - Calibration of the probe against the real shaders: four points (the desktop, the laptop, the phone, the Safari laptop);
   rich's ratio spreads 0.3-0.55, so the real rich measure, unseen, stays the gate and the probe only decides whether

@@ -158,6 +158,8 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       if (engine) { engine.start(P, { at }); return; }
       const profile = wireProfile(P);
       seq++;
+      /* (the mark is the new start's once its first frame is said, as on the page) */
+      delete warp.dataset.drawn;
       live = { P, at, since: now() };
       post({ type: "start", seq, profile, ...(typeof at === "number" ? { at } : {}) });
     },
