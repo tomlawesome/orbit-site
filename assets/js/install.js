@@ -11,7 +11,7 @@
  *
  * Drawn by world.js; this is the camera, the clock and the line.
  */
-import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor, drawnAside, settings } from "../door/index.js";
+import { chore, note, noteChores, quiet, counted, compilesAside, liveDoor, drawnAside, moving, settings } from "../door/index.js";
 import { reduced } from "./sky.js";
 import { createWorld, fetchWorld, lookOf } from "./world.js";
 import { createRemoteWorld, whyPage } from "./remote-world.js";
@@ -120,6 +120,12 @@ export function createInstall(pad, opts = {}) {
   let world = null, failed = false;
   let W = 0, H = 0, scale = 1, maxScale = 1, lay = null, moonPos = [0, 0, 0, 0], flyPos = [0, 0, 0, 0];
   let running = false, raf = 0, last = 0, clock = 0;
+  /* the dive's loop paints on the page's thread every frame where the world is drawn on the page: the chore queue is
+     told for as long as it runs (chores.js moving; ADR-0004 6c.4), once, so a second stop() releases nothing more. A
+     hidden tab does not release it: the loop keeps polling, and a hidden tab runs no slices */
+  /** @type {(() => void) | null} */
+  let still = null;
+  const rest = () => { still?.(); still = null; };
   /* the approach: u runs 0 → 1 going in, back to 0 going home */
   let u = 1, motion = null;
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
@@ -390,7 +396,7 @@ export function createInstall(pad, opts = {}) {
     listen();
     /* a world that could not be made, or whose context was lost, draws nothing: no loop for it. A map that failed is
        tried again on the next start (prepare), so its flat is not final and does not stop the loop */
-    if (failed) { running = false; shared?.world?.run?.(false); return; }
+    if (failed) { running = false; rest(); shared?.world?.run?.(false); return; }
     raf = requestAnimationFrame(frame);
     /* (period: the loop's own, for the frame drawn below; dt: the same, a stall counted as no more than 100 ms) */
     const period = last ? now - last : 16, dt = Math.min(100, period); last = now;
@@ -524,6 +530,7 @@ export function createInstall(pad, opts = {}) {
       adopt();
       if (running) return;
       running = true; last = 0; w?.run?.(true);
+      if (!drawnHere()) still ??= moving();
       const t0 = performance.now(); size(); sized = performance.now() - t0;
       addEventListener("resize", onResize); addEventListener("pointermove", onPointer); untilt = onTilt(onTilted);
       /* flat follows each bake, set or cleared, since a failed map is tried again; a lost context keeps it */
@@ -565,7 +572,7 @@ export function createInstall(pad, opts = {}) {
     },
     stop() {
       shared?.world?.run?.(false);
-      running = false; motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
+      running = false; rest(); motion = null; u = 1; cancelAnimationFrame(raf); canvas.style.opacity = "";
       removeEventListener("resize", onResize); removeEventListener("pointermove", onPointer); untilt(); untilt = () => {};
       /* the world is free again: the door's planets may be drawn by it */
       doorLoop?.wake();
@@ -652,6 +659,11 @@ function startDoor(door, lead, after = null) {
   if (!list.length) return null;
 
   let raf = 0, started = false, live = false, failed = false, last = 0, hook = null;
+  /* this loop paints the worlds on the page's thread every frame: the chore queue is told while it asks frames
+     (marked where wake asks one, released wherever tick ends without asking the next, and in fail; 6c.4) */
+  /** @type {(() => void) | null} */
+  let still = null;
+  const rest = () => { still?.(); still = null; };
   /* the square's side, device px, shared by both (the larger), changed only when it is a tenth out; the scale the
      world draws it at, halved once if the two take more than 8 ms a frame (over 30 frames, timed only once the chores
      are at rest, quiet: a compile or an upload beside them is not their time, and halved them for nothing in Firefox;
@@ -713,17 +725,17 @@ function startDoor(door, lead, after = null) {
   }
   function tick(now) {
     raf = 0;
-    if (failed || !started) return;
-    if (!shown() || busy()) { away(); return; }
+    if (failed || !started) { rest(); return; }
+    if (!shown() || busy()) { away(); rest(); return; }
     raf = requestAnimationFrame(tick);
     /* the door's own reveal brings the planets all the way in first */
     if (!live && getComputedStyle(box).opacity !== "1") return;
     const dt = last ? Math.min(100, now - last) : 16; last = now;
     try { paint(now, dt); } catch (e) { fail(e); }
   }
-  const wake = () => { if (!raf && started && !failed) { last = 0; raf = requestAnimationFrame(tick); } };
+  const wake = () => { if (!raf && started && !failed) { last = 0; raf = requestAnimationFrame(tick); still ??= moving(); } };
   function fail(e) {
-    failed = true;
+    failed = true; rest();
     console.warn("orbit: the door's planets stay planets3d's", e);
     for (const p of list) p.c.remove();
     delete root.dataset.worldplanets;
