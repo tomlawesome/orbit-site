@@ -1233,6 +1233,10 @@ PERFORMANCE.md; done when `resting` no longer dominates `over` on both and the d
   the tests' control and the owner's A/B for about ten lines; **101-2b** remove it once M5's numbers are in, and the
   tests lose their control.
 
+**Owner answers, 2026-10-29:** build by a cheaper model from this section (the owner's 3a for #101); 101-1a,
+8 ms; 101-2 open: the owner wants the M5 device tests run again first, so `?pace=frame` is built as designed and
+the keep-or-remove call is asked after them.
+
 ## 7. Rejected
 
 - **Compile in a worker, keep drawing on the page, on Firefox:** measured no shared cache; the page would pay twice.
