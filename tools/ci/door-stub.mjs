@@ -128,7 +128,7 @@ export function installPage(opts = {}) {
   };
   const doc = {
     hidden: !!opts.hidden, visibilityState: opts.hidden ? "hidden" : "visible",
-    body: { classList, style: {}, dataset: {}, appendChild() {}, removeChild() {} },
+    body: { classList, get className() { return [...page.bodyClasses].join(" "); }, style: {}, dataset: {}, appendChild() {}, removeChild() {} },
     documentElement: { classList: { add() {}, remove() {}, contains: () => false }, style: {}, dataset: {} },
     fonts: { ready: Promise.resolve() },
     addEventListener(type, fn) { (page.docListeners[type] ||= []).push(fn); },

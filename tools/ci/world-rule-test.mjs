@@ -92,7 +92,7 @@ async function doorCase(draw) {
    are run after a change that shows the door again, as the browser would run them. */
 async function planetsCase(draw) {
   const { b, ob, doorEl } = await doorBed(draw);
-  const { choresNow } = await import(CHORES);
+  const { choresNow, openChores } = await import(CHORES);
   const m = () => choresNow().moving;
   let asked = 0;
   const raf = globalThis.requestAnimationFrame;
@@ -101,15 +101,17 @@ async function planetsCase(draw) {
   const ready = new Promise((r) => { release = r; });
   const got = b.ring.doorPlanets(doorEl, ready);
   const out = { returned: got === null ? "null" : got === undefined ? "undefined" : typeof got.then === "function" ? "promise" : typeof got };
-  const step = async (name, f) => {
+  const step = async (name, f, ms = 100) => {
     f();
-    await b.clock.advance(100);
+    await b.clock.advance(ms);
     out[name] = m();
     out.frames = asked;
   };
   const watchers = () => { for (const o of [...ob.mutation, ...ob.resize]) if (o.on && typeof o.cb === "function") { try { o.cb([], o); } catch { /* the page's own error */ } } };
   await step("waiting", () => {});
-  await step("ready", () => release());
+  /* the door is shown, so the page has opened the queue: the loop's fit runs as a chore before its first frame */
+  /* a measure's 200 ms rest (6c.2) can stand between ready and the fit chore: half a second covers it */
+  await step("ready", () => { openChores(); release(); }, 500);
   await step("hidden", () => b.page.setHidden(true));
   await step("shown", () => { b.page.setHidden(false); watchers(); });
   await step("departing", () => b.page.document.body.classList.add("departing"));
