@@ -20,6 +20,10 @@
  *   forced     draw=worker beats the rule (parallel, userAgentData and gpu force all against it): a worker
  *   door       doorPlanets() returns null with a remote world, and makes nothing (no canvas, no observer, no
  *              html[data-worldplanets]); control: on the page path, on a bed where the live door is on, it goes ahead
+ *   planets    (#101, ADR-0004 6c.6 S10d) the door's planets loop marks moving for the chore queue (choresNow().moving) on
+ *              the page path: 0 until `ready` has resolved, 1 once the loop has asked a frame, 0 after the tab is hidden
+ *              and a frame has passed, 1 again once shown and a frame has passed, 0 while the body carries `departing`,
+ *              1 when it is removed; control: the remote world (startDoor gives null), where it stays 0 throughout
  *
  * One fresh Node process a case, on the virtual clock.
  */
@@ -52,22 +56,8 @@ async function scenario(o) {
   };
 }
 
-const CASES = {
-  worker: () => scenario({}),
-  drawPage: () => scenario({ draw: "page" }),
-  parallel: () => scenario({ parallel: true }),
-  ua: () => scenario({ userAgentData: true }),
-  force: () => scenario({ flags: { gpu: "force" } }),
-  saveData: () => scenario({ saveData: true }),
-  noFonts: () => scenario({ fonts: false }),
-  noWorker: () => scenario({ worker: false }),
-  forced: () => scenario({ draw: "worker", parallel: true, userAgentData: true, flags: { gpu: "force" } }),
-  /* doorPlanets on a bed where the live door is on: ?door3d at level 1, the probe stored as having worked */
-  async door() { return doorCase("worker"); },
-  async doorPage() { return doorCase("page"); },
-};
-
-async function doorCase(draw) {
+/* the bed doorPlanets() needs: the live door on, the probe stored as having worked, a rich root, a planet and a lockup */
+async function doorBed(draw) {
   const b = await boot({ draw, flags: { door3d: "1", level: "1" } });
   const t = Date.now() - 1000;
   globalThis.localStorage = { getItem: () => JSON.stringify({ t, r: { ok: true, background: false, compileMs: 50, msPerMpx: 1 } }), setItem() {}, removeItem() {}, key: () => null, length: 0 };
@@ -83,6 +73,11 @@ async function doorCase(draw) {
   const planet = { querySelector: (s) => (s === ".spin" ? spin : s === ".body" ? body : null), classList: { contains: () => false } };
   const lockup = { append() {}, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
   const doorEl = { hidden: false, querySelector: (s) => (/\.lockup/.test(s) ? lockup : /\.planets/.test(s) ? {} : /\.planet\[/.test(s) ? planet : null), classList: { contains: () => false } };
+  return { b, door, prepared, ob, root, doorEl };
+}
+
+async function doorCase(draw) {
+  const { b, door, prepared, ob, root, doorEl } = await doorBed(draw);
   const before = b.dom.canvases.length;
   const got = b.ring.doorPlanets(doorEl, Promise.resolve());
   await b.clock.advance(50);
@@ -92,6 +87,54 @@ async function doorCase(draw) {
     canvasesMade: b.dom.canvases.length - before, observers: ob.mutation.length, planets: root.dataset.worldplanets ?? null,
   };
 }
+
+/* S10d: the planets loop's mark, read at each change with a few frames of virtual time after it. The watchers' callbacks
+   are run after a change that shows the door again, as the browser would run them. */
+async function planetsCase(draw) {
+  const { b, ob, doorEl } = await doorBed(draw);
+  const { choresNow, openChores } = await import(CHORES);
+  const m = () => choresNow().moving;
+  let asked = 0;
+  const raf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (f) => { asked++; return raf(f); };
+  let release;
+  const ready = new Promise((r) => { release = r; });
+  const got = b.ring.doorPlanets(doorEl, ready);
+  const out = { returned: got === null ? "null" : got === undefined ? "undefined" : typeof got.then === "function" ? "promise" : typeof got };
+  const step = async (name, f, ms = 100) => {
+    f();
+    await b.clock.advance(ms);
+    out[name] = m();
+    out.frames = asked;
+  };
+  const watchers = () => { for (const o of [...ob.mutation, ...ob.resize]) if (o.on && typeof o.cb === "function") { try { o.cb([], o); } catch { /* the page's own error */ } } };
+  await step("waiting", () => {});
+  /* the door is shown, so the page has opened the queue: the loop's fit runs as a chore before its first frame */
+  /* a measure's 200 ms rest (6c.2) can stand between ready and the fit chore: half a second covers it */
+  await step("ready", () => { openChores(); release(); }, 500);
+  await step("hidden", () => b.page.setHidden(true));
+  await step("shown", () => { b.page.setHidden(false); watchers(); });
+  await step("departing", () => b.page.document.body.classList.add("departing"));
+  await step("back", () => { b.page.document.body.classList.remove("departing"); watchers(); });
+  return out;
+}
+
+const CASES = {
+  worker: () => scenario({}),
+  drawPage: () => scenario({ draw: "page" }),
+  parallel: () => scenario({ parallel: true }),
+  ua: () => scenario({ userAgentData: true }),
+  force: () => scenario({ flags: { gpu: "force" } }),
+  saveData: () => scenario({ saveData: true }),
+  noFonts: () => scenario({ fonts: false }),
+  noWorker: () => scenario({ worker: false }),
+  forced: () => scenario({ draw: "worker", parallel: true, userAgentData: true, flags: { gpu: "force" } }),
+  /* doorPlanets on a bed where the live door is on: ?door3d at level 1, the probe stored as having worked */
+  async door() { return doorCase("worker"); },
+  async doorPage() { return doorCase("page"); },
+  planets: () => planetsCase("page"),
+  planetsRemote: () => planetsCase("worker"),
+};
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -143,5 +186,13 @@ for (const [name, what] of [["drawPage", "draw is \"page\""], ["parallel", "the 
   chk("W3 (control) on the page path, with the live door on, doorPlanets() goes ahead (a promise; its canvases and observers made)", c, (c) => [c.live === true && c.returned === "promise" && c.canvasesMade >= 1 && c.observers >= 1, `live door ${c.live}, doorPlanets gave ${c.returned}, canvases made ${c.canvasesMade}, observers ${c.observers}`]);
   chk("W3 startDoor returns null with a remote world", r, (r) => [r.live === true && r.prepared === true && r.returned === "null", `live door ${r.live}, prepared ${show(r.prepared)}, doorPlanets gave ${r.returned}`]);
   chk("W3 ... and made nothing: no canvas, no observer, html[data-worldplanets] never set", r, (r) => [r.canvasesMade === 0 && r.observers === 0 && r.planets === null, `canvases made ${r.canvasesMade}, observers ${r.observers}, worldplanets ${show(r.planets)}`]);
+}
+{
+  const r = run("planets"), c = run("planetsRemote");
+  const seen = (r) => `doorPlanets gave ${r.returned}; moving: waiting for ready ${JSON.stringify(r.waiting)}, ready ${JSON.stringify(r.ready)}, tab hidden ${JSON.stringify(r.hidden)}, shown ${JSON.stringify(r.shown)}, body departing ${JSON.stringify(r.departing)}, departing removed ${JSON.stringify(r.back)}; ${r.frames} frames asked in all`;
+  chk("S10d the door's planets loop on the page path: moving is 0 until `ready` has resolved, 1 once the loop has asked a frame", r, (r) => [r.returned === "promise" && r.waiting === 0 && r.ready === 1 && r.frames > 0, seen(r)]);
+  chk("S10d ... 0 after the tab is hidden and a frame has passed, 1 again once it is shown and a frame has passed", r, (r) => [r.hidden === 0 && r.shown === 1, seen(r)]);
+  chk("S10d ... 0 while the body carries `departing`, and 1 when it is removed", r, (r) => [r.departing === 0 && r.back === 1, seen(r)]);
+  chk("S10d W3 control: with the remote world startDoor returns null and moving stays 0 throughout", c, (c) => [c.returned === "null" && [c.waiting, c.ready, c.hidden, c.shown, c.departing, c.back].every((x) => x === 0), seen(c)]);
 }
 finish();

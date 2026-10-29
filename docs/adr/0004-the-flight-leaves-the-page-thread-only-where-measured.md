@@ -4,10 +4,12 @@
 section 4's pre-warm is not built, and the door folder's interface is unchanged.
 **Amended:** 2026-10-27, section 6a: the detailed design of section 6 (#85), for the owner's review before any code;
 questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds in a worker (#93), the detailed design
-for the owner's review before any code; questions 6b-1 to 6b-4 open.
+for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-28. 2026-10-29, section 6c: the pacing
+of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
+the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
-worlds in a worker); ADR-0001 (the folder Orbit copies); ADR-0002
+worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
 (decision 12d, the leisure proof; decision 7, nothing remembered); #76 (memory on a phone); PERFORMANCE.md "The
 worker, measured"; CAPABILITIES.md "A worker's compile"; `tests/worker.js`, `tests/t-worker.js`, `tests/t-stall.js`.
 
@@ -1013,6 +1015,257 @@ the same day, the answer stands).
   the ring's anyway; **6b-4b** no wait at all, the compiles finishing behind the lit door and each way in opening as
   its world bakes.
 
+## 6c. Detailed design: pacing the flight's chores (#101)
+
+Written 2026-10-29, from the line a real phone printed on 2026-10-28 (iOS Safari, `?preview`, the page path; the
+numbers are on #101): `chores at flight ready: 527 done, ran 2377 ms, waited 233 ms to start, held 0 ms for the
+reveal, …, resting 14125 ms, over 16906`, the flight's way in opening at 17.9 s with the door ready at 2.5 s. The
+line's own arithmetic gives the figure it elides: `empty` is 16906 − 2377 − 233 − 0 − 14125 = 171 ms, so the network
+and the decoding are not it. 14.1 s is time the queue chose to wait: 26.8 ms a chore, more than a frame at 60 Hz, for
+chores that ran 4.5 ms each. The owner sees the same wait on desktop Firefox. Nothing here changes a decision of
+sections 1 to 6b; 6a.5 and 6b.5 keep the worker's queue unpaced, and this section is about the page's queue, on both
+paths (on the Firefox worker path it holds what stays on the page). Owner decision on #101 before this was written:
+7a, this goes in before promotion to `main`.
+
+### 6c.1 Where the 14 s goes, read from `chores.js`
+
+Three things in `end` and `pump`, none of them the work:
+
+- **Two waits where one yield is asked.** After every unhurried hard chore (not soft), `end` asks a frame and then
+  `min(rest, 20)` ms more (`rest` is 60 by default, so 20): a frame plus 20 ms, 37 ms or more at 60 Hz, 25-odd
+  times. The 20 ms was "a frame or so" on top of the frame; the frame alone is the page's chance to paint.
+- **The soft share is measured from the wrong point.** Once open, soft chores (the bands of a picture, `upload.js`)
+  may run back to back "while the frame's share lasts" (`SHARE`, 8 ms), but the share is counted from the frame
+  callback (`frameAt`), not from when the chores get the thread. Between the two sit the browser's own paint of the
+  frame and two timer hops (`setTimeout(next, ms)` after the frame, then `pump`'s `setTimeout(run, 0)`), so the share
+  is largely spent before the first band runs, and a band that ends more than 8 ms after the callback ends it. On the
+  phone a frame mostly carried one band, and every band then cost a frame and the hops: 500-odd frames.
+- **Every continuation is a timer.** Even inside the share the next band is reached by `setTimeout(next, 0)` and then
+  `setTimeout(run, 0)`, two tasks the browser may put behind other work, each a chance for the frame to pass.
+
+The count: 527 is about 500 bands and 25-odd other chores (the eight maps' mipmaps, the stars, the rich maps, the
+compile, the warm draws, the fitness test, the probe). A band starts at about a megabyte of rows, is halved after any
+band over 4 ms (`SLOW`, chosen so a band fits the reveal's 4 ms share) and never goes under 16 rows (`FEWEST`); at the
+floor the eight maps sum to about 600 bands (`earth-lights` 4096×2048: 128; `europe-lights` 2048×1582: 99;
+`clouds-near` 3360×1824: 114; `lights-near` 2625×1425: 90; `earth-day` and `earth-clouds` 2048×1024: 64 each;
+`land-near` 1050×570: 36; the moon 1×511: 1), so the phone's bands were mostly at or near it. Desktop halves less and
+has fewer bands, which is why 6a.5 measured 3.4 s there for the same rule.
+
+### 6c.2 The decision: a frame-aligned time slice, with a budget that depends on what moves
+
+**The standard pattern is time-sliced cooperative scheduling** (React's scheduler, the browser's `scheduler.yield()`,
+`requestIdleCallback`'s deadlines): run queued work back to back until a time budget is spent, yield to the browser,
+continue. Here the slice is aligned to the page's frames, as the queue already is: a slice starts in the task after an
+animation frame (`page.frame`, then one `setTimeout(next, 0)`, as today), runs chores back to back while the budget
+lasts, then asks one frame and starts the next slice in the task after it. Two departures from React's shape, each
+for a reason: the budget is **8 ms, half a 60 Hz frame**, not React's 5 ms, because what is protected here is the
+paint of a page that is nearly still (the compositor carries the sky, the twinkle, the rays and the breath; the page's
+thread paints only `.shimmer`'s `stroke-dashoffset`, an SVG sweep every browser paints on the main thread), not input
+latency, which React's figure is for; and the yield is a frame rather than `scheduler.yield()`, because Safari lacks
+it and `page.frame` is the one yield the folder has on both threads. The rules:
+
+- **The budget is counted from the slice's first chore's start** (`sliceAt`), never from the frame callback: the
+  browser's paint and the hop are its own, outside the budget.
+- **A chore starts while `now − sliceAt < budget`; the budget never cuts a chore.** A band of 5 ms started at 6 ms runs
+  to 11; the next waits for the frame. The slice's overrun is at most one chore.
+- **Inside a slice the next chore runs in the microtask that ends the last** (the `finally` that calls `end`): no
+  timer between them. `pump`'s `setTimeout(run, 0)` stays for a slice's first chore and for a `chore()` call that finds
+  the queue idle, so `chore()` never runs its function synchronously.
+- **A hard chore is a slice of its own**: it starts only as a slice's first chore and the slice ends with it (its
+  stall is its own, whatever the budget; the frame after it is the page's). After it: one frame, and no 20 ms. The
+  measures keep their own rest (`"measure"`, 200 ms), as on the worker path: `rest` is honoured for a measure and read
+  as "a frame" for everything else, which is what `pace("none")` already does.
+- **A chore that arrives while the last slice is still within budget joins it** (the queue ran empty for a moment,
+  as a bands loop does when a cut is slow); one that arrives after the budget is spent, and before a frame has been
+  yielded, waits for the frame. Running empty does not reset the budget.
+- **The pick is the queue's, the slice only says when**: `ORDER`, `hurryChores`, the typing wait, `quiet()`,
+  `drawnIn()` and `fetchOnce` are unchanged.
+- **The cap timer (`CAP`, 15 s) is set only for a chore that returns a promise.** A function that has returned has
+  settled, so there is nothing for the cap to guard, and a slice of synchronous chores sets no timer at all (what S1
+  counts). A chore that returns a promise sets the cap and clears it when the promise settles; its slice therefore
+  does set a timer, and S1's chores are synchronous for that reason. `CAP`'s value is unchanged. (Ruled during the
+  build, 2026-10-29: the first text left the cap on every chore, which no slice test could pass.)
+
+The budget by state, the page's queue, both paths:
+
+| State | How the queue knows | Soft chores | Hard chores |
+| --- | --- | --- | --- |
+| Before lit | `compiling` without `soft` or `open` | none | the compiles alone, as today |
+| The reveal (lit, not open) | `soft && !open` | **unchanged**: today's rule to the letter, 4 ms (`REVEAL_SHARE`) counted from the frame callback, timers as today (measured and A/B'd by the owner with `?holdreveal`; nothing here is allowed to change what the eye saw) | none |
+| Open, the door still | `open`, nothing wanted, `moving()` count 0 | slices of **8 ms** (`SHARE`) | one a slice |
+| Open, something moving on the page's thread: a journey's opening (`want` set, until `until`), or a frame loop registered through `moving()` (6c.4: the engine's flight loop on the page path, `install.js`'s dive on the page path and its door planets, `door3d.js`'s live door) | `want`, or the `moving()` count | slices of **4 ms** (`REVEAL_SHARE`, the share the reveal proved) | one a slice (hurried as today: a frame between, no 20 ms) |
+| Someone typing | `settings.typingWait`, as today | the slice waits | waits |
+| The worker's queue (`pace("none")`) | 6a.5 | **unchanged**: no slices, no frames, the measures' rest alone | at once |
+| `?pace=frame` | `flags.pace` | **today's rule entire**, for the owner's A/B and the tests' control (as `?holdreveal` is kept for the reveal) | |
+
+`moving()` in the worker (the engine runs there too) touches the worker's queue, which is unpaced, so it changes
+nothing; `remote-flight.js` on the page registers nothing, so on the Firefox worker path the page's queue runs at the
+still budget while the worker flies, which is right: the page's thread is free. A 120 Hz screen gets the same 8 ms,
+as `SHARE` already assumed 60 Hz: the compositor's animations keep their rate, the shimmer's paint may fall to every
+other frame while the readying runs, and M5 (6c.8) is where the eye says whether that shows.
+
+### 6c.3 The chore count stands
+
+The band is the right grain for a slice (2-5 ms on the phone, by the line), and the rule that makes it is kept
+whole: a megabyte to start, halved after a band over 4 ms (half the still budget, so two fit a slice), the 16-row
+floor, never doubled (`upload.js`: a band doubled after a quick first one took 30-50 ms on the laptop in Edge and the
+reveal dropped frames). Bigger bands after open would buy slices at the price of exactly that stall (section 7). The
+hard chores are 25-odd and cost a frame each; the eight mipmap chores (30-170 ms each on the desktop, `upload.js`'s
+header) are the stalls that remain, and they are one `generateMipmap` call each, not splittable. So the count stays
+about what it is, and what changes is what a chore costs between chores. Expected on that phone, said as an
+expectation and not a promise: 500 bands at 3 ms, two or three a slice, about 200 slices at 60 Hz, 3.5 s, plus 25
+hard slices, 0.5 s: the flight's way in 6-7 s after opening where it was 17.9, `resting` about 2 s against `ran` 2.4,
+`held` and `empty` as they are. Desktop Firefox on the page path: 3.4 s resting falls to a few hundred ms.
+
+### 6c.4 What changes where; the interface change, deliberate and additive
+
+- `assets/door/chores.js`: `end` and `pump` as 6c.2 says (`sliceAt`, a `budget()` of `SHARE` or `REVEAL_SHARE` by
+  state, `slice` the count of chores in the current slice, a yield that is `page.frame` then one timer). New export
+  `moving()`: something is drawn on the page's thread every frame; counted, so several loops may say so; returns the
+  function to call when it stops. `flags.pace`: `"frame"` for today's rule; a number (ms, `"5"`, `"12"`) for the
+  still budget, for M5. `choresNow()` gains `slices`, `moving`, `slice`. `noteChores` as 6c.5. `SHARE`, `REVEAL_SHARE`,
+  `SLOW`, `FEWEST`, `CAP`, `ORDER` keep their values.
+- `assets/door/index.js`: re-exports `moving` (additive; `pace` is already there for a host's worker).
+- `assets/door/engine.js`: `moving()` where the flight's frame loop starts on the page path (`flightRaf = raf(frame)`)
+  and its release where the loop ends (the last `frame` past `dur + 400`, or `cancel(flightRaf)`); once per flight,
+  never twice for one loop. Under `options.requestFrame` (a test's own frames) the same.
+- `assets/door/door3d.js`: around `wake`/`tick` (`raf` set; the loop ends on `dead`, `reduced`, or `!shown()`): the
+  live door's loop is moving for as long as it runs, which is `?door3d` only.
+- `assets/js/install.js`, two loops, both of which paint on the page's thread every frame (ruled 2026-10-29; the
+  first text ran them together):
+  - **The dive's loop** (`frame`, in the world's shot: `start()` sets `running` and asks the first frame; `stop()`
+    ends it; `frame` ends itself when `failed`): marked in `start()`, **only where the world draws on the page**
+    (`drawnHere()` false; on the worker path the page's frame builds a view and posts it, the drawing is the worker's,
+    and the page's thread is free, as for the flight's `remote-flight.js`); released in `stop()` and where `frame`
+    sets `running` false. A hidden tab does **not** release it: the loop keeps polling, the mark is the loop's and not
+    the frame's, and a hidden tab runs neither frames nor slices, so nothing is lost. The release is once: `stop()`
+    without a `start()`, or twice, releases nothing more.
+  - **The door's planets loop** (`startDoor`: `tick`, `wake`, `away`, `fail`; it draws the worlds at planet size on
+    the door, measured 8 ms a frame on the desktop, the load the 4 ms budget exists for): marked in `wake()` when it
+    asks a frame with none asked (`raf` was 0, `started` and not `failed`); released wherever `tick` returns without
+    asking the next frame (`failed`, `!started`, `!shown()` or `busy()`, where it also calls `away()`) and in
+    `fail()`. So the tab hidden, the door hidden or a dive under way (`busy`) release it, and the `watch` observers'
+    `wake()` marks it again when it is shown. On the worker path `startDoor` returns null (W3), so there is no loop
+    and no mark.
+- `assets/js/main.js`: `FLAGS.pace` from `?pace=`, as `draw` was added (6a.6).
+- `assets/door/README.md`: the `flags` row gains `pace`; "Also exported from `index.js`" gains `moving`; one sentence
+  under the chores on the slice. No markup change, so `tools/door-markup.mjs` is not run.
+- `tools/ci/door-stub.mjs`: `installClock()` gains `spend(ms)` (moves the virtual clock inside a chore without running
+  a timer: a chore's cost in virtual ms) and `scheduled` (how many timers have been set), for 6c.6.
+- `tools/ci/chores-slice-test.mjs` (new), `tools/ci/node-tests.sh` (runs it), `PERFORMANCE.md` after M5.
+- `tools/ci/freeze.mjs`: **unchanged**, and its check 5 must still pass: "no two non-soft chores start in one frame"
+  holds (a hard chore is a slice of its own, slices are a frame apart) and "soft ones may share a frame" was already
+  its wording. `tools/ci/coverage-floors.json`: `chores.js` keeps its floor; the slice runs in every Chromium page run
+  and the Node tests, the `pace=frame` branch in their controls.
+
+The interface change, for Orbit's import (ADR-0001): one additive export (`moving`), one flag (`pace`), and the
+meaning of a chore's `rest` on the page path after open (a frame for everything but a measure, as the worker path
+already read it; the signature `chore(fn, rest, tag, options)` is unchanged). Entry point, slots, stylesheet and
+markup are untouched. Said in the commit.
+
+### 6c.5 The console line
+
+`chores at flight ready: 527 done (502 soft, 25 hard) in 210 slices, longest slice 171 ms, ran 2377 ms, waited 233 ms
+to start, held 0 ms for the reveal, of which 40 soft chores (120 ms) during the reveal, empty 171 ms, moving 0 ms,
+resting 1900 ms, over 4600` (the shape; the figures are invented). `slices` counts the frames yielded after open (a
+slice is the chores between two yields; the worker's queue says `0 slices`); `longest slice` runs from a slice's first
+start to its last end, so a hard chore's own length shows there and an overrun is visible; `moving` is time after
+open spent at the moving budget. `resting` keeps its definition and should now read about `slices` × a frame. The
+`?door3d` per-chore list is unchanged.
+
+### 6c.6 Tests: behaviour, never timings; the paths forced by flags
+
+Node, through `assets/door/index.js` on the stub page (`tools/ci/door-stub.mjs`), one fresh process per case on the
+virtual clock (`installClock`), `requestAnimationFrame` and `setTimeout` counted, each chore's cost set by the case
+with `clock.spend(ms)`: every time here is virtual, so nothing depends on the runner. The shape is
+`draw-pace-test.mjs`, and like it every case has its control under `flags: { pace: "frame" }`, which shows the thing
+the slice removes is there to begin with. `choresNow()` is read by its own path, as `draw-pace-test` reads `pace`.
+
+- S1 the slice: opened, twenty soft chores of 3 ms: they run three to a slice (starts at 0, 3 and 6 ms of it; 9 is
+  past the budget), exactly one frame asked between slices, and no timer set between the chores of a slice
+  (`scheduled` unchanged across them). Control: a timer after every chore.
+- S2 the budget never cuts a chore: soft chores of 5 ms run two a slice (0 and 5); of 9 ms, one a slice; a chore
+  started inside the budget always runs whole (its `spend` is never split).
+- S3 hard chores: five hard chores (`rest` 60) and ten 1-ms soft ones queued and opened: each hard chore runs with no
+  other chore in its slice (read `slice` from `choresNow()` at each start: a hard chore's slice holds it alone), one
+  frame between it and the next slice, and the next slice's first chore starts within one frame interval of the hard
+  chore's end. Control: it starts 20 ms or more after that frame.
+- S4 the measures: a `"measure"` chore (`rest` 200), then a soft one: the soft starts 200 ms or more after the measure
+  ends (D7's M, kept).
+- S5 moving: `moving()` called once, 3 ms soft chores: two a slice (0 and 3; 6 is past 4); its release: three a
+  slice again. Called twice: still two after one release, three after both. Hard chores: one a slice either way.
+- S6 hurried: `hurryChores("flight", 6000)` with 3 ms `"flight"` soft chores: two a slice during the opening; the clock
+  past 6000 with nothing wanted: three. Unhurried chores still wait for the opening (D7's O covers the control).
+- S7 the reveal untouched: `openSoft()` without `openChores()`, soft chores of 3 ms: two a frame (the second starts
+  because the first ended within 4 ms of the frame callback); of 5 ms: one a frame; a timer after each; no hard chore
+  starts. The same under `pace: "frame"`: identical in every count (this case has no difference to show, and that is
+  what it proves).
+- S8 typing: `typingWait` 600, a key pressed, soft chores opened: no slice starts until the clock has passed 600 ms
+  from the key; then one does.
+- S9 joining: opened, one 6 ms soft chore alone in the queue; a second queued 1 ms (virtual) after it ends: it runs
+  with no frame asked between (it joined the slice); a third queued after the budget is spent, before any frame: a
+  frame is asked before it starts.
+- S10 the loops mark moving: (a) the engine on the stub page path, `fit-skip-test.mjs`'s bed: `choresNow().moving` is
+  1 while `fly(UP)` runs on the virtual clock and 0 after the loop ends, and 0 again after a flight cancelled midway;
+  (b) the dive's loop on the page path (`world-page-test.mjs`'s bed): 0 before, 1 after `start()`, 0 after `stop()`,
+  1 after `start()` again; the tab then hidden (`document.hidden` true on the stub, a `visibilitychange` dispatched)
+  while the dive runs: **still 1** (the mark is the loop's, not the frame's); `stop()` with the tab hidden: 0; a second
+  `stop()`: still 0, never below. On the worker path (`world-hello-test.mjs`'s bed, the fake answering `up`):
+  `start()` leaves it 0. (c) the worker path for the flight (`draw-hello-test.mjs`'s bed, the fake answering `up`):
+  the page's `moving` stays 0 through a flight. (d) the door's planets loop, in `world-rule-test.mjs`'s bed (the one
+  that reaches `startDoor`, with its rich root and lockup), on the page path: 0 until `ready` has resolved, 1 once the
+  loop has asked a frame, 0 after the tab is hidden and a frame has passed (`tick` returns without asking the next), 1
+  again after it is shown and a frame has passed, 0 while the body carries `departing` (`shown()` false) and 1 when
+  it is removed; control: W3's remote world, where `startDoor` returns null and `moving` stays 0 throughout. Each in
+  its existing file's style.
+- S11 the line: after S1's run `noteChores("x")` says `in N slices` with N the frames asked after open, `(20 soft, 0
+  hard)`, and `moving 0 ms`; after S5's, `moving` is greater than 0; under `pace("none")` (D7's bed), `0 slices`.
+- S12 `flags.pace` as a number: `{ pace: "5" }` with 3 ms soft chores: two a slice (0 and 3; 6 is past 5).
+
+Browser: no new live test. The gate's `freeze.mjs` checks 1-5 run as the map selects them (`chores.js` is in group
+`all`) and must pass unchanged, 5 in particular; every other live test keeps its path. Speed is the owner's to judge
+(AGENTS.md), in M5.
+
+### 6c.7 Build: two batches
+
+Each a pipeline, reviewed inline as written; tests first, from this section, by an agent that has not seen the code;
+the unaudited count read from the commit hook at each commit and written in the handoff.
+
+1. **The slice** (~450 lines): `door-stub.mjs` `spend` and `scheduled`; `chores-slice-test.mjs` S1-S9, S11, S12,
+   run and failing; then `chores.js` (6c.2, `moving()`, `flags.pace`, `choresNow`, the line), `index.js`, `main.js`
+   `FLAGS.pace`, the README, `node-tests.sh`. The reveal's and the worker's behaviour are unchanged throughout: S7, D7
+   and the existing suites prove it.
+2. **The marks** (~120 lines): S10 in the three beds, failing; then `moving()` in `engine.js`, `door3d.js` and
+   `install.js`. Separate because it is the one change that can alter a page-path flight's own frames.
+
+About 570 lines in all. No design call is left to the builder: the budgets, the states and the line are above; where
+the code's start and stop points for a loop are not where 6c.4 says, the builder reports it rather than choosing.
+
+### 6c.8 What the owner measures (M5): a real phone and the desktop
+
+After batch 2, the phone (iOS Safari, `?preview`, the local design server), then `?preview&pace=frame`, the console
+lines of each: `chores at flight ready: …` (slices, longest slice, `resting` against `ran`, `over`), `flight: ready`'s
+time, `reveal: … longest frame gap` (unchanged, as a check), `flight: first second N frames, worst N ms`. The eye on
+the door's sky and the shimmer while the readying runs, and on the first flight. The same on desktop Firefox
+(`?preview`: the worker path, the page's queue holding what stays; `?preview&draw=page`) and Edge (`?preview`).
+`?pace=5` and `?pace=12` only if the eye disagrees with 8 (question 101-1). The numbers go on #101 and into
+PERFORMANCE.md; done when `resting` no longer dominates `over` on both and the door is as smooth as before.
+
+### Questions for the owner (#101)
+
+**101-1** The still budget (6c.2), which only the eye on a real device can judge: **101-1a** (recommended) 8 ms,
+  half a 60 Hz frame, leaving the browser the other half for the shimmer's paint and its own work; React's 5 ms
+  protects input latency, which nothing here needs, and a smaller slice costs more frames; `?pace=N` lets M5 try
+  others without a build. **101-1b** 5 ms, React's figure. **101-1c** 12 ms, if the eye sees nothing at 8 and the
+  flight's way in is still slow to open.
+**101-2** Today's pacing behind `?pace=frame` after M5: **101-2a** (recommended) keep it, as `?holdreveal` is kept:
+  the tests' control and the owner's A/B for about ten lines; **101-2b** remove it once M5's numbers are in, and the
+  tests lose their control.
+
+**Owner answers, 2026-10-29:** build by a cheaper model from this section (the owner's 3a for #101); 101-1a,
+8 ms; 101-2 open: the owner wants the M5 device tests run again first, so `?pace=frame` is built as designed and
+the keep-or-remove call is asked after them.
+
 ## 7. Rejected
 
 - **Compile in a worker, keep drawing on the page, on Firefox:** measured no shared cache; the page would pay twice.
@@ -1023,6 +1276,18 @@ the same day, the answer stands).
   is also what Orbit's copy can serve.
 - **A remembered "warmed" verdict in localStorage:** nothing is remembered (ADR-0002 decision 7), and Safari's cache
   is the driver's, not ours to predict across visits.
+- **(#101) `requestIdleCallback`'s deadlines as the slice's budget:** the browser's own measure of a frame's slack,
+  but measured (the comment in `chores.js`): while the door's sky drifts neither browser calls one, so each chore
+  waited its whole 120 ms timeout; and Safari has none.
+- **(#101) Bigger bands once the door is open, or bands doubled after a quick one:** measured 30-50 ms a band on the
+  laptop in Edge when doubled (`upload.js`); a slice holds several small bands for the same work with no such stall.
+- **(#101) A budget that shrinks when the queue sees late frames (a governor, as `install.js` has for its density):**
+  it would hide which loop was costing the frames, feed back on the queue's own overruns, and make the pacing depend
+  on the machine's speed where an explicit `moving()` is checkable in a test.
+- **(#101) `scheduler.yield()` as the yield:** Safari lacks it; `page.frame` is the one yield the folder has on both
+  threads, and the worker's queue does not yield at all.
+- **(#101) Changing the reveal's pacing with the rest:** the reveal was measured and A/B'd by the owner (`?holdreveal`);
+  it is 2.4 s, and the issue's 14 s is after it.
 
 ## 8. What the owner measures on a real device
 

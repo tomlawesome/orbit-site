@@ -21,12 +21,16 @@
  *   warn            opts.warn receives what would go to console.warn, and console.warn does not; by default console.warn does
  *   exports         assets/door/index.js exports setPage, pace and drawnAside as functions
  *   asidePage       journey.aside() resolves false once the flight is on the page
+ *   moving          (#101, ADR-0004 6c.6 S10b) the install's dive loop on the page path marks itself moving for the chore
+ *                   queue: choresNow().moving is 0 before, 1 after start(), 0 after stop(), 1 after start() again; still 1
+ *                   with the tab hidden (the mark is the loop's, not the frame's); 0 after stop() while hidden, and a
+ *                   second stop() leaves it 0
  *
  * One fresh Node process a case, on the virtual clock (door-stub.mjs). A missing export is said in plain words.
  */
 import { bootInstallPage, settled, infoWorld, childMain, runCase, chk, check, finish, INDEX } from "./door-stub.mjs";
 
-const INSTALL = "../../assets/js/install.js", WORLD = "../../assets/js/world.js";
+const INSTALL = "../../assets/js/install.js", WORLD = "../../assets/js/world.js", CHORES = "../../assets/door/chores.js";
 const MOON = { map: "http://localhost/map.webp", rings: "http://localhost/rings.png", moon: "http://localhost/moon.webp", small: true };
 
 /* the page path of the install: the shared world made, baked and measured on the page */
@@ -128,6 +132,24 @@ const CASES = {
     const door = await import(INDEX);
     return { kinds: Object.fromEntries(["setPage", "pace", "drawnAside"].map((n) => [n, typeof door[n]])) };
   },
+  async moving() {
+    const b = await bootInstallPage({ draw: "page" });
+    const { createInstall } = await import(INSTALL);
+    const { choresNow } = await import(CHORES);
+    const ring = createInstall(b.pad("installpad"));
+    const prepared = await settled(ring.prepare(), b.clock);
+    await b.clock.advance(3000);
+    const m = () => choresNow().moving;
+    const out = { prepared: prepared.state, before: m() };
+    const step = async (name, f) => { f(); await b.clock.advance(300); out[name] = m(); };
+    await step("started", () => ring.start());
+    await step("stopped", () => ring.stop());
+    await step("restarted", () => ring.start());
+    await step("hidden", () => b.page.setHidden(true));
+    await step("stoppedHidden", () => ring.stop());
+    await step("stoppedTwice", () => ring.stop());
+    return out;
+  },
   async asidePage() {
     const b = await bootInstallPage({ draw: "page" });
     if (typeof b.journey.aside !== "function") return { missing: "journey.aside" };
@@ -201,5 +223,13 @@ for (const [name, how, why] of [
 {
   const r = run("asidePage");
   chk("W1 journey.aside() resolves false once the flight is on the page", r, (r) => r.missing ? [false, said(r, "the journey's surface")] : [r.state === "resolved" && r.value === false, `aside() is ${r.state}${r.state === "resolved" ? ` with ${show(r.value)}` : ""} (want resolved with false)`]);
+}
+{
+  const r = run("moving");
+  const seen = (r) => `prepared ${r.prepared}; moving: before ${show(r.before)}, after start() ${show(r.started)}, after stop() ${show(r.stopped)}, after start() again ${show(r.restarted)}, tab then hidden ${show(r.hidden)}, stop() while hidden ${show(r.stoppedHidden)}, a second stop() ${show(r.stoppedTwice)}`;
+  chk("S10b the dive's loop on the page path marks moving: 0 before, 1 after start()", r, (r) => [r.prepared === "resolved" && r.before === 0 && r.started === 1, seen(r)]);
+  chk("S10b ... 0 after stop(), 1 after start() again", r, (r) => [r.stopped === 0 && r.restarted === 1, seen(r)]);
+  chk("S10b ... still 1 with the tab hidden while the dive runs (the mark is the loop's, not the frame's)", r, (r) => [r.hidden === 1, seen(r)]);
+  chk("S10b ... 0 after stop() with the tab hidden, and a second stop() leaves it 0, never below", r, (r) => [r.stoppedHidden === 0 && r.stoppedTwice === 0, seen(r)]);
 }
 finish();
