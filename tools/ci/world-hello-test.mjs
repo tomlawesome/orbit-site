@@ -19,6 +19,8 @@
  *   drew        drew { seq, dt, ms } sets the canvas's data-drawn to seq and calls the onDrew callbacks with (dt, ms)
  *   measure     calibrate posts `measure` with two sets (the parts 0.4 and 0.8) and sets the measured part from `measured`
  *   aside       the remote world's aside() resolves true once the worker said `up`
+ *   moving      (#101, ADR-0004 6c.6 S10b, the worker half) start() leaves the page's choresNow().moving at 0: the
+ *               drawing is the worker's, the page's thread is free; so does stop()
  *
  * One fresh Node process a case, on the virtual clock. A missing module is said in plain words.
  */
@@ -217,10 +219,27 @@ async function measureCase(ms) {
   return out;
 }
 
+async function movingCase() {
+  const b = await boot();
+  const { ring } = b.install();
+  const s = await prepared(b, ring);
+  if (!b.ww.first()) return { none: noWorker };
+  const { choresNow } = await import("../../assets/door/chores.js");
+  const out = { prepared: s.state, before: choresNow().moving };
+  ring.start();
+  await b.clock.advance(300);
+  out.started = choresNow().moving;
+  ring.stop();
+  await b.clock.advance(300);
+  out.stopped = choresNow().moving;
+  return out;
+}
+
 const CASES = guarded({
   hello: () => helloCase({}), helloInfo: () => helloCase({ info: true, small: true }), canvas: canvasCase,
   bake: () => bakeCase(true), bakeFalse: () => bakeCase(false), run: runCaseOn, viewFrame, viewWorker: () => viewStill("worker"), viewPage: () => viewStill("page"),
   touch: touchCase, drew: drewCase, aside: asideCase, measureMid: () => measureCase([10, 20]), measureSlow: () => measureCase([40, 80]),
+  moving: movingCase,
 });
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -294,5 +313,9 @@ for (const [how, ms] of [["measureMid", [10, 20]], ["measureSlow", [40, 80]]]) {
   const r = run(how);
   chk(`W2 calibrate (${ms[0]} and ${ms[1]} ms) posts one \`measure\` with an id and two sets, the parts 0.4 then 0.8, no function in it`, r, (r) => [r.asks === 1 && r.kinds[0].id && r.kinds[0].sets === 2 && show(r.parts) === show([[0.4], [0.8]]) && r.fn === null && r.sizes.every((n) => n >= 1), `asks ${r.asks}, ${show(r.kinds)}, parts ${show(r.parts)}, views a set ${show(r.sizes)}, function at ${show(r.fn)}`]);
   chk(`W2 ... and sets the measured part from \`measured\` (want ${partFor(ms[0], ms[1]).toFixed(3)}, not the page's own timing)`, r, (r) => [r.part !== null && Math.abs(r.part - r.want) < 1e-3, `part ${show(r.part)}, want ${r.want}`]);
+}
+{
+  const r = run("moving");
+  chk("S10b on the worker path start() leaves the page's choresNow().moving at 0, and so does stop()", r, (r) => [r.prepared === "resolved" && r.before === 0 && r.started === 0 && r.stopped === 0, `prepared ${r.prepared}; moving before ${show(r.before)}, after start() ${show(r.started)}, after stop() ${show(r.stopped)}`]);
 }
 finish();
