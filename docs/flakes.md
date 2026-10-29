@@ -45,3 +45,4 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 ## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad
 
 - 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40862 · the click on the install planet never opened #installpad; cc20922 changes only `coverage-floors.json`, and the same shard passed 3 of 3 on 409c39b (pipeline 3106); retried as job 40991
+- 2026-10-29 · cfedb56 · pipeline 3153, live:chromium 2/3, job 41374 · the same; cfedb56 is the revert of !96, so the site's code is ccd883d's, which this shard passed on pipeline 3149; the second sighting, re-run by this push
