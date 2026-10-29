@@ -1017,6 +1017,14 @@ the same day, the answer stands).
 
 ## 6c. Detailed design: pacing the flight's chores (#101)
 
+**Reverted 2026-10-29** (owner 11a; #105): built in !96 and taken out again the same day. On the owner's Edge the
+flight was ready at 49.8 s against 4.7 s under the old rule; on the phone the flight came 3 s sooner but the docs waited
+46 s. Two faults in this section, kept here as the record: the premise read `resting` as the pause after each chore, but
+it is a remainder (wall time less work, waits and holds), and the old rule already ran soft chores back to back within a
+frame's share, so the pause it blamed was about half a second; and a slice that moves only on a frame (`page.frame`)
+runs at the frame rate, which during a dive or on a slow laptop is the crawl seen. The standard scheduler yields through a
+task, not a frame. Before any redesign, the `?door3d` line is to say where the remainder goes (#101).
+
 Written 2026-10-29, from the line a real phone printed on 2026-10-28 (iOS Safari, `?preview`, the page path; the
 numbers are on #101): `chores at flight ready: 527 done, ran 2377 ms, waited 233 ms to start, held 0 ms for the
 reveal, …, resting 14125 ms, over 16906`, the flight's way in opening at 17.9 s with the door ready at 2.5 s. The

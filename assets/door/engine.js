@@ -23,7 +23,7 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, noteChores, compilesAside, moving, PICTURE_WAIT } from "./chores.js";
+import { chore, note, noteChores, compilesAside, PICTURE_WAIT } from "./chores.js";
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
 import { page } from "./page.js";
@@ -557,12 +557,6 @@ export function createFlight(canvas, options = {}) {
   /** @type {FlightState | null} */
   let flight = null;
   let flightRaf = 0;
-  /* the flight's frame loop is drawn on this thread every frame: the chore queue is told for as long as it runs
-     (chores.js moving; once a flight, released where the loop ends or is stopped; in the worker, whose queue is
-     unpaced, it changes nothing) */
-  /** @type {(() => void) | null} */
-  let flightMoving = null;
-  const flightStill = () => { flightMoving?.(); flightMoving = null; };
 
   function sizeCanvas() {
     const screen = page.size();
@@ -1252,7 +1246,7 @@ export function createFlight(canvas, options = {}) {
     step(t, dt);
     markDrawn();
     if (t < active.P.dur + 400) flightRaf = raf(frame);
-    else { flightRaf = 0; flight = null; flightStill(); }
+    else { flightRaf = 0; flight = null; }
   }
 
   /* `data-drawn` on the canvas: the number of the start whose first frame is on it (the worker path's mark, remote-flight.js).
@@ -1383,12 +1377,11 @@ export function createFlight(canvas, options = {}) {
         markDrawn();
         return;
       }
-      flightStill(); flightMoving = moving();
       flightRaf = raf(frame);
     },
     stop() {
       if (flightRaf) cancel(flightRaf);
-      flightRaf = 0; flight = null; flightStill();
+      flightRaf = 0; flight = null;
     },
     clear() {
       this.stop();

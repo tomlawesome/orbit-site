@@ -21,8 +21,6 @@
  *   note      a `note` from the worker prints as it was sent, "orbit · ..." (kind "note" and "verdict" alike)
  *   resize    a window resize posts `size` and restyles both canvases; visibilitychange posts `visible`
  *   destroy   destroy() calls terminate(); destroy() before any need makes no worker
- *   moving    (#101, ADR-0004 6c.6 S10c) fly(UP) with the fake answering `up`: the page's choresNow().moving stays 0
- *             through the flight (the worker's loop is not the page's thread), sampled every 250 ms of virtual time
  *
  * Each case runs in a fresh Node process, on the virtual clock: nothing waits on the runner. A message that is not
  * structured-cloneable (a function in the profile) is counted by the fake worker as a clone error.
@@ -190,22 +188,11 @@ async function destroyCase(need) {
   return { made: b.host.made, terminated: w ? w.terminated : 0 };
 }
 
-async function movingCase() {
-  const b = await boot();
-  const { choresNow } = await import("../../assets/door/chores.js");
-  const seen = [];
-  b.journey.fly(b.door.UP, { on: {} });
-  for (let t = 0; t < 12000; t += 250) { await b.clock.advance(250); seen.push(choresNow().moving); }
-  if (!b.w()) return { none: noWorker(b.host) };
-  return { seen: [...new Set(seen)].map((x) => (x === undefined ? "undefined" : x)), starts: b.w().of("start").length };
-}
-
 const CASES = {
   hello: () => helloCase(false), hidden: () => helloCase(true), canvases: canvasesCase,
   warm: () => warmCase("warm"), warmDocs: () => warmCase("warmDocs"), warmProve: () => warmCase("prove"),
   fly: flyCase, pinned: pinnedCase, note: noteCase, resize: resizeCase,
   destroy: () => destroyCase(true), destroyNone: () => destroyCase(false),
-  moving: movingCase,
 };
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -268,5 +255,4 @@ chk("D2 a pinned fly(UP, { at: 2600 }) posts `start` with `at` the flight's own 
 }
 chk("D2 destroy() calls terminate() on the worker", run("destroy"), (r) => [r.made === 1 && r.terminated === 1, `workers made ${r.made}, terminate() calls ${r.terminated}`]);
 chk("D2 destroy() before any need makes no worker", run("destroyNone"), (r) => [r.made === 0, `workers made ${r.made}`]);
-chk("S10c the page's choresNow().moving stays 0 through a flight drawn in the worker", run("moving"), (r) => [r.starts >= 1 && r.seen.length === 1 && r.seen[0] === 0, `${r.starts} start(s) posted; moving seen ${show(r.seen)}`]);
 finish();

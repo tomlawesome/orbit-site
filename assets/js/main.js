@@ -30,9 +30,6 @@ FLAGS.fit = /[?&]fit=skip\b/.test(location.search) ? "skip" : null;
 /* ?draw=worker|page: where the flight is drawn, whatever the door's rule says (assets/door/fitness.js: drawnAside; the
    worker is Firefox's by the rule, ADR-0004 6a.4) */
 FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
-/* ?pace=frame|N: how the chores are paced once the door is open (assets/door/chores.js): frame, the rule before the
-   slice (the owner's A/B); a number, the slice's budget in ms where the page is still (the default 8) */
-FLAGS.pace = location.search.match(/[?&]pace=(frame|\d+(?:\.\d+)?)\b/)?.[1] ?? null;
 const door = createDoor({
   image: (p) => `assets/door/img/${p}`, flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
