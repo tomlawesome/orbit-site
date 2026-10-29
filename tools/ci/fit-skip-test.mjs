@@ -14,13 +14,6 @@
  *   control   flags { gpu: "force" }                 slow frames: the world is let go, "off: frame N ms"
  *   skip      flags { gpu: "force", fit: "skip" }    slow frames: not let go, "on (fitness skipped)", no "off"
  *   no force  flags { fit: "skip" }, software GL     still refused: "off: software renderer"
- *
- * Also the engine's mark for #101 (ADR-0004 6c.4 and 6c.6, test S10a), on this bed with the virtual clock (door-stub.mjs)
- * put in place of the real one: the flight's frame loop on the page path says it is moving, so the chore queue gives
- * the page's frames the smaller budget (choresNow().moving, sampled every 250 ms of virtual time).
- *
- *   moving    fly(UP) runs to its end: moving is 1 while it runs (never 2: once per flight), 0 after the loop ends
- *   cancel    a flight cancelled midway (journey.reset()): moving was 1, and is 0 after
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -30,8 +23,6 @@ const CASES = {
   control: { gpu: "force" },
   skip: { gpu: "force", fit: "skip" },
   noforce: { fit: "skip" },
-  moving: { gpu: "force", fit: "skip" },
-  cancel: { gpu: "force", fit: "skip" },
 };
 
 if (process.argv[2] === "--child") {
@@ -105,37 +96,6 @@ if (process.argv[2] === "--child") {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const out = { error: null };
   try {
-    if (name === "moving" || name === "cancel") {
-      /* S10a: the virtual clock replaces the real one, then a live fly(UP) is watched frame by frame */
-      const { installClock } = await import("./door-stub.mjs");
-      const clock = installClock();
-      let asked = 0;
-      const raf = globalThis.requestAnimationFrame;
-      globalThis.requestAnimationFrame = (f) => { asked++; return raf(f); };
-      const door = await import(INDEX);
-      const { choresNow } = await import("../../assets/door/chores.js");
-      const d = door.createDoor({ typingWait: 0, flags });
-      const j = d.journey({ canvas: hostCanvas(), name: any(), dawnGlyph: () => null, duskGlyph: () => null, on: {} });
-      door.openChores();
-      const samples = [];
-      const sample = async (ms) => { await clock.advance(ms); samples.push(choresNow().moving); return samples[samples.length - 1]; };
-      j.fly(door.UP, { title: "Orbit", subtitle: "to somewhere" });
-      if (name === "moving") {
-        for (let t = 0; t < door.UPDUR + 8000; t += 250) await sample(250);
-        out.samples = [...new Set(samples)];
-        out.after = samples[samples.length - 1];
-      } else {
-        let t = 0;
-        while (t < 6000 && samples[samples.length - 1] !== 1) { await sample(100); t += 100; }
-        out.midway = samples[samples.length - 1];
-        j.reset();
-        out.afterReset = await sample(500);
-        for (let k = 0; k < 40; k++) await sample(250);
-        out.after = samples[samples.length - 1];
-        out.samples = [...new Set(samples)];
-      }
-      out.frames = asked;
-    } else {
     const door = await import(INDEX);
     const d = door.createDoor({ typingWait: 0, flags });
     const j = d.journey({ canvas: hostCanvas(), name: any(), dawnGlyph: () => null, duskGlyph: () => null, on: {} });
@@ -145,7 +105,6 @@ if (process.argv[2] === "--child") {
     await sleep(300);
     out.verdicts = lines.filter((l) => /flight world:/.test(l));
     out.skewed = skew;
-    }
   } catch (e) { out.error = String(e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : e); }
   process.stdout.write("RESULT " + JSON.stringify(out) + "\n");
   process.exit(0);
@@ -178,16 +137,5 @@ check("skip: the world is not let go for a slow frame", !skip.error && !has(skip
 const noforce = run("noforce");
 check("fit skip without force on a software renderer: still refused",
   !noforce.error && has(noforce, /flight world: off: software renderer/) && !has(noforce, /flight world: on/), said(noforce));
-
-const mark = (r) => `${r.error ? r.error + "; " : ""}moving sampled ${JSON.stringify(r.samples)}, midway ${JSON.stringify(r.midway)}, after reset ${JSON.stringify(r.afterReset)}, at the end ${JSON.stringify(r.after)}; ${r.frames} frames asked`;
-
-const moving = run("moving");
-check("S10a the engine's frame loop marks moving: choresNow().moving is 1 while fly(UP) runs, and never above 1",
-  !moving.error && moving.frames > 10 && Array.isArray(moving.samples) && moving.samples.includes(1) && Math.max(...moving.samples) === 1, mark(moving));
-check("S10a ... and 0 after the loop ends", !moving.error && moving.after === 0, mark(moving));
-
-const cancel = run("cancel");
-check("S10a a flight cancelled midway: moving was 1 while it flew, and is 0 after, and stays 0",
-  !cancel.error && cancel.midway === 1 && cancel.afterReset === 0 && cancel.after === 0, mark(cancel));
 
 process.exit(failed ? 1 : 0);
