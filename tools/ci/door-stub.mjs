@@ -197,18 +197,20 @@ export function installPage(opts = {}) {
 }
 
 /*
- * installClock() -> { advance(ms, until?) }: setTimeout, performance.now, Date.now and the frame callbacks run on a
- * virtual clock, moved only by advance(); each step drains the promises first. A case that would wait seconds in real
- * life waits none.
+ * installClock() -> { now(), advance(ms, until?), spend(ms), scheduled }: setTimeout, performance.now, Date.now and the
+ * frame callbacks run on a virtual clock, moved only by advance(); each step drains the promises first. A case that
+ * would wait seconds in real life waits none. spend(ms) moves the clock forward inside running code without running a
+ * timer: a chore's cost in virtual ms (ADR-0004 6c.6). `scheduled` is how many timers have been set (setTimeout and
+ * setInterval calls, which a frame request is one of), read as a number.
  */
 export function installClock() {
-  let now = 0, seq = 0;
+  let now = 0, seq = 0, scheduled = 0;
   const timers = new Map();
   const real = { now: performance.now.bind(performance), date: Date.now };
   const flush = () => new Promise((r) => realSetImmediate(r));
-  globalThis.setTimeout = (f, ms = 0, ...a) => { const id = ++seq; timers.set(id, { t: now + Math.max(0, Number(ms) || 0), f, a, id, seq: id }); return id; };
+  globalThis.setTimeout = (f, ms = 0, ...a) => { scheduled++; const id = ++seq; timers.set(id, { t: now + Math.max(0, Number(ms) || 0), f, a, id, seq: id }); return id; };
   globalThis.clearTimeout = (id) => { timers.delete(id); };
-  globalThis.setInterval = (f, ms = 0, ...a) => { const id = ++seq; const tick = () => { timers.set(id, { t: now + Math.max(1, Number(ms) || 1), f: () => { tick(); f(...a); }, a: [], id, seq: ++seq }); }; tick(); return id; };
+  globalThis.setInterval = (f, ms = 0, ...a) => { scheduled++; const id = ++seq; const tick = () => { timers.set(id, { t: now + Math.max(1, Number(ms) || 1), f: () => { tick(); f(...a); }, a: [], id, seq: ++seq }); }; tick(); return id; };
   globalThis.clearInterval = globalThis.clearTimeout;
   globalThis.requestAnimationFrame = (f) => globalThis.setTimeout(() => f(now), 16);
   globalThis.cancelAnimationFrame = globalThis.clearTimeout;
@@ -218,6 +220,10 @@ export function installClock() {
   Date.now = () => 1.7e12 + now;
   return {
     now: () => now,
+    /* the clock moves ms forward inside a running function, no timer run (a chore's cost) */
+    spend(ms) { now += Math.max(0, Number(ms) || 0); },
+    /* how many timers have been set so far */
+    get scheduled() { return scheduled; },
     /* run virtual time forward by ms, or until until() is true (checked after every timer) */
     async advance(ms, until = () => false) {
       const end = now + ms;
@@ -225,7 +231,7 @@ export function installClock() {
       while (!until()) {
         let next = null;
         for (const t of timers.values()) if (t.t <= end && (!next || t.t < next.t || (t.t === next.t && t.seq < next.seq))) next = t;
-        if (!next) { now = end; break; }
+        if (!next) { now = Math.max(now, end); break; }
         timers.delete(next.id);
         now = Math.max(now, next.t);
         try { next.f(...next.a); } catch { /* the page's own error */ }

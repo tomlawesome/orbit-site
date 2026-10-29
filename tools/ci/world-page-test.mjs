@@ -21,12 +21,14 @@
  *   warn            opts.warn receives what would go to console.warn, and console.warn does not; by default console.warn does
  *   exports         assets/door/index.js exports setPage, pace and drawnAside as functions
  *   asidePage       journey.aside() resolves false once the flight is on the page
+ *   moving          (#101, ADR-0004 6c.6 S10b) the install's dive loop on the page path marks itself moving for the chore
+ *                   queue: choresNow().moving is 1 after start(), 0 after stop(), and 0 while the tab is hidden (away())
  *
  * One fresh Node process a case, on the virtual clock (door-stub.mjs). A missing export is said in plain words.
  */
 import { bootInstallPage, settled, infoWorld, childMain, runCase, chk, check, finish, INDEX } from "./door-stub.mjs";
 
-const INSTALL = "../../assets/js/install.js", WORLD = "../../assets/js/world.js";
+const INSTALL = "../../assets/js/install.js", WORLD = "../../assets/js/world.js", CHORES = "../../assets/door/chores.js";
 const MOON = { map: "http://localhost/map.webp", rings: "http://localhost/rings.png", moon: "http://localhost/moon.webp", small: true };
 
 /* the page path of the install: the shared world made, baked and measured on the page */
@@ -128,6 +130,32 @@ const CASES = {
     const door = await import(INDEX);
     return { kinds: Object.fromEntries(["setPage", "pace", "drawnAside"].map((n) => [n, typeof door[n]])) };
   },
+  async moving() {
+    const b = await bootInstallPage({ draw: "page" });
+    const { createInstall } = await import(INSTALL);
+    const { choresNow } = await import(CHORES);
+    const ring = createInstall(b.pad("installpad"));
+    const prepared = await settled(ring.prepare(), b.clock);
+    await b.clock.advance(3000);
+    const out = { prepared: prepared.state, idle: choresNow().moving };
+    ring.start();
+    await b.clock.advance(300);
+    out.running = choresNow().moving;
+    ring.stop();
+    await b.clock.advance(300);
+    out.stopped = choresNow().moving;
+    ring.start();
+    await b.clock.advance(300);
+    out.again = choresNow().moving;
+    b.page.setHidden(true);
+    await b.clock.advance(300);
+    out.hidden = choresNow().moving;
+    b.page.setHidden(false);
+    ring.stop();
+    await b.clock.advance(300);
+    out.end = choresNow().moving;
+    return out;
+  },
   async asidePage() {
     const b = await bootInstallPage({ draw: "page" });
     if (typeof b.journey.aside !== "function") return { missing: "journey.aside" };
@@ -201,5 +229,12 @@ for (const [name, how, why] of [
 {
   const r = run("asidePage");
   chk("W1 journey.aside() resolves false once the flight is on the page", r, (r) => r.missing ? [false, said(r, "the journey's surface")] : [r.state === "resolved" && r.value === false, `aside() is ${r.state}${r.state === "resolved" ? ` with ${show(r.value)}` : ""} (want resolved with false)`]);
+}
+{
+  const r = run("moving");
+  const seen = (r) => `prepared ${r.prepared}; moving: idle ${show(r.idle)}, after start() ${show(r.running)}, after stop() ${show(r.stopped)}, started again ${show(r.again)}, tab hidden ${show(r.hidden)}, after stop() ${show(r.end)}`;
+  chk("S10b the install's dive loop marks moving: choresNow().moving is 1 after start()", r, (r) => [r.prepared === "resolved" && r.idle === 0 && r.running === 1, seen(r)]);
+  chk("S10b ... 0 after stop()", r, (r) => [r.stopped === 0 && r.end === 0, seen(r)]);
+  chk("S10b ... and 0 while the tab is hidden (away()), the loop having been running", r, (r) => [r.again === 1 && r.hidden === 0, seen(r)]);
 }
 finish();
