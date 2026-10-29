@@ -5,7 +5,8 @@ section 4's pre-warm is not built, and the door folder's interface is unchanged.
 **Amended:** 2026-10-27, section 6a: the detailed design of section 6 (#85), for the owner's review before any code;
 questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds in a worker (#93), the detailed design
 for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-28. 2026-10-29, section 6c: the pacing
-of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open.
+of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
+the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
 worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
@@ -1077,8 +1078,13 @@ it and `page.frame` is the one yield the folder has on both threads. The rules:
 - **A chore that arrives while the last slice is still within budget joins it** (the queue ran empty for a moment,
   as a bands loop does when a cut is slow); one that arrives after the budget is spent, and before a frame has been
   yielded, waits for the frame. Running empty does not reset the budget.
-- **The pick is the queue's, the slice only says when**: `ORDER`, `hurryChores`, the typing wait, `CAP`, `quiet()`,
+- **The pick is the queue's, the slice only says when**: `ORDER`, `hurryChores`, the typing wait, `quiet()`,
   `drawnIn()` and `fetchOnce` are unchanged.
+- **The cap timer (`CAP`, 15 s) is set only for a chore that returns a promise.** A function that has returned has
+  settled, so there is nothing for the cap to guard, and a slice of synchronous chores sets no timer at all (what S1
+  counts). A chore that returns a promise sets the cap and clears it when the promise settles; its slice therefore
+  does set a timer, and S1's chores are synchronous for that reason. `CAP`'s value is unchanged. (Ruled during the
+  build, 2026-10-29: the first text left the cap on every chore, which no slice test could pass.)
 
 The budget by state, the page's queue, both paths:
 
@@ -1087,7 +1093,7 @@ The budget by state, the page's queue, both paths:
 | Before lit | `compiling` without `soft` or `open` | none | the compiles alone, as today |
 | The reveal (lit, not open) | `soft && !open` | **unchanged**: today's rule to the letter, 4 ms (`REVEAL_SHARE`) counted from the frame callback, timers as today (measured and A/B'd by the owner with `?holdreveal`; nothing here is allowed to change what the eye saw) | none |
 | Open, the door still | `open`, nothing wanted, `moving()` count 0 | slices of **8 ms** (`SHARE`) | one a slice |
-| Open, something moving on the page's thread: a journey's opening (`want` set, until `until`), or a frame loop registered through `moving()` (6c.4: the engine's flight loop on the page path, `install.js`'s dive, `door3d.js`'s live door) | `want`, or the `moving()` count | slices of **4 ms** (`REVEAL_SHARE`, the share the reveal proved) | one a slice (hurried as today: a frame between, no 20 ms) |
+| Open, something moving on the page's thread: a journey's opening (`want` set, until `until`), or a frame loop registered through `moving()` (6c.4: the engine's flight loop on the page path, `install.js`'s dive on the page path and its door planets, `door3d.js`'s live door) | `want`, or the `moving()` count | slices of **4 ms** (`REVEAL_SHARE`, the share the reveal proved) | one a slice (hurried as today: a frame between, no 20 ms) |
 | Someone typing | `settings.typingWait`, as today | the slice waits | waits |
 | The worker's queue (`pace("none")`) | 6a.5 | **unchanged**: no slices, no frames, the measures' rest alone | at once |
 | `?pace=frame` | `flags.pace` | **today's rule entire**, for the owner's A/B and the tests' control (as `?holdreveal` is kept for the reveal) | |
@@ -1125,7 +1131,22 @@ hard slices, 0.5 s: the flight's way in 6-7 s after opening where it was 17.9, `
   never twice for one loop. Under `options.requestFrame` (a test's own frames) the same.
 - `assets/door/door3d.js`: around `wake`/`tick` (`raf` set; the loop ends on `dead`, `reduced`, or `!shown()`): the
   live door's loop is moving for as long as it runs, which is `?door3d` only.
-- `assets/js/install.js`: around `wake`/`tick`/`away` (the dive's loop; `failed`, `away()` and `stop` end it).
+- `assets/js/install.js`, two loops, both of which paint on the page's thread every frame (ruled 2026-10-29; the
+  first text ran them together):
+  - **The dive's loop** (`frame`, in the world's shot: `start()` sets `running` and asks the first frame; `stop()`
+    ends it; `frame` ends itself when `failed`): marked in `start()`, **only where the world draws on the page**
+    (`drawnHere()` false; on the worker path the page's frame builds a view and posts it, the drawing is the worker's,
+    and the page's thread is free, as for the flight's `remote-flight.js`); released in `stop()` and where `frame`
+    sets `running` false. A hidden tab does **not** release it: the loop keeps polling, the mark is the loop's and not
+    the frame's, and a hidden tab runs neither frames nor slices, so nothing is lost. The release is once: `stop()`
+    without a `start()`, or twice, releases nothing more.
+  - **The door's planets loop** (`startDoor`: `tick`, `wake`, `away`, `fail`; it draws the worlds at planet size on
+    the door, measured 8 ms a frame on the desktop, the load the 4 ms budget exists for): marked in `wake()` when it
+    asks a frame with none asked (`raf` was 0, `started` and not `failed`); released wherever `tick` returns without
+    asking the next frame (`failed`, `!started`, `!shown()` or `busy()`, where it also calls `away()`) and in
+    `fail()`. So the tab hidden, the door hidden or a dive under way (`busy`) release it, and the `watch` observers'
+    `wake()` marks it again when it is shown. On the worker path `startDoor` returns null (W3), so there is no loop
+    and no mark.
 - `assets/js/main.js`: `FLAGS.pace` from `?pace=`, as `draw` was added (6a.6).
 - `assets/door/README.md`: the `flags` row gains `pace`; "Also exported from `index.js`" gains `moving`; one sentence
   under the chores on the slice. No markup change, so `tools/door-markup.mjs` is not run.
@@ -1186,9 +1207,17 @@ the slice removes is there to begin with. `choresNow()` is read by its own path,
   frame is asked before it starts.
 - S10 the loops mark moving: (a) the engine on the stub page path, `fit-skip-test.mjs`'s bed: `choresNow().moving` is
   1 while `fly(UP)` runs on the virtual clock and 0 after the loop ends, and 0 again after a flight cancelled midway;
-  (b) `install.js`'s world (`world-page-test.mjs`'s bed): 1 after `start()`, 0 after `stop()`, and 0 while the tab is
-  hidden (`away()`); (c) the worker path (`draw-hello-test.mjs`'s bed, the fake answering `up`): the page's `moving`
-  stays 0 through a flight. Each in its existing file's style.
+  (b) the dive's loop on the page path (`world-page-test.mjs`'s bed): 0 before, 1 after `start()`, 0 after `stop()`,
+  1 after `start()` again; the tab then hidden (`document.hidden` true on the stub, a `visibilitychange` dispatched)
+  while the dive runs: **still 1** (the mark is the loop's, not the frame's); `stop()` with the tab hidden: 0; a second
+  `stop()`: still 0, never below. On the worker path (`world-hello-test.mjs`'s bed, the fake answering `up`):
+  `start()` leaves it 0. (c) the worker path for the flight (`draw-hello-test.mjs`'s bed, the fake answering `up`):
+  the page's `moving` stays 0 through a flight. (d) the door's planets loop, in `world-rule-test.mjs`'s bed (the one
+  that reaches `startDoor`, with its rich root and lockup), on the page path: 0 until `ready` has resolved, 1 once the
+  loop has asked a frame, 0 after the tab is hidden and a frame has passed (`tick` returns without asking the next), 1
+  again after it is shown and a frame has passed, 0 while the body carries `departing` (`shown()` false) and 1 when
+  it is removed; control: W3's remote world, where `startDoor` returns null and `moving` stays 0 throughout. Each in
+  its existing file's style.
 - S11 the line: after S1's run `noteChores("x")` says `in N slices` with N the frames asked after open, `(20 soft, 0
   hard)`, and `moving 0 ms`; after S5's, `moving` is greater than 0; under `pace("none")` (D7's bed), `0 slices`.
 - S12 `flags.pace` as a number: `{ pace: "5" }` with 3 ms soft chores: two a slice (0 and 3; 6 is past 5).
