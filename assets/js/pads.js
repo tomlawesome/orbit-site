@@ -28,12 +28,15 @@ const R = "https://github.com/tomlawesome/orbit";
 const DOCS_DIR = "assets/docs/";
 /* the docs' diagrams: Mermaid's own release file (dist/mermaid.min.js of the npm package), kept on the site (#92:
    nothing on the site loads from a third party). This path is the version's one pin: Renovate bumps it (renovate.json),
-   and the bump fails the diagram checks until the named file is added and the old one removed. To add it, check the
-   tarball against the registry's integrity and copy the file out (credits: README.md):
+   and the bump fails the diagram checks until the named file is added and the old one removed. The integrity beside it
+   is the file's sha384: the browser refuses a file that does not match it, and the lint checks it against the file, so
+   a changed file under the same name fails both. To add a version, check the tarball against the registry's integrity,
+   copy the file out (credits: README.md) and set the integrity to the last command's output:
    v=X.Y.Z; curl -sO https://registry.npmjs.org/mermaid/-/mermaid-$v.tgz
    [ "sha512-$(openssl dgst -sha512 -binary mermaid-$v.tgz | base64 -w0)" = "$(npm view mermaid@$v dist.integrity)" ]
-   tar -xzOf mermaid-$v.tgz package/dist/mermaid.min.js > assets/vendor/mermaid-$v.min.js */
-const MERMAID = { src: "assets/vendor/mermaid-12.2.0.min.js" };
+   tar -xzOf mermaid-$v.tgz package/dist/mermaid.min.js > assets/vendor/mermaid-$v.min.js
+   echo "sha384-$(openssl dgst -sha384 -binary assets/vendor/mermaid-$v.min.js | base64 -w0)" */
+const MERMAID = { src: "assets/vendor/mermaid-12.2.0.min.js", integrity: "sha384-8xUhuLNMjW/cI2Dacg3DR4WliYznvIg0LVG1stctThKD/YVrJFI9TNCFxft5NYgp" };
 /* start here: the sections worth a first click, when the import has them */
 const KEYS = ["#docs/readme/quick-start", "#docs/readme/run-with-docker", "#docs/readme/configuration", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
 const SEED = 20260929;
@@ -428,7 +431,7 @@ export function createDocs(pad) {
   /** @type {any} */
   let lib = null;
   const mermaid = createScriptLoader(() => new Promise((resolve, reject) => {
-    const s = document.createElement("script"); s.src = MERMAID.src; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
+    const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
   }).then(() => {
     const dark = document.documentElement.dataset.theme !== "day";
     lib = window.mermaid;

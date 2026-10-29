@@ -578,9 +578,11 @@ export function createInstall(pad, opts = {}) {
       ensure(); if (!world) return false;
       adopt(); size(); if (!(await world.bake())) return false;
       motion = dotAt ? { dot: { ...dotAt, from: dotAt.from ?? fromFor(dotAt.rot ?? null) } } : null; u = k; clock = idle;
+      /* the frame's time is idle's too, so the grain and the motes (uTime's) are the same every time it is drawn */
+      const now = idle * 1000;
       /* a frame of the shot in motion: the one before it, a 60th of a second earlier */
-      if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: performance.now() - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
-      draw(performance.now()); motion = null;
+      if (moving) { const pv = view(Math.max(0, k - 1 / 60 / APPROACH), idle, false, motion?.dot || null); prev = { t: now - 1000 / 60, cam: pv.cam, dist: pv.dist }; } else prev = null;
+      draw(now); motion = null;
       return true;
     },
   };

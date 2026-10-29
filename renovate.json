@@ -36,7 +36,7 @@
       "datasourceTemplate": "npm"
     },
     {
-      "description": "Mermaid, which the docs draw their diagrams with: its release file is kept on the site (#92), and its path in assets/js/pads.js (MERMAID) is the version's one pin. Renovate bumps the path but cannot add the file, so the bump's merge request fails the lint and the diagram checks until the file is added by hand (the command is in pads.js).",
+      "description": "Mermaid, which the docs draw their diagrams with: its release file is kept on the site (#92), and its path in assets/js/pads.js (MERMAID) is the version's one pin. Renovate bumps the path but cannot add the file, so the bump's merge request fails the lint and the diagram checks until the file is added by hand and the integrity beside the path set to its sha384 (the commands are in pads.js; the lint prints the value).",
       "customType": "regex",
       "managerFilePatterns": ["/^assets/js/pads\\.js$/"],
       "matchStrings": ["assets/vendor/(?<depName>mermaid)-(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\.min\\.js"],

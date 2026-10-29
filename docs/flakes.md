@@ -29,14 +29,19 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
 - 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
 
-## docs-planet D1/D2, Chromium: the docs planet misses its wall-clock budget by under 2 s
+## docs-planet D1/D2, Chromium: the docs planet misses its wall-clock budget ([#98](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/98))
 
 Both cases hold the docs planet to a budget (D2: tappable within 20 s of the page opening; D1: within 5 s of install and information) on a shared runner with software GL; the same commit's code passed in dev's live job 20 minutes before each. The merge request's diff cannot reach this test.
 
 - 2026-10-28 · c7bd3ba · pipeline 3071, job 40280 · D2: docs tappable at 21.4 s, want by 20 s (dev's live job was running beside it)
 - 2026-10-28 · c7bd3ba · pipeline 3071, job 40327 (retry) · D1 run 3: docs tappable 5.2 s after install and information, want 5 s
+- 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40991 (the retry) · journey passed; D2 "completion status stuck false": docs labelled and tappable at 24.3 s, want 20 s; shard took 705 s against 517 planned · the third sighting files #98
 
 ## flight-waits W3: a later warm() does not prove the world
 
 - 2026-10-23 · 17824c8 (and dev 8b2d23e) · node-tests.sh under coverage-run.sh, agent host · 0 'flight world: on' lines; 6 of 10 runs with coverage, 2 of 10 without, 4 of 10 on dev's door code
 - Fixed by the next commit: the stub's picture loads on a real timer, and the virtual clock could jump past the picture's limit first; W3 now waits for the new picture before running the clock on (0 of 20 failed; still fails with the door's re-request removed)
+
+## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad
+
+- 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40862 · the click on the install planet never opened #installpad; cc20922 changes only `coverage-floors.json`, and the same shard passed 3 of 3 on 409c39b (pipeline 3106); retried as job 40991

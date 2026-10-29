@@ -211,6 +211,20 @@
       "gates": ["firefox"],
       "seconds": { "firefox": 55 }
     },
+    "world-pixels": {
+      "file": "tools/ci/world-pixels-test.mjs",
+      "groups": ["harness", "worlds"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 40 }
+    },
+    "world-live": {
+      "file": "tools/ci/world-live-test.mjs",
+      "groups": ["page", "worlds"],
+      "browsers": ["firefox"],
+      "gates": ["firefox"],
+      "seconds": { "firefox": 100 }
+    },
     "dropped-warning": {
       "file": "tools/ci/dropped-warning-test.mjs",
       "groups": ["import"],

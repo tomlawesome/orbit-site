@@ -15,10 +15,10 @@
  *   P1e  control: draw=page at 2600 against 2800 differ, so the comparison can fail
  *
  * Each pair also has its own controls, so a case cannot pass for nothing: under draw=worker the console says `flight:
- * drawn in a worker` (not the page's fallback), under draw=page `flight: drawn on the page`, and the picture is not
- * blank. On a failure the count of differing pixels is printed, and the page's picture, the worker's and a diff
- * picture (the differing pixels in red over the page's, dimmed) are written to SHOTS_DIR (default ./shots, which the
- * live:chromium job keeps as an artifact).
+ * drawn in a worker` and never `flight: drawn on the page` (the page's fallback), under draw=page `flight: drawn on the
+ * page`, and the picture is not blank. On a failure the count of differing pixels is printed, and the page's picture,
+ * the worker's and a diff picture (the differing pixels in red over the page's, dimmed) are written to SHOTS_DIR
+ * (default ./shots, which the live:chromium job keeps as an artifact).
  *
  * The software GL draws the same commands the same way on either thread, so none of this depends on the runner's
  * speed. If the two ever differ between contexts without a fault, the test says so and the owner decides a tolerance;
@@ -140,6 +140,7 @@ const keep = (name, files) => {
 const pair = (id, name, kind, at) => judge(id, name, async (want) => {
   const [page, worker] = [await shoot("page", kind, at), await shoot("worker", kind, at)];
   want(worker.said.some((l) => /flight: drawn in a worker/.test(l)), `control: under draw=worker the console never said "flight: drawn in a worker" (it said ${JSON.stringify(worker.said.filter((l) => /flight: drawn/.test(l)))}), so the worker may not have drawn this`);
+  want(!worker.said.some((l) => /flight: drawn on the page/.test(l)), `control: under draw=worker the console also said the flight was drawn on the page (${worker.said.find((l) => /flight: drawn on the page/.test(l))}), a fallback`);
   want(page.said.some((l) => /flight: drawn on the page/.test(l)), `control: under draw=page the console never said "flight: drawn on the page" (it said ${JSON.stringify(page.said.filter((l) => /flight: drawn/.test(l)))})`);
   want(!page.errors.length && !worker.errors.length, `page error: ${page.errors[0] || worker.errors[0]}`);
   const r = await compare(page.png, worker.png);
