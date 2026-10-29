@@ -37,7 +37,7 @@
  * it. The rich weight's two passes (the clouds' field, the cities' glow: voyage.js, cloudField, cityGlow) are drawn
  * by the rich program itself, so they are made once it is there, before its first measure.
  */
-import { chore, fetchOnce, note, quiet, linked, counted, compilesAside, compiledWithin } from "./chores.js";
+import { chore, fetchOnce, note, quiet, linked, counted, compilesAside, compiledWithin, moving } from "./chores.js";
 import { flag } from "./settings.js";
 import { sceneHead, PASS_SWITCH, pictures, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
@@ -348,6 +348,10 @@ export function liveDoor(world) {
 
   /* the clock: twenty frames a second while the door is shown and the page is seen; nothing otherwise */
   let raf = 0, last = 0, prev = 0;
+  /* the loop draws on the page's thread: the chore queue is told for as long as it runs (chores.js moving) */
+  /** @type {(() => void) | null} */
+  let still = null;
+  const rest = () => { still?.(); still = null; };
   const door = /** @type {HTMLElement | null} */ (world.closest("#door"));
   /* and not from the moment a journey begins (the flight draws its own Earth from this one's state; a dive blurs the
      door): the last frame stays as a still, so nothing of the door's costs while the journey comes up */
@@ -356,15 +360,15 @@ export function liveDoor(world) {
   /** @param {number} now */
   function tick(now) {
     raf = 0;
-    if (dead) return;
-    if (!shown()) { prev = 0; return; }
+    if (dead) { rest(); return; }
+    if (!shown()) { prev = 0; rest(); return; }
     clock += prev ? Math.min(now - prev, 100) / 1000 : 0; prev = now;
     if (dirty || (!reduced && now - last >= 48)) { last = now; draw(); }
-    if (!reduced) raf = requestAnimationFrame(tick);
+    if (!reduced) raf = requestAnimationFrame(tick); else rest();
   }
   /* (and only once it is shown: until then the canvas is drawn only to be measured) */
   let seen = false;
-  const wake = () => { if (!raf && prog && seen && !dead) raf = requestAnimationFrame(tick); };
+  const wake = () => { if (!raf && prog && seen && !dead) { raf = requestAnimationFrame(tick); still ??= moving(); } };
 
   /* a measure, after a weight's first frame: three frames, each waited for (a pixel read back, as voyage.js's
      calibrate does), the last two timed (the first may still be finishing the driver's work); their mean (ms) */
@@ -498,7 +502,7 @@ export function liveDoor(world) {
      its canvas goes and the page shows its pictures again (door.css: .world.live) */
   /* (the context itself is let go, so a remount is handed a fresh one: context, above; preventDefault says the page
      takes the loss in hand rather than leaving the canvas for good) */
-  const onLost = (/** @type {Event} */ e) => { e.preventDefault?.(); dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; world.classList.remove("live"); if (ctx?.canvas === canvas) ctx = null; measuredNow(); };
+  const onLost = (/** @type {Event} */ e) => { e.preventDefault?.(); dead = true; if (raf) cancelAnimationFrame(raf); raf = 0; rest(); world.classList.remove("live"); if (ctx?.canvas === canvas) ctx = null; measuredNow(); };
   addEventListener("resize", onResize);
   document.addEventListener("visibilitychange", wake);
   canvas.addEventListener("webglcontextlost", onLost);
@@ -517,7 +521,7 @@ export function liveDoor(world) {
   const destroy = () => {
     dead = true;
     if (raf) cancelAnimationFrame(raf);
-    raf = 0;
+    raf = 0; rest();
     removeEventListener("resize", onResize);
     document.removeEventListener("visibilitychange", wake);
     canvas.removeEventListener("webglcontextlost", onLost);
