@@ -23,7 +23,7 @@ export { gpu, isSoftware, FIT_MS } from "./fitness.js";
 export { drawnAside } from "./fitness.js";
 /* for a host's own worker: the page answered for there (page.js), and its queue run unpaced (chores.js), as draw-worker.js does */
 export { setPage } from "./page.js";
-export { pace } from "./chores.js";
+export { pace, moving } from "./chores.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";
 /* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */

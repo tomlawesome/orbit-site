@@ -136,8 +136,8 @@ async function movingTwice() {
   const one = await batch(ctx, 12, 3);
   r2();
   counts.push(ctx.choresNow().moving);
-  const none = await batch(ctx, 12, 3);
-  return { both, one, none, counts };
+  const neither = await batch(ctx, 12, 3);
+  return { both, one, neither, counts };
 }
 
 async function movingHard() {
@@ -339,7 +339,7 @@ const sliced = (what, ran, total, per, step) => [ran.length === total && same(of
   chk("S5 ... choresNow().moving is 1 while it is held and 0 after the release", once, (r) => [same(r.counts, [1, 0]), `moving ${short(r.counts)}`]);
   chk("S5 moving() called twice: two a slice with both held", twice, (r) => sliced("both held", r.both, 12, 2, 3));
   chk("S5 ... still two a slice after one release", twice, (r) => sliced("one released", r.one, 12, 2, 3));
-  chk("S5 ... three a slice after both", twice, (r) => sliced("both released", r.none, 12, 3, 3));
+  chk("S5 ... three a slice after both", twice, (r) => sliced("both released", r.neither, 12, 3, 3));
   chk("S5 ... choresNow().moving counts 2, 1, 0", twice, (r) => [same(r.counts, [2, 1, 0]), `moving ${short(r.counts)}`]);
   chk("S5 hard chores run one a slice while moving", hardOnes, (r) => sliced("while moving", r.held, 4, 1, 2));
   chk("S5 ... and one a slice after the release", hardOnes, (r) => sliced("after release", r.released, 4, 1, 2));

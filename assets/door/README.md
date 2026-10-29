@@ -46,7 +46,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `pace` (`"frame"`: the chores keep the pacing they had before the slice, a frame and up to 20 ms after every hard chore, for an A/B; a number as a string, `"5"`: the slice's budget in ms where nothing moves, 8 by default; see the chores). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
@@ -371,7 +371,7 @@ The console says `orbit · flight: drawn on the page: <why>`.
 For a host's own worlds and skies, so their work takes its turn with the
 door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
 `noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
-`hurryChores`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
+`hurryChores`, `moving`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
 (`drawnAside()`, for a host that puts its own drawing beside it), the capability probe
@@ -383,6 +383,14 @@ unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
 answers replaced by the worker's) and `pace("none")` (`chores.js`: the rests
 and the one-band-a-frame uploads dropped). All three are optional: a host that
 uses none of them has the door as before.
+Once the door is open the chores run in slices (ADR-0004 6c): soft chores back
+to back for 8 ms counted from the slice's first start (never cutting one), then
+one frame, the next slice after it; a hard chore is a slice of its own. While
+something moves on the page's thread the budget is 4 ms: a host whose own frame
+loop does so calls `moving()` when it starts and the function it returns when
+it stops (counted, so several loops may); the door's own loops do. Additive:
+a host that never calls it keeps the 8 ms budget, and a chore's `rest` is read
+as "a frame" after open except for a measure's.
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the
