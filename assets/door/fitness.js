@@ -166,3 +166,28 @@ export function drawnAside() {
   page.note(drawn ? "orbit · flight: drawn in a worker" : `orbit · flight: drawn on the page: ${why}`);
   return drawn;
 }
+
+/*
+ * WHERE THE PICTURES ARE DECODED (ADR-0004 6e.1). Firefox decodes a blob's picture (createImageBitmap(blob)) on the page's
+ * thread, whichever thread asked, and stalls it for the decode's length; its own image loader (an <img> and decode())
+ * does the same work on its decode pool. So where the family tell says Firefox, the pictures go through the loader
+ * (page.js: decode); everywhere else, today's route. Decided once a page and said once when taken. `decode: "img"` takes
+ * the loader whatever the rest says, `decode: "blob"` keeps today's route (the A/B control, and the tests' forced paths).
+ * Otherwise the tell of drawnWhy, without the worker's clauses: the gate accepted the page (forced or not), it compiles
+ * on its thread (parallel false), and no navigator.userAgentData.
+ */
+/** @type {boolean | undefined} */
+let decoded;
+/** whether the pictures are decoded by the browser's image loader @returns {boolean} */
+export function decodeAside() {
+  if (decoded !== undefined) return decoded;
+  const asked = flag("decode");
+  let take = asked === "img";
+  if (!asked) {
+    const g = gpu();
+    take = !!g && !g.parallel && !("userAgentData" in (globalThis.navigator ?? {}));
+  }
+  decoded = take;
+  if (take) page.note("orbit · pictures: decoded by the image loader");
+  return take;
+}

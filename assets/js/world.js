@@ -16,7 +16,7 @@
  * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
  * view can carry its look from wherever it is built (ADR-0004 6b.2).
  */
-import { fetchOnce, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
+import { fetchOnce, fetchBitmap, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -634,19 +634,16 @@ export function createWorld(canvas, opts = {}) {
   /* a failed load is not kept: bake() reports it once, and the next bake() asks for the map again (as fetchOnce does for
      the fetch) */
   let mapLoad = null;
-  const loadMap = () => mapLoad || (mapLoad = fetchOnce(MAP)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const loadMap = () => mapLoad || (mapLoad = fetchBitmap(MAP, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); }));
   loadMap().catch(() => {});   /* asked for now; a failure is bake()'s to report */
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const loadRings = fetchOnce(RINGS)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
+  const loadRings = fetchBitmap(RINGS, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) })
     /* (in a texture of its own, the drawn rings' let go once it is in) */
     .then((img) => banded(img, "rings", gl.CLAMP_TO_EDGE).then((t) => { gl.deleteTexture(ringT); ringT = t; }),
       (e) => warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
-  const loadMoon = fetchOnce(MOON)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const loadMoon = fetchBitmap(MOON, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
       (e) => warn("orbit: the moon is drawn, not photographed", e));
   /* the galaxy painted, a strip a frame */

@@ -11,7 +11,7 @@
 import { setPage, page } from "./page.js";
 import { configure } from "./settings.js";
 import { createFlight, unwireProfile } from "./engine.js";
-import { fetchOnce, openChores, pace } from "./chores.js";
+import { fetchBitmap, openChores, pace } from "./chores.js";
 import { gpu } from "./fitness.js";
 
 /** @typedef {{ add(face: FontFace): unknown }} FontSet */
@@ -66,7 +66,7 @@ function hello(m) {
     picture(url, loaded) {
       /** @type {ImageBitmap | null} */
       let bitmap = null, done = false;
-      const settled = fetchOnce(url).then((blob) => createImageBitmap(blob))
+      const settled = fetchBitmap(url)
         .then((b) => { bitmap = b; loaded(b, b.width, b.height); }, () => {}).finally(() => { done = true; });
       return { settled, done: () => done, drawable: () => bitmap };
     },

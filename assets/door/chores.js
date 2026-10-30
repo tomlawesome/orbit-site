@@ -79,7 +79,7 @@ export const holdReveal = () => !!flag("holdreveal");
 
 import { settings, flag } from "./settings.js";
 import { gpu } from "./fitness.js";
-import { page } from "./page.js";
+import { page, decodeHere } from "./page.js";
 /* whether this browser compiles shaders in the background (KHR_parallel_shader_compile). Where it does not (Firefox),
    every compile freezes the page for as long as it takes (measured: even the compositor's animations stall), so each
    is a chore tagged "compile", all of them done while the first light's ring runs, before the door is lit
@@ -380,6 +380,44 @@ export function fetchOnce(url) {
     p.catch(() => { if (fetched.get(key) === p) fetched.delete(key); });
   }
   return /** @type {Promise<Blob>} */ (fetched.get(key));
+}
+
+/**
+ * A picture fetched once (fetchOnce) and decoded by this thread's route (page.js: decode; ADR-0004 6e): the browser's image
+ * loader where fitness.js says so, createImageBitmap(blob, options) elsewhere, a worker's page asked in a worker. A
+ * decode is never a chore, as a download is not; the caller's chore is what puts the bitmap on the GPU.
+ * @param {string} url @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>}
+ */
+export function fetchBitmap(url, options) { return fetchOnce(url).then((blob) => page.decode(blob, options)); }
+/** a blob this thread has, decoded as fetchBitmap does (a host answering a worker's ask) @param {Blob} blob @param {ImageBitmapOptions} [options] */
+export const decodeBlob = (blob, options) => page.decode(blob, options);
+
+/**
+ * A worker's way to the page's decoder (ADR-0004 6e.2): `decode` for page.decode (setPage) posts the blob up as a `decode`
+ * ask and resolves on the page's `decoded` answer (the bitmap, transferred); `heard` is given each `decoded` message. An
+ * error answer, no answer in PICTURE_WAIT (the bound a download has) or an answer with no bitmap is made good in the
+ * worker, by createImageBitmap(blob, options); an answer for an ask no longer waiting changes nothing.
+ * @param {(message: object) => void} post
+ */
+export function askPage(post) {
+  let ids = 0;
+  /** @type {Map<number, (m: { bitmap?: ImageBitmap }) => void>} */
+  const waiting = new Map();
+  return {
+    /** @param {Blob} blob @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>} */
+    decode: (blob, options) => new Promise((resolve) => {
+      const id = ++ids;
+      /** @type {ReturnType<typeof setTimeout> | undefined} */
+      let timer;
+      const end = () => { waiting.delete(id); clearTimeout(timer); };
+      const here = () => { end(); resolve(decodeHere(blob, options)); };
+      waiting.set(id, (m) => { if (m.bitmap) { end(); resolve(m.bitmap); } else here(); });
+      timer = setTimeout(here, PICTURE_WAIT);
+      post({ type: "decode", id, blob, options });
+    }),
+    /** @param {{ id: number, bitmap?: ImageBitmap }} m */
+    heard(m) { waiting.get(m.id)?.(m); },
+  };
 }
 
 /** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as

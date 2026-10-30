@@ -19,7 +19,7 @@
  * NASA Earth Observatory. Reduced to small maps for here (img/flight in this folder).
  */
 
-import { chore, fetchOnce, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
+import { chore, fetchOnce, fetchBitmap, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
@@ -110,8 +110,7 @@ function sharpen() {
   if (!todo.length) return;
   sharp.busy = true;
   for (const w of todo) w.served = true;
-  fetchOnce(/** @type {Strip} */ (strip).url)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  fetchBitmap(/** @type {Strip} */ (strip).url, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => chore(() => {
       for (const w of todo) { try { if (!w.left) /** @type {StripTake} */ (w.take)(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
       /* the fade's start, the same moment for all of them */
@@ -1316,8 +1315,7 @@ export function createVoyage(under, { restFor }) {
   /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
      only once its mipmaps are made */
   /** @param {string} key @returns {Promise<void>} */
-  const load = (key) => fetchOnce(pictures()[key])
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       /** @type {[number, number]} */

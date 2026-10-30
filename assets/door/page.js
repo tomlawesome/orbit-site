@@ -5,6 +5,8 @@
  * reads the real thing, exactly as those modules did themselves. Read at call time (`page.size()`), never kept, so what
  * answers can be changed once per thread before anything is drawn.
  */
+import { decodeAside } from "./fitness.js";
+
 /**
  * A picture asked for (picture): settled once it has loaded or failed.
  * @typedef {object} Picture
@@ -37,6 +39,17 @@ function yielded(fn) {
   hopSend.postMessage(0);
 }
 
+/** a blob decoded by the browser, on whichever thread it chooses: the one route that is correct everywhere
+    @param {Blob} blob @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>} */
+export const decodeHere = (blob, options) => createImageBitmap(blob, options);
+/** the options a wrap from an <img> may carry: the resizing alone @param {ImageBitmapOptions} [options] @returns {ImageBitmapOptions} */
+function resizeOnly({ resizeWidth, resizeHeight, resizeQuality } = {}) {
+  return {
+    ...(resizeWidth === undefined ? {} : { resizeWidth }), ...(resizeHeight === undefined ? {} : { resizeHeight }),
+    ...(resizeQuality === undefined ? {} : { resizeQuality }),
+  };
+}
+
 export const page = {
   /** the window's size in CSS px, and its pixel ratio as the browser gives it (the callers cap it)
       @returns {{ W: number, H: number, dpr: number }} */
@@ -61,17 +74,39 @@ export const page = {
   yield: (fn) => yielded(fn),
   /** @param {number} id */
   cancelFrame: (id) => cancelAnimationFrame(id),
-  /** a picture for drawImage, asked for now; `loaded(img, w, h)` once it has come (not if it fails); null where
-      there are no pictures
+  /** a picture for drawImage, asked for now; `loaded(img, w, h)` once it has come and been decoded (not if it fails to
+      load; one whose decode fails is offered as it is), so the first drawImage never decodes it on this thread; null
+      where there are no pictures
       @param {string} url @param {(img: CanvasImageSource, w: number, h: number) => void} loaded @returns {Picture | null} */
   picture(url, loaded) {
     if (typeof Image === "undefined") return null;
     const img = new Image();
     /** @type {Promise<void>} */
-    const settled = new Promise((r) => { img.addEventListener("load", () => r(), { once: true }); img.addEventListener("error", () => r(), { once: true }); });
-    img.addEventListener("load", () => loaded(img, img.naturalWidth, img.naturalHeight), { once: true });
+    const settled = new Promise((r) => {
+      img.addEventListener("load", () => {
+        img.decode().catch(() => {}).then(() => { try { loaded(img, img.naturalWidth, img.naturalHeight); } finally { r(); } });
+      }, { once: true });
+      img.addEventListener("error", () => r(), { once: true });
+    });
     img.src = url;
     return { settled, done: () => img.complete, drawable: () => (img.complete && img.naturalWidth ? img : null) };
+  },
+  /** a fetched picture as an ImageBitmap (chores.js: fetchBitmap). Under the image-loader route (fitness.js: decodeAside)
+      the browser's own background decode: an <img> on a blob: URL, decode() awaited, the bitmap wrapped from it, so the
+      page's thread is not held; only the resize options go to the wrap, as any other makes Firefox decode again. A decode or
+      a wrap that fails is made the other way. Elsewhere createImageBitmap(blob, options) as it always was. A worker's adapter
+      (draw-worker.js) asks the page instead; with no <img> here the blob is decoded here
+      @param {Blob} blob @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>} */
+  async decode(blob, options) {
+    if (typeof Image === "undefined" || !decodeAside()) return decodeHere(blob, options);
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+      await img.decode();
+      return await createImageBitmap(img, resizeOnly(options));
+    } catch { return await decodeHere(blob, options); } finally { URL.revokeObjectURL(url); }
   },
   /** a scratch canvas @param {number} w @param {number} h @returns {HTMLCanvasElement} */
   canvas(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; },
