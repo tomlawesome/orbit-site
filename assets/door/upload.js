@@ -40,6 +40,8 @@ const say = () => !!flag("door3d");
  * @property {WebGLProgram} p
  * @property {WebGLShader[]} shaders
  * @property {WebGLSync | null} sync the fence behind the work
+ * @property {WebGLFramebuffer} fb the probe's own framebuffer (a 1x1 renderbuffer)
+ * @property {WebGLRenderbuffer} rb
  */
 /** @type {WeakMap<WebGL2RenderingContext, Promise<boolean>>} */
 const probes = new WeakMap();
@@ -53,7 +55,7 @@ void main(){ o = vec4(0.0); }`;
 /** @param {WebGL2RenderingContext} gl @returns {() => void} */
 function keepState(gl) {
   const was = { unit: gl.getParameter(gl.ACTIVE_TEXTURE), program: gl.getParameter(gl.CURRENT_PROGRAM), vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING),
-    discard: gl.isEnabled(gl.RASTERIZER_DISCARD) };
+    discard: gl.isEnabled(gl.RASTERIZER_DISCARD), fb: gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) };
   gl.activeTexture(gl.TEXTURE0);
   const tex = gl.getParameter(gl.TEXTURE_BINDING_2D), tf = gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING), read = gl.getParameter(gl.COPY_READ_BUFFER_BINDING);
   return () => {
@@ -61,15 +63,18 @@ function keepState(gl) {
     gl.useProgram(was.program); gl.bindVertexArray(was.vao);
     gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, tf); gl.bindBuffer(gl.COPY_READ_BUFFER, read);
     gl.bindTexture(gl.TEXTURE_2D, tex); gl.activeTexture(was.unit);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, was.fb);
   };
 }
-/* the bitmap put on the GPU and its first texel sent to a buffer: what was made, with a fence behind it */
+/* the bitmap put on the GPU and its first texel sent to a buffer: what was made, with a fence behind it. The draw goes to
+   a framebuffer of its own: a draw with the screen's bound, even one that writes no pixel, makes Chromium show the
+   canvas again, cleared, so a still page went black after it (#101) */
 /** @param {WebGL2RenderingContext} gl @param {ImageBitmap} bitmap @returns {Made} */
 function submitTexel(gl, bitmap) {
   const T = gl.TEXTURE_2D, B = gl.TRANSFORM_FEEDBACK_BUFFER;
   const restore = keepState(gl);
   /** @type {Made} */
-  const made = { t: gl.createTexture(), buf: gl.createBuffer(), p: gl.createProgram(), shaders: [], sync: null };
+  const made = { t: gl.createTexture(), buf: gl.createBuffer(), p: gl.createProgram(), shaders: [], sync: null, fb: gl.createFramebuffer(), rb: gl.createRenderbuffer() };
   try {
     for (const [type, src] of /** @type {[number, string][]} */ ([[gl.VERTEX_SHADER, TF_VERT], [gl.FRAGMENT_SHADER, TF_FRAG]])) {
       const x = /** @type {WebGLShader} */ (gl.createShader(type)); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(made.p, x); made.shaders.push(x);
@@ -80,6 +85,8 @@ function submitTexel(gl, bitmap) {
     gl.bindTexture(T, made.t); gl.texImage2D(T, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
     gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(T, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.bindBuffer(B, made.buf); gl.bufferData(B, 8, gl.DYNAMIC_READ); gl.bindBufferBase(B, 0, made.buf);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, made.rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, 1, 1); gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, made.fb); gl.framebufferRenderbuffer(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, made.rb);
     gl.bindVertexArray(null); gl.useProgram(made.p); gl.uniform1i(gl.getUniformLocation(made.p, "t"), 0);
     gl.enable(gl.RASTERIZER_DISCARD);
     gl.beginTransformFeedback(gl.POINTS); gl.drawArrays(gl.POINTS, 0, 1); gl.endTransformFeedback();
@@ -93,7 +100,7 @@ function submitTexel(gl, bitmap) {
 /** @param {WebGL2RenderingContext} gl @param {Made} made */
 function letGo(gl, made) {
   if (made.sync) gl.deleteSync(made.sync);
-  gl.deleteTexture(made.t); gl.deleteBuffer(made.buf); for (const x of made.shaders) gl.deleteShader(x); gl.deleteProgram(made.p);
+  gl.deleteTexture(made.t); gl.deleteBuffer(made.buf); gl.deleteFramebuffer(made.fb); gl.deleteRenderbuffer(made.rb); for (const x of made.shaders) gl.deleteShader(x); gl.deleteProgram(made.p);
 }
 /* red and green of the texel, once the fence has passed (never waited for longer than the cap) */
 /** @param {WebGL2RenderingContext} gl @param {Made} made @returns {Promise<Float32Array>} */
@@ -169,9 +176,13 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
      for a picture that will never be drawn (a lost context: nothing to delete) */
   /** @param {WebGLTexture | null} t */
   const drop = (t) => { if (t) try { gl.deleteTexture(t); } catch { /* fine */ } };
+  /* each chore's first step: a context lost while the chore waited its turn (the world let go, #101) fails the upload
+     before any GPU call, the guard the WebGL context-loss guidance asks for */
+  const alive = () => { if (gl.isContextLost()) throw new Error(`upload: ${name}: the context was lost`); };
   /* whole, in one ordinary chore, its mipmaps with it: with ?holdreveal, where a cut picture's crop is not honoured, or
      in a queue with no page to keep moving (chores.js: pace) */
   const whole = () => chore(() => {
+    try { alive(); } catch (e) { if (!keep) bitmap.close?.(); throw e; }
     const t = gl.createTexture(); gl.bindTexture(T, t);
     try {
       gl.texImage2D(T, 0, internal, format, type, bitmap);
@@ -202,6 +213,7 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
     /* a band put in, in its own soft chore (the texture made with the first); how long the copy took (ms) */
     /** @param {Band} band @returns {Promise<number>} */
     const put = ({ y, n, bm }) => chore(() => {
+      alive();
       if (!t) {
         t = gl.createTexture(); gl.bindTexture(T, t);
         gl.texImage2D(T, 0, internal, w, h, 0, format, type, null);
@@ -237,6 +249,6 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
       drawable?.(/** @type {WebGLTexture} */ (/** @type {unknown} */ (t)));
       return /** @type {WebGLTexture} */ (/** @type {unknown} */ (t));
     })();
-    return mips ? bandsIn.then((tx) => chore(() => { try { levels(tx); } catch (e) { drop(tx); throw e; } return tx; }, 60, tag)) : bandsIn;
+    return mips ? bandsIn.then((tx) => chore(() => { try { alive(); levels(tx); } catch (e) { drop(tx); throw e; } return tx; }, 60, tag)) : bandsIn;
   }
 }

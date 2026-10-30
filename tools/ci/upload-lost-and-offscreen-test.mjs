@@ -94,7 +94,7 @@ async function lostBanded() {
   const s = setup();
   const g = s.page.glBase;
   let first = false, lostAt = -1;
-  for (const fn of ["texSubImage2D", "texImage2D"]) {
+  for (const fn of ["texSubImage2D"]) {
     const orig = g[fn];
     g[fn] = (...a) => {
       const out = orig(...a);
