@@ -36,9 +36,12 @@
  *        seen to read the page's own queue (it runs exactly one here, the docs chart: a one-a-frame bound could never
  *        trip on it, so it is checked in 5). The long tasks after lit, and before it, are logged, never judged.
  *   5    ?gpu=force: a webgl2 context without the caveat, #warpgl, and the install world logs `install: ready`;
- *        with the readying run through (the queue at rest for 60 frames), no two non-soft chores start in one frame
- *        (chores.js: the next waits for the frame after one ends; soft ones may share a frame while its share lasts,
- *        a time, so they are not bounded), and none but a compile or a soft one before open. A start is known when
+ *        with the readying run through (the queue at rest for 60 frames), non-soft chores start one a frame, or one a
+ *        backstop in a frame the browser let run long (ADR-0004 6d.6): a frame holding two or more must have lasted
+ *        over FRAME_WAIT (50 ms, measured between the page's own frame callbacks) and holds at most
+ *        1 + floor(length / FRAME_WAIT) of them, and the chores line's `backstops` is at least the extra starts counted
+ *        (soft ones may share a frame while its share lasts, a time, so they are not bounded), and none but a compile
+ *        or a soft one before open. A start is known when
  *        the chore was queued at the last frame and is gone now (queuedSoft says which kind); one queued and started
  *        within a frame is not judged, since a frame's starts cannot be ordered from outside. At least HARD_SEEN
  *        non-soft starts must be known, else the bound proved nothing (the constant says why its value)
@@ -131,6 +134,9 @@ const RECORD = () => {
 const COUNT = () => {
   const rec = window.__freeze;
   rec.chores = { frames: 0, starts: [], error: null, seen: null };
+  /* the page's own frame callbacks, to measure a frame's length (6d.6): a start entry's `len` is the time from the
+     previous callback to the one that saw it */
+  let tickAt = performance.now();
   rec.uploads = [];
   for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
     if (!C) continue;
@@ -147,6 +153,9 @@ const COUNT = () => {
       const tick = () => {
         const q = choresNow();
         rec.chores.frames++;
+        const now = performance.now();
+        const len = now - tickAt;
+        tickAt = now;
         rec.chores.seen = { started: q.started, open: q.open };
         /* frames in a row with nothing queued or running (the queue at rest: what a wait for it reads) */
         rec.chores.rest = q.running || q.queued.length ? 0 : (rec.chores.rest || 0) + 1;
@@ -156,7 +165,7 @@ const COUNT = () => {
           for (const k of items(last)) left.set(k, (left.get(k) || 0) + 1);
           for (const k of items(q)) if (left.get(k)) left.set(k, left.get(k) - 1);
           const known = [...left].flatMap(([k, n]) => Array(n).fill(k));
-          rec.chores.starts.push({ at: performance.now(), n: q.started - last.started, open: q.open, known });
+          rec.chores.starts.push({ at: now, n: q.started - last.started, open: q.open, known, len });
         }
         last = q;
         requestAnimationFrame(tick);
@@ -194,6 +203,25 @@ const webgl2 = (s) => s.gl.filter((c) => c.type === "webgl2");
 const HARD_SEEN = 8;
 const hard = (f) => f.known.filter((k) => k.startsWith("hard "));
 const closedHard = (starts) => starts.filter((f) => !f.open && hard(f).some((k) => !/^hard compile(\+|$)/.test(k))).map((f) => `${Math.round(f.at)} ms: ${f.known.join(", ")}`);
+/* 5's bound on non-soft starts in one frame (ADR-0004 6d.6): a window is one frame or one backstop firing, and the
+   backstop (chores.js FRAME_WAIT) fires 50 ms after a share. A frame holding two or more must have lasted longer than
+   that, and holds at most 1 + floor(length / FRAME_WAIT) of them. Returns the frames that break it, as text, and the
+   number of extra starts (beyond the first in each frame) counted */
+const FRAME_WAIT = 50;
+const crowding = (starts) => {
+  let extra = 0;
+  const broken = [];
+  for (const f of starts) {
+    const n = hard(f).length;
+    if (n < 2) continue;
+    extra += n - 1;
+    const allowed = f.len > FRAME_WAIT ? 1 + Math.floor(f.len / FRAME_WAIT) : 1;
+    if (n > allowed) broken.push(`${Math.round(f.at)} ms: frame of ${Math.round(f.len)} ms held ${n} (at most ${allowed}): ${f.known.join(", ")}`);
+  }
+  return { broken, extra };
+};
+/* the most `backstops N` any "chores at ..." console line reports (the figure counts from the start of the page) */
+const backstopsSaid = (log) => Math.max(0, ...log.console.map((c) => /\bchores at\b.*\bbackstops (\d+)/.exec(c.text)).filter(Boolean).map((m) => Number(m[1])));
 const said = (log, re) => log.console.filter((c) => re.test(c.text));
 
 /* A scenario: a name, and a function that states what must be so with want(); a throw is a problem too. want.gpu():
@@ -352,8 +380,11 @@ try {
       const hardSeen = opened.reduce((a, f) => a + hard(f).length, 0);
       info(`chores: ${ch.seen?.started} started over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
       want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores known to start after the queue opened (else this proves nothing) -- ${hardSeen}`);
-      const crowded = ch.starts.filter((f) => hard(f).length > 1).map((f) => `${Math.round(f.at)} ms: ${f.known.join(", ")}`);
-      want(crowded.length === 0, `no two non-soft chores start in one frame (a frame apart: the next waits for the frame after one ends) -- ${short(crowded)}`);
+      const { broken, extra } = crowding(ch.starts);
+      const backstops = backstopsSaid(log);
+      info(`frames holding two or more non-soft starts: ${ch.starts.filter((f) => hard(f).length > 1).map((f) => `${Math.round(f.len)} ms x${hard(f).length}`).join(", ") || "none"}; extra starts ${extra}; backstops said ${backstops}`);
+      want(broken.length === 0, `a frame with two or more non-soft starts lasted over ${FRAME_WAIT} ms and holds at most 1 + floor(length / ${FRAME_WAIT}) of them (frames of ${FRAME_WAIT} ms or less hold one) -- ${short(broken)}`);
+      want(backstops >= extra, `the chores line's backstops is at least the extra non-soft starts counted -- backstops ${backstops}, extra starts ${extra}`);
       const early = closedHard(ch.starts);
       want(early.length === 0, `no chore but a compile or a soft one starts before the queue is opened (the reveal done) -- ${short(early)}`);
     });

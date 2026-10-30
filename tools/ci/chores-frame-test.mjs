@@ -9,8 +9,9 @@
  *       callback's time, the chores of one share have no yield and no timer between them, at most 4 frames asked
  *   B2  the window never cuts a chore: chores of 5 ms run two a frame (starts 0 and 5 ms into the callback), chores of
  *       9 ms one a frame
- *   B3  a hard chore (rest 60) then a soft one: `timer 20`, then `frame`, the soft chore starting at that callback
- *       with no yield; a measure (rest 200): `timer 200`, then `frame`
+ *   B3  a hard chore (rest 60) then a soft one: `timer 20`, then a frame or the backstop, whichever first (on the
+ *       stub's healthy frames it is the frame), the soft chore starting at that callback with no yield; a measure
+ *       (rest 200): `timer 200`, then likewise
  *   B4  frames absent: every chore still runs, a share per 50 ms (the backstop), `backstops 4` and `frames 4` in the
  *       line; frames 200 ms late: all ten run within 300 ms, `backstops` 3 or more
  *   B5  healthy frames: `backstops 0`, and no share begins 50 ms after the last one's end
@@ -21,6 +22,14 @@
  *       20 ms`); `resting` within 1 ms of 0 in each
  *   B9  a chore arriving while the window is open joins it, in a task of the arrival's own (never synchronously, no
  *       frame, no yield); one arriving after the window waits for a frame
+ *   B11 hard chores (3 ms, rest 60) on slow and absent frames (ADR-0004 6d.6): frames 200 ms late, two queued and
+ *       opened: the second starts 70 ms (within 1 ms) after the first ended, from the backstop (`backstops` 1 or more),
+ *       with no frame callback between them; hurried, 50 ms; frames absent, six all run, each 70 ms after the last,
+ *       `backstops 6`; healthy 16 ms frames: the second starts at the first frame callback after the 20 ms rest, never
+ *       before it, `backstops 0`. (The control, today's code 792b724 with frames absent, never starts the second: not
+ *       asserted here)
+ *   B12 two hard chores never share one window: healthy frames, hard chores (1 ms, rest 60) queued three deep: each
+ *       starts in a later frame callback than the one before, never 1 ms after it in the same window
  *   B10 `moving`: exported; while held (by hand, or by a page-path flight's loop) the window is 4 ms (two 3 ms chores
  *       a frame) and `choresNow().moving` is 1; released, at the loop's end, or after `reset()`, 8 ms (three a frame)
  *       and 0; on the worker path `moving` stays 0 and the page's queue stays at 8 ms
@@ -113,6 +122,20 @@ async function hardThenSoft(rest) {
   await ctx.clock.advance(5000);
   ctx.door.noteChores("x");
   return { ran, cb: ctx.log.cb.slice(), lines: lineOf(ctx.page) };
+}
+
+/* B11/B12: n hard chores (tag "hard", rest 60) of `dur` ms, queued and opened; `hurry` hurries their tag ("flight") */
+async function hardRun(n, { dur = 3, frames = "stub", hurry = false, settle = 5000 } = {}) {
+  const ctx = await setup({ frames });
+  const ran = [];
+  const tag = hurry ? "flight" : "hard";
+  for (let i = 0; i < n; i++) ctx.door.chore(rec(ctx, ran, `h${i}`, dur), 60, tag);
+  ctx.reset();
+  ctx.door.openChores();
+  if (hurry) ctx.door.hurryChores("flight");
+  await ctx.clock.advance(settle);
+  ctx.door.noteChores("x");
+  return { ran, cb: ctx.log.cb.slice(), timers: ctx.log.timers.slice(), lines: lineOf(ctx.page) };
 }
 
 async function reveal(n, dur, delay) {
@@ -236,6 +259,11 @@ const CASES = {
   b2b: () => run(4, 9, { delay: 6 }),
   b3a: () => hardThenSoft(60),
   b3b: () => hardThenSoft(200),
+  b11a: () => hardRun(2, { frames: "slow" }),
+  b11b: () => hardRun(2, { frames: "slow", hurry: true }),
+  b11c: () => hardRun(6, { frames: "absent" }),
+  b11d: () => hardRun(2),
+  b12: () => hardRun(3, { dur: 1 }),
   b4a: () => run(10, 3, { frames: "absent" }),
   b4b: () => run(10, 3, { frames: "slow", settle: 3000 }),
   b5: () => run(12, 3, { delay: 6 }),
@@ -308,8 +336,8 @@ for (const [id, rest, ask] of [["b3a", 60, 20], ["b3b", 200, 200]]) {
   const r = runCase(import.meta.url, id);
   const name = rest === 60 ? "a hard chore (rest 60)" : "a measure (rest 200)";
   chk(`B3 control: ${name} and the soft chore after it both ran, one \`chores at x\` line`, r, (r) => [r.ran.length === 2 && r.lines.length === 1, `${r.ran.length} ran; ${shown(r)}`]);
-  chk(`B3 after ${name} the order is \`timer ${ask}\`, then \`frame\` (today: frame, then timer)`, r, (r) => [JSON.stringify(r.ran[1].since) === JSON.stringify([`timer ${ask}`, "frame"]), JSON.stringify(r.ran[1].since)]);
-  chk(`B3 the soft chore starts at that frame's callback, with no yield since ${name}`, r, (r) => [atCb(r.cb, r.ran[1].at) && r.ran[1].at > r.ran[0].at && r.ran[1].yields === r.ran[0].yields, `hard at ${r.ran[0].at}, soft at ${r.ran[1].at}, callbacks ${JSON.stringify(r.cb)}, yields ${r.ran[0].yields} then ${r.ran[1].yields}`]);
+  chk(`B3 after ${name} the order is \`timer ${ask}\`, then a frame or the backstop, whichever first (here, healthy frames: the frame)`, r, (r) => [JSON.stringify(r.ran[1].since) === JSON.stringify([`timer ${ask}`, "frame"]), JSON.stringify(r.ran[1].since)]);
+  chk(`B3 on healthy frames the soft chore starts at that frame's callback, with no yield since ${name}`, r, (r) => [atCb(r.cb, r.ran[1].at) && r.ran[1].at > r.ran[0].at && r.ran[1].yields === r.ran[0].yields, `hard at ${r.ran[0].at}, soft at ${r.ran[1].at}, callbacks ${JSON.stringify(r.cb)}, yields ${r.ran[0].yields} then ${r.ran[1].yields}`]);
 }
 {
   const r = runCase(import.meta.url, "b4a");
@@ -362,6 +390,44 @@ for (const [id, rest, ask] of [["b3a", 60, 20], ["b3b", 200, 200]]) {
 {
   const r = runCase(import.meta.url, "b4a");
   chk("B8 after B4's run `timers` counts rests alone (0) and `resting` is within 1 ms of 0", r, (r) => { const t = lineTimers(r), [ok, d] = restingOk(r); return [!!t && t[0] === 0 && ok, `${text(t, "timers")}; ${d}`]; });
+}
+const endOf = (c) => c.at + c.dur;
+const cbBetween = (cb, a, b) => cb.filter((c) => c > a + 0.5 && c < b - 0.5);
+const gapsAfterEnd = (ran) => ran.slice(1).map((c, i) => +(c.at - endOf(ran[i])).toFixed(2));
+const near = (x, y) => Math.abs(x - y) <= 1;
+{
+  const r = runCase(import.meta.url, "b11a");
+  chk("B11 control: frames 200 ms late, both hard chores (3 ms, rest 60) ran and the queue printed one line", r, (r) => [r.ran.length === 2 && r.lines.length === 1, `${r.ran.length} ran; ${shown(r)}`]);
+  chk("B11 frames 200 ms late: the second hard chore starts 70 ms after the first ended (20 ms rest, 50 ms backstop)", r, (r) => { const g = gapsAfterEnd(r.ran); return [g.length === 1 && near(g[0], 70), `gap after the first's end ${JSON.stringify(g)}`]; });
+  chk("B11 frames 200 ms late: no frame callback fell between the two hard chores, and `backstops` is 1 or more", r, (r) => { const b = lineBackstops(r); return [r.ran.length === 2 && cbBetween(r.cb, endOf(r.ran[0]), r.ran[1].at).length === 0 && !!b && b[0] >= 1, `callbacks between ${JSON.stringify(r.ran.length === 2 ? cbBetween(r.cb, endOf(r.ran[0]), r.ran[1].at) : "?")}; ${text(b, "backstops")}`]; });
+}
+{
+  const r = runCase(import.meta.url, "b11b");
+  chk("B11 control: hurried, frames 200 ms late, both hard chores ran", r, (r) => [r.ran.length === 2, `${r.ran.length} ran; ${shown(r)}`]);
+  chk("B11 hurried, frames 200 ms late: the second hard chore starts 50 ms after the first ended", r, (r) => { const g = gapsAfterEnd(r.ran); return [g.length === 1 && near(g[0], 50), `gap after the first's end ${JSON.stringify(g)}`]; });
+}
+{
+  const r = runCase(import.meta.url, "b11c");
+  chk("B11 frames absent: all six hard chores run (the control, today's code, never starts the second)", r, (r) => [r.ran.length === 6, `${r.ran.length} of 6 ran after 5000 ms`]);
+  chk("B11 frames absent: each hard chore starts 70 ms after the last one ended", r, (r) => { const g = gapsAfterEnd(r.ran); return [g.length === 5 && g.every((x) => near(x, 70)), `gaps after each end ${JSON.stringify(g)}`]; });
+  chk("B11 frames absent: the line reads `backstops 6`", r, (r) => { const b = lineBackstops(r); return [!!b && b[0] === 6, `${text(b, "backstops")}: ${shown(r)}`]; });
+}
+{
+  const r = runCase(import.meta.url, "b11d");
+  chk("B11 control: healthy frames, both hard chores ran and frame callbacks were logged", r, (r) => [r.ran.length === 2 && r.cb.length > 0, `${r.ran.length} ran; callbacks ${JSON.stringify(r.cb)}`]);
+  chk("B11 healthy frames: the second hard chore starts at the first frame callback after the 20 ms rest, never before it", r, (r) => {
+    if (r.ran.length !== 2) return [false, `${r.ran.length} ran`];
+    const ready = endOf(r.ran[0]) + 20;
+    return [atCb(r.cb, r.ran[1].at) && r.ran[1].at >= ready - 0.5 && cbBetween(r.cb, ready, r.ran[1].at).length === 0, `first ended ${endOf(r.ran[0])}, rest over ${ready}, second at ${r.ran[1].at}; callbacks ${JSON.stringify(r.cb)}`];
+  });
+  chk("B11 healthy frames: the line reads `backstops 0`", r, (r) => { const b = lineBackstops(r); return [!!b && b[0] === 0, `${text(b, "backstops")}: ${shown(r)}`]; });
+}
+{
+  const r = runCase(import.meta.url, "b12");
+  const idx = (r, c) => r.cb.findIndex((t) => Math.abs(t - c.at) <= 0.5);
+  chk("B12 control: healthy frames, all three hard chores (1 ms, rest 60) ran", r, (r) => [r.ran.length === 3 && r.cb.length > 0, `${r.ran.length} ran; callbacks ${JSON.stringify(r.cb)}`]);
+  chk("B12 each hard chore after the first starts in a later frame callback than the one before, not in the same window", r, (r) => [r.ran.length === 3 && r.ran.every((c, i) => i === 0 || (idx(r, c) >= 0 && idx(r, c) > idx(r, r.ran[i - 1]) && c.at - r.ran[i - 1].at > 1.5)), `starts ${JSON.stringify(r.ran.map((c) => c.at))}, callback numbers ${JSON.stringify(r.ran.map((c) => idx(r, c)))}`]);
+  chk("B12 no hard chore starts before the 20 ms rest after the last has passed", r, (r) => { const g = gapsAfterEnd(r.ran); return [g.length === 2 && g.every((x) => x >= 19.5), `gaps after each end ${JSON.stringify(g)}`]; });
 }
 {
   const r = runCase(import.meta.url, "b9");
