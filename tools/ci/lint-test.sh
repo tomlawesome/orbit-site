@@ -7,8 +7,8 @@
 # script": a handler or script tag in a stored section fails and names it; and
 # the renovate.json section: a look-around in a customManagers matchString
 # fails and names renovate.json (Renovate compiles these with RE2); and the
-# .gitlab-ci.yml section: the docs/import-* merge-request rule must set
-# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13); and section
+# .gitlab-ci.yml section: image variables are plain Docker Hub names pinned by
+# digest and nothing names the Dependency Proxy (ai/agent-infra#65); and section
 # "the shared door is self-contained" (ADR-0001, issue #16): a file in
 # assets/door/ that imports from outside the folder, reads location.search or
 # uses import.meta.url fails and is named, as is a site module that imports a
@@ -486,62 +486,17 @@ else
   failed=1
 fi
 
-# Cases (g)-(h) judge the .gitlab-ci.yml section "docs-import merge requests
-# pull without the dependency proxy" (issue #13): the workflow rule for source
-# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io,
-# and (issue #20) so does the rule for pushes whose commit author is a GitLab
-# project bot (CI_COMMIT_AUTHOR =~ /project_N_bot_/): the import's merge request
-# merges itself as the bot, so main's push pipeline runs as the bot too.
-proxy_line='^[[:space:]]*CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:[[:space:]]*docker\.io[[:space:]]*$'
-
-# Case (g): the docs/import rule loses its prefix override -> fails, names
-# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
-# a clear line instead of stopping the run.
-if ! grep -q 'docs/import-' .gitlab-ci.yml || ! grep -Eq "$proxy_line" .gitlab-ci.yml; then
-  echo "FAIL removing the docs/import prefix override fails (no docs/import rule to remove: .gitlab-ci.yml has no docs/import- rule setting CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io)"
-  failed=1
-else
-  sed -i -E "/$proxy_line/d" .gitlab-ci.yml
-  commit_all "docs/import rule without the prefix override"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
-    echo "ok   removing the docs/import prefix override fails"
-  else
-    echo "FAIL removing the docs/import prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-
-# Case (g2): the bot-author rule loses its prefix override -> fails, names
-# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
-# a clear line instead of stopping the run.
-if ! grep -q 'CI_COMMIT_AUTHOR =~' .gitlab-ci.yml; then
-  echo "FAIL removing the bot-author prefix override fails (no bot-author rule to remove: .gitlab-ci.yml has no CI_COMMIT_AUTHOR =~ rule)"
-  failed=1
-else
-  sed -i '/CI_COMMIT_AUTHOR =~/d' .gitlab-ci.yml
-  commit_all "bot-author rule removed"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
-    echo "ok   removing the bot-author prefix override fails"
-  else
-    echo "FAIL removing the bot-author prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-
-# Cases (g3)-(g6): the rules are judged as blocks, in order (GitLab takes the
-# first workflow rule that matches). Each edit leaves every line of the old
-# checks in the file, so only a block-and-order check catches it. rule_case
-# <label> <named> <js>: <js> edits the string y (the file) and must change it.
-rule_case() {
+# Cases (g)-(h) judge the .gitlab-ci.yml section "job images are plain Docker
+# Hub names pinned by digest, not pulled through the Dependency Proxy"
+# (ai/agent-infra#65): the runner image cache serves Docker Hub by plain name, so
+# a regression to the group Dependency Proxy prefix, a registry host in front of
+# NODE_IMAGE, a missing digest, a direct MCR name for PLAYWRIGHT_IMAGE or any
+# CI_DEPENDENCY_PROXY reference must fail.
+# image_case <label> <named> <js>: <js> edits the string y (the file) and must
+# change it; the lint must exit 1 naming .gitlab-ci.yml and <named>.
+image_case() {
   Y="$(cat .gitlab-ci.yml)" JS="$3" node -e '
     let y = process.env.Y; const before = y;
-    new Function("y", "return y")(y);
     y = new Function("y", process.env.JS + "; return y;")(y);
     if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
     require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
@@ -557,82 +512,38 @@ rule_case() {
   fi
   git reset -q --hard HEAD~1
 }
-# (g3) the docs/import rule moved below the general merge-request rule
-rule_case "the docs/import rule after the general merge-request rule" "comes after the general merge-request rule" '
-  const m = y.match(/    - if: \$CI_PIPELINE_SOURCE == "merge_request_event" && \$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n/);
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(m[0], "").replace(g, g + m[0]);'
-# (g4) its override moved to another rule: every old line is still in the file
-rule_case "the docs/import rule's override moved to the general merge-request rule" "docs/import- merge-request rule does not set" '
-  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const d = "=~ /^docs\\/import-/\n";
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(d + o, d).replace(g, g + o);'
-# (g5) the docs/import rule turned off
-rule_case "the docs/import rule with when: never" "docs/import- merge-request rule does not set" '
-  y = y.replace("=~ /^docs\\/import-/\n      variables:", "=~ /^docs\\/import-/\n      when: never\n      variables:");'
-# (g6) the bot-author rule moved below the closing rule
-rule_case "the bot-author rule after the general branch rule" "bot-author rule comes after" '
-  const b = "    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const c = "    - if: $CI_COMMIT_BRANCH\n";
-  y = y.replace(b, "").replace(c, c + b);'
-
-# Cases B1-B4 (issue #70): a merge-request pipeline started by the import's
-# project bot (GITLAB_USER_LOGIN =~ /project_N_bot_/) pulls from Docker Hub too:
-# the bot cannot use the group dependency proxy. The rule comes before the
-# general merge-request rule (GitLab takes the first match) and sets the prefix
-# override. B5 (the committed tree, rule added, passes the whole lint) is case (h).
-bot_mr_if='    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/'
-
-# Case B1: the bot merge-request rule removed -> fails, names .gitlab-ci.yml and
-# the bot. Before the rule exists there is nothing to remove: FAIL with a clear
-# line instead of stopping the run.
-if ! grep -qxF "$bot_mr_if" .gitlab-ci.yml; then
-  echo "FAIL removing the bot merge-request rule fails (no bot merge-request rule to remove: .gitlab-ci.yml has no GITLAB_USER_LOGIN =~ /project_N_bot_/ merge-request rule)"
-  failed=1
-else
-  BOT_IF="$bot_mr_if" node -e '
-    const fs = require("fs");
-    const lines = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n");
-    const i = lines.indexOf(process.env.BOT_IF);
-    let n = 1;
-    while (i + n < lines.length && /^      /.test(lines[i + n])) n++;
-    lines.splice(i, n);
-    fs.writeFileSync(".gitlab-ci.yml", lines.join("\n"));
-  '
-  commit_all "bot merge-request rule removed"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "^   \.gitlab-ci\.yml: .*merge-request pipelines the import bot starts" "$out"; then
-    echo "ok   removing the bot merge-request rule fails"
-  else
-    echo "FAIL removing the bot merge-request rule fails (exit $rc, want 1 naming .gitlab-ci.yml: bot)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-# B2 the rule's override removed
-rule_case "the bot merge-request rule without the prefix override" "the bot merge-request rule does not set" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
-  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  y = y.replace(b + o, b);'
-# B3 the rule turned off
-rule_case "the bot merge-request rule with when: never" "the bot merge-request rule does not set" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
-  y = y.replace(b + "      variables:", b + "      when: never\n      variables:");'
-# B4 the rule moved below the general merge-request rule
-rule_case "the bot merge-request rule after the general merge-request rule" "the bot merge-request rule comes after the general merge-request rule" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(b, "").replace(g, g + b);'
+# (g) NODE_IMAGE back on the Dependency Proxy prefix
+image_case "NODE_IMAGE through the Dependency Proxy prefix" "NODE_IMAGE must be a plain Docker Hub name" '
+  y = y.replace("  NODE_IMAGE: node:", "  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:");'
+# (g2) the Renovate image (or anything else) back on the prefix
+image_case "the Renovate image through the Dependency Proxy prefix" "refers to CI_DEPENDENCY_PROXY" '
+  y = y.replace("name: renovate/renovate:", "name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:");'
+# (g3) a login to the proxy in a script
+image_case "a docker login to the Dependency Proxy" "refers to CI_DEPENDENCY_PROXY" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - docker login -u $CI_DEPENDENCY_PROXY_USER -p $CI_DEPENDENCY_PROXY_PASSWORD $CI_DEPENDENCY_PROXY_SERVER\n    - sh tools/ci/nightly-publish.sh\n");'
+# (g4) a registry host in front of NODE_IMAGE
+image_case "NODE_IMAGE with a registry host" "NODE_IMAGE must be a plain Docker Hub name" '
+  y = y.replace("  NODE_IMAGE: node:", "  NODE_IMAGE: docker.io/library/node:");'
+# (g5) NODE_IMAGE without its digest
+image_case "NODE_IMAGE without a digest" "NODE_IMAGE must" '
+  y = y.replace(/(  NODE_IMAGE: node:\S+)@sha256:[a-f0-9]{64}/, "$1");'
+# (g6) PLAYWRIGHT_IMAGE without its digest
+image_case "PLAYWRIGHT_IMAGE without a digest" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace(/(  PLAYWRIGHT_IMAGE: \S+)@sha256:[a-f0-9]{64}/, "$1");'
+# (g7) PLAYWRIGHT_IMAGE pulled direct from MCR, past the cache
+image_case "PLAYWRIGHT_IMAGE with a direct mcr.microsoft.com name" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace("  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/", "  PLAYWRIGHT_IMAGE: mcr.microsoft.com/");'
+# (g8) PLAYWRIGHT_IMAGE on the Docker Hub path or another image under the cache
+image_case "PLAYWRIGHT_IMAGE naming another image under the MCR cache" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace("  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/playwright:", "  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/other:");'
 
 # Case (h): the committed tree as it is -> the lint passes and has a heading
-# for the section, a "==" line naming both "import" and "dependency proxy".
+# for the section, a "==" line naming both "Docker Hub" and "Dependency Proxy".
 lint_to_out
-if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'import' | grep -iq 'dependency proxy'; then
-  echo "ok   the committed .gitlab-ci.yml has the docs-import proxy section and passes"
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'docker hub' | grep -iq 'dependency proxy'; then
+  echo "ok   the committed .gitlab-ci.yml has the plain-image section and passes"
 else
-  echo "FAIL the committed .gitlab-ci.yml has the docs-import proxy section and passes (exit $rc, want 0 with a == heading naming import and dependency proxy)"
+  echo "FAIL the committed .gitlab-ci.yml has the plain-image section and passes (exit $rc, want 0 with a == heading naming Docker Hub and Dependency Proxy)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -1159,7 +1070,7 @@ split_case "p64: NODE_IMAGE twice in the global variables" $ci "NODE_IMAGE is de
 split_case "p65: a second global variables block holding NODE_IMAGE" $ci "NODE_IMAGE is defined 2 times in the global variables" '
   y = y + "\nvariables:\n  NODE_IMAGE: evil/node:1\n";'
 split_case "p66: NODE_IMAGE in the variables of a workflow rule" $ci "in workflow > rules > [0-9]+ > variables: sets NODE_IMAGE" '
-  y = y.replace("        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n", "        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n        NODE_IMAGE: evil/node:1\n");'
+  y = y.replace("    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n", "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      variables:\n        NODE_IMAGE: evil/node:1\n");'
 split_case "p67: NODE_IMAGE in the variables of publish_docs" $ci "in publish_docs > variables: sets NODE_IMAGE" '
   y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    NODE_IMAGE: evil/node:1\n");'
 split_case "p68: NODE_IMAGE in the variables of a parent of publish_docs" $ci "in .parent > variables: sets NODE_IMAGE" '

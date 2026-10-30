@@ -196,7 +196,7 @@ const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 // the one global definition of each variable the image reads is pinned to a digest
 for (const v of IMAGE_VARS) {
   const val = isObj(doc.variables) ? doc.variables[v] : undefined;
-  if (!(typeof val === "string" && /^\$\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\}\/\S+@sha256:[a-f0-9]{64}$/.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that starts with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
+  if (!(typeof val === "string" && /^[a-z0-9_-]+(?:\/[a-z0-9._-]+)*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that is a plain Docker Hub name (no registry host, no variable) and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
 }
 // whether a mapping in the set (LATE or TWICE) is in v, replaced values included
 const within = (set, v, seen = new Set()) => {

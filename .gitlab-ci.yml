@@ -35,19 +35,6 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
-    # The nightly import's merge requests (docs/import-*) are started by its project
-    # token's bot, which is not a member of the group and so cannot pull
-    # through the group dependency proxy: they pull the same digest-pinned
-    # images from Docker Hub instead (#13).
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\/import-/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
-    # The import bot also starts a merge request's pipeline when its own merge
-    # moves that request's source branch (a back-merge from main, open during a
-    # nightly): it cannot use the proxy either (#70).
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -56,12 +43,6 @@ workflow:
     # branch's first push would otherwise run twice (orbit #829).
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
       when: never
-    # That merge request merges itself as the same bot, so the push pipeline
-    # main then gets runs as the bot and its merge commit is the bot's: Docker
-    # Hub again (pipeline 2379 failed pulling through the proxy).
-    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_COMMIT_BRANCH
 
 .not_scheduled: &not_scheduled
@@ -69,12 +50,17 @@ workflow:
   when: never
 
 variables:
-  # Docker Hub through the group dependency proxy, pinned by digest;
-  # Renovate bumps them (renovate.json, the regex manager).
-  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
-  # Microsoft's own registry, not proxied. Its tag names the playwright
-  # version the `live` job installs; the two must agree.
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+  # Docker Hub by plain name, pinned by digest. The runner hosts' Docker
+  # daemons mirror Docker Hub through the runner image cache
+  # (ai/agent-infra#14, #65), which needs no login, so every pipeline pulls
+  # the same way, the import bot's included. Renovate bumps the pin
+  # (renovate.json, the regex manager).
+  NODE_IMAGE: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
+  # Microsoft's registry through the runner image cache's MCR route (same as
+  # ai/orbit, #1510): the runner config sets CI_IMAGE_CACHE_MCR (host:port, plain
+  # HTTP, no login); the address is never written in this repository. Its tag
+  # names the playwright version the `live` job installs; the two must agree.
+  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
   PLAYWRIGHT_VERSION: "1.64.0"
 
 # ---------------------------------------------------------------- lint --
@@ -318,7 +304,7 @@ publish_docs:
 renovate:
   stage: maintenance
   image:
-    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
+    name: renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
     pull_policy: if-not-present
   timeout: 1h
   interruptible: false
