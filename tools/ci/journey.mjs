@@ -267,6 +267,65 @@ const landings = async (prefix) => {
       if (fell.length) throw new Error(`a world fell back to drawn textures: ${fell[0]}`);
     } finally { await wctx.close(); }
   });
+  /* #113 (ADR-0004 6e, J1): where the door's pictures are decoded is said once a page, on the console, and the pictures
+     still arrive. In Firefox they are decoded by the browser's image loader (the page path, ?gpu=force as above); in
+     Chromium they are not; Firefox with &decode=blob is the control, today's route. Behaviour only: no step reads a frame
+     time. `install: ready` is the world's own line; the door's picture lines under ?door3d (`strip:`, `upload:`) are not required here: their text could not be confirmed on this runner. */
+  const LOADER = "pictures: decoded by the image loader";
+  const consoleOf = async (url, until, ms) => {
+    const wctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    try {
+      const wpage = await wctx.newPage();
+      const messages = [];
+      let met = () => {};
+      const metP = new Promise((ok) => { met = ok; });
+      wpage.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+      wpage.on("console", (m) => {
+        const text = m.text();
+        messages.push(text);
+        if (m.type() === "error") problems.push(`console.error: ${text}`);
+        if (until.every((u) => messages.some((t) => t.includes(u)))) met();
+      });
+      if (!(await wpage.evaluate(() => !!document.createElement("canvas").getContext("webgl2")))) return null;
+      await wpage.goto(url, { waitUntil: "load" });
+      let timer;
+      const timedOut = new Promise((ok) => { timer = setTimeout(ok, ms); });
+      try { await Promise.race([metP, timedOut]); } finally { clearTimeout(timer); }
+      await wpage.waitForTimeout(3000);
+      return messages;
+    } finally { await wctx.close(); }
+  };
+  const join = prefix ? prefix + "&" : "?";
+  const said = (messages) => messages.filter((t) => t.includes(LOADER)).length;
+  await step(`the pictures are decoded by the image loader in Firefox only${prefix ? " (preview)" : ""}`, async () => {
+    const world = await consoleOf(SITE + join + "gpu=force#install", ["install: ready"], 90000);
+    if (!world) { if (process.env.WEBGL === "required") throw new Error(`no WebGL2 in ${BROWSER}`); console.log("     (no WebGL2 here: not judged)"); return; }
+    if (!world.some((t) => t.includes("install: ready"))) throw new Error("the install world never logged 'install: ready' within 90s");
+    const want = BROWSER === "firefox" ? 1 : 0;
+    if (said(world) !== want) throw new Error(`the console carries '${LOADER}' ${said(world)} time(s) in ${BROWSER}, want ${want}`);
+    const fell = world.filter((t) => t.includes("is drawn, not photographed") || t.includes("orbit: no map"));
+    if (fell.length) throw new Error(`a world fell back to drawn textures: ${fell[0]}`);
+    if (BROWSER === "firefox") {
+      const live = await consoleOf(SITE + join + "door3d&gpu=force", ["upload:"], 40000);
+      if (live) {
+        if (said(live) !== 1) throw new Error(`under ?door3d the console carries '${LOADER}' ${said(live)} time(s), want 1`);
+      }
+    }
+  });
+  if (BROWSER === "firefox") {
+    await step(`the control: &decode=blob keeps today's route and the pictures still arrive${prefix ? " (preview)" : ""}`, async () => {
+      const world = await consoleOf(SITE + join + "gpu=force&decode=blob#install", ["install: ready"], 90000);
+      if (!world) { if (process.env.WEBGL === "required") throw new Error(`no WebGL2 in ${BROWSER}`); console.log("     (no WebGL2 here: not judged)"); return; }
+      if (!world.some((t) => t.includes("install: ready"))) throw new Error("with &decode=blob the install world never logged 'install: ready' within 90s");
+      if (said(world) !== 0) throw new Error(`with &decode=blob the console carries '${LOADER}' ${said(world)} time(s), want 0`);
+      const fell = world.filter((t) => t.includes("is drawn, not photographed") || t.includes("orbit: no map"));
+      if (fell.length) throw new Error(`with &decode=blob a world fell back to drawn textures: ${fell[0]}`);
+      const live = await consoleOf(SITE + join + "door3d&gpu=force&decode=blob", ["upload:"], 40000);
+      if (live) {
+        if (said(live) !== 0) throw new Error(`under ?door3d&decode=blob the console carries '${LOADER}' ${said(live)} time(s), want 0`);
+      }
+    });
+  }
   await step(`a docs page opens${prefix ? " (preview)" : ""}`, async () => {
     await page.goto(SITE + prefix + "#docs/readme", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
