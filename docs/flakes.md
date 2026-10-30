@@ -36,6 +36,7 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 - 2026-10-28 · c7bd3ba · pipeline 3071, job 40280 · D2: docs tappable at 21.4 s, want by 20 s (dev's live job was running beside it)
 - 2026-10-28 · c7bd3ba · pipeline 3071, job 40327 (retry) · D1 run 3: docs tappable 5.2 s after install and information, want 5 s
 - 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40991 (the retry) · journey passed; D2 "completion status stuck false": docs labelled and tappable at 24.3 s, want 20 s; shard took 705 s against 517 planned · the third sighting files #98
+- 2026-10-29 · 273cfb5 · pipeline 3160, live:chromium 2/3, job 41467 · D1 "docs labelled and tappable within 5 s" failed on the revert of !96 (site code ccd883d's); the same shard failed the Back mid-flight flake (#107) on the two pipelines before · fourth sighting, retried
 
 ## flight-waits W3: a later warm() does not prove the world
 
