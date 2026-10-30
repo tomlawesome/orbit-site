@@ -8,7 +8,7 @@ for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-
 of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
 the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2). 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
 frame's share of chores runs inside the frame callback, with a backstop (#101), for the owner's review before any code; section 6d.6 the same day, after CI: a hard chore may
-start from the backstop, and `freeze.mjs` check 5 says so (owner 10a).
+start from the backstop, and `freeze.mjs` check 5 says so (owner 10a). 2026-10-30, section 6e: the maps decoded by the browser's image loader on Firefox (#113; owner 13a).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
 worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
@@ -1482,6 +1482,163 @@ check stay. Its comment (lines 39-41) says why: one a frame, or one a backstop i
   left (a 1 ms hard chore at 0 ms does not pull the next in at 1 ms).
 - `freeze.mjs` check 5 as 6d.6: it passes on the runner's software GL, its message names the frame's length and the
   count when it fails, and a run with every frame under 50 ms (the design host) still allows no crowded frame.
+
+### 6e. Detailed design: the pictures decoded by the browser's image loader, not by `createImageBitmap(blob)` (#113)
+
+Written 2026-10-30 from the Firefox profiles on #113 (the Gecko profiler from startup, agent host, page path, 14
+loads) and the owner's console lines. The premise on #113 holds and is sharper than stated: on the page's thread of
+the content process, 766-1094 ms of every slow load is spent inside `DecodePool::SyncRunIfPossible` for an image
+**with no address** (an anonymous image: what `createImageBitmap(blob)` makes), in stretches of up to 850 ms, and a
+further 49-72 ms (stretches of 56-126 ms) decoding `dawn/dawn.webp`, the Earth's picture, which `engine.js` draws from
+an `<img>` before it is decoded. The standalone test in the same Firefox put one 4096x2048 decode at 113-174 ms with
+the page's timers blocked for all of it. The pictures' pixels per path: the flight's ten (33.6 MP, about 0.5-0.7 s at
+that rate), the install/info world's three (8.9 MP, 0.12-0.19 s; 2.6 MP on a small screen), and under `?door3d` the
+door's own copies of eight maps, the planets' two and the sharp strip (up to 18.4 MP for the 240 px tier).
+
+**The correction.** "Decode in a worker with `createImageBitmap`" does not fit Firefox, and the worker paths already
+do it: `voyage.js`, `world.js` and `draw-worker.js`'s `picture` call `createImageBitmap(blob)` inside their workers
+today. Firefox decodes a blob's picture synchronously on the page's thread, and a worker's call is handed to that
+thread too (the image library that decodes blobs runs only there: the blob is read, then the first frame is asked for
+with a synchronous decode, on the page's thread, whichever thread asked). That is why the owner's default path
+(`?preview`, both workers up) still had reveal gaps of 333-1200 ms with no page script to blame. Chromium decodes a
+blob off the page's thread; Safari is unmeasured (6e.6). The build confirms the worker half first (6e.7 step 0): the
+page half stands on the profiles alone.
+
+**The standard pattern** is the browser's own background decode, `img.decode()` (MDN's "decode an image before
+drawing it"), with the result handed on as an ImageBitmap: the page makes an `<img>` from the fetched bytes (a `blob:`
+URL), awaits `decode()`, which Firefox runs on its decode pool off the page's thread, and wraps the decoded picture
+with `createImageBitmap(img)`, which in Firefox shares the decoded surface rather than decoding again. A worker that
+wants a picture asks the page for it and receives the bitmap **transferred** (`postMessage(..., [bitmap])`, no copy).
+It is the pattern `decode-ahead.js` already uses for the dusk's pictures (Orbit's #1299), applied to the maps, with
+the transfer added for the worker paths. Everything after the decode is unchanged: `uploadBanded` cuts its bands from
+the bitmap with `createImageBitmap(bitmap, 0, y, w, n)`, which is a copy of those rows, not a decode (in Firefox a
+cropped bitmap is copied from the source surface; the profiles show no decode under the bands, and `firstCut` on the
+console stays a few ms), and the worker's unpaced queue still puts a picture on whole.
+
+#### 6e.1 The rule: where each picture is decoded, per path and browser
+
+`decodeAside()` in `fitness.js`, beside `drawnAside()`, decided once a page and said once on the console
+(`pictures: decoded by the image loader`, only when taken):
+
+- `flags.decode === "img"`: the image-loader route; `"blob"`: today's `createImageBitmap(blob)`, whatever follows
+  (the A/B control for the owner, and the forced paths for the tests).
+- Else the image-loader route where the family tell says Firefox, the same tell as 6a.4 without the worker clauses:
+  `gpu()` accepted the page, `parallel` is false, `navigator.userAgentData` is absent. A forced gate (`gpu=force`)
+  does **not** keep the old route: CI's Firefox runs then exercise the new one, and `decode=blob` is the control.
+- Everywhere else (Chromium, Safari, a refused gate: no pictures at all) today's route, unchanged.
+
+| Path | Who fetches | Who decodes, Firefox (the rule) | Who decodes, Chromium (unchanged) | Who uploads |
+| --- | --- | --- | --- | --- |
+| page (`draw=page`, Edge/Chrome, Firefox fallbacks) | the page (`fetchOnce`) | the page's `<img>` + `decode()`, off its thread | the page, `createImageBitmap(blob)` off its thread | the page, in bands |
+| flight worker (`draw=worker`, Firefox's default) | the worker (`fetchOnce`, as today) | the page, asked by the worker; the bitmap transferred back | not on this path | the worker, whole |
+| world worker (install/info, Firefox's default) | the worker, as today | the page, asked by the worker | not on this path | the worker, whole |
+| `?door3d` (page only) | the page | the page's `<img>` route | the page, as today | the page, in bands |
+| the Earth's picture (`engine.js` `askEarth`, `page.picture`) | the page's `<img>` as today / the worker's `fetchOnce` | the page: `decode()` awaited before `loaded` / the page, asked | as today | drawn on the 2D canvas |
+
+The options the call sites pass (`colorSpaceConversion: "none"`, `premultiplyAlpha: "none"`) are **dropped on the
+image-loader route**, deliberately: Firefox keys its cache of decoded pictures on those two flags, so a wrap asking
+for either would miss the background decode and decode again, synchronously, on the page's thread: the stall back
+under another name (step 0 proves this with a figure). The consequences: the maps are opaque lossy WebP with no colour
+profile, so their pixels are unchanged; the moon and the rings carry alpha and arrive premultiplied, which WebGL
+un-premultiplies on upload (the usual `<img>` texture path, a small loss at low alpha on two small pictures);
+Firefox's colour management applies to these pictures as it does to every `<img>` on the page. Resize options
+(`resizeWidth`, `resizeHeight`, `resizeQuality`: the rings on a small GPU, the planets under `?door3d`) are kept on
+both routes. The decoded picture stays in Firefox's image cache after the wrap until the cache expires or needs the
+room (the bitmap itself is closed by `uploadBanded` as today): a transient cost of the size of the pictures, accepted.
+
+#### 6e.2 What changes where
+
+- `assets/door/page.js`: the adapter gains `decode(blob, options) → Promise<ImageBitmap>`. On the page: under
+  `decodeAside()`, `URL.createObjectURL(blob)` into a new `Image` (`decoding = "async"`), `await img.decode()`,
+  `createImageBitmap(img, resizeOnly(options))`, the URL revoked in `finally`; a `decode()` that rejects, or a wrap
+  that throws, falls back to `createImageBitmap(blob, options)` (today's call, correct everywhere, slow in Firefox);
+  not under `decodeAside()`, `createImageBitmap(blob, options)` as today. `picture(url, loaded)` calls `loaded` only
+  once `img.decode()` has settled (resolved or rejected) after `load`, so the Earth's picture is never decoded by its
+  first `drawImage`; `done()` and `drawable()` keep their meaning.
+- `assets/door/chores.js`: `fetchBitmap(url, options)` = `fetchOnce(url).then((b) => page.decode(b, options))`;
+  a host adapter given to `setPage` without `decode` is answered with `createImageBitmap(blob, options)`, as `yield`
+  is defaulted. `index.js` re-exports `fetchBitmap` (additive). `fetchOnce` is unchanged, and still never a chore.
+- `assets/door/fitness.js`: `decodeAside()` and its line; `settings.js`'s comment lists the flag; `main.js` reads
+  `?decode=img|blob` into `FLAGS.decode` as `draw` is read.
+- Call sites, each `fetchOnce(...).then((b) => createImageBitmap(b, OPTS))` becoming `fetchBitmap(url, OPTS)`:
+  `voyage.js` (the strip, 113; the maps, 1319), `door3d.js` (249), `assets/js/world.js` (637, 642, 648),
+  `assets/js/planets3d.js` (191). The options stay as written: the route decides what to keep.
+- The worker paths. `hello` gains `decode: "page" | "here"`, the page's verdict. Under `"page"`, the worker's
+  adapter (`draw-worker.js`, `world-worker.js`: `setPage({ decode })`) posts `decode { id, blob, options }` and
+  resolves on `decoded { id }`; `draw-worker.js`'s `picture` becomes `fetchBitmap`. The page side (`remote-flight.js`,
+  `remote-world.js`) answers a `decode` with `page.decode(blob, options)` and posts `decoded { id, bitmap }` with the
+  bitmap transferred, or `decoded { id, error }`. Under `"here"` the worker decodes itself as today and posts nothing.
+
+| Message | Fields | When |
+| --- | --- | --- |
+| `hello.decode` (page to worker) | `"page"` or `"here"` | with `hello`; `"page"` where `decodeAside()` is true on the page |
+| `decode` (worker to page) | `id`, `blob`, `options` | a picture's bytes have arrived in the worker and the page decodes |
+| `decoded` (page to worker) | `id`, `bitmap` (transferred) or `error` | the page's `decode` settled; after a fallback or `destroy` the adapter is gone and answers nothing |
+
+#### 6e.3 Failure and the fallbacks
+
+One rule: a decode that cannot be had the new way is had the old way, and a picture that fails at all fails as it
+does today (`failed`, retried by the next `warm`; the strip stays small; the rings and moon drawn, not photographed).
+On the page, 6e.2's fallback inside `decode`. In a worker, a `decoded { error }`, a page that never answers
+(`PICTURE_WAIT`, 20 s, the same bound `fetchOnce` puts on a download), or a worker running with no page adapter
+answering (`hello.decode` absent or `"here"`) all end in the worker's own `createImageBitmap(blob, options)`. A worker
+that falls back to the page mid-decode (6a.4, 6b.4) is terminated and its pending decodes die with it; the page engine
+or world fetches its own pictures through `fetchBitmap` as the page path does. Nothing of the chore queue changes: a
+decode was never a chore and still is not; the queue's `empty` time, which read "the pictures still coming, or
+decoding", now means what it says on Firefox too.
+
+#### 6e.4 The interface change (README, `assets/door/`), deliberate, additive
+
+For Orbit's import (ADR-0001): one export (`fetchBitmap`), one optional adapter method (`page.decode`; a host adapter
+without it gets today's behaviour), one flag (`decode`), one `hello` field and two messages inside the folder
+(`draw-worker.js` and `remote-flight.js` are both the folder's), one console line, and `picture`'s `loaded` called
+after the decode rather than at `load`. The README's CSP already requires `img-src 'self' data: blob:` for the glows,
+so the `blob:` picture needs nothing new of a host. Entry point, slots, markup and stylesheet untouched; no
+`door-markup.mjs` run. Said in the commit.
+
+#### 6e.5 Tests: behaviour, never timings; the routes forced by flags
+
+6e's cases are in the design note on #113 (ids P1-P6, W1-W6, L1, J1): each with a control, each on the Node stub
+(`tools/ci/door-stub.mjs`, whose `Image` has `decode()`, whose `createImageBitmap` records its source, and whose
+`URL.createObjectURL`/`revokeObjectURL` are logged), the route chosen by `?decode=` or by the stub's family tell.
+No case reads a clock. Coverage floors unchanged.
+
+#### 6e.6 What the owner measures (M7): Firefox first, the phone behind the flag
+
+- **M7a, desktop Firefox, `?preview` and `?preview&draw=page`**, each twice, against the same URL with
+  `&decode=blob` (the control, today's route): the `reveal` line's longest frame gap (41d571c: 833, 333, 1200 ms on
+  the default path; 67-83 ms on 792b724), which should read under ~100 ms on both paths with the new route; `install:
+  ready` and `flight: ready` no later than the control; the new line `pictures: decoded by the image loader` present;
+  and the eye on the reveal. On `?preview&draw=page` also the `chores at` line: `resting` near 0 and `frames` with
+  fewer over 50 ms.
+- **The stall just before the labels on `?preview` (653c3d5, owner).** The labels open on the world's `baked`; the
+  last things the world worker does before saying so are the map put on the GPU **whole with its mipmaps** (the
+  unpaced queue, `upload.js` `whole()`: 32 MB and a mipmap pass) and, right after, the first full-size draws (`touch`,
+  then the governor's measure), all in Firefox's one GPU process, which the page's compositor animations (the
+  planets' orbits) also wait on. On the page's own thread at that moment there are class changes and console lines
+  only. So it is most likely not a decode (the pictures land seconds earlier) and 6e will not remove it; M7a tells:
+  a stall that stays with `decode=img` at the labels is the worker's bake end. That is its own issue (bands and a
+  separate mipmap chore in the worker's queue too, and the measure held until the page is quiet), filed with M7a's
+  figures, not folded into this one.
+- **M7b, the phone (Safari draws on the page there), `?decode=img` against the default**, twice each: the `reveal`
+  line's gap (653c3d5: 257 ms) and the longest frame during the chores (216 ms). Safari's blob decode is unmeasured
+  here; a gap that falls with the flag funds adding the Safari tell (`parallel` true and no `userAgentData`) to 6e.1,
+  by amendment, with the figures. Until then Safari keeps today's route by the title rule.
+- "Default" in the owner's notes is `?preview` with no other flag: the path each browser takes by the rule (Firefox both
+  workers, Edge and the phone the page). M7a's `?preview` runs are that path.
+
+#### 6e.7 Build: two batches, the worker half confirmed first
+
+- **Step 0 (before any code, the scratch `ab/cbm.mjs` extended, figures on #113):** in the same Firefox, with the
+  page's 2 ms timer running, (i) `createImageBitmap(blob)` of `earth-lights.webp` called **from a worker**: the
+  page's longest timer gap; (ii) the `<img>` + `decode()` + `createImageBitmap(img)` route on the page: its gap;
+  (iii) route (ii) with `premultiplyAlpha: "none"` on the wrap: its gap. Expected: (i) a gap of the decode's length
+  (the worker half is built), (ii) under 20 ms, (iii) the stall again (the options are dropped, 6e.1). If (i) shows
+  no gap, the worker half (`hello.decode`, the two messages) is left out and the page half built alone; if (ii)
+  stalls, stop and report: the design's premise fails and the alternative is a decode in the worker by other means.
+- Batch 1, the page half: `fitness.js`, `settings.js`, `main.js`, `page.js`, `chores.js`, `index.js`, the six call
+  sites, README; tests P1-P6, L1, J1.
+- Batch 2, the worker half: `draw-worker.js`, `remote-flight.js`, `world-worker.js`, `remote-world.js`; tests W1-W6.
 
 ## 7. Rejected
 
