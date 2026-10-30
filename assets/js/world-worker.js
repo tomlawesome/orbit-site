@@ -7,10 +7,11 @@
  *
  * The frame feed, latest wins: each `view` replaces the one held, and the next frame callback draws it and says `drew`
  * with this thread's own period between its callbacks (the governor's measure, 6b.3). While `run` is on the callbacks
- * run every frame; while it is off, one is asked only for a view that came. An exception handling a message is `dead`:
+ * run every frame; while it is off, one is asked only for a view that came. Where the `hello` says `decode: "page"` the
+ * pictures are decoded by the page (6e.2): a `decode` posted up, a `decoded` back. An exception handling a message is `dead`:
  * the page falls back.
  */
-import { createDoor, setPage, pace, openChores } from "../door/index.js";
+import { createDoor, setPage, pace, openChores, askPage } from "../door/index.js";
 import { createWorld } from "./world.js";
 
 const scope = /** @type {any} */ (self);
@@ -18,11 +19,13 @@ const post = (m) => scope.postMessage(m);
 const text = (a) => a.map((x) => (x instanceof Error ? x.message : String(x))).join(" ");
 
 let given = null, world = null, gone = false, lostSaid = false;
-let running = false, asked = false, last = 0, held = null;
+let running = false, asked = false, last = 0, held = null, asker = null;
 
 function hello(m) {
   given = m;
+  asker = m.decode === "page" ? askPage(post) : null;
   setPage({
+    ...(asker ? { decode: asker.decode } : {}),
     baseURI: () => m.baseURI,
     frame: (fn) => requestAnimationFrame(fn),
     canvas: (w, h) => new OffscreenCanvas(w, h),
@@ -94,6 +97,7 @@ function handle(m) {
   switch (m.type) {
     case "hello": hello(m); break;
     case "canvas": bringUp(m.canvas); break;
+    case "decoded": asker?.heard(m); break;
     case "destroy": gone = true; running = false; scope.close(); break;
     default: {
       if (gone || !world) break;

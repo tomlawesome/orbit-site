@@ -13,7 +13,7 @@
  * pending asks asked of it, and baked afresh if the worker's had baked. From then on everything is the page world's,
  * and the worker is told nothing more.
  */
-import { note, settings, gpu, COMPILE_WAIT } from "../door/index.js";
+import { note, settings, gpu, decodeAside, decodeBlob, COMPILE_WAIT } from "../door/index.js";
 import { createWorld, picturesOf } from "./world.js";
 
 /* why the page draws the world: the same tells as the flight's rule (assets/door/fitness.js drawnWhy), in its order,
@@ -58,6 +58,11 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     switch (m.type) {
       case "up": if (m.ok) { up = true; clearTimeout(timer); asideIs(true); } else fallBack(String(m.why || "the worker cannot draw here")); break;
       case "compiled": ms = Number(m.ms) || 0; madeIs(!!m.ok); break;
+      /* a picture's bytes from the worker, decoded here by the image loader and handed back, transferred (6e.2) */
+      case "decode":
+        if (!m.blob) { post({ type: "decoded", id: m.id, error: "no picture" }); break; }
+        decodeBlob(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]), (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
+        break;
       case "baked": case "measured": {
         const ask = pending.get(m.id);
         if (!ask || ask.kind !== m.type) break;
@@ -124,7 +129,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     const p = picturesOf(opts);
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     post({
-      type: "hello", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON) }, sky: opts.sky, tag: opts.tag,
+      type: "hello", decode: decodeAside() ? "page" : "here", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON) }, sky: opts.sky, tag: opts.tag,
       hue: opts.hue, sat: opts.sat, ringsOn: opts.ringsOn, haze: opts.haze, grade: opts.grade,
     });
     const off = el.transferControlToOffscreen();
