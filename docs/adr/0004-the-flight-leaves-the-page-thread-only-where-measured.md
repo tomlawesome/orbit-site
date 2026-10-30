@@ -6,7 +6,9 @@ section 4's pre-warm is not built, and the door folder's interface is unchanged.
 questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds in a worker (#93), the detailed design
 for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-28. 2026-10-29, section 6c: the pacing
 of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
-the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2).
+the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2). 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
+frame's share of chores runs inside the frame callback, with a backstop (#101), for the owner's review before any code; section 6d.6 the same day, after CI: a hard chore may
+start from the backstop, and `freeze.mjs` check 5 says so (owner 10a).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
 worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
@@ -1273,6 +1275,213 @@ PERFORMANCE.md; done when `resting` no longer dominates `over` on both and the d
 **Owner answers, 2026-10-29:** build by a cheaper model from this section (the owner's 3a for #101); 101-1a,
 8 ms; 101-2 open: the owner wants the M5 device tests run again first, so `?pace=frame` is built as designed and
 the keep-or-remove call is asked after them.
+
+## 6d. Detailed design: the docs' trip on its own galaxy, and the frame's share before the paint (#101)
+
+Written 2026-10-30, from the phone's line at 0d08543 (iOS Safari, `?preview&door3d`; the numbers are on #101):
+install/info ready 3.9 s, the docs' galaxy compiled 3.1 s, `chores at flight ready: 648 done, ran 2760 ms, waited 2945 ms
+to start, held 1150, frames 343, 2347 ms, timers 17, took 398 ms, resting 4467 ms, over 14065`, flight ready 15.9 s, and
+the docs' way in with it, because `assets/js/main.js` (line 121) opens the docs only when `journey.warm()` has settled
+too, and `flyToPad` flies them on `journey.warm()` as well. So the docs wait for the flight's six hundred map uploads,
+and the flight's 14 s is 2.8 s of work and 11 s of getting from one chore to the next: 343 frame waits (2.3 s), the
+hop before each frame's first chore (2.9 s: Safari paints between the frame callback and the next task, ~8.6 ms each),
+and 4.5 s unexplained, most likely the hops within the share, which the line does not yet time. The owner's desktop
+runs the same day (dev 792b724): Firefox `?preview` ways in clickable 8.2-8.9 s, `?preview&draw=page` everything at
+10.6 s; Edge `?preview&door3d` flight ready 6.8 s. Section 6c is reverted and stays the record (#105: a queue that
+advances only on frames crawls when frames are slow); nothing here changes a decision of sections 1 to 6b. Owner
+decisions on #101 before this was written: 13a (the docs' chores rank before the flight's; built), 1a (!98 merged), 2a
+(the docs' way in may open before the flight's world is fully warm), 7a (the docs' trip is mostly the galaxy; the
+Earth's pictures appear only in its opening moment, so an early tap is neither held for them nor flown flat).
+
+### 6d.1 The docs' trip starts on its own galaxy (owner 2a, 7a)
+
+**The standard pattern is progressive loading: draw with what has landed, use each piece from the frame it lands,
+never hold the whole for a part.** The world already does this for its maps (`voyage.js` `draw`: `uHas` says which
+maps are in, `blank` is bound where one is not, and a map is used from the frame `uploadBanded` calls `drawable`),
+and the engine already lays the door's own Earth photo over the world's Earth for the opening moment (`engine.js`:
+`ea`, until the Earth has shrunk past 93% of its size at the door). What holds the docs to the maps is only the proof
+chain: the world is proved fit (`ready`) by `warm()`, which waits for `loading`, which waits for every band. So the
+change is to the proof, not to the drawing:
+
+- **"The docs' galaxy is ready"** (`journey.warmDocs({ prove: false })`): the world is made (`made`: its core programs
+  compiled, or failed), the galaxy's two programs compiled or given up (`galMade`, bounded by `COMPILE_WAIT`), and
+  the star cloud on the GPU. `voyage.js`: the star chore (`remakeStars(); makeStars()`) is queued at `warm()`'s first
+  call after `made` alone, tagged `["docs", "galaxy"]` (hard, `rest` 60), not at the end of `loading`; `loading` still
+  waits for it. `docsLoading` becomes `Promise.all([made, galaxy, stars])`. `engine.js`: `warmedDocs` hangs off `made`,
+  not `warmed`.
+- **The docs' proof** (`journey.warmDocs()`, the default): `docsLoading`, then the tab shown (`whenVisible`), then the
+  galaxy's unseen touch, then **the fitness test if no verdict is in yet**; it sets `fit` and `ready` as `warm()`'s
+  proof does. One verdict a visit: the first proof to run takes the test (`fitWhenShown`, memoised), the other reads
+  it; `sayVerdict` prints once; `calibrate` (the measure) stays with the flight's proof. So that the verdict does not
+  depend on which maps have landed, `fitness()` draws its frames with every map's branch taken (`uHas` and `uHasN`
+  all set, `blank` bound where a map is not in): the same shader work either way. The docs' proof waits for the
+  Earth's picture as `settle` does (the same `earthWait`, its 20 s cap): the 2D canvas draws it in the opening, and
+  it is the dawn's own photo, already on the door. Its chores are tagged `"docs"`.
+- **The site**: `main.js` line 121 opens the docs on `[PADS.docs.ring.ready(), journey.warmDocs({ prove: false })]`,
+  `all[1]` dropped; `flyToPad("docs")` flies on `[ring.ready(), journey.warmDocs()]`, `journey.warm()` dropped. The
+  hurry stays `["flight", "docs"]`, so the maps keep landing behind the trip. The gate still opens and flies on
+  `journey.warm()`; install and info are untouched; save-data and maintenance unchanged.
+
+**What an early docs tap looks like.** The trip starts at once; if the proof is not yet in (a tap before the leisure
+proof at lit + 4 s), its chores are hurried and the clock holds at the warp for the few frames they take (the galaxy's
+touch and the fitness test: well under a second), never for a map. The dawn's photo covers the Earth as the trip
+leaves, as it does today; as the Earth shrinks the world's own shows for about a second before the sky gives way to the
+galaxy (`FAR_T0`-`FAR_T1`, quickened), drawn with whatever maps have landed and plain where none has (the shader's
+own fallback: a dark surface, its air and limb; no cities, clouds or day map until theirs lands, and each used from the
+frame it does). The galaxy, its stars and the chart are the docs' own and are all there. A machine judged unfit flies
+painted, as today. The maps go on landing behind the trip at the moving share (6d.2), so the next flight has them.
+
+**The flight's own readiness is unaffected**: the same chores in the same order (the star chore a few frames earlier,
+within the docs' rank); `warm()`'s `settle` still prints `flight: ready` and `chores at flight ready`; the gate still
+waits on it; `warm()`'s proof still runs its two warm-up touches and, where the docs' proof came first, reads the
+verdict instead of testing again.
+
+Ruled out: a low-resolution copy of each map uploaded whole first (the LQIP shape): it adds eight pictures to the
+folder Orbit copies and `sw.js`'s list for a second of a dark Earth that the shader already covers; reorder or add
+later if the eye asks. Holding the trip up to 8 s or flying it flat (the first draft of this section): the owner's 7a.
+
+### 6d.2 The frame's share runs inside the frame callback, before the paint, with a backstop
+
+**The standard pattern** is frame-aligned budgeted work with a timeout backstop: React's scheduler of 2018
+(`requestAnimationFrameWithTimeout`: a `requestAnimationFrame` and a 100 ms timer, whichever fires first runs the work
+and cancels the other), the work within a frame chained without yielding until a budget is spent, as a
+`scheduler.postTask` or `requestIdleCallback` deadline loop chains it. Two departures, each for a reason: the backstop
+is **50 ms** (`FRAME_WAIT`), the line's own figure for a slow frame and the one #105 named, because at under 20 frames a
+second the page is no longer painting anything worth waiting for and the warm-up's finishing is worth more; and the
+budget is the folder's own window (`SHARE`, 8 ms from the callback), not a deadline API, because `requestIdleCallback`
+is rejected in section 7 and Safari has neither `scheduler.yield()` nor `isInputPending()` (the typing wait is the
+folder's input guard, unchanged). The rules, for the page's queue once open or hurried:
+
+- **A frame wait is a frame and a backstop.** After a share, `page.frame` is asked and a `FRAME_WAIT` timer set; whichever
+  fires first runs the next share and the other is cancelled (`cancelFrame`, `clearTimeout`). Exactly one share per wait.
+  A healthy page never sees the backstop fire (`backstops 0` in the line); a page whose frames are slow or absent (a
+  hidden tab, a dive on a slow laptop) advances a share every 50 ms, or at the browser's throttled rate when hidden,
+  and never stands still. Chores that must not run in a hidden tab already look themselves (`fitness`, `calibrate`).
+- **The window opens at the callback** (or the backstop's firing) and lasts the budget. A chore starts while the
+  window is open: the next in the microtask that ends the last (`end`, no hop), and one that arrives while it is open
+  (`chore()`, `openChores`, `hurryChores` finding the queue idle) in a microtask of its own, never synchronously. The
+  budget never cuts a chore: one started at 7 ms runs whole. The first chore wanted outside the window asks a frame
+  wait. `frameAt`/`fresh` and the hop before `run` go; `page.yield` stays for the reveal.
+- **The budget is `SHARE` (8 ms) while the door is still, and `REVEAL_SHARE` (4 ms, the share the reveal proved)
+  while the flight's own loop draws on the page's thread** (added for 6d.1: the docs' trip now normally flies while
+  the maps are still landing). `chores.js` exports `moving()` (counted; returns the release), 6c.4's shape, and
+  `engine.js` marks it where the flight's loop starts on the page path (`flightRaf = raf(frame)`) and releases it
+  where the loop ends or is cancelled, once per loop; `remote-flight.js` marks nothing (the page's thread is free on
+  the worker path). The install's dive and the door's planets loops (6c.4) are not marked in this step: that is
+  lever (3). `choresNow()` gains `moving`.
+- **Hard chores**: start as any chore (first in a window, or after soft ones in it, as today); after one, a timer of
+  `min(rest, 20)` ms (a measure: its own 200), **then** a frame wait, so the next share lands in a callback. (Today it
+  is the frame first and the timer after, which put the next chore in a plain task.) No two hard chores start in one
+  window; two in one frame only when the backstop ran between them, which needs a frame over `FRAME_WAIT` (6d.6).
+- **The reveal** (`soft && !open`) is untouched, to the letter: one soft chore a frame, the 4 ms share from the first
+  chore's start, the hop after the frame, no backstop (the reveal is bounded by `openChores`, which `drawnIn` caps at
+  10 s). It was measured and A/B'd by the owner (`?holdreveal`).
+- **The worker's queue** (`pace("none")`): unchanged: 0 ms timers, no frames, no yields, no backstop (6a.5 and the
+  2026-10-30 amendment on #101).
+- **The line** (`noteChores`): after `frames …` add `yields N, Y ms` (the hops: `page.yield` on the page, the 0 ms
+  timers in the worker; Y their total wait) and `backstops N` (shares begun by the backstop); `timers` counts the rests
+  alone (asked above 0). `resting` is the remainder as before, now less Y too, and should still read near 0. The
+  `?door3d` per-chore line is unchanged.
+
+**Lever (3), a larger share while nothing moves, is not in this step.** What this step removes is the getting-between
+(two hops a frame, ~17 ms on the phone); the share's size is the one lever left, and raising it trades the still door's
+paint for speed, which only the eye on a device can judge, with the other two loops marked (6c.4) to lower it again.
+The phone's line under this step says whether it is needed.
+
+### 6d.3 What changes where; the interface change, deliberate
+
+- `assets/door/chores.js`: `end` and `pump` as 6d.2; `FRAME_WAIT = 50`; `moving()`; the line's two figures. `SHARE`,
+  `REVEAL_SHARE`, `CAP`, `ORDER`, `chore(fn, rest, tag, options)` keep their values and shape. `index.js` re-exports `moving`.
+- `assets/door/voyage.js`: the star chore, `docsLoading`, the docs' proof and the shared verdict, `fitness()`'s map
+  branches (6d.1). `assets/door/engine.js`: `warmDocs` off `made`; `moving()` round the flight loop.
+- `assets/js/main.js`: line 121 and `flyToPad`'s `ready` for the docs. `assets/door/page.js`: nothing.
+  `tools/ci/door-stub.mjs`: nothing new; a case that wants frames absent or slow replaces `requestAnimationFrame`
+  itself, as `chores-yield-test.mjs` wraps it.
+- `assets/door/README.md`: the journey's `warmDocs` sentence: `warmDocs({ prove: false })` resolves once the docs'
+  galaxy is ready (the world made, the galaxy compiled or given up, its stars on the GPU), which may be before
+  `warm({ prove: false })`; `warmDocs()` proves the world on that alone, so a trip to the docs may begin while the
+  flight's maps are still landing, drawn with those that have; a host that wants the maps too waits on `warm()` as
+  well. "Also exported": `moving`. The chores' paragraph: one sentence on the share in the frame callback and the backstop.
+
+The interface change, for Orbit's import (ADR-0001): the meaning of `warmDocs` (both forms) and one additive export.
+Orbit's own code calls neither (checked 2026-10-30: only the copied folder and its typings name `warmDocs`), so its
+import merge request needs nothing. Entry point, settings, slots, markup, stylesheet and the `page` adapter are
+untouched. Said in the commit.
+
+### 6d.4 Tests: behaviour, never timings (ids as in the design note on #101, which has each case in full)
+
+Node, through `assets/door/index.js` on the stub page (`tools/ci/door-stub.mjs`), one fresh process per case on the
+virtual clock; every figure virtual; each case with a control that shows the thing is there to begin with.
+
+- A1 maps that never arrive: `warmDocs({ prove: false })` settles while `warm({ prove: false })` is still pending
+  (today both pend). A2 by then the star cloud is on the GPU, the galaxy's shaders compiled, no map texture made.
+  A3 maps never arriving, `warmDocs()` proves the world: `flight world: on` once, its fitness frames drawn with every
+  map branch on, and `warm()` later adds no second verdict. A4 a flight with `ready` = the docs' proof starts drawing
+  with the world before any map is in, and a map that lands mid-trip is used. A5 maps arriving: `flight: ready` and
+  `chores at flight ready` print once, after all eight maps, as today.
+- B1 the share in the callback: with yields 6 ms late, a frame's first chore starts at the callback's time and the
+  frame's chores run with no yield and no timer between them. B2 the window never cuts a chore (5 ms: two a frame;
+  9 ms: one). B3 a hard chore: timer 20 then frame, the next chore in that callback. B4 frames absent: the chores
+  still run, a share per 50 ms, `backstops` counted (today nothing runs); frames at 200 ms: shares every 50 ms. B5
+  healthy frames: `backstops 0`. B6 the reveal as `chores-yield-test` Y5. B7 the worker as Y6. B8 the line's figures
+  and `resting` near 0. B9 a chore arriving inside an open window joins it; one arriving after it waits for a frame.
+  B10 while a flight runs on the page path the window is 4 ms (two 3 ms chores a frame), 8 ms again after it ends and
+  after a cancelled flight; `choresNow().moving` 1 and 0; the worker path's page queue stays at 8.
+
+Browser: no new live test. `docs-planet-test.mjs` D1 and D2, `freeze.mjs` check 5 and the journey must pass unchanged.
+
+### 6d.5 What the owner measures (M6): the phone, Edge, Firefox
+
+`?preview&door3d` on the design host, the same three loads as on 2026-10-30: the time the docs' planet takes a tap,
+`flight: ready`, and the line (`frames`, `yields`, `backstops`, `waited`, `resting`, `over`); then a tap on the docs
+as soon as it is ready, the eye on the leaving (the second of plain Earth), the galaxy and the arrival, and
+`flight: first second N frames, worst N ms` for that trip. Expected, said as expectations: the phone's docs' planet
+takes a tap at 3.5 to 4.5 s after the page (from 15.9), a tap then flies within a second, the flight's own way in at
+8 to 10 s, the line about `frames 300, 1500 ms, yields 0, backstops 0, waited under 50 ms, resting under 100 ms, over
+6000 to 7000`; the docs' trip's first second no worse than the demo's today (51 frames, worst 62 ms) with the maps
+landing at the 4 ms share beneath it; Edge and Firefox no later than today on every figure, `backstops 0` on a healthy
+desktop and above 0 only during a dive on a slow one.
+
+### 6d.6 Amendment after CI (2026-10-30): a hard chore may start from the backstop; check 5 says so
+
+Built at 2bb371d, `freeze.mjs` check 5 ("no two non-soft chores start in one frame") failed on the runner's software
+GL (`?gpu=force`, frames often over 50 ms: `16628 ms: hard flight, hard flight`). The reading is right: after a hard
+chore the queue rests (`min(rest, 20)` ms) and then waits for a frame **or** the backstop; when the frame is over
+50 ms late the backstop fires, the next hard chore starts, and the same long frame holds both. 6d.2's "a window is
+one frame" was wrong as a guarantee: a window is one frame **or** one backstop firing.
+
+**Decision (owner 10a): the backstop serves hard chores too; the invariant is restated and check 5 changes to measure it.**
+Between two hard starts there is always the rest and then a frame callback or `FRAME_WAIT` of waiting, whichever
+first: that is the rule, and it is the one that keeps #105's lesson. The two alternatives both break it: a backstop
+that serves soft chores only, or one that must see a real frame first after a hard chore, makes the maps' six hundred
+bands (hard, tagged `flight`) frame-bound again, which on a page whose frames take 100 ms is a minute of warm-up (the
+Edge crawl of #105, 4.7 s to 49.8 s), and in a hidden tab a standstill. What one-a-frame was for, the paint between two
+heavy chores, the backstop does not take away: it fires only when the browser has had 50 ms in which it could have
+painted and did not, after a rest in which it also could have. The browser, not the queue, chose not to paint; starting
+work in that gap is what #105 asked for. No code changes in `chores.js`.
+
+`freeze.mjs` check 5 becomes: a frame holding two or more non-soft starts must have lasted longer than `FRAME_WAIT`
+(50 ms, measured by the page between its own frame callbacks), and holds at most `1 + floor(length / FRAME_WAIT)` of
+them (each extra start needed another 50 ms of waiting); frames of 50 ms or under hold at most one, as before; and the
+line's `backstops` is at least the number of extra starts counted. `HARD_SEEN` and the "nothing hard before open"
+check stay. Its comment (lines 39-41) says why: one a frame, or one a backstop in a frame the browser let run long.
+
+### 6d.7 Tests the amendment implies (behaviour; `tools/ci/chores-frame-test.mjs` unless said)
+
+- B3 reads "the event order is `timer 20`, then a frame **or the backstop**, whichever first; on the stub's healthy
+  frames it is the frame, and the soft chore starts at that callback". The measure's case likewise.
+- B4 unchanged (soft chores; the backstop already serves them).
+- B11 (new) hard chores on slow and absent frames: frames at 200 ms, two hard chores of 3 ms (rest 60) queued and
+  opened: the second starts 70 ms (within 1 ms) after the first ended, from the backstop (`backstops` 1 at least), and
+  no frame callback fell between them; hurried, 50 ms. Frames absent: six hard chores all run, each 70 ms after the
+  last, `backstops 6`. Healthy frames (16 ms): the second hard chore starts at the first frame callback after the
+  20 ms rest, never before it, and `backstops 0`. Control, today's code (792b724): frames absent, the second hard
+  chore never starts.
+- B12 (new) two hard chores never share one window: healthy frames, a window opened by a callback with a hard chore at
+  its head and another behind it: the second starts in a later callback, not in this window, whatever the window has
+  left (a 1 ms hard chore at 0 ms does not pull the next in at 1 ms).
+- `freeze.mjs` check 5 as 6d.6: it passes on the runner's software GL, its message names the frame's length and the
+  count when it fails, and a run with every frame under 50 ms (the design host) still allows no crowded frame.
 
 ## 7. Rejected
 

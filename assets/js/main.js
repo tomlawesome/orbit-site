@@ -118,7 +118,8 @@ function warmJourneys() {
   /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
   settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
   settled(all[1]).then(() => openWays([], true));
-  Promise.all([settled(all[1]), settled(all[2]), settled(journey.warmDocs({ prove: false }))]).then(() => openWays(["docs"]));
+  /* (the docs' way in opens on its own galaxy, not the flight's maps: ADR-0004 6d.1) */
+  Promise.all([settled(all[2]), settled(journey.warmDocs({ prove: false }))]).then(() => openWays(["docs"]));
   settled(PADS.info.world?.baked ?? all[3]).then(() => openWays(["info"]));
   /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are. Where
      the browser compiles on the page's own thread, every one of them, the docs' galaxy's and the live door's too
@@ -422,7 +423,8 @@ function flyToPad(id, push = true) {
      world is ready (install.js: form); the flights hold on the mark lifting to the centre (assets/door/journey.js: fly) */
   hurryChores(id === "docs" ? ["flight", "docs"] : id === "install" || id === "info" ? id : "flight");
   if (id === "install" || id === "info") { shotOf(PADS[id]).prepare?.(); goToWorld(id, token); return; }
-  flyNow(id, token, Promise.all([journey.warm(), id === "docs" ? PADS.docs.ring.ready?.() : null, id === "docs" ? journey.warmDocs() : null]));
+  /* (the docs' trip is proved on its own galaxy and flies with whatever maps have landed, ADR-0004 6d.1; the demo's on the whole flight) */
+  flyNow(id, token, id === "docs" ? Promise.all([PADS.docs.ring.ready?.(), journey.warmDocs()]) : journey.warm());
 }
 /* the docs' chart, as the flights carry it: where it sits on the screen, measured when first wanted, and again
    if the window is resized on the way */

@@ -5,26 +5,28 @@
  *
  *   node tools/ci/chores-yield-test.mjs
  *
- *   Y1  opened, ten soft chores of 1 ms: `timers 0` in the line, no timer set at all, at most 5 frames, every chore
- *       started after a yield or a frame (control: all ten ran and the line printed once; today's line reads
+ *   Y1  opened, ten soft chores of 1 ms: `timers 0` in the line, no timer set but the backstop's 50 ms (which the harness
+ *       leaves out, as it leaves out the cap's 15000), at most 5 frames, no yield at all (the chores of a share run
+ *       back to back; 6d.2, 2026-10-30) (control: all ten ran and the line printed once; today's line reads
  *       `timers 10`, which is the failure it shows first)
  *   Y2  a hard chore (rest 60): one frame, then one timer asked 20, and nothing else
  *   Y3  a measure (rest 200): its timer asked 200 is kept, and no timer asked 0 is set
- *   Y4  before `run`: opening the queue sets no timer and makes one yield, the chore not yet run; it runs after
+ *   Y4  before `run`: opening the queue sets no rest timer and asks one frame, makes no yield, the chore not yet run;
+ *       it runs in that frame's callback (6d.2, 2026-10-30; it used to be after a yield)
  *   Y5  the reveal (openSoft), soft chores that fill the share: still one soft chore a frame, and no timer
  *   Y6  pace("none"): no frame between ten chores, and the hops stay 0 ms timers, not yields (the worker's own
  *       messages share the task queue with a yield: draw-pixels P1, 2026-10-30); a measure still sets its 200 ms timer
  *   Y7  the docs' chores rank before the flight's (owner decision 13a): a flight chore queued before a docs chore
  *       runs second; install and info keep their place (install first, info after both)
  *   Y8  yields delivered late (each 6 ms of virtual time after it is posted, as on a phone that paints between a frame
- *       and the next task), the queue opened, twelve soft chores of 3 ms: at least two chores run per frame asked, so
- *       at most 7 frames (the share counts from the first chore's start after a frame, not from the frame callback;
- *       today it counts from the callback, the first chore starts after the share is spent, and every chore asks a
- *       frame: 12). Control, the delay 0: at most 7 frames as well (the share works today when the hop is instant)
+ *       and the next task), the queue opened, twelve soft chores of 3 ms: at most 4 frames (the share runs in the
+ *       frame's callback and no hop sits before it; 6d.2, 2026-10-30; it was 7, and today it is 6). Control, the
+ *       delay 0: at most 7 frames (the share works today when the hop is instant)
  *
  * The stub's MessageChannel (installClock, door-stub.mjs) is the unclamped next task: an immediate on the virtual
  * clock, counted as clock.yields(), set without a setTimeout. Timers set (setTimeout, apart from the one a frame
- * wraps) and frames (requestAnimationFrame) are counted here, in order. Every case runs in a fresh Node process on
+ * wraps and the two guards the queue sets, the cap's 15000 ms and the backstop's 50 ms: neither a hop nor a rest) and
+ * frames (requestAnimationFrame) are counted here, in order. Every case runs in a fresh Node process on
  * the stub page, on its virtual clock; chores are reached through assets/door/index.js as a host reaches them.
  */
 import { INDEX, installPage, installClock, childMain, runCase, chk, finish } from "./door-stub.mjs";
@@ -41,24 +43,24 @@ async function setup({ none = false, spendable = false } = {}) {
   const spend = (ms) => { extra += ms; };
   /* frames and timers asked, in order; a frame's own setTimeout in the stub is not a timer of the page's, and the
      15000 ms one a running chore sets (a stall guard: neither a hop nor a rest) is left out */
-  const log = { frames: 0, timers: [], ev: [] };
+  const log = { frames: 0, timers: [], ev: [], cb: [] };
   let inFrame = false;
   const raf = globalThis.requestAnimationFrame;
-  globalThis.requestAnimationFrame = (f) => { log.frames++; log.ev.push("frame"); inFrame = true; try { return raf(f); } finally { inFrame = false; } };
+  globalThis.requestAnimationFrame = (f) => { log.frames++; log.ev.push("frame"); inFrame = true; try { return raf((t) => { log.cb.push(performance.now()); f(t); }); } finally { inFrame = false; } };
   const set = globalThis.setTimeout;
   globalThis.setTimeout = (f, ms = 0, ...a) => {
-    if (!inFrame && Number(ms) !== 15000) { const m = Number(ms) || 0; log.timers.push(m); log.ev.push(`timer ${m}`); }
+    if (!inFrame && Number(ms) !== 15000 && Number(ms) !== 50) { const m = Number(ms) || 0; log.timers.push(m); log.ev.push(`timer ${m}`); }
     return set(f, ms, ...a);
   };
   const door = await import(INDEX);
   door.createDoor({ typingWait: 0, flags: {} });
   if (none) door.pace("none");
-  const reset = () => { log.frames = 0; log.timers.length = 0; log.ev.length = 0; };
+  const reset = () => { log.frames = 0; log.timers.length = 0; log.ev.length = 0; log.cb.length = 0; };
   return { page, clock, door, spend, log, reset };
 }
 
 const lineOf = (page) => page.lines.filter((l) => /chores at x\b/.test(l));
-const noter = (ctx, ran, name, ms = 0) => () => { ran.push({ name, at: performance.now(), frames: ctx.log.frames }); if (ms) ctx.spend(ms); };
+const noter = (ctx, ran, name, ms = 0) => () => { ran.push({ name, at: performance.now(), frames: ctx.log.frames, yields: ctx.clock.yields() }); if (ms) ctx.spend(ms); };
 
 async function softTen() {
   const ctx = await setup({ spendable: true });
@@ -111,9 +113,9 @@ async function beforeRun() {
   ctx.reset();
   const y0 = ctx.clock.yields();
   ctx.door.openChores();
-  const at = { timers: ctx.log.timers.slice(), yields: ctx.clock.yields() - y0, ran: ran.length };
+  const at = { timers: ctx.log.timers.slice(), yields: ctx.clock.yields() - y0, frames: ctx.log.frames, ran: ran.length };
   await ctx.clock.advance(5000);
-  return { at, ranAfter: ran.length };
+  return { at, ranAfter: ran.length, start: ran[0] || null, cb: ctx.log.cb.slice(), y0 };
 }
 
 async function reveal() {
@@ -183,9 +185,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const r = runCase(import.meta.url, "y1");
   chk("Y1 control: all ten soft chores ran, and the queue printed one `chores at x` line", r, (r) => [r.ran === 10 && r.lines.length === 1, `${r.ran} ran; ${shown(r)}`]);
   chk("Y1 the line reads `timers 0` (every hop a yield; today it reads `timers 10`)", r, (r) => { const t = lineTimers(r); return [!!t && t[0] === 0, `${t ? `timers ${t.join(", ")}` : NOTIMERS}: ${shown(r)}`]; });
-  chk("Y1 no timer was set by the page at all", r, (r) => [r.timers.length === 0, `timers set: ${JSON.stringify(r.timers)}`]);
+  chk("Y1 no timer was set by the page (the cap's and the backstop's guards apart)", r, (r) => [r.timers.length === 0, `timers set: ${JSON.stringify(r.timers)}`]);
   chk("Y1 at most 5 frames", r, (r) => { const f = lineFrames(r); return [r.frames <= 5 && !!f && f[0] <= 5, `${r.frames} frames asked; ${f ? `frames ${f.join(", ")}` : NOFRAMES}`]; });
-  chk("Y1 every chore started after a yield or a frame (yields + frames at least 10)", r, (r) => [r.yields + r.frames >= 10, `${r.yields} yields, ${r.frames} frames`]);
+  chk("Y1 no yield at all: the chores of a share run back to back (today every hop is one)", r, (r) => [r.yields === 0, `${r.yields} yields, ${r.frames} frames`]);
 }
 {
   const r = runCase(import.meta.url, "y2");
@@ -206,8 +208,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 {
   const r = runCase(import.meta.url, "y4");
   chk("Y4 control: the chore had not run when the queue was opened, and ran afterwards", r, (r) => [r.at.ran === 0 && r.ranAfter === 1, `ran at open ${r.at.ran}, after ${r.ranAfter}`]);
-  chk("Y4 opening the queue sets no timer (the hop before `run` is not a setTimeout)", r, (r) => [r.at.timers.length === 0, `timers set at open: ${JSON.stringify(r.at.timers)}`]);
-  chk("Y4 opening the queue makes one yield", r, (r) => [r.at.yields === 1, `${r.at.yields} yields at open`]);
+  chk("Y4 opening the queue sets no rest timer", r, (r) => [r.at.timers.length === 0, `timers set at open: ${JSON.stringify(r.at.timers)}`]);
+  chk("Y4 opening the queue asks one frame and makes no yield (today it makes one yield)", r, (r) => [r.at.frames === 1 && r.at.yields === 0, `${r.at.frames} frames, ${r.at.yields} yields at open`]);
+  chk("Y4 the chore runs in that frame's callback, after no yield", r, (r) => [!!r.start && r.cb.length >= 1 && Math.abs(r.start.at - r.cb[0]) <= 0.5 && r.start.yields === r.y0, `chore at ${r.start && r.start.at}, first callback at ${r.cb[0]}; yields at the chore ${r.start && r.start.yields}, at open ${r.y0}`]);
 }
 {
   const r = runCase(import.meta.url, "y5");
@@ -239,8 +242,8 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 }
 {
   const r = runCase(import.meta.url, "y8a");
-  chk("Y8 control: all twelve soft chores ran, with each yield delivered 6 ms late", r, (r) => [r.ran === 12 && r.yields > 0, `${r.ran} ran, ${r.yields} yields`]);
-  chk("Y8 with every yield 6 ms late, at least two chores run per frame asked (at most 7 frames; today 12)", r, (r) => [r.frames <= 7, `${r.frames} frames asked for ${r.ran} chores`]);
+  chk("Y8 control: all twelve soft chores ran, with each yield delivered 6 ms late", r, (r) => [r.ran === 12, `${r.ran} ran, ${r.yields} yields`]);
+  chk("Y8 with every yield 6 ms late, at most 4 frames are asked for twelve chores (today 6)", r, (r) => [r.frames <= 4, `${r.frames} frames asked for ${r.ran} chores`]);
 }
 {
   const r = runCase(import.meta.url, "y8b");
