@@ -1172,7 +1172,7 @@ export function createVoyage(under, { restFor }) {
     return ok;
   });
   /* the docs' galaxy and its stars are wanted by the docs' flight alone, so the flight is not kept waiting for them:
-     where the browser compiles in the background they are a chore of their own ("galaxy", ranked after the journeys
+     where the browser compiles in the background they are a chore of their own (tagged "docs" first, so it ranks with the docs' journey, before the flight's: owner, #101, 13a,
      and before the live door and the measures: chores.js), so they are compiled once the queue opens, not beside the
      rest during the reveal (the docs' journey still hurries them: "docs"); where it compiles on the page's own thread (Firefox:
      compilesAside false) they are a "compile" chore, queued now, behind the flight's, so they too are done under the
@@ -1197,7 +1197,7 @@ export function createVoyage(under, { restFor }) {
   };
   /* (in the background the chore only starts them and lets the queue go, so the door's measures, which wait for it
      to be at rest, are not held for a compile that costs the page nothing) */
-  const galaxy = compilesAside() ? chore(() => { makeGal(); }, 60, ["galaxy", "docs"]).then(() => galMade).catch(() => {}) : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
+  const galaxy = compilesAside() ? chore(() => { makeGal(); }, 60, ["docs", "galaxy"]).then(() => galMade).catch(() => {}) : chore(makeGal, 20, ["compile", "docs"]).catch(() => {});
   const vao = gl.createVertexArray();
 
   /* the rich Earth (wantRich, above): its program (where the door is rich from the first, the overlay itself), the

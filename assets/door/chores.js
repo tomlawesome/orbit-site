@@ -47,6 +47,10 @@ let softN = 0, softMs = 0;
    chores run back to back within this much of a frame (ms) before the next frame is waited for; during the reveal,
    one a frame and no more */
 let frameAt = 0;
+/* a frame has been waited for and no chore has started since: the next to start begins the frame's share (#101: on a
+   phone the browser paints between the frame callback and the hop, ~8 ms, so a share counted from the callback was spent
+   before the first chore started, and every chore waited for a frame) */
+let fresh = true;
 const SHARE = 8, REVEAL_SHARE = 4;
 /* the longest a chore may hold the queue (ms): the longest real one is a texture upload or a compile, seconds on a slow GPU */
 const CAP = 15000;
@@ -140,7 +144,7 @@ function pump() {
     started++;
     /* a soft chore let through before open: one of the reveal's */
     const early = job.soft && !open && !hurried;
-    const t0 = performance.now(); waited += t0 - asked;
+    const t0 = performance.now(); waited += t0 - asked; if (fresh) { frameAt = t0; fresh = false; }
     const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0, f: 0, t: 0 }; record.push(rec);
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
@@ -174,8 +178,8 @@ function pump() {
       const frame = (ms) => {
         const f0 = performance.now();
         page.frame(() => {
-          frameAt = performance.now();
-          const d = frameAt - f0; framesN++; framesMs += d; rec.f += d;
+          const at = performance.now(); fresh = true;
+          const d = at - f0; framesN++; framesMs += d; rec.f += d;
           if (d > framesMax) framesMax = d;
           if (d > 50) framesSlow++;
           /* (no rest asked: the next chore starts in this frame callback itself) */
