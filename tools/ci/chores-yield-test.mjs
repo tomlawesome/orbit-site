@@ -12,7 +12,8 @@
  *   Y3  a measure (rest 200): its timer asked 200 is kept, and no timer asked 0 is set
  *   Y4  before `run`: opening the queue sets no timer and makes one yield, the chore not yet run; it runs after
  *   Y5  the reveal (openSoft), soft chores that fill the share: still one soft chore a frame, and no timer
- *   Y6  pace("none"): yields only (no frame, no timer) between ten chores; a measure still sets its 200 ms timer
+ *   Y6  pace("none"): no frame between ten chores, and the hops stay 0 ms timers, not yields (the worker's own
+ *       messages share the task queue with a yield: draw-pixels P1, 2026-10-30); a measure still sets its 200 ms timer
  *   Y7  the docs' chores rank before the flight's (owner decision 13a): a flight chore queued before a docs chore
  *       runs second; install and info keep their place (install first, info after both)
  *
@@ -200,14 +201,14 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 {
   const r = runCase(import.meta.url, "y6a");
   chk("Y6 control: under pace(\"none\") all ten chores ran", r, (r) => [r.ran === 10, `${r.ran} ran`]);
-  chk("Y6 under pace(\"none\") no timer and no frame are set between chores", r, (r) => [r.timers.length === 0 && r.frames === 0, `timers ${JSON.stringify(r.timers)}, frames ${r.frames}`]);
-  chk("Y6 under pace(\"none\") the hops are yields (at least 9 for ten chores)", r, (r) => [r.yields >= 9, `${r.yields} yields`]);
+  chk("Y6 under pace(\"none\") no frame is asked and every timer between chores asks 0 ms", r, (r) => [r.frames === 0 && r.timers.length >= 9 && r.timers.every((ms) => ms === 0), `timers ${JSON.stringify(r.timers)}, frames ${r.frames}`]);
+  chk("Y6 under pace(\"none\") the hops are not yields", r, (r) => [r.yields === 0, `${r.yields} yields`]);
 }
 {
   const r = runCase(import.meta.url, "y6b");
   chk("Y6 control: under pace(\"none\") a measure still holds the next chore back 200 ms or more", r, (r) => [r.ran === 2 && r.gap >= 200, `${r.ran} ran; gap ${r.gap} ms`]);
-  chk("Y6 under pace(\"none\") the measure's timer asked 200 is kept, and it is the only timer", r, (r) => [same(r.timers, [200]), `timers set: ${JSON.stringify(r.timers)}`]);
-  chk("Y6 under pace(\"none\") the hops are yields and no frame is asked", r, (r) => [r.yields >= 1 && r.frames === 0, `${r.yields} yields, ${r.frames} frames`]);
+  chk("Y6 under pace(\"none\") the measure's timer asked 200 is kept, beside the 0 ms hops", r, (r) => [r.timers.includes(200) && r.timers.every((ms) => ms === 0 || ms === 200), `timers set: ${JSON.stringify(r.timers)}`]);
+  chk("Y6 under pace(\"none\") no yield and no frame", r, (r) => [r.yields === 0 && r.frames === 0, `${r.yields} yields, ${r.frames} frames`]);
 }
 {
   const r = runCase(import.meta.url, "y7");

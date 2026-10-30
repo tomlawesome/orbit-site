@@ -101,9 +101,12 @@ const tags = (tag) => /** @type {string[]} */ ([]).concat(tag);
 /** @param {Tag} tag */
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
 
-/* the next task, with no clamp: the page's own yield (page.js), or, from a host's page adapter without one, a 0 ms timer */
+/* the next task, with no clamp, where the queue is paced (the page): its own yield (page.js), or, from a host's page
+   adapter without one, a 0 ms timer. Unpaced (a worker, pace("none")) the hop stays a 0 ms timer: there the host's
+   own messages (a frame, a size) share the task queue with a yield, and a chore hopping ahead of them drew the
+   flight's first frame before its size had come (draw-pixels P1, 2026-10-30); the worker's hops were never the wait */
 /** @param {() => void} fn */
-const hop = (fn) => { if (typeof page.yield === "function") page.yield(fn); else setTimeout(fn, 0); };
+const hop = (fn) => { if (paced && typeof page.yield === "function") page.yield(fn); else setTimeout(fn, 0); };
 
 function pump() {
   if (running || resting || !queue.length) return;
