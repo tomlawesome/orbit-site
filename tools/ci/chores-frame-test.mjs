@@ -314,7 +314,7 @@ for (const [id, rest, ask] of [["b3a", 60, 20], ["b3b", 200, 200]]) {
 {
   const r = runCase(import.meta.url, "b4a");
   chk("B4 control: with no frame ever called back, a frame was asked (the queue is waiting on one)", r, (r) => [r.frames >= 1 && r.cb.length === 0, `${r.frames} frames asked, ${r.cb.length} called back`]);
-  chk("B4 frames absent: all ten chores still run (today none does)", r, (r) => [r.ran.length === 10, `${r.ran.length} of 10 ran after 5000 ms`]);
+  chk("B4 frames absent: all ten chores still run (today 3 of 10 do: the first share, then the queue waits for a frame that never comes)", r, (r) => [r.ran.length === 10, `${r.ran.length} of 10 ran after 5000 ms`]);
   chk("B4 frames absent: each share after the first begins 50 ms after the last share's end", r, (r) => { const g = gaps(r.ran); return [g.length >= 2 && g.every((x) => Math.abs(x - 50) <= 1), `shares ${sizes(r.ran)}, gaps ${JSON.stringify(g)}`]; });
   chk("B4 frames absent: the line reads `backstops 4` and `frames 4`", r, (r) => { const b = lineBackstops(r), f = lineFrames(r); return [!!b && b[0] === 4 && !!f && f[0] === 4, `${text(b, "backstops")}; ${f ? `frames ${f[0]}` : "no `frames` figure"}: ${shown(r)}`]; });
 }

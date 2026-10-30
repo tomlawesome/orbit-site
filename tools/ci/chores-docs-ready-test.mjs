@@ -30,6 +30,12 @@ const BLOB = { ok: true, status: 200, blob: async () => ({ size: 1, type: "image
 /* the flight world's pictures: the five under flight/ and the three near ones under dawn/ (the Earth's own photo, dawn/dawn.webp, is a plain picture, not asked for with fetch) */
 const isMap = (u) => /(?:^|\/)(?:flight\/[^/]+|dawn\/(?:lights|clouds|land)-near\.webp)$/.test(String(u).split("?")[0]);
 
+/* the textures a picture was put on. The stub's page.mapTextures() also counts the world's render targets and its 1x1 blank
+   (texImage2D with no picture), which exist from the moment the world is made whether or not a map has landed, so a count
+   of 0 could never be read from it; a map is put on the GPU by texStorage2D and texSubImage2D bands (the stub honours the
+   crop) */
+const mapTextures = (page) => new Set(page.tex.filter((c) => !c.probe && c.texture && c.fn !== "texImage2D").map((c) => c.texture));
+
 /* the stub page whose fetch holds the maps while bed.hold is set */
 function bed({ hold }) {
   const b = { hold, held: [], asked: [] };
@@ -86,7 +92,7 @@ async function a2() {
   const { journey } = await mount(b);
   let snap = null;
   journey.warmDocs({ prove: false }).then(() => {
-    snap = { stars: stars.slice(), vertex: page.bufCalls.some((c) => c.vertex), galaxy: page.lines.filter((l) => /docs galaxy: shaders compiled/.test(l)).length, maps: page.mapTextures().size, at: b.clock.now() };
+    snap = { stars: stars.slice(), vertex: page.bufCalls.some((c) => c.vertex), galaxy: page.lines.filter((l) => /docs galaxy: shaders compiled/.test(l)).length, maps: mapTextures(page).size, at: b.clock.now() };
   }, () => {});
   await b.clock.advance(5000, () => snap !== null);
   return snap ? { ...snap } : { none: "warmDocs({ prove: false }) had not resolved by 5000 ms of virtual time" };
@@ -102,7 +108,7 @@ async function a3() {
     page.glBase[fn] = (loc, ...a) => {
       const n = log.length;
       const r = was(loc, ...a);
-      if (log.length > n) log[log.length - 1].ctx = { galaxy: page.lines.some((l) => /docs galaxy/.test(l)), maps: page.mapTextures().size };
+      if (log.length > n) log[log.length - 1].ctx = { galaxy: page.lines.some((l) => /docs galaxy/.test(l)), maps: mapTextures(page).size };
       return r;
     };
   }
@@ -146,14 +152,14 @@ async function a4run() {
   const addAt = page.bodyLog.findIndex((e) => e.op === "add" && e.name === "holding");
   const removed = addAt < 0 ? undefined : page.bodyLog.slice(addAt).find((e) => e.op === "remove" && e.name === "holding");
   out.removedAt = removed ? removed.at : null;
-  if (lift === null) { out.drawsFlight = page.draws; out.maps = page.mapTextures().size; return out; }
+  if (lift === null) { out.drawsFlight = page.draws; out.maps = mapTextures(page).size; return out; }
   await clock.advance(2800);
   out.drawsFlight = page.draws - before;
-  out.mapsEarly = page.mapTextures().size;
+  out.mapsEarly = mapTextures(page).size;
   out.asked = b.held.length;
   if (b.held.length) b.held.shift()();
   await clock.advance(1500);
-  out.mapsLate = page.mapTextures().size;
+  out.mapsLate = mapTextures(page).size;
   out.flightOver = page.bodyClasses.has("instrument");
   journey.reset();
   return out;
@@ -168,8 +174,8 @@ async function a5() {
     console[k] = (...a) => {
       was(...a);
       const s = a.join(" ");
-      if (/chores at flight ready/.test(s)) snaps.chores = page.mapTextures().size;
-      else if (/flight: ready/.test(s)) snaps.ready = page.mapTextures().size;
+      if (/chores at flight ready/.test(s)) snaps.chores = mapTextures(page).size;
+      else if (/flight: ready/.test(s)) snaps.ready = mapTextures(page).size;
     };
   }
   const { journey } = await mount(b);
@@ -180,7 +186,7 @@ async function a5() {
   return {
     docs: docs.state, docsAt: docs.at, flight: flight.state, flightAt: flight.at,
     ready: page.lines.filter((l) => /flight: ready/.test(l)).length, chores: page.lines.filter((l) => /chores at flight ready/.test(l)).length,
-    mapsAtReady: snaps.ready ?? null, mapsAtChores: snaps.chores ?? null, maps: page.mapTextures().size, asked: b.asked.filter(isMap).length,
+    mapsAtReady: snaps.ready ?? null, mapsAtChores: snaps.chores ?? null, maps: mapTextures(page).size, asked: b.asked.filter(isMap).length,
   };
 }
 

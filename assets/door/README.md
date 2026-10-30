@@ -154,8 +154,12 @@ it was given (the worker's fallback, below), so a host keeps no reference to it
   `ProfileCurveError`. The site's flights are all `UP`'s curves with data.
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
-- `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: and the galaxy;
-  `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
+- `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: the docs' galaxy, ready on its
+  own (#101): `warmDocs({ prove: false })` resolves once the world is made, the galaxy compiled or given up and its stars
+  on the GPU, which may be before `warm({ prove: false })` does, the flight's maps still landing; `warmDocs()` proves the
+  world on that alone (one galaxy test frame, and the fitness test shared with `warm()`'s proof: one verdict a visit), so
+  a trip to the docs may begin while the maps are still landing, drawn with those that have; a host that wants the maps
+  too waits on `warm()` as well. `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
   below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
   `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
   put on the GPU (as chores, so as the host opens them), and no frame drawn, no pixel read back. The default
@@ -371,7 +375,7 @@ The console says `orbit · flight: drawn on the page: <why>`.
 For a host's own worlds and skies, so their work takes its turn with the
 door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
 `noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
-`hurryChores`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
+`hurryChores`, `programs`, `compilesAside`, `holdReveal`, `moving`, and the wait limit for
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
 (`drawnAside()`, for a host that puts its own drawing beside it), the capability probe
@@ -385,10 +389,14 @@ and the one-band-a-frame uploads dropped). All three are optional: a host that
 uses none of them has the door as before.
 `page.yield(fn)` (`page.js`) is an additive change to that page interface (#101):
 the next task with no clamp (a `MessageChannel` message, else `setTimeout(fn, 0)`),
-which the chore queue hops on between chores instead of 0 ms timers. A host's own
+which the chore queue hops on during the door's reveal instead of 0 ms timers. A host's own
 page adapter given to `setPage` need not have it: `setPage` only replaces what
 it names, and where a page without `yield` is in use `chores.js` falls back to
 `setTimeout(fn, 0)`, as before.
+The page's chore queue runs its share inside the animation frame's callback, before the paint, with a 50 ms
+timer behind it for a page whose frames are slow or absent (#101); `moving()` (`chores.js`) → `release()` says
+something moves on the page's thread (the flight's own loop does, on the page path), so the share is the smaller
+one until released. A host with its own loop on the page's thread may call it; one that never does has the door as before.
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the

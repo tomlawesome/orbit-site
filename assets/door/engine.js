@@ -23,7 +23,7 @@
  */
 import { createVoyage, fetchVoyage, doorIsLive, DOOR3D } from "./voyage.js";
 import { probe } from "./capability.js";
-import { chore, note, noteChores, compilesAside, PICTURE_WAIT } from "./chores.js";
+import { chore, note, noteChores, compilesAside, moving, PICTURE_WAIT } from "./chores.js";
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
 import { page } from "./page.js";
@@ -1246,8 +1246,13 @@ export function createFlight(canvas, options = {}) {
     step(t, dt);
     markDrawn();
     if (t < active.P.dur + 400) flightRaf = raf(frame);
-    else { flightRaf = 0; flight = null; }
+    else { flightRaf = 0; flight = null; still(); }
   }
+  /* the flight's own loop draws on the page's thread: while it runs the chore queue's share is the smaller one (chores.js:
+     moving), taken where the loop starts and given back where it ends or is cancelled, once per loop (ADR-0004 6d.2) */
+  /** @type {(() => void) | null} */
+  let unmove = null;
+  const still = () => { if (unmove) { unmove(); unmove = null; } };
 
   /* `data-drawn` on the canvas: the number of the start whose first frame is on it (the worker path's mark, remote-flight.js).
      Cleared as a start begins; an OffscreenCanvas (the worker's) has no dataset, and the page is told by message there */
@@ -1350,11 +1355,16 @@ export function createFlight(canvas, options = {}) {
       }
       return proved;
     },
-    /* the docs' flight needs its galaxy too, readied after the flight itself (`prove` as warm's) */
+    /* the docs' flight needs its galaxy, readied on its own: the world made, the galaxy compiled and its stars on the GPU,
+       before the flight's maps are in (ADR-0004 6d.1). `prove: false`: that, and nothing more. The default proves the world
+       on that alone (voyage.js: its test frame of the galaxy and the fitness test, which it shares with the flight's proof), the
+       Earth's picture waited for as the flight's is, so a trip to the docs may begin while the maps are still landing,
+       drawn with those that have. A host that wants the maps too waits on warm() as well. */
     warmDocs({ prove = true } = {}) {
-      this.warm({ prove });
-      if (!prove) return (warmedDocs ??= /** @type {Promise<void>} */ (warmed).then(() => (world3d ? world3d.warmDocs({ prove: false }) : null)).catch(() => {}));
-      return (provedDocs ??= /** @type {Promise<void>} */ (proved).then(() => (world3d ? world3d.warmDocs() : null)).catch(() => {}));
+      this.warm({ prove: false });
+      const mine = round;
+      if (!prove) return (warmedDocs ??= made.then(() => (world3d && mine === round ? world3d.warmDocs({ prove: false }) : null)).catch(() => {}));
+      return (provedDocs ??= Promise.all([earthWait(), made]).then(() => (world3d && mine === round ? world3d.warmDocs() : null)).catch(() => {}).then(() => { if (mine === round && world3d?.dead) letGo(); }));
     },
     /**
      * Fly. `at` pins the flight to one beat instead of running it: the
@@ -1377,11 +1387,12 @@ export function createFlight(canvas, options = {}) {
         markDrawn();
         return;
       }
+      still(); unmove = moving();
       flightRaf = raf(frame);
     },
     stop() {
       if (flightRaf) cancel(flightRaf);
-      flightRaf = 0; flight = null;
+      flightRaf = 0; flight = null; still();
     },
     clear() {
       this.stop();
