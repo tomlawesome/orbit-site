@@ -533,6 +533,9 @@ export function createWorld(canvas, opts = {}) {
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+  /* the card's limit asked once, here, before anything is queued: in Firefox every getParameter waits on the GPU process
+     for all the calls queued before it, 340-660 ms when it was asked per texture behind an upload (#113) */
+  const anisoK = aniso ? Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 0;
   const { small, MAP, RINGS, MOON } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
   const LOOK = lookOf(opts);
@@ -593,7 +596,7 @@ export function createWorld(canvas, opts = {}) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     return t;
   };
-  const sharp = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
+  const sharp = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
   const mip = (t) => {
     gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);

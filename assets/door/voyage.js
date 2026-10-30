@@ -1283,6 +1283,9 @@ export function createVoyage(under, { restFor }) {
   /** @type {WebGLTexture | null} */
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+  /* the card's limit asked once, here, before anything is queued: in Firefox every getParameter waits on the GPU process
+     for all the calls queued before it, 340-660 ms when it was asked per texture behind an upload (#113) */
+  const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 0;
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
      at a time (upload.js: soft chores, which may run during the reveal), its mipmaps after, a chore of their own */
   /** @param {string} key @returns {(g: WebGL2RenderingContext) => void} */
@@ -1292,7 +1295,7 @@ export function createVoyage(under, { restFor }) {
   };
   /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
   /** @param {WebGL2RenderingContext} g */
-  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
+  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
   /* the sharper strip, put on the GPU whole (sharpStrip: in every context in the one chore, its fade started on the
      same clock; the last chore of all, never during the reveal) */
   /** @param {string} key @param {ImageBitmap} bm @returns {WebGLTexture} */
