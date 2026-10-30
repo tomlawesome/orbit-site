@@ -7,7 +7,8 @@ questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds i
 for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-28. 2026-10-29, section 6c: the pacing
 of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
 the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2). 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
-frame's share of chores runs inside the frame callback, with a backstop (#101), for the owner's review before any code.
+frame's share of chores runs inside the frame callback, with a backstop (#101), for the owner's review before any code; section 6d.6 the same day, after CI: a hard chore may
+start from the backstop, and `freeze.mjs` check 5 says so (owner 10a).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
 worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
@@ -1371,7 +1372,7 @@ folder's input guard, unchanged). The rules, for the page's queue once open or h
 - **Hard chores**: start as any chore (first in a window, or after soft ones in it, as today); after one, a timer of
   `min(rest, 20)` ms (a measure: its own 200), **then** a frame wait, so the next share lands in a callback. (Today it
   is the frame first and the timer after, which put the next chore in a plain task.) No two hard chores start in one
-  frame (`freeze.mjs` check 5 holds).
+  window; two in one frame only when the backstop ran between them, which needs a frame over `FRAME_WAIT` (6d.6).
 - **The reveal** (`soft && !open`) is untouched, to the letter: one soft chore a frame, the 4 ms share from the first
   chore's start, the hop after the frame, no backstop (the reveal is bounded by `openChores`, which `drawnIn` caps at
   10 s). It was measured and A/B'd by the owner (`?holdreveal`).
@@ -1440,6 +1441,47 @@ takes a tap at 3.5 to 4.5 s after the page (from 15.9), a tap then flies within 
 6000 to 7000`; the docs' trip's first second no worse than the demo's today (51 frames, worst 62 ms) with the maps
 landing at the 4 ms share beneath it; Edge and Firefox no later than today on every figure, `backstops 0` on a healthy
 desktop and above 0 only during a dive on a slow one.
+
+### 6d.6 Amendment after CI (2026-10-30): a hard chore may start from the backstop; check 5 says so
+
+Built at 2bb371d, `freeze.mjs` check 5 ("no two non-soft chores start in one frame") failed on the runner's software
+GL (`?gpu=force`, frames often over 50 ms: `16628 ms: hard flight, hard flight`). The reading is right: after a hard
+chore the queue rests (`min(rest, 20)` ms) and then waits for a frame **or** the backstop; when the frame is over
+50 ms late the backstop fires, the next hard chore starts, and the same long frame holds both. 6d.2's "a window is
+one frame" was wrong as a guarantee: a window is one frame **or** one backstop firing.
+
+**Decision (owner 10a): the backstop serves hard chores too; the invariant is restated and check 5 changes to measure it.**
+Between two hard starts there is always the rest and then a frame callback or `FRAME_WAIT` of waiting, whichever
+first: that is the rule, and it is the one that keeps #105's lesson. The two alternatives both break it: a backstop
+that serves soft chores only, or one that must see a real frame first after a hard chore, makes the maps' six hundred
+bands (hard, tagged `flight`) frame-bound again, which on a page whose frames take 100 ms is a minute of warm-up (the
+Edge crawl of #105, 4.7 s to 49.8 s), and in a hidden tab a standstill. What one-a-frame was for, the paint between two
+heavy chores, the backstop does not take away: it fires only when the browser has had 50 ms in which it could have
+painted and did not, after a rest in which it also could have. The browser, not the queue, chose not to paint; starting
+work in that gap is what #105 asked for. No code changes in `chores.js`.
+
+`freeze.mjs` check 5 becomes: a frame holding two or more non-soft starts must have lasted longer than `FRAME_WAIT`
+(50 ms, measured by the page between its own frame callbacks), and holds at most `1 + floor(length / FRAME_WAIT)` of
+them (each extra start needed another 50 ms of waiting); frames of 50 ms or under hold at most one, as before; and the
+line's `backstops` is at least the number of extra starts counted. `HARD_SEEN` and the "nothing hard before open"
+check stay. Its comment (lines 39-41) says why: one a frame, or one a backstop in a frame the browser let run long.
+
+### 6d.7 Tests the amendment implies (behaviour; `tools/ci/chores-frame-test.mjs` unless said)
+
+- B3 reads "the event order is `timer 20`, then a frame **or the backstop**, whichever first; on the stub's healthy
+  frames it is the frame, and the soft chore starts at that callback". The measure's case likewise.
+- B4 unchanged (soft chores; the backstop already serves them).
+- B11 (new) hard chores on slow and absent frames: frames at 200 ms, two hard chores of 3 ms (rest 60) queued and
+  opened: the second starts 70 ms (within 1 ms) after the first ended, from the backstop (`backstops` 1 at least), and
+  no frame callback fell between them; hurried, 50 ms. Frames absent: six hard chores all run, each 70 ms after the
+  last, `backstops 6`. Healthy frames (16 ms): the second hard chore starts at the first frame callback after the
+  20 ms rest, never before it, and `backstops 0`. Control, today's code (792b724): frames absent, the second hard
+  chore never starts.
+- B12 (new) two hard chores never share one window: healthy frames, a window opened by a callback with a hard chore at
+  its head and another behind it: the second starts in a later callback, not in this window, whatever the window has
+  left (a 1 ms hard chore at 0 ms does not pull the next in at 1 ms).
+- `freeze.mjs` check 5 as 6d.6: it passes on the runner's software GL, its message names the frame's length and the
+  count when it fails, and a run with every frame under 50 ms (the design host) still allows no crowded frame.
 
 ## 7. Rejected
 
