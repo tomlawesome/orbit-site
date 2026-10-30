@@ -154,54 +154,24 @@ grep -q 'svs\.gsfc\.nasa\.gov/4720' index.html \
 fi
 
 if on proxy; then
-echo "== docs-import merge requests pull without the dependency proxy"
-# the import's bot cannot use the group proxy: its merge requests must pull
-# from Docker Hub, and the node pin must keep the prefix that rule swaps
-wf=$(awk '/^workflow:/{w=1} /^[a-z]/&&!/^workflow:/{w=0} w' .gitlab-ci.yml)
-# GitLab takes the first workflow rule that matches, so each rule is judged as
-# one block (its condition, its variables, no `when: never`) and by its place:
-# the docs/import rule must come before the general merge-request rule, and
-# the bot-author rule before the closing `if: $CI_COMMIT_BRANCH` rule, or the
-# general rule matches first and the override never applies.
-WF="$wf" node -e '
-  const bad = (m) => { console.log(`   .gitlab-ci.yml: ${m}`); process.exitCode = 1; };
-  const rules = [];
-  let inRules = false;
-  for (const l of process.env.WF.split("\n")) {
-    if (/^\s*#/.test(l) || !l.trim()) continue;
-    if (/^  rules:/.test(l)) { inRules = true; continue; }
-    if (!inRules) continue;
-    if (/^    - /.test(l)) rules.push(l.trim().replace(/^- /, "") + "\n");
-    else if (rules.length) rules[rules.length - 1] += l.trim() + "\n";
-  }
-  const sets = (r) => /^variables:\n(?:.*\n)*?CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker\.io\n/m.test(r) && !/^when: never$/m.test(r);
-  const first = (r) => r.split("\n")[0];
-  const docs = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\//.test(first(r)));
-  const mr = rules.findIndex((r) => first(r) === `if: $CI_PIPELINE_SOURCE == "merge_request_event"`);
-  const botMr = rules.findIndex((r) => /CI_PIPELINE_SOURCE == "merge_request_event"/.test(first(r)) && /GITLAB_USER_LOGIN =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
-  const bot = rules.findIndex((r) => /CI_COMMIT_AUTHOR =~ \/project_\[0-9\]\+_bot_\//.test(first(r)));
-  const last = rules.findIndex((r) => first(r) === "if: $CI_COMMIT_BRANCH");
-  if (docs < 0) bad("no workflow rule matches merge requests from docs/import- branches");
-  else {
-    if (!sets(rules[docs])) bad("the docs/import- merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never), so those merge requests pull through the group proxy the import bot cannot use");
-    if (mr < 0) bad("no general merge-request workflow rule to order the docs/import- rule before");
-    else if (docs > mr) bad("the docs/import- merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
-  }
-  // a merge request whose pipeline the bot started, by moving its source branch (#70)
-  if (botMr < 0) bad("no workflow rule sends merge-request pipelines the import bot starts (GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/) to Docker Hub");
-  else {
-    if (!sets(rules[botMr])) bad("the bot merge-request rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
-    if (mr >= 0 && botMr > mr) bad("the bot merge-request rule comes after the general merge-request rule, which matches first, so its Docker Hub override never applies");
-  }
-  if (bot < 0) bad("no workflow rule sends the import bot pushes (its self-merge on main) to Docker Hub");
-  else {
-    if (!sets(rules[bot])) bad("the bot-author rule does not set CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (or says when: never)");
-    if (last < 0) bad("no closing `if: $CI_COMMIT_BRANCH` workflow rule to order the bot-author rule before");
-    else if (bot > last) bad("the bot-author rule comes after the general `if: $CI_COMMIT_BRANCH` rule, which matches first, so its Docker Hub override never applies");
-  }
-' || fail=1
-grep -q '^  NODE_IMAGE: \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/[^ ]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
-  || { echo "   .gitlab-ci.yml: NODE_IMAGE must start with \${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ and pin a digest"; fail=1; }
+echo "== job images are plain Docker Hub names pinned by digest, not pulled through the Dependency Proxy"
+# Registry pulls go through the runner image cache (ai/agent-infra#14, #65): the
+# runner hosts' Docker daemons mirror Docker Hub, so a Docker Hub image is its
+# plain name and needs no login, for bot-started pipelines too. The group
+# Dependency Proxy is being retired: nothing in the pipeline may name it, and
+# every *_IMAGE variable keeps its digest. NODE_IMAGE (and publish_docs' image
+# that reads it) must also be a plain Docker Hub name: no registry host, no
+# variable in front. PLAYWRIGHT_IMAGE is an MCR image, named through the
+# runner-config variable $CI_IMAGE_CACHE_MCR (never a direct mcr.microsoft.com
+# name, never an address).
+if grep -n 'CI_DEPENDENCY_PROXY' .gitlab-ci.yml | sed 's/^/   .gitlab-ci.yml:/' | grep .; then
+  echo "   .gitlab-ci.yml: refers to CI_DEPENDENCY_PROXY_*: pull Docker Hub images by plain name through the runner image cache"; fail=1
+fi
+grep -q '^  NODE_IMAGE: [a-z0-9_-][a-z0-9_-]*\(/[a-z0-9._-][a-z0-9._-]*\)*:[A-Za-z0-9._-][A-Za-z0-9._-]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
+  || { echo "   .gitlab-ci.yml: NODE_IMAGE must be a plain Docker Hub name (no registry host, no variable) and pin a digest"; fail=1; }
+grep -q '^  PLAYWRIGHT_IMAGE: \$CI_IMAGE_CACHE_MCR/playwright:[A-Za-z0-9._-][A-Za-z0-9._-]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
+  || { echo "   .gitlab-ci.yml: PLAYWRIGHT_IMAGE must be \$CI_IMAGE_CACHE_MCR/playwright:<tag> and pin a digest"; fail=1; }
+grep -E '^  [A-Z_]+_IMAGE:' .gitlab-ci.yml | grep -v -E '@sha256:[a-f0-9]{64}$' | sed 's/^  \([A-Z_]*\):.*/   .gitlab-ci.yml: \1 must pin a digest/' | grep . && fail=1
 fi
 
 if on ci-split; then

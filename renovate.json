@@ -18,13 +18,23 @@
   "enabledManagers": ["npm", "gitlabci", "github-actions", "custom.regex"],
   "customManagers": [
     {
-      "description": "The pipeline pins its job images in the variables block (NODE_IMAGE, PLAYWRIGHT_IMAGE) and the jobs reference them as $NODE_IMAGE, which the gitlabci manager cannot see through. The first pattern strips the dependency-proxy prefix; the second is for a pin that names its registry directly (the leading-$ exclusion tells them apart). Same as orbit's.",
+      "description": "The pipeline pins its job images in the variables block (NODE_IMAGE, PLAYWRIGHT_IMAGE) and the jobs reference them as $NODE_IMAGE, which the gitlabci manager cannot see through. The pattern reads a plain Docker Hub name (node) a leading $ is excluded so a variable-built name is never taken for an image; PLAYWRIGHT_IMAGE, which goes through the MCR cache, has its own manager below.",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
       "matchStrings": [
-        "_IMAGE:\\s+\\$\\{CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX\\}/(?<depName>[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
         "_IMAGE:\\s+(?<depName>[^\\s:@$][^\\s:@]*):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "PLAYWRIGHT_IMAGE is pinned through the MCR cache ($CI_IMAGE_CACHE_MCR/playwright:<tag>@<digest>, ai/agent-infra#65), which is not a real registry path, so this reads the tag and digest and names the real registry itself.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "matchStrings": [
+        "PLAYWRIGHT_IMAGE:\\s+\\$CI_IMAGE_CACHE_MCR/playwright:(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "mcr.microsoft.com/playwright",
+      "packageNameTemplate": "mcr.microsoft.com/playwright",
       "datasourceTemplate": "docker"
     },
     {
