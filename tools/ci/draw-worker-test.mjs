@@ -247,13 +247,13 @@ async function w1() {
   const { w, s } = await decodeBoot("page");
   await waitFor(w, () => s.asks().length > 0);
   await w.run(1000);
-  const before = { ...seen(w, s), distinctIds: new Set(s.asks().map((m) => m.id)).size, uploads: s.tex.filter((x) => x && !x.probe).length, optionsSeen: s.asks().some((m) => m.options && m.options.premultiplyAlpha === "none") };
+  const before = { ...seen(w, s), distinctIds: new Set(s.asks().map((m) => m.id)).size, uploads: s.tex.filter((x) => x && !x.probe && !ArrayBuffer.isView(x)).length, optionsSeen: s.asks().some((m) => m.options && m.options.premultiplyAlpha === "none") };
   /* an answer for an id nobody asked: nothing happens */
   const stray = BM("stray");
   let threw = null;
   try { w.send({ type: "decoded", id: 987654, bitmap: stray }); } catch (e) { threw = String(e && e.message); }
   await w.run(500);
-  const afterStray = { uploaded: s.uploaded(stray), uploads: s.tex.filter((x) => x && !x.probe).length, blobCalls: s.blobCalls.length, deads: w.of("dead").length, threw };
+  const afterStray = { uploaded: s.uploaded(stray), uploads: s.tex.filter((x) => x && !x.probe && !ArrayBuffer.isView(x)).length, blobCalls: s.blobCalls.length, deads: w.of("dead").length, threw };
   const ask = s.asks().find((m) => !isDawn(m.blob));
   const good = BM("good");
   if (ask) w.send({ type: "decoded", id: ask.id, bitmap: good });
@@ -313,7 +313,7 @@ async function w4(decode) {
 }
 
 const CASES = guarded({ up, compile, warm, pictures, fonts, size, visible, pinned, live, stop, destroy,
-  w1, w1here: () => w1control("here"), w1none: () => w1control(undefined), w2, w2good: () => w2("good"), w3: () => w3("silence"), w3late: () => w3("late-answer"),
+  w1, w1here: () => w1control("here"), w1none: () => w1control(undefined), w2: () => w2("error"), w2good: () => w2("good"), w3: () => w3("silence"), w3late: () => w3("late-answer"),
   w4: () => w4("page"), w4here: () => w4("here") });
 
 if (process.argv[2] === "--child") await childMain(CASES);
