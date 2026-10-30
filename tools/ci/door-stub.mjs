@@ -204,10 +204,11 @@ export function installPage(opts = {}) {
  * It also stands in for the unclamped next task a scheduler yields through (#101: `page.yield(fn)`, which uses
  * MessageChannel where there is one): a MessageChannel whose postMessage runs the port's handler as an immediate on
  * the virtual clock (due now, ahead of any frame or timer), without a setTimeout, so a test sees a yield apart from a
- * timer. Each postMessage is counted: clock.yields().
+ * timer. Each postMessage is counted: clock.yields(). clock.yieldDelay(ms) makes each message posted after it arrive
+ * ms of virtual time later, as on a phone that paints between a frame and the next task (0 = an immediate, the default).
  */
 export function installClock() {
-  let now = 0, seq = 0, yielded = 0;
+  let now = 0, seq = 0, yielded = 0, delay = 0;
   const timers = new Map();
   const realMC = globalThis.MessageChannel;
   const real = { now: performance.now.bind(performance), date: Date.now };
@@ -227,7 +228,7 @@ export function installClock() {
       const post = (to) => (data) => {
         yielded++;
         const id = ++seq;
-        timers.set(id, { t: now, f: () => { if (to.closed) return; const ev = { data }; if (typeof to.onmessage === "function") to.onmessage(ev); for (const f of [...to.listeners]) f(ev); }, a: [], id, seq: id });
+        timers.set(id, { t: now + delay, f: () => { if (to.closed) return; const ev = { data }; if (typeof to.onmessage === "function") to.onmessage(ev); for (const f of [...to.listeners]) f(ev); }, a: [], id, seq: id });
       };
       a.postMessage = post(b); b.postMessage = post(a);
       this.port1 = a; this.port2 = b;
@@ -238,6 +239,7 @@ export function installClock() {
   return {
     now: () => now,
     yields: () => yielded,
+    yieldDelay(ms) { delay = Math.max(0, Number(ms) || 0); },
     /* run virtual time forward by ms, or until until() is true (checked after every timer) */
     async advance(ms, until = () => false) {
       const end = now + ms;

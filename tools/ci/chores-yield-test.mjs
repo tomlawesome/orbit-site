@@ -16,6 +16,11 @@
  *       messages share the task queue with a yield: draw-pixels P1, 2026-10-30); a measure still sets its 200 ms timer
  *   Y7  the docs' chores rank before the flight's (owner decision 13a): a flight chore queued before a docs chore
  *       runs second; install and info keep their place (install first, info after both)
+ *   Y8  yields delivered late (each 6 ms of virtual time after it is posted, as on a phone that paints between a frame
+ *       and the next task), the queue opened, twelve soft chores of 3 ms: at least two chores run per frame asked, so
+ *       at most 7 frames (the share counts from the first chore's start after a frame, not from the frame callback;
+ *       today it counts from the callback, the first chore starts after the share is spent, and every chore asks a
+ *       frame: 12). Control, the delay 0: at most 7 frames as well (the share works today when the hop is instant)
  *
  * The stub's MessageChannel (installClock, door-stub.mjs) is the unclamped next task: an immediate on the virtual
  * clock, counted as clock.yields(), set without a setTimeout. Timers set (setTimeout, apart from the one a frame
@@ -64,6 +69,17 @@ async function softTen() {
   await ctx.clock.advance(5000);
   ctx.door.noteChores("x");
   return { lines: lineOf(ctx.page), ran: ran.length, frames: ctx.log.frames, timers: ctx.log.timers, yields: ctx.clock.yields() };
+}
+
+async function softTwelve(delay) {
+  const ctx = await setup({ spendable: true });
+  const ran = [];
+  for (let i = 0; i < 12; i++) ctx.door.chore(noter(ctx, ran, `s${i}`, 3), 0, "", { soft: true });
+  ctx.reset();
+  ctx.clock.yieldDelay(delay);
+  ctx.door.openChores();
+  await ctx.clock.advance(5000);
+  return { ran: ran.length, frames: ctx.log.frames, yields: ctx.clock.yields() };
 }
 
 async function hardOne() {
@@ -144,6 +160,7 @@ const CASES = {
   y1: softTen, y2: hardOne, y3: measureOne, y4: beforeRun, y5: reveal, y6a: noneTen, y6b: noneMeasure,
   y7: () => order(["flight", "docs"]),
   y7b: () => order(["info", "flight", "docs", "install"]),
+  y8a: () => softTwelve(6), y8b: () => softTwelve(0),
 };
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -219,5 +236,15 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const r = runCase(import.meta.url, "y7b");
   chk("Y7 control: all four ran", r, (r) => [r.ran.length === 4, JSON.stringify(r.ran)]);
   chk("Y7 install keeps its place before the docs and the flight, and info after both (queued info, flight, docs, install)", r, (r) => [same(r.ran, ["install", "docs", "flight", "info"]), JSON.stringify(r.ran)]);
+}
+{
+  const r = runCase(import.meta.url, "y8a");
+  chk("Y8 control: all twelve soft chores ran, with each yield delivered 6 ms late", r, (r) => [r.ran === 12 && r.yields > 0, `${r.ran} ran, ${r.yields} yields`]);
+  chk("Y8 with every yield 6 ms late, at least two chores run per frame asked (at most 7 frames; today 12)", r, (r) => [r.frames <= 7, `${r.frames} frames asked for ${r.ran} chores`]);
+}
+{
+  const r = runCase(import.meta.url, "y8b");
+  chk("Y8 control: all twelve soft chores ran with no delay", r, (r) => [r.ran === 12, `${r.ran} ran`]);
+  chk("Y8 control: with the delay 0, at most 7 frames as well (the share works today when the hop is instant)", r, (r) => [r.frames <= 7, `${r.frames} frames asked for ${r.ran} chores`]);
 }
 finish();
