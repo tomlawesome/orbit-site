@@ -315,7 +315,8 @@ export function noteChores(when) {
   const wall = firstAt < 0 ? 0 : now - firstAt;
   const idle = empty + (emptyAt ? now - emptyAt : 0);
   /* (the soft chores ran inside the held time, so held is taken net of the time something ran or rested in it: heldNet) */
-  const rest = Math.max(0, wall - ran - waited - heldNet - idle - framesMs - timersMs - openingMs - typingMs);
+  /* (not clamped: below 0 means a span was counted twice, which is as much a finding as a gap above it) */
+  const rest = wall - ran - waited - heldNet - idle - framesMs - timersMs - openingMs - typingMs;
   note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, of which ${softN} soft chores (${Math.round(softMs)} ms) during the reveal, empty ${Math.round(idle)} ms, frames ${framesN}, ${Math.round(framesMs)} ms (longest ${Math.round(framesMax)} ms, ${framesSlow} over 50 ms), timers ${timersN}, asked ${Math.round(timersAsked)} ms, took ${Math.round(timersMs)} ms, opening ${Math.round(openingMs)} ms, typing ${Math.round(typingMs)} ms, resting ${Math.round(rest)} ms, over ${Math.round(wall)}`);
   /* each one: tag, waited/ran, and the frame wait and the timer wait after it (?door3d only: a long line) */
   if (counting()) note(`chores, each (tag waited/ran/frame/timer): ${record.map((c) => `${c.tag} ${c.w}/${c.r}/${Math.round(c.f)}/${Math.round(c.t)} ms`).join(", ")}`);
