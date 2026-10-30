@@ -383,6 +383,12 @@ unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
 answers replaced by the worker's) and `pace("none")` (`chores.js`: the rests
 and the one-band-a-frame uploads dropped). All three are optional: a host that
 uses none of them has the door as before.
+`page.yield(fn)` (`page.js`) is an additive change to that page interface (#101):
+the next task with no clamp (a `MessageChannel` message, else `setTimeout(fn, 0)`),
+which the chore queue hops on between chores instead of 0 ms timers. A host's own
+page adapter given to `setPage` need not have it: `setPage` only replaces what
+it names, and where a page without `yield` is in use `chores.js` falls back to
+`setTimeout(fn, 0)`, as before.
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the

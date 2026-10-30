@@ -89,16 +89,21 @@ export function compilesAside() {
    and 1.3 s in Edge before the flight was ready. Now a chore starts a frame after the last, and no sooner) */
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
    freeze the page: compilesAside; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
-   (a visitor can do nothing until one is ready), the docs' galaxy where it compiles in the background (voyage.js:
+   (a visitor can do nothing until one is ready; the docs' before the flight's: owner, #101, 13a, so the docs open first on a
+   slow device), the docs' galaxy where it compiles in the background (voyage.js:
    one chore that only starts its compiles, so it costs the door nothing, and the docs' way in opens with the others',
    #49; the docs' journey still hurries it), then the live door (door3d.js: its picture is already on screen), the
    measures, and last of all the rich clouds, which nothing waits for */
-const ORDER = ["compile", "install", "flight", "docs", "info", "", "galaxy", "door", "measure", "rich"];
+const ORDER = ["compile", "install", "docs", "flight", "info", "", "galaxy", "door", "measure", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 /** @param {Tag} tag @returns {string[]} */
 const tags = (tag) => /** @type {string[]} */ ([]).concat(tag);
 /** @param {Tag} tag */
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
+
+/* the next task, with no clamp: the page's own yield (page.js), or, from a host's page adapter without one, a 0 ms timer */
+/** @param {() => void} fn */
+const hop = (fn) => { if (typeof page.yield === "function") page.yield(fn); else setTimeout(fn, 0); };
 
 function pump() {
   if (running || resting || !queue.length) return;
@@ -152,12 +157,16 @@ function pump() {
       /* (the rest is kept whoever asks next: a chore queued, or a journey hurried, during it waits for its end) */
       /* (the queue is empty from the end of the rest, not the chore: the rest is counted as a rest, #101) */
       const next = () => { resting = false; if (!queue.length) emptyAt = performance.now(); pump(); };
+      /* (a hop that asks for no rest is a yield, the next task with no clamp, and not a timer: a browser stretches a
+         0 ms timer to ~8 ms and more, and one per chore was most of the wait, #101; a timer only where a rest is asked) */
       /* (the waits are timed, for the line: a timer asked for ms, a frame, each counted against the chore before it) */
       /** @param {number} ms */
       const timer = (ms) => {
         const t1 = performance.now(); timersN++; timersAsked += ms;
         setTimeout(() => { const d = performance.now() - t1; timersMs += d; rec.t += d; next(); }, ms);
       };
+      /** @param {number} ms */
+      const rest = (ms) => { if (ms > 0) timer(ms); else hop(next); };
       /** @param {number} ms */
       const frame = (ms) => {
         const f0 = performance.now();
@@ -166,20 +175,21 @@ function pump() {
           const d = frameAt - f0; framesN++; framesMs += d; rec.f += d;
           if (d > framesMax) framesMax = d;
           if (d > 50) framesSlow++;
-          timer(ms);
+          /* (no rest asked: the next chore starts in this frame callback itself) */
+          if (ms > 0) timer(ms); else next();
         });
       };
       /* (during the reveal a smaller share, 4 ms: a second band in the frame when the first was quick) */
       /* (unpaced: the next at once, and nothing but a measure rests) */
-      if (!paced) timer(job.tag === "measure" ? job.rest : 0);
-      else if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) timer(0);
+      if (!paced) rest(job.tag === "measure" ? job.rest : 0);
+      else if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) hop(next);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
     };
     cap = setTimeout(end, CAP);
     Promise.resolve(out).then(job.resolve, job.reject).finally(end);
   };
-  setTimeout(run, 0);
+  hop(run);
 }
 
 /**
