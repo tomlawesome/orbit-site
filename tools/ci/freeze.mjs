@@ -376,6 +376,9 @@ try {
       await page.waitForFunction(() => window.__freeze.chores.error || (window.__freeze.chores.seen?.open && window.__freeze.chores.rest >= 60), null, { timeout: 180000 }).catch(() => {});
       const ch = (await state(page)).chores;
       if (ch.error) throw new Error(`the chores could not be counted: ${ch.error}`);
+      /* (a fresh chores line, so its backstops cover every start counted: the page's own lines may all be earlier) */
+      await page.evaluate(() => import(new URL("/assets/door/chores.js", location.href).href).then(({ noteChores }) => noteChores("freeze check 5")));
+      await page.waitForTimeout(500);
       const opened = ch.starts.filter((f) => f.open);
       const hardSeen = opened.reduce((a, f) => a + hard(f).length, 0);
       info(`chores: ${ch.seen?.started} started over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);

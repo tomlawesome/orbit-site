@@ -131,8 +131,8 @@ async function hardRun(n, { dur = 3, frames = "stub", hurry = false, settle = 50
   const tag = hurry ? "flight" : "hard";
   for (let i = 0; i < n; i++) ctx.door.chore(rec(ctx, ran, `h${i}`, dur), 60, tag);
   ctx.reset();
-  ctx.door.openChores();
-  if (hurry) ctx.door.hurryChores("flight");
+  /* (hurrying opens the queue itself; opened first, the first chore is picked before the hurry and keeps its rest) */
+  if (hurry) ctx.door.hurryChores("flight"); else ctx.door.openChores();
   await ctx.clock.advance(settle);
   ctx.door.noteChores("x");
   return { ran, cb: ctx.log.cb.slice(), timers: ctx.log.timers.slice(), lines: lineOf(ctx.page) };
