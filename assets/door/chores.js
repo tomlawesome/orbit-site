@@ -416,7 +416,7 @@ export function askPage(post) {
       post({ type: "decode", id, blob, options });
     }),
     /** @param {{ id: number, bitmap?: ImageBitmap }} m */
-    heard(m) { waiting.get(m.id)?.(m); },
+    heard(m) { const f = waiting.get(m.id); if (f) f(m); else m.bitmap?.close?.(); },  // a late or second answer: let its bitmap go
   };
 }
 

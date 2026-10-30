@@ -1594,6 +1594,8 @@ after the decode rather than at `load`. The README's CSP already requires `img-s
 so the `blob:` picture needs nothing new of a host. Entry point, slots, markup and stylesheet untouched; no
 `door-markup.mjs` run. Said in the commit.
 
+As built (3ba0fc5, b3afb8f): four exports, not one. The install and info worlds' files live in `assets/js/`, which may import only the door's `index.js`, so the world's page side needs `decodeAside` (its `hello`) and `decodeBlob` (its answers), and the world worker `askPage` (its asks), beside `fetchBitmap`; the README lists all four. `picture`'s later `loaded` and `settled` apply in every browser, Chromium included (its decode was already off the page's thread, so only the timing moves); the table's "as today" for Chromium means the route, not this.
+
 #### 6e.5 Tests: behaviour, never timings; the routes forced by flags
 
 6e's cases are in the design note on #113 (ids P1-P6, W1-W6, L1, J1): each with a control, each on the Node stub

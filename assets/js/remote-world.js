@@ -50,7 +50,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
   let madeIs = () => {}, asideIs = () => {};
   const made = new Promise((r) => { madeIs = r; });
   const aside = new Promise((r) => { asideIs = r; });
-  const post = (m, transfer = []) => { if (worker && !page && !gone) worker.postMessage(m, transfer); };
+  const post = (m, transfer = []) => { if (!(worker && !page && !gone)) return false; worker.postMessage(m, transfer); return true; };
 
   const hear = (e) => {
     const m = e.data;
@@ -61,7 +61,8 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       /* a picture's bytes from the worker, decoded here by the image loader and handed back, transferred (6e.2) */
       case "decode":
         if (!m.blob) { post({ type: "decoded", id: m.id, error: "no picture" }); break; }
-        decodeBlob(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]), (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
+        decodeBlob(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]) || bitmap.close(),  // gone meanwhile: let it go
+          (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
         break;
       case "baked": case "measured": {
         const ask = pending.get(m.id);

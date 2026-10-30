@@ -99,14 +99,15 @@ export const page = {
       @param {Blob} blob @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>} */
   async decode(blob, options) {
     if (typeof Image === "undefined" || !decodeAside()) return decodeHere(blob, options);
-    const url = URL.createObjectURL(blob);
+    let url = "";
     try {
+      url = URL.createObjectURL(blob);
       const img = new Image();
       img.decoding = "async";
       img.src = url;
       await img.decode();
       return await createImageBitmap(img, resizeOnly(options));
-    } catch { return await decodeHere(blob, options); } finally { URL.revokeObjectURL(url); }
+    } catch { return await decodeHere(blob, options); } finally { if (url) URL.revokeObjectURL(url); }
   },
   /** a scratch canvas @param {number} w @param {number} h @returns {HTMLCanvasElement} */
   canvas(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; },
