@@ -200,10 +200,16 @@ export function installPage(opts = {}) {
  * installClock() -> { advance(ms, until?) }: setTimeout, performance.now, Date.now and the frame callbacks run on a
  * virtual clock, moved only by advance(); each step drains the promises first. A case that would wait seconds in real
  * life waits none.
+ *
+ * It also stands in for the unclamped next task a scheduler yields through (#101: `page.yield(fn)`, which uses
+ * MessageChannel where there is one): a MessageChannel whose postMessage runs the port's handler as an immediate on
+ * the virtual clock (due now, ahead of any frame or timer), without a setTimeout, so a test sees a yield apart from a
+ * timer. Each postMessage is counted: clock.yields().
  */
 export function installClock() {
-  let now = 0, seq = 0;
+  let now = 0, seq = 0, yielded = 0;
   const timers = new Map();
+  const realMC = globalThis.MessageChannel;
   const real = { now: performance.now.bind(performance), date: Date.now };
   const flush = () => new Promise((r) => realSetImmediate(r));
   globalThis.setTimeout = (f, ms = 0, ...a) => { const id = ++seq; timers.set(id, { t: now + Math.max(0, Number(ms) || 0), f, a, id, seq: id }); return id; };
@@ -214,10 +220,24 @@ export function installClock() {
   globalThis.cancelAnimationFrame = globalThis.clearTimeout;
   globalThis.requestIdleCallback = (f) => globalThis.setTimeout(() => f({ didTimeout: false, timeRemaining: () => 50 }), 5);
   globalThis.cancelIdleCallback = globalThis.clearTimeout;
+  globalThis.MessageChannel = class {
+    constructor() {
+      const mk = () => ({ onmessage: null, listeners: [], addEventListener(t, f) { if (t === "message") this.listeners.push(f); }, removeEventListener(t, f) { this.listeners = this.listeners.filter((x) => x !== f); }, start() {}, close() { this.closed = true; } });
+      const a = mk(), b = mk();
+      const post = (to) => (data) => {
+        yielded++;
+        const id = ++seq;
+        timers.set(id, { t: now, f: () => { if (to.closed) return; const ev = { data }; if (typeof to.onmessage === "function") to.onmessage(ev); for (const f of [...to.listeners]) f(ev); }, a: [], id, seq: id });
+      };
+      a.postMessage = post(b); b.postMessage = post(a);
+      this.port1 = a; this.port2 = b;
+    }
+  };
   Object.defineProperty(performance, "now", { value: () => now, configurable: true, writable: true });
   Date.now = () => 1.7e12 + now;
   return {
     now: () => now,
+    yields: () => yielded,
     /* run virtual time forward by ms, or until until() is true (checked after every timer) */
     async advance(ms, until = () => false) {
       const end = now + ms;
@@ -234,7 +254,7 @@ export function installClock() {
       await flush();
       return now;
     },
-    restore() { globalThis.setTimeout = realSetTimeout; Object.defineProperty(performance, "now", { value: real.now, configurable: true, writable: true }); Date.now = real.date; },
+    restore() { globalThis.setTimeout = realSetTimeout; globalThis.MessageChannel = realMC; Object.defineProperty(performance, "now", { value: real.now, configurable: true, writable: true }); Date.now = real.date; },
   };
 }
 
