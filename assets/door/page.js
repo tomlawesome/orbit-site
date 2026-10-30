@@ -17,6 +17,26 @@
  * @typedef {{ canvas: HTMLCanvasElement, check: boolean }} Gate
  */
 
+/** @type {(() => void)[]} */
+const hops = [];
+/** @type {MessagePort | null} */
+let hopSend = null;
+/** @type {MessagePort | null} */
+let hopGet = null;
+/** @param {() => void} fn */
+function yielded(fn) {
+  if (typeof MessageChannel === "undefined") { setTimeout(fn, 0); return; }
+  if (!hopSend) {
+    const { port1, port2 } = new MessageChannel();
+    port1.onmessage = () => { try { hops.shift()?.(); } finally { if (!hops.length) /** @type {any} */ (port1).unref?.(); } };
+    hopGet = port1; hopSend = port2;
+  }
+  /* (under Node the receiving port keeps the process alive only while a hop is pending) */
+  if (!hops.length) /** @type {any} */ (hopGet)?.ref?.();
+  hops.push(fn);
+  hopSend.postMessage(0);
+}
+
 export const page = {
   /** the window's size in CSS px, and its pixel ratio as the browser gives it (the callers cap it)
       @returns {{ W: number, H: number, dpr: number }} */
@@ -33,6 +53,12 @@ export const page = {
   },
   /** @param {FrameRequestCallback} fn @returns {number} */
   frame: (fn) => requestAnimationFrame(fn),
+  /** fn as the next task, with no clamp (#101: a browser stretches a 0 ms timer to ~8 ms and more, and the chore queue
+      hopped on one per chore): a message on a channel where there is one, as a scheduler does (React's), else a 0 ms
+      timer. Callbacks run in the order asked, one a task. An addition to the interface: a host's own adapter (setPage)
+      without it is answered by chores.js with the timer
+      @param {() => void} fn */
+  yield: (fn) => yielded(fn),
   /** @param {number} id */
   cancelFrame: (id) => cancelAnimationFrame(id),
   /** a picture for drawImage, asked for now; `loaded(img, w, h)` once it has come (not if it fails); null where

@@ -402,7 +402,7 @@ Tried, October 2026:
   - **Soft chores** (assets/door/chores.js). `chore(fn, rest, tag, { soft: true })` promises to take under ~5 ms. `openSoft()`
     is called by main.js at `light()`, when the door is lit and the reveal begins. From then until `openChores()`
     (still at `drawn()`), pump() runs only soft chores (and the compiles, where they may run). They run one a frame:
-    the next starts on the next animation frame and `setTimeout(0)`, with no 20 ms rest. Once the queue is open they
+    the next starts on the next animation frame and a yield (`page.yield`, not a timer: #101), with no 20 ms rest. Once the queue is open they
     are ordinary chores, ranked by their tags as before. A journey chosen hurries them as it hurries the rest.
     - *Superseded 2026-10: `openChores()` is no longer left to `drawn()`. `main.js` opens the chores at `light()`
       unless they are held (on Firefox, or with `?open=late`); see "Three to see" below.*
@@ -430,6 +430,26 @@ Tried, October 2026:
     an animation-frame loop from `light()` to `drawn()`, between consecutive frames; 16.7 ms is a whole frame at
     60 Hz. This is the smoothness proof: compare it with `&holdreveal`.
   - The `chores at … ready` line now says `held N ms for the reveal, of which N soft chores (X ms) during the reveal`.
+  - The `chores at …` line says where the idle time goes (#101). After `empty` (which now includes the span still open
+    when the line prints, and starts at the end of the last rest, not the chore's end) it gives `frames N, F ms (longest
+    L ms, S over 50 ms)` (the waits for an animation frame between chores), `timers N, asked A ms, took T ms` (the
+    `setTimeout` waits: the up to 20 ms after a hard chore, a measure's rest; T less A is the browser's clamping or
+    throttling; the hops that ask no rest are not timers, see below), `opening O ms` (an unhurried chore waiting for a journey's opening) and `typing Y ms`
+    (waiting for typing to pause). `resting` is now only what none of these (nor `ran`, `waited`, `held`, `empty`)
+    explain, and should be near 0; `over` counts from the first chore queued, so the waits before the first chore
+    start are inside it. With `?door3d`, `chores, each` gives each entry as `tag waited/ran/frame/timer ms`: the frame
+    and timer waits that followed that chore. The pacing itself is unchanged.
+  - **Yields, not 0 ms timers (#101).** Measured on a phone (Safari): 645 chores took 15.8 s, of which 5.2 s was 644
+    `setTimeout(0)` waits that asked 280 ms in all: the browser stretched each to ~8 ms, so the soft chores' share (8 ms
+    of the frame) was spent before the next chore began. Every hop that asks no rest is now `page.yield(fn)` (assets/door/page.js:
+    a `MessageChannel` message, as a scheduler such as React's does; `setTimeout(fn, 0)` where there is none, or from a
+    host's page adapter without `yield`): the hop before a chore runs, the next soft chore within the share, and, after
+    a frame, the next chore started in the frame's own callback. A timer is set only where a rest is asked: a hard
+    chore's up to 20 ms, a measure's rest. So `timers` is now near the number of hard chores and measures, and `took`
+    within a few ms of `asked`. Nothing else in the rule changed (one frame per share, the reveal's 4 ms share, the
+    holds, `pace("none")`). Tests: tools/ci/chores-yield-test.mjs.
+  - **Order (owner, #101).** `ORDER` ranks `"docs"` before `"flight"` (the compiles first, then install, the docs, the
+    flight, info, as before otherwise), so the docs open first on a slow device.
   - With `?door3d` only, each texture's bands: `upload: lights 4096x2048 in 32 bands, longest 3.1 ms`.
 - The test page has a new test, `upload-bands` (tests/t-upload-bands.js). It puts `clouds-near.webp` on the GPU whole
   and in bands, draws each into a target and compares them byte for byte: level 0, then level 2 once both have their
@@ -531,7 +551,7 @@ Edge, the Safari laptop and the phone 3 s; after the reveal no frame over 33 ms 
 2. **Chore waiting** (in). The `chores at … ready` line (assets/door/chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
    (Edge) of waiting for an idle moment on the laptop before the flight was ready, the full 120 ms timeout each time.
    Chores now start a frame after the last. The line still prints: the queue's empty time (pictures still coming, or
-   decoding) and its rests are told apart, for the next look.
+   decoding) and its rests are told apart, for the next look (#101: and, further, frames, timers, the journey's opening and typing, so `resting` is only the remainder).
 3. **Uploads on Firefox** (in: "Fill the reveal", above). Each map 25-95 ms on the page thread plus its mipmaps, and the door and the flight upload
    the same maps twice. Count and total first; then upload once where both need a map, mipmaps only where a map is
    minified, the smaller tier on weak machines. Expected 1-2 s, and fewer stutters after the reveal.

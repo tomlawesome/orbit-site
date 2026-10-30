@@ -28,10 +28,18 @@ let open = false, soft = false, compiling = false, running = false, resting = fa
 /* when someone last typed (watchTyping): an unhurried chore waits while they are, so a texture upload never lands
    between a keystroke and its echo (Orbit's addition; settings.typingWait, 0 to never wait) */
 let lastInput = -Infinity;
-/* where the chores' time goes (noteChores): waiting for an idle moment, running, and the first one's start */
-let waited = 0, ran = 0, firstAt = 0, empty = 0, emptyAt = 0, held = 0, heldAt = 0;
-/* and each chore: its tag, how long it waited to start, how long it ran (ms) */
-/** @type {{ tag: string, w: number, r: number }[]} */
+/* where the chores' time goes (noteChores): waiting for an idle moment, running, and when the first was queued (-1:
+   none yet) */
+let waited = 0, ran = 0, firstAt = -1, empty = 0, emptyAt = 0, held = 0, heldAt = 0;
+/* and the rest of it, each span counted once (#101): held with nothing running (holdAt: held net of the soft chores
+   and their rests), an unhurried chore waiting for a journey's opening or for typing to pause (blockAt, from when,
+   blockOpening, which), the waits for an animation frame between chores (their number, total, longest and how many
+   over 50 ms) and the setTimeout waits (their number, the ms asked for, the ms they took) */
+let heldNet = 0, holdAt = 0, openingMs = 0, typingMs = 0, blockAt = 0, blockOpening = false;
+let framesN = 0, framesMs = 0, framesMax = 0, framesSlow = 0, timersN = 0, timersAsked = 0, timersMs = 0;
+/* and each chore: its tag, how long it waited to start, how long it ran, and the frame wait and the timer wait that
+   followed it (ms) */
+/** @type {{ tag: string, w: number, r: number, f: number, t: number }[]} */
 const record = [];
 /* the soft chores run during the reveal (before open): how many, and how long they ran */
 let softN = 0, softMs = 0;
@@ -39,6 +47,10 @@ let softN = 0, softMs = 0;
    chores run back to back within this much of a frame (ms) before the next frame is waited for; during the reveal,
    one a frame and no more */
 let frameAt = 0;
+/* a frame has been waited for and no chore has started since: the next to start begins the frame's share (#101: on a
+   phone the browser paints between the frame callback and the hop, ~8 ms, so a share counted from the callback was spent
+   before the first chore started, and every chore waited for a frame) */
+let fresh = true;
 const SHARE = 8, REVEAL_SHARE = 4;
 /* the longest a chore may hold the queue (ms): the longest real one is a texture upload or a compile, seconds on a slow GPU */
 const CAP = 15000;
@@ -81,38 +93,49 @@ export function compilesAside() {
    and 1.3 s in Edge before the flight was ready. Now a chore starts a frame after the last, and no sooner) */
 /* the order the rest are done in, when no journey has been chosen: the compiles before anything (only where they
    freeze the page: compilesAside; elsewhere nothing is tagged so; and before open, nothing else), then the journeys
-   (a visitor can do nothing until one is ready), the docs' galaxy where it compiles in the background (voyage.js:
+   (a visitor can do nothing until one is ready; the docs' before the flight's: owner, #101, 13a, so the docs open first on a
+   slow device), the docs' galaxy where it compiles in the background (voyage.js:
    one chore that only starts its compiles, so it costs the door nothing, and the docs' way in opens with the others',
    #49; the docs' journey still hurries it), then the live door (door3d.js: its picture is already on screen), the
    measures, and last of all the rich clouds, which nothing waits for */
-const ORDER = ["compile", "install", "flight", "docs", "info", "", "galaxy", "door", "measure", "rich"];
+const ORDER = ["compile", "install", "docs", "flight", "info", "", "galaxy", "door", "measure", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 /** @param {Tag} tag @returns {string[]} */
 const tags = (tag) => /** @type {string[]} */ ([]).concat(tag);
 /** @param {Tag} tag */
 const rank = (tag) => { const i = ORDER.indexOf(tags(tag)[0]); return i < 0 ? ORDER.length : i; };
 
+/* the next task, with no clamp, where the queue is paced (the page): its own yield (page.js), or, from a host's page
+   adapter without one, a 0 ms timer. Unpaced (a worker, pace("none")) the hop stays a 0 ms timer: there the host's
+   own messages (a frame, a size) share the task queue with a yield, and a chore hopping ahead of them drew the
+   flight's first frame before its size had come (draw-pixels P1, 2026-10-30); the worker's hops were never the wait */
+/** @param {() => void} fn */
+const hop = (fn) => { if (paced && typeof page.yield === "function") page.yield(fn); else setTimeout(fn, 0); };
+
 function pump() {
   if (running || resting || !queue.length) return;
   const now = performance.now();
+  /* (any wait there was is over: it is begun again below if it goes on) */
+  if (holdAt) { heldNet += now - holdAt; holdAt = 0; }
+  if (blockAt) { if (blockOpening) openingMs += now - blockAt; else typingMs += now - blockAt; blockAt = 0; }
   /* what the chosen journey needs, first */
   let i = want ? queue.findIndex((j) => tags(j.tag).some((t) => /** @type {string[]} */ (want).includes(t))) : -1;
   if (want && i < 0 && now >= until) want = null;
   const hurried = i >= 0;
   if (!hurried) {
-    if (paced && !open && !compiling && !soft) { if (!heldAt) heldAt = now; return; }
+    if (paced && !open && !compiling && !soft) { if (!heldAt) heldAt = now; holdAt = now; return; }
     /* the rest waits until the journey has had its opening */
-    if (paced && now < until) { clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
+    if (paced && now < until) { blockAt = now; blockOpening = true; clearTimeout(wake); wake = setTimeout(pump, until - now + 20); return; }
     /* and while someone is typing, until they pause */
     const typing = paced ? settings.typingWait - (now - lastInput) : 0;
-    if (typing > 0) { clearTimeout(wake); wake = setTimeout(pump, typing + 20); return; }
+    if (typing > 0) { blockAt = now; blockOpening = false; clearTimeout(wake); wake = setTimeout(pump, typing + 20); return; }
     /* before open, only a compile (while they may run) or a soft chore (once the door is lit), or nothing ("compile"
        ranks first, so if there is one, it is this) */
     /** @param {Job} j */
     const may = (j) => !paced || open || (compiling && tags(j.tag)[0] === "compile") || (soft && j.soft);
     i = -1;
     for (let k = 0; k < queue.length; k++) if (may(queue[k]) && (i < 0 || rank(queue[k].tag) < rank(queue[i].tag))) i = k;
-    if (i < 0) { if (!heldAt) heldAt = now; return; }
+    if (i < 0) { if (!heldAt) heldAt = now; holdAt = now; return; }
   }
   running = true;
   const asked = performance.now();
@@ -121,8 +144,8 @@ function pump() {
     started++;
     /* a soft chore let through before open: one of the reveal's */
     const early = job.soft && !open && !hurried;
-    const t0 = performance.now(); waited += t0 - asked; if (!firstAt) firstAt = t0;
-    const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0 }; record.push(rec);
+    const t0 = performance.now(); waited += t0 - asked; if (fresh) { frameAt = t0; fresh = false; }
+    const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0, f: 0, t: 0 }; record.push(rec);
     let out;
     try { out = job.fn(); } catch (e) { out = Promise.reject(e); }
     /* a job that never settles must not hold the queue for ever: after CAP the queue goes on. The chore's own promise
@@ -132,27 +155,48 @@ function pump() {
     const end = () => {
       if (over) return;
       over = true; clearTimeout(cap);
-      running = false; resting = true; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0; if (!queue.length) emptyAt = performance.now();
+      running = false; resting = true; rec.r = Math.round(performance.now() - t0); ran += performance.now() - t0;
       if (early) { softN++; softMs += performance.now() - t0; }
       /* a rest between chores: a frame or so, so whatever is moving keeps moving (the measures keep their longer rest,
          so nothing heavy sits right beside them); hurried, still a frame; a soft one during the reveal, a frame and no
          more (it fits in a frame's slack, and the reveal is short) */
       /* (a soft one after the reveal, or hurried: the next at once while the frame's share lasts) */
       /* (the rest is kept whoever asks next: a chore queued, or a journey hurried, during it waits for its end) */
-      const next = () => { resting = false; pump(); };
+      /* (the queue is empty from the end of the rest, not the chore: the rest is counted as a rest, #101) */
+      const next = () => { resting = false; if (!queue.length) emptyAt = performance.now(); pump(); };
+      /* (a hop that asks for no rest is a yield, the next task with no clamp, and not a timer: a browser stretches a
+         0 ms timer to ~8 ms and more, and one per chore was most of the wait, #101; a timer only where a rest is asked) */
+      /* (the waits are timed, for the line: a timer asked for ms, a frame, each counted against the chore before it) */
       /** @param {number} ms */
-      const frame = (ms) => page.frame(() => { frameAt = performance.now(); setTimeout(next, ms); });
+      const timer = (ms) => {
+        const t1 = performance.now(); timersN++; timersAsked += ms;
+        setTimeout(() => { const d = performance.now() - t1; timersMs += d; rec.t += d; next(); }, ms);
+      };
+      /** @param {number} ms */
+      const rest = (ms) => { if (ms > 0) timer(ms); else hop(next); };
+      /** @param {number} ms */
+      const frame = (ms) => {
+        const f0 = performance.now();
+        page.frame(() => {
+          const at = performance.now(); fresh = true;
+          const d = at - f0; framesN++; framesMs += d; rec.f += d;
+          if (d > framesMax) framesMax = d;
+          if (d > 50) framesSlow++;
+          /* (no rest asked: the next chore starts in this frame callback itself) */
+          if (ms > 0) timer(ms); else next();
+        });
+      };
       /* (during the reveal a smaller share, 4 ms: a second band in the frame when the first was quick) */
       /* (unpaced: the next at once, and nothing but a measure rests) */
-      if (!paced) setTimeout(next, job.tag === "measure" ? job.rest : 0);
-      else if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) setTimeout(next, 0);
+      if (!paced) rest(job.tag === "measure" ? job.rest : 0);
+      else if (job.soft && performance.now() - frameAt < (open || hurried ? SHARE : REVEAL_SHARE)) hop(next);
       else if (hurried || (job.soft && !open)) frame(0);
       else frame(job.tag === "measure" ? job.rest : Math.min(job.rest, 20));
     };
     cap = setTimeout(end, CAP);
     Promise.resolve(out).then(job.resolve, job.reject).finally(end);
   };
-  setTimeout(run, 0);
+  hop(run);
 }
 
 /**
@@ -166,6 +210,7 @@ function pump() {
  * @returns {Promise<T>}
  */
 export function chore(fn, rest = 60, tag = "", { soft: frameSized = false } = {}) {
+  if (firstAt < 0) firstAt = performance.now();
   if (emptyAt) { empty += performance.now() - emptyAt; emptyAt = 0; }
   return new Promise((resolve, reject) => { queue.push({ fn, resolve, reject, rest, tag, soft: frameSized }); pump(); });
 }
@@ -276,15 +321,22 @@ export function fetchOnce(url) {
 }
 
 /** where the chores' time has gone so far, in the console: running (a compile's wait in the background counts as
-    running), waiting to start (a frame, or the opening a journey is given), the queue empty (nothing to do: the
-    pictures still coming, or decoding), and the rests between
+    running), waiting to start (the hop before a chore), held for the reveal, the queue empty (nothing to do: the
+    pictures still coming, or decoding; the span still open now included), the waits between chores (for an animation
+    frame; for a timer: asked for, and what it took, the difference being the browser's clamping or throttling), an
+    unhurried chore waiting for a journey's opening, and for typing to pause. `resting` is what none of those explain,
+    and should be near 0 (#101: it was a remainder that read a frame-rate crawl as a pause)
     @param {string} when */
 export function noteChores(when) {
-  const wall = firstAt ? performance.now() - firstAt : 0;
-  /* (the soft chores ran inside the held time: counted once, as running) */
-  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, of which ${softN} soft chores (${Math.round(softMs)} ms) during the reveal, empty ${Math.round(empty)} ms, resting ${Math.round(Math.max(0, wall - ran - waited - Math.max(0, held - softMs) - empty))} ms, over ${Math.round(wall)}`);
-  /* each one: tag, waited/ran (?door3d only: a long line) */
-  if (counting()) note(`chores, each (tag waited/ran ms): ${record.map((c) => `${c.tag} ${c.w}/${c.r}`).join(", ")}`);
+  const now = performance.now();
+  const wall = firstAt < 0 ? 0 : now - firstAt;
+  const idle = empty + (emptyAt ? now - emptyAt : 0);
+  /* (the soft chores ran inside the held time, so held is taken net of the time something ran or rested in it: heldNet) */
+  /* (not clamped: below 0 means a span was counted twice, which is as much a finding as a gap above it) */
+  const rest = wall - ran - waited - heldNet - idle - framesMs - timersMs - openingMs - typingMs;
+  note(`chores at ${when}: ${started} done, ran ${Math.round(ran)} ms, waited ${Math.round(waited)} ms to start, held ${Math.round(held)} ms for the reveal, of which ${softN} soft chores (${Math.round(softMs)} ms) during the reveal, empty ${Math.round(idle)} ms, frames ${framesN}, ${Math.round(framesMs)} ms (longest ${Math.round(framesMax)} ms, ${framesSlow} over 50 ms), timers ${timersN}, asked ${Math.round(timersAsked)} ms, took ${Math.round(timersMs)} ms, opening ${Math.round(openingMs)} ms, typing ${Math.round(typingMs)} ms, resting ${Math.round(rest)} ms, over ${Math.round(wall)}`);
+  /* each one: tag, waited/ran, and the frame wait and the timer wait after it (?door3d only: a long line) */
+  if (counting()) note(`chores, each (tag waited/ran/frame/timer): ${record.map((c) => `${c.tag} ${c.w}/${c.r}/${Math.round(c.f)}/${Math.round(c.t)} ms`).join(", ")}`);
 }
 /** how long the readying took, in the console (the first visit's GPU work differs greatly between machines and
    browsers: this says where the time went)
