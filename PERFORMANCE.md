@@ -450,6 +450,13 @@ Tried, October 2026:
     holds, `pace("none")`). Tests: tools/ci/chores-yield-test.mjs.
   - **Order (owner, #101).** `ORDER` ranks `"docs"` before `"flight"` (the compiles first, then install, the docs, the
     flight, info, as before otherwise), so the docs open first on a slow device.
+  - **Measured after (#101; seen on a real device, a phone (Safari), 30 October 2026, `?preview` in a fresh private tab,
+    fix/aniso-once 653c3d5: dev 41d571c plus the anisotropy fix).** Before, the docs' way in opened ~16 s after the
+    page (645 chores in 15.8 s, above). After: the docs galaxy compiled and ready at ~2.9 s, the install and info ways in
+    ready at 3.4 s, the reveal ends at 5.2 s (longest frame gap 257 ms), the flight's world proved at 6.9 s (every way
+    in, docs included, can be taken by then), and the flight ready at 12.4 s (all eight maps: 467 chores, ran 4145 ms,
+    frames 272, longest 216 ms, 2 over 50 ms). On the phone the flight and install are drawn on the page, so `?preview`
+    and `?preview&draw=page` run the same code, as on Edge. The desktop Firefox run (#85, #93, below) is on dev 792b724.
   - With `?door3d` only, each texture's bands: `upload: lights 4096x2048 in 32 bands, longest 3.1 ms`.
 - The test page has a new test, `upload-bands` (tests/t-upload-bands.js). It puts `clouds-near.webp` on the GPU whole
   and in bands, draws each into a target and compares them byte for byte: level 0, then level 2 once both have their
@@ -625,9 +632,11 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
 canvases (`?draw=worker|page`; otherwise the rule in `fitness.js` `drawnAside()`), the page keeping the clock, the beats
 and the 2D door; any failure falls back to the page. Pixel-identical to the page path in Chromium
 (`tools/ci/draw-pixels-test.mjs`). The install and info worlds follow it (#93, below).
-**Not yet measured:** nothing here is a number for the worker path. The owner's M3 run on a real desktop (ADR-0004
-6a.10: `?preview` against `?preview&draw=page`, the console lines of each) is still to come, and the targets above
-stand until it is in.
+**Measured (#85, ADR-0004 6a.10; seen on a real device, desktop Firefox, 30 October 2026, dev 792b724, from the page's own
+console lines).** `?preview` (worker), first load: the door shown at ~3.7 s, the flight ready at 7.1 s, its world proved at
+10.6 s. `?preview&draw=page`, three loads: the door shown at ~10.6 s, the flight ready at 10.8-13.2 s, proved at
+11.9-14.4 s. `?preview` (worker), a second visit in a normal window: the flight ready at 7.8 s, proved at 8.3 s. The
+owner on the page path: it "works well on firefox, docs and all of them seem to appear quickly".
 
 **Built for the install and info worlds (#93, ADR-0004 6b).** On Firefox the install's and the information's planets
 are drawn in a second module worker (`assets/js/world-worker.js`) that owns the pad's canvas, by the flight's rule
@@ -639,11 +648,13 @@ back to the page world on a fresh canvas.
 `data-drawn` is set, which both paths now set); and, in Firefox under software GL (`tools/ci/world-live-test.mjs`), that
 a dive into the install's and the information's planet lands under both paths with the console lines and the canvas a
 placeholder as expected, and that a worker that answers 404 falls back to the page and the dive still lands.
-**Not yet measured (the owner's M4 run, ADR-0004 6b.10):** on a real desktop, Firefox, `?preview` against
-`?preview&draw=page`: `install: shaders compiled in N ms`, `reveal: … longest frame gap N ms`, the time each way in
-opens, `install: dive began: resize N ms, first frame N ms`, `install: first second N frames, worst N ms`, the ring's
-shape, and the eye on the ring, the reveal and the dives. The owner will run it together with the flight's M3. No
-number for the worlds' worker is claimed here until it is in.
+**Measured (#93, ADR-0004 6b.10; the same run, desktop Firefox, dev 792b724).** `?preview` (worker), first load: the
+install and info ways in clickable at 8.9 s, ~4.5 s after the door is shown (~3.7 s); the queue's `empty 6742 ms` is the
+wait on the worker's flight compile (4.2 s). `?preview&draw=page`: the ring runs to ~10.6 s and every way in opens within
+~0.2 s of the reveal, at 10.3-12.6 s, so nothing waits once the door is shown. A second visit in a normal window on
+the worker: clickable at 8.2 s, the ring one lap only. The wait on the worker path is #103 (desktop Firefox: planets
+clickable ~7 s after opening). Still open on Firefox: the planets slow to be clickable, and a click that played the 2D
+flight, are #113 (Firefox planets slow to be clickable); Edge's reveal stall is #109 (Edge reveal stalls).
 
 **The build, as it was planned:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
 state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;
