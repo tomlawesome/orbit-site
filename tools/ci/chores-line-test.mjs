@@ -16,7 +16,8 @@
  *   node tools/ci/chores-line-test.mjs
  *
  *   M1  opened, three hard chores (rest 60): `frames 3`, `timers 3, asked 60 ms`; resting within 1 ms of 0
- *   M2  opened, six soft chores of 1 ms: fewer frames than chores (the share), `timers 6`; resting within 1 ms of 0
+ *   M2  opened, six soft chores of 1 ms: fewer frames than chores (the share), `timers 0` (the hops are yields, not
+ *       timers, since the fix); resting within 1 ms of 0
  *   M3  a measure chore: `asked` includes 200 (no control for the 200 itself: under the page's pace the chore after a
  *       measure starts 36 ms later today, not 200, so whether the page keeps the measure's rest is for the spec to say)
  *   M4  hurryChores("flight", 6000) with one unhurried chore queued: `opening` at least the wait it took; resting
@@ -173,7 +174,7 @@ const restingText = (r) => { const x = resting(r); return x ? `resting ${x[0]} m
   const r = runCase(import.meta.url, "m2");
   chk("M2 control: six soft chores ran, and the queue printed one `chores at x` line", r, (r) => [r.ran === 6 && r.lines.length === 1, `${r.ran} ran; ${shown(r)}`]);
   chk("M2 fewer frames than chores (soft chores share a frame)", r, (r) => { const f = frames(r); return [!!f && f[0] < 6, `${f ? `frames ${f.join(", ")}` : "no `frames N, F ms (longest L ms, S over 50 ms)` figure"}: ${shown(r)}`]; });
-  chk("M2 `timers 6` (a 0 ms hop after each soft chore)", r, (r) => { const t = timers(r); return [!!t && t[0] === 6 && t[1] === 0, `${t ? `timers ${t.join(", ")}` : "no `timers N, asked A ms, took T ms` figure"}: ${shown(r)}`]; });
+  chk("M2 `timers 0` (the 0 ms hop after each soft chore is a yield, not a timer)", r, (r) => { const t = timers(r); return [!!t && t[0] === 0 && t[1] === 0, `${t ? `timers ${t.join(", ")}` : "no `timers N, asked A ms, took T ms` figure"}: ${shown(r)}`]; });
   chk("M2 resting within 1 ms of 0", r, (r) => [nearZero(r), `${restingText(r)}: ${shown(r)}`]);
 }
 {
