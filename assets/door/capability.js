@@ -14,7 +14,7 @@
  */
 import { note, compiledWithin } from "./chores.js";
 import { settings, flag } from "./settings.js";
-import { gpu } from "./fitness.js";
+import { gpu, WEEK } from "./fitness.js";
 
 const VERT = `#version 300 es
 void main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
@@ -47,8 +47,7 @@ void main(){
   o=vec4(1.0-exp(-L*0.35),1.0);
 }`;
 
-/* kept a week, for this browser on this screen */
-const WEEK = 7 * 24 * 3600e3;
+/* kept a week (WEEK, fitness.js: the one week the folder keeps anything), for this browser on this screen */
 /**
  * @typedef {{ ok: true, background: boolean, compileMs: number, msPerMpx: number }} Probed the probe's measures
  * @typedef {{ ok: false, background: null, compileMs: null, msPerMpx: null }} NotProbed no probe could be had

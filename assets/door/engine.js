@@ -27,6 +27,7 @@ import { chore, note, noteChores, compilesAside, moving, PICTURE_WAIT } from "./
 import { seededRng } from "./stars.js";
 import { image } from "./settings.js";
 import { page } from "./page.js";
+import { gpu, rememberedFit, sayVerdict } from "./fitness.js";
 
 /**
  * @typedef {object} Atmosphere
@@ -468,6 +469,52 @@ export function createFlight(canvas, options = {}) {
   /* a world that can no longer be drawn (its shaders would not link, its context lost or let go) is stopped as it is
      dropped, so what it made is given back (voyage.js: stop) and nothing more of it is put on the context */
   const letGo = () => { /** @type {World} */ (world3d).stop(); world3d = null; };
+  /*
+   * THE VERDICT ON THE WORLD (ADR-0002 6.3, #116): what a way in waits for besides the flight's load, so none opens on a
+   * cheaper version for want of readiness. A promise of { fit, ms, how }, settled once a round by the first of: a pass
+   * remembered on this device (fitness.js: rememberedFit, read at the first warm, on the page only), "remembered"; this
+   * visit's test (the world's `judged`), "tested" or "skipped"; the GPU refused or save-data (6.9), "refused", at once;
+   * the world not made, lost or given up before any judgement, "failed". Never on a remembered unfit. A new promise with
+   * each new round (a world made anew). Every verdict but a remembered one is told to the page (page.judged: kept there
+   * for the next visit when it measured; from a worker, posted to the page)
+   */
+  /** @typedef {{ fit: boolean, ms: number, how: "remembered" | "tested" | "skipped" | "refused" | "failed" }} Verdict */
+  /** @type {(v: Verdict) => void} */
+  let verdictIs = () => {};
+  /** @type {Promise<Verdict>} */
+  let verdictNow = Promise.resolve(/** @type {Verdict} */ ({ fit: false, ms: Infinity, how: "failed" }));
+  let decided = false;
+  const renewVerdict = () => { decided = false; verdictNow = new Promise((r) => { verdictIs = r; }); };
+  renewVerdict();
+  /** @param {Verdict} v */
+  const decide = (v) => { if (!decided) { decided = true; verdictIs(v); } };
+  /** @param {Verdict} v */
+  const tell = (v) => { try { page.judged({ fit: v.fit, ms: v.ms, skipped: v.how === "skipped", how: v.how }); } catch { /* the verdict stands */ } };
+  /* a refusal or a failure: the verdict, if none is in yet (a world proved or remembered stands) */
+  /** @param {"refused" | "failed"} how */
+  const fail = (how) => { if (decided) return; const v = /** @type {Verdict} */ ({ fit: false, ms: Infinity, how }); tell(v); decide(v); };
+  /* unfit: this visit's test refused the machine (5a), so the flight is painted for the visit and no world is made again;
+     again: the world failed (lost, or given up at the hold's backstop: abandon), so the next warm makes it anew (6.7);
+     madeOk: this round's world was made (one whose shaders would not link is not tried again) */
+  let unfit = false, again = false, madeOk = false;
+  /* a world found dead, let go: made anew at the next warm unless it was judged too slow or never made, and failed if
+     no verdict was in */
+  const drop = () => { if (!world3d?.dead) return; letGo(); if (!unfit && madeOk) again = true; fail("failed"); };
+  /* the world's own judgement, heard for its round */
+  /** @param {{ made?: Promise<boolean>, judged?: Promise<{ fit: boolean, ms: number, skipped?: boolean }> }} w */
+  const hear = (w) => {
+    const mine = round;
+    w.made?.then?.((ok) => { if (mine === round) madeOk = !!ok; }, () => {});
+    w.judged?.then((j) => {
+      if (mine !== round || destroyed) return;
+      if (!j.fit) unfit = true;
+      const v = /** @type {Verdict} */ ({ fit: j.fit, ms: j.ms, how: j.skipped ? "skipped" : "tested" });
+      tell(v); decide(v);
+    }, () => {});
+  };
+  /* save-data (ADR-0002 6.9, owner 1a): the visitor's own ask for less, so no world at all: the GPU not asked, nothing of
+     it fetched, the flight painted */
+  const saving = () => !!(/** @type {Navigator & { connection?: { saveData?: boolean } }} */ (globalThis.navigator ?? {})).connection?.saveData;
   /* destroyed (journey.js: destroy): no world is made after it, and the one made is stopped */
   let destroyed = false;
   /** @type {{ cx: number, cy: number, R: number, alpha: number, c: number } | null} */
@@ -1297,7 +1344,7 @@ export function createFlight(canvas, options = {}) {
   const settle = (made) => {
     const earthIn = earthWait(), mine = round;
     return Promise.all([earthIn, made.then(() => (world3d ? world3d.warm({ prove: false }) : null))]).catch(() => {})
-      .then(() => earthIn).then((ok) => { if (mine !== round) return; earthLate = !ok; if (world3d?.dead) letGo(); if (!options.plain) { note(ok ? "flight: ready" : "flight: ready, without the Earth's picture"); noteChores("flight ready"); } });
+      .then(() => earthIn).then((ok) => { if (mine !== round) return; earthLate = !ok; if (world3d?.dead) drop(); else if (!world3d) fail("failed"); if (!options.plain) { note(ok ? "flight: ready" : "flight: ready, without the Earth's picture"); noteChores("flight ready"); } });
   };
   /** @type {Promise<void>} */
   let made = Promise.resolve();
@@ -1308,6 +1355,17 @@ export function createFlight(canvas, options = {}) {
     /* when the flight's shaders are compiled (after warm has made its world); where compiles freeze the page, the docs'
        galaxy's too (voyage.js: a "compile" chore of its own, which main.js holds the door for with the rest) */
     compiled() { return compiled || Promise.resolve(); },
+    /** the verdict on the world, for the ways in (above: decide) @returns {Promise<Verdict>} */
+    verdict() { return verdictNow; },
+    /* the journey's hold let go at its backstop (journey.js: WORLD_FAILED, ADR-0002 6.7): a world still not ready by then
+       has hung somewhere, so it is given up as failed, said once, and made anew at the next warm; a world already ready
+       stands */
+    abandon() {
+      if (destroyed) return;
+      if (world3d?.dead) drop();
+      else if (world3d && !world3d.ready) { sayVerdict("off: not ready in 30 s"); letGo(); again = true; }
+      fail("failed");
+    },
     /** whether a flight is under way with the WebGL world drawing it (journey.js: the clock's stall cap) */
     get drawingWorld() { return !!flight && !!voyage; },
     /** whether the flight last started is drawn with the WebGL world (the worker's `frame` says so: draw-worker.js) */
@@ -1320,28 +1378,43 @@ export function createFlight(canvas, options = {}) {
     warm({ prove = true } = {}) {
       /* a world that died after it was made (its context lost: a backgrounded phone tab, a GPU reset) is let go, and
          the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
-      if (world3d?.dead && !destroyed) { round++; letGo(); warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; }
+      /* (one judged too slow is retired for the visit, never made again) */
+      if (world3d?.dead && unfit) drop();
+      if ((world3d?.dead || again) && !destroyed) { fail("failed"); round++; if (world3d) letGo(); again = false; madeOk = false; warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; renewVerdict(); }
       /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
       else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.done()) askEarth(); warmed = settle(made); }
       if (!warmed) {
         if (!earth) askEarth();
+        /* the verdict, where it is known before any proof: no world here, or a pass remembered (a remembered unfit opens
+           nothing: the test is taken again, ADR-0002 6.4) */
+        const bare = !!options.plain || saving();
+        if (!options.plain) {
+          if (saving()) { if (round === 0) sayVerdict("off: save-data"); fail("refused"); }
+          else if (!gpu()) fail("refused");
+          else {
+            const kept = page.shared() ? rememberedFit() : null;
+            if (kept?.fit) decide({ fit: true, ms: kept.ms, how: "remembered" });
+          }
+        }
         /* its pictures asked for (only if the GPU gate lets the page have a world: voyage.js), and its world made (its
            shaders set compiling in the background), at once; what it then puts on the GPU waits its turn as chores
            (voyage.js). Where the browser compiles on the page's own thread (compilesAside false), the world is made as
            a chore ("compile", queued at once and run under the first light's ring, before the door is lit; hurried
            with the flight's own), its shaders looked at in the same chore (voyage.js: made) */
-        if (!options.plain) fetchVoyage();
+        if (!bare) fetchVoyage();
         const make = () => {
           if (destroyed) return undefined;
           try { world3d = createVoyage(canvas, { restFor: (w, h) => (tallScreen(w, h) ? PATH_TALL : PATH)[3] }); const screen = page.size(); world3d?.resize(W || screen.W, H || screen.H); } catch (e) { world3d = null; }
+          if (world3d) hear(world3d);
           return world3d?.made;
         };
         /* (where the door is live, its weight is chosen first, by the probe: the flight's Earth is compiled to match,
            voyage.js) */
-        const first = DOOR3D() && !options.plain ? probe().catch(() => null) : Promise.resolve();
-        made = options.plain ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
+        const first = DOOR3D() && !bare ? probe().catch(() => null) : Promise.resolve();
+        made = bare ? Promise.resolve() : compilesAside() ? first.then(() => { make(); })
           : first.then(() => chore(make, 20, ["compile", "flight"])).then(() => {}, () => {});
-        compiled = made.then(() => world3d?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(world3d?.galaxy).then(() => ok)));
+        /* (under save-data nothing compiles, and the GPU is not asked whether it would compile aside) */
+        compiled = saving() ? made : made.then(() => world3d?.made).then((ok) => (compilesAside() ? ok : Promise.resolve(world3d?.galaxy).then(() => ok)));
         /* if its shaders could not be made after all, the flight draws without it, as it always could */
         warmed = settle(made);
       }
@@ -1351,7 +1424,7 @@ export function createFlight(canvas, options = {}) {
       if (!proved) {
         /* (not while the Earth's picture is late: proved by the warm that has it) */
         const mine = round;
-        proved = warmed.then(() => (world3d && !earthLate && mine === round ? world3d.warm() : null)).catch(() => {}).then(() => { if (mine !== round) return; if (world3d?.dead) letGo(); if (earthLate) proved = null; });
+        proved = warmed.then(() => (world3d && !earthLate && mine === round ? world3d.warm() : null)).catch(() => {}).then(() => { if (mine !== round) return; if (world3d?.dead) drop(); if (earthLate) proved = null; });
       }
       return proved;
     },
@@ -1364,7 +1437,7 @@ export function createFlight(canvas, options = {}) {
       this.warm({ prove: false });
       const mine = round;
       if (!prove) return (warmedDocs ??= made.then(() => (world3d && mine === round ? world3d.warmDocs({ prove: false }) : null)).catch(() => {}));
-      return (provedDocs ??= Promise.all([earthWait(), made]).then(() => (world3d && mine === round ? world3d.warmDocs() : null)).catch(() => {}).then(() => { if (mine === round && world3d?.dead) letGo(); }));
+      return (provedDocs ??= Promise.all([earthWait(), made]).then(() => (world3d && mine === round ? world3d.warmDocs() : null)).catch(() => {}).then(() => { if (mine === round && world3d?.dead) drop(); }));
     },
     /**
      * Fly. `at` pins the flight to one beat instead of running it: the

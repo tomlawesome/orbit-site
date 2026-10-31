@@ -5,7 +5,7 @@
  * reads the real thing, exactly as those modules did themselves. Read at call time (`page.size()`), never kept, so what
  * answers can be changed once per thread before anything is drawn.
  */
-import { decodeAside } from "./fitness.js";
+import { decodeAside, rememberFit } from "./fitness.js";
 
 /**
  * A picture asked for (picture): settled once it has loaded or failed.
@@ -131,6 +131,10 @@ export const page = {
   note(line) { console.info(line); },
   /** the line that says whether the flight's world is drawn @param {string} line */
   verdict(line) { console.info(line); },
+  /** a verdict on the flight's world, as the engine heard it (ADR-0002 6.12): kept on the page for the next visits
+      (fitness.js: rememberFit, which keeps only one that measured); in the worker, posted to the page to keep
+      @param {{ fit: boolean, ms: number, skipped: boolean, how: string }} v */
+  judged(v) { rememberFit(v); },
   /** whether a page shares this thread, so a compile here freezes it (chores.js: compilesAside; in the worker, no) */
   shared: () => true,
 };

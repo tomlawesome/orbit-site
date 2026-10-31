@@ -147,6 +147,32 @@ async function size() {
   return { proved, before: a, after: { warp: [w.warp.width, w.warp.height], gl: [w.warpgl.width, w.warpgl.height] }, ...common(w) };
 }
 
+/* #116: the worker tells the page its judgement (`verdict { fit, ms, skipped, how }`: the memory is the page's, ADR-0002
+   6.12), and a journey's `abandon` reaches the engine in the worker, which gives the world up as failed */
+const verdictsOf = (w) => w.of("verdict").map((m) => ({ fit: m.fit, ms: m.ms, skipped: m.skipped, how: m.how }));
+
+async function judged() {
+  const w = await boot();
+  await w.bring({ flags: { fit: "skip" } });
+  w.send({ type: "warm", id: 1, kind: "warm", prove: true });
+  await w.run(60000, () => w.of("warmed").some((m) => m.id === 1) && w.of("verdict").length > 0);
+  await w.run(500);
+  return { warmed: w.of("warmed").some((m) => m.id === 1 && m.ok), verdicts: verdictsOf(w), ...common(w) };
+}
+
+async function abandon(after) {
+  const w = await boot();
+  await w.bring({ flags: { fit: "skip" } });
+  if (after === "verdict") {
+    w.send({ type: "warm", id: 1, kind: "warm", prove: true });
+    await w.run(60000, () => w.of("verdict").length > 0);
+  } else await w.run(200);
+  const before = verdictsOf(w);
+  w.send({ type: "abandon" });
+  await w.run(500);
+  return { before, verdicts: verdictsOf(w), ...common(w) };
+}
+
 async function visible() {
   const w = await boot();
   await w.bring();
@@ -312,7 +338,7 @@ async function w4(decode) {
   };
 }
 
-const CASES = guarded({ up, compile, warm, pictures, fonts, size, visible, pinned, live, stop, destroy,
+const CASES = guarded({ up, compile, warm, pictures, fonts, size, judged, abandon: () => abandon("early"), abandonLate: () => abandon("verdict"), visible, pinned, live, stop, destroy,
   w1, w1here: () => w1control("here"), w1none: () => w1control(undefined), w2: () => w2("error"), w2good: () => w2("good"), w3: () => w3("silence"), w3late: () => w3("late-answer"),
   w4: () => w4("page"), w4here: () => w4("here") });
 
@@ -414,6 +440,23 @@ const near = (x, y) => Math.abs(x - y) / y < 0.01;
   chk("W4 `decode: \"page\"`: dawn/dawn.webp is fetched once and asked for like the maps", r, (r) => [r.fetchedDawn === 1 && r.asked === 1, `fetched ${r.fetchedDawn} time(s), asked ${r.asked} time(s)`]);
   chk("W4 ... and drawn (a drawImage with the bitmap) once answered", r, (r) => [r.drawnWith && r.blobCalls === 0 && r.deads.length === 0, `drawn with the page's bitmap ${r.drawnWith}, blob calls for it ${r.blobCalls}, dead ${show(r.deads)}`]);
   chk("W4 control: \"here\": no `decode` posted, the picture decoded here and drawn", c, (c) => [c.fetchedDawn === 1 && c.askedAny === 0 && c.blobCalls === 1 && c.drawnWith, `fetched ${c.fetchedDawn}, decodes asked ${c.askedAny}, blob calls ${c.blobCalls}, drawn ${c.drawnWith}`]);
+}
+{
+  const r = run("judged");
+  chk("V1 (precondition) the proving warm was answered", r, (r) => [r.warmed === true, `warmed ${r.warmed}`]);
+  chk("V1 the judgement is posted as one `verdict` with fit, ms, skipped and how (fit \"skip\": passed, skipped, how \"skipped\")", r, (r) => {
+    const v = r.verdicts[0];
+    return [r.verdicts.length === 1 && v.fit === true && v.skipped === true && v.how === "skipped" && typeof v.ms === "number", `verdicts ${show(r.verdicts)}`];
+  });
+  chk("V1 ... and nothing it posts is beyond structured clone, and no `dead`", r, (r) => [clean(r), `clone errors ${show(r.cloneErrors)}, dead ${show(r.deads)}`]);
+  const a = run("abandon"), l = run("abandonLate");
+  chk("V2 (precondition) before any proof the worker has posted no `verdict`", a, (a) => [a.before.length === 0, `verdicts ${show(a.before)}`]);
+  chk("V2 `abandon` makes the engine give the world up: one `verdict { fit: false, how: \"failed\" }` follows", a, (a) => {
+    const v = a.verdicts[0];
+    return [a.verdicts.length === 1 && v.fit === false && v.how === "failed" && v.skipped === false, `verdicts ${show(a.verdicts)}`];
+  });
+  chk("V2 ... with no `dead` and nothing beyond structured clone", a, (a) => [clean(a), `clone errors ${show(a.cloneErrors)}, dead ${show(a.deads)}`]);
+  chk("V2 control: after a verdict is in, `abandon` posts no other (a judgement made stands)", l, (l) => [l.before.length === 1 && l.verdicts.length === 1 && l.verdicts[0].how === l.before[0].how, `before ${show(l.before)}, after ${show(l.verdicts)}`]);
 }
 chk("D5 `destroy` calls close()", run("destroy"), (r) => [r.closed === 1, `close() calls ${r.closed}`]);
 finish();

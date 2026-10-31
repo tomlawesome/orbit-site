@@ -1,8 +1,8 @@
 /*
  * WHETHER THIS PAGE MAY USE THE GPU, AND WHETHER THIS MACHINE CAN DRAW THE FLIGHT'S WORLD (ADR-0002, #2; Orbit's
- * #1253). Ported from Orbit's web/src/lib/flight/fitness.js, without its remembered verdict (Orbit's #1310): the
- * fitness test runs every visit, on the flight's own first ask, so a driver fix, a new GPU or a busy moment is judged
- * as it is now (owner, 2026-10-10).
+ * #1253). Ported from Orbit's web/src/lib/flight/fitness.js. The fitness test runs every visit, so a driver fix, a new
+ * GPU or a busy moment is judged as it is now; its verdict is also kept on the device for a week (ADR-0002 6.4, owner
+ * 19a, #116), so a later visit's ways in can open on a remembered pass while the test is taken again quietly.
  *
  * Two questions, asked at different times:
  *  - gpu(): once a page, before any other WebGL, from ONE context. Refused where the browser itself calls WebGL2 a
@@ -20,6 +20,10 @@
  */
 import { flag, settings } from "./settings.js";
 import { page } from "./page.js";
+
+/** a week, in milliseconds: how long a remembered verdict (rememberedFit) and the probe's (capability.js) are kept */
+export const WEEK = 7 * 24 * 3600e3;
+const DAY = 24 * 3600e3;
 
 /** the most one frame may take, in milliseconds */
 export const FIT_MS = 30;
@@ -128,6 +132,58 @@ export function gpu() {
 export const isSoftware = (renderer) => SOFTWARE.test(renderer);
 
 /*
+ * THE VERDICT REMEMBERED (ADR-0002 6.4, #116): a cached capability verdict with a time to live, revalidated each visit.
+ * One key, `<storagePrefix>-fit <renderer> <width>x<height>@<pixel ratio>` (the renderer names the GPU and its driver,
+ * and the test's cost scales with the screen), value { t, fit, ms }, valid for a week (WEEK, the probe's rule: never
+ * from the future). Read once a page, on the page (never in a worker: the page's engine or remote-flight.js asks it at
+ * the first warm), and written at every judgement that measured, a pass or an unfit, with the fresh figures. Neither
+ * read nor written under `fit: "skip"` (its pass measures nothing) or save-data (no world there, 6.9); `gpu: "force"`
+ * changes nothing here. A remembered pass lets the ways in open before the test; a remembered unfit opens nothing
+ * (engine.js: verdict), and is only said.
+ */
+const saving = () => !!(/** @type {Navigator & { connection?: { saveData?: boolean } }} */ (globalThis.navigator ?? {})).connection?.saveData;
+/** the key the verdict is kept under, or null where the GPU was refused (nothing to remember) @returns {string | null} */
+export function fitKey() {
+  const g = gpu();
+  if (!g) return null;
+  return `${settings.storagePrefix}-fit ${g.renderer} ${screen.width}x${screen.height}@${globalThis.devicePixelRatio || 1}`;
+}
+/** @type {{ t: number, fit: boolean, ms: number } | null | undefined} */
+let kept;
+/**
+ * The verdict this device was given within the week, or null: read once a page (the console says what was found, once).
+ * @returns {{ t: number, fit: boolean, ms: number } | null}
+ */
+export function rememberedFit() {
+  if (flag("fit") === "skip" || saving()) return null;
+  if (kept !== undefined) return kept;
+  kept = null;
+  try {
+    const key = fitKey();
+    if (!key) return kept;
+    const v = JSON.parse(localStorage.getItem(key) || "null");
+    const now = Date.now();
+    if (v && typeof v.t === "number" && typeof v.fit === "boolean" && typeof v.ms === "number" && v.t <= now && now - v.t < WEEK) {
+      kept = { t: v.t, fit: v.fit, ms: v.ms };
+      sayVerdict(v.fit ? `remembered on (frame ${Math.round(v.ms)} ms, ${Math.floor((now - v.t) / DAY)} d ago)` : `remembered off (frame ${Math.round(v.ms)} ms), tested again`);
+    }
+  } catch { /* nothing remembered: this visit's test decides */ }
+  return kept;
+}
+/**
+ * A judgement kept for the next visits: only one that measured (not skipped, not a failure or a refusal, a frame's
+ * time to tell), never under `fit: "skip"` or save-data.
+ * @param {{ fit: boolean, ms: number, skipped?: boolean, how?: string }} v
+ */
+export function rememberFit({ fit, ms, skipped = false, how = "tested" }) {
+  if (skipped || how !== "tested" || !Number.isFinite(ms) || flag("fit") === "skip" || saving()) return;
+  try {
+    const key = fitKey();
+    if (key) localStorage.setItem(key, JSON.stringify({ t: Date.now(), fit, ms }));
+  } catch { /* this visit only */ }
+}
+
+/*
  * WHERE THE FLIGHT IS DRAWN (ADR-0004 6a.4): in a worker (draw-worker.js, through remote-flight.js) or on the page.
  * Decided once a page, at the journey's first need (after the gate has run), and said once when the host gave a
  * worker: `flight: drawn in a worker` / `flight: drawn on the page: <why>`. `draw: "page"` keeps the page;
@@ -145,16 +201,17 @@ function drawnWhy() {
   const asked = flag("draw");
   if (asked === "page") return "asked for (draw=page)";
   if (asked === "worker") return null;
+  const nav = /** @type {Navigator & { connection?: { saveData?: boolean } }} */ (globalThis.navigator ?? {});
+  /* (before the gate: under save-data the GPU is not asked at all, ADR-0002 6.9) */
+  if (nav.connection?.saveData) return "save-data is on";
   const g = gpu();
   if (!g) return "the GPU gate refused this page";
   if (g.parallel) return "this browser compiles shaders in the background (parallel)";
-  const nav = /** @type {Navigator & { connection?: { saveData?: boolean } }} */ (globalThis.navigator ?? {});
   if ("userAgentData" in nav) return "a Chromium browser (navigator.userAgentData), which keeps the page";
   if (flag("gpu") === "force") return "the GPU gate was forced (gpu=force)";
   if (typeof Worker === "undefined") return "no Worker here";
   if (typeof OffscreenCanvas === "undefined") return "no OffscreenCanvas here";
   if (typeof HTMLCanvasElement === "undefined" || !("transferControlToOffscreen" in HTMLCanvasElement.prototype)) return "a canvas cannot be handed to a worker here";
-  if (nav.connection?.saveData) return "save-data is on";
   return null;
 }
 /** whether the flight is drawn in a worker @returns {boolean} */

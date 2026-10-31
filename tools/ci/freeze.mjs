@@ -46,7 +46,7 @@
  *        within a frame is not judged, since a frame's starts cannot be ordered from outside. At least HARD_SEEN
  *        non-soft starts must be known, else the bound proved nothing (the constant says why its value)
  *   6    ?door3d without force: no probe runs, and the `level 0` line is there
- *   7    save-data: no webgl2 context until the gate is clicked, then one
+ *   7    save-data: no webgl2 context before the gate is clicked, and none after (ADR-0002 6.9)
  *   12d  the leisure warm-up proves the world (no readPixels before lit, some after, no flight asked for); a flight up
  *        asked first still proves it behind its hold; a descent never waits and makes no timed frames (tests/gate.html,
  *        a page-bent clock to judge the software renderer fit or unfit)
@@ -331,6 +331,8 @@ try {
       info(`localStorage keys: ${short(keys)}`);
       want(!keys.includes("orbit-flight-fitness"), "no orbit-flight-fitness key in localStorage");
       want(!keys.some((k) => k.startsWith("orbit-probe")), `no "orbit-probe ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-probe")))}`);
+      /* #116 (ADR-0002 6.4, L3): the refused machine keeps no verdict either: a software renderer is never remembered */
+      want(!keys.some((k) => k.startsWith("orbit-fit")), `no "orbit-fit ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-fit")))}`);
     });
 
     await scenario("4 software GL: the gate flies on the 2D canvas, with no further WebGL context", async (want, info) => {
@@ -428,7 +430,7 @@ try {
   {
     const saveData = () => Object.defineProperty(navigator, "connection", { configurable: true, get: () => ({ saveData: true, effectiveType: "4g", addEventListener() {}, removeEventListener() {} }) });
     const { ctx, page, log } = await open({ init: [saveData] });
-    await scenario("7 save-data: no webgl2 context until the gate is clicked, then one", async (want, info) => {
+    await scenario("7 save-data: no webgl2 context before the gate is clicked, and none after (ADR-0002 6.9)", async (want, info) => {
       await page.goto(at(), { waitUntil: "load" });
       want(await page.evaluate(() => navigator.connection?.saveData === true), "the stub reports saveData (otherwise this proves nothing)");
       await waitBody(page, "lit", 90000);
@@ -443,7 +445,7 @@ try {
       await page.waitForTimeout(3000);
       const after = webgl2(await state(page));
       info(`webgl2 calls after the click: ${short(after)}`);
-      want(after.length === 1, `exactly one webgl2 context after the click -- ${after.length}`);
+      want(after.length === 0, `no webgl2 context at all after the click (ADR-0002 6.9) -- ${after.length}`);
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
     });
     await ctx.close();

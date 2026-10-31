@@ -29,9 +29,9 @@ import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, run
  */
 /** @typedef {{ profile: Profile, on: Hooks, at?: number, gone?: boolean }} Climb the flight under way */
 /** @typedef {{ onto: "dusk" | "dawn", from: Profile | null, homes: Home[], on: Hooks, at?: number, rate?: number, gone?: boolean }} Descent the descent under way */
-/** @typedef {{ at: number, done: boolean, since: number | null }} Hold */
+/** @typedef {{ at: number, done: boolean, since: number | null, onFailed: () => void }} Hold */
 /** @typedef {{ title?: string, subtitle?: string, on?: Hooks, ready?: Promise<unknown> | null, at?: number }} FlyOptions */
-/** @typedef {{ title?: string, subtitle?: string, onto?: "dusk" | "dawn", from?: Profile | null, homes?: Home[], on?: Hooks, at?: number }} DescendOptions */
+/** @typedef {{ title?: string, subtitle?: string, onto?: "dusk" | "dawn", from?: Profile | null, homes?: Home[], on?: Hooks, ready?: Promise<unknown> | null, at?: number }} DescendOptions */
 /**
  * @typedef {object} Journey
  * @property {(profile: Profile, options?: FlyOptions) => void} fly
@@ -44,6 +44,7 @@ import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, run
  * @property {(how?: { prove?: boolean }) => Promise<void>} warm
  * @property {(how?: { prove?: boolean }) => Promise<unknown>} warmDocs
  * @property {() => Promise<unknown>} compiled
+ * @property {() => Promise<{ fit: boolean, ms: number, how: string }>} verdict
  * @property {() => Promise<boolean>} aside
  */
 
@@ -83,22 +84,27 @@ const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ 
    so a stall pauses the journey where it is rather than skipping it ahead to the landing; otherwise real time, so a
    machine that simply draws slowly finishes the journey on time rather than stretching it. The flight and its beats
    both keep this time. The descent always keeps real time */
-/* how long the climb's hold waits for the flight's world before going on without it (holdAt) */
-const WORLD_WAIT = 8000;
+/* how long a hold waits for the flight's world before the world counts as failed (holdAt; ADR-0002 6.7): past the
+   longest bounded wait inside a proof (PICTURE_WAIT and COMPILE_WAIT, chores.js, and the chores between), so it fires
+   only when something has hung. Not a let-go into the painted flight for want of readiness (#116): when it fires, the
+   world is given up (the engine's abandon) and the journey goes on painted */
+export const WORLD_FAILED = 30000;
 function journeyClock() {
   let t = 0, last = performance.now(), raf = 0, /** @type {Hold | null} */ hold = null, cap = Infinity;
   /** @type {Map<number, { at: number, fn: () => void }>} */
   const pending = new Map(); let ids = 0;
   /* a hold: the clock stops at a point in the journey until something it needs has come (the host gives it what the
-     flight draws), so a journey can start the moment it is chosen and still never draw before it is ready. It lets
-     go by itself once the clock has stood at it for WORLD_WAIT of real time, counted from when the journey reaches
-     it, not from when it was set (Orbit's #1299) */
+     flight draws), so a journey can start the moment it is chosen and still never draw before it is ready. Past
+     WORLD_FAILED of real time standing at it, counted from when the journey reaches it, not from when it was set
+     (Orbit's #1299), it lets go as a failure: its onFailed is called, then the journey goes on */
   const now = () => {
     const p = performance.now(); t += Math.min(cap, Math.max(0, p - last)); last = p;
+    let failed = null;
     if (hold && !hold.done && t > hold.at) {
       if (hold.since === null) hold.since = p;
-      if (p - hold.since >= WORLD_WAIT) hold.done = true; else t = hold.at;
+      if (p - hold.since >= WORLD_FAILED) { hold.done = true; failed = hold.onFailed; } else t = hold.at;
     }
+    if (failed) failed();
     return t;
   };
   const poll = () => {
@@ -113,8 +119,8 @@ function journeyClock() {
     stalls(on) { now(); cap = on ? 64 : Infinity; },
     /** @param {() => void} fn @param {number} ms */
     schedule(fn, ms) { const id = ++ids; pending.set(id, { at: now() + ms, fn }); if (!raf) raf = requestAnimationFrame(poll); return id; },
-    /** @param {number} ms @param {Promise<unknown>} until */
-    holdAt(ms, until) { const h = /** @type {Hold} */ ({ at: now() + ms, done: false, since: null }); hold = h; const free = () => { h.done = true; }; until.then(free, free); return h; },
+    /** @param {number} ms @param {Promise<unknown>} until @param {() => void} onFailed */
+    holdAt(ms, until, onFailed) { const h = /** @type {Hold} */ ({ at: now() + ms, done: false, since: null, onFailed }); hold = h; const free = () => { h.done = true; }; until.then(free, free); return h; },
     /** @param {number} id */
     cancel(id) { pending.delete(id); },
     /** the hold let go: a journey that starts after one still pending is not clamped at it */
@@ -252,7 +258,9 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       /* (only the flight that set the class takes it off: an older flight's ready settling late must not clear the
          class a newer flight has set) */
       const mine = flight;
-      clock.holdAt(Math.max(0, warp - 10), ready.finally(() => { if (flight === mine) body.classList.remove("holding"); }));
+      const unhold = () => { if (flight === mine) body.classList.remove("holding"); };
+      /* (past WORLD_FAILED the world is given up: the flight goes on painted, ADR-0002 6.7) */
+      clock.holdAt(Math.max(0, warp - 10), ready.finally(unhold), () => { unhold(); need().abandon(); });
     }
     flight.gone = gone(beats, at, "land");
     cancelTimeline = runTimeline(beats, ascentStep, pinned ? { at } : clock);
@@ -261,14 +269,14 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
   const ascend = (o = {}) => fly(UP, o);
   /* `at` as for fly(): ms into the descent's own (quickened) time */
   /** @param {DescendOptions} [options] */
-  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, homes = [], on: hooks = {}, at } = {}) {
+  function descend({ title = "", subtitle = "signing out", onto = "dusk", from = null, homes = [], on: hooks = {}, ready = null, at } = {}) {
     need();
     dropLeisure();
     cancelTimeline();
     /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
        drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
     clock.stalls(false); clock.release();
-    body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching");
+    body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching", "holding");
     descent = { onto, from, homes, on: hooks, at, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
     write(title, subtitle);
     let beats = descentBeats();
@@ -281,12 +289,24 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     }
     beats = reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, /** @type {number} */ (descent.rate));
     descent.gone = gone(beats, at, "warpOut");
-    /* (a descent never waits for the flight's world: at the warp it draws it if its verdict is in and fit, else it is painted) */
+    /* not yet ready (ADR-0002 6.8, #116): held as the climb is, but at its first beat, before the landing withdraws, so
+       the landing stays as it is while it waits (nothing has dispersed to leave a blank); not under reduced motion (no
+       world is drawn) nor when pinned. The beats a millisecond on, so the hold at 0 stands before the first of them */
+    if (ready && !reduced && typeof at !== "number") {
+      beats = beats.map((b) => ({ ...b, at: b.at + 1 }));
+      body.classList.add("holding");
+      const mine = descent;
+      const unhold = () => { if (descent === mine) body.classList.remove("holding"); };
+      clock.holdAt(0, ready.finally(unhold), () => { unhold(); need().abandon(); });
+    }
+    /* (at the warp it draws the flight's world if its verdict is in and fit, else it is painted) */
     cancelTimeline = runTimeline(beats, descentStep, typeof at === "number" ? { at } : clock);
   }
   /* the journey taken down (a host that remounts its door): nothing of it keeps running or listening */
   /* (before any need there is no engine, and nothing of it to take down) */
   function destroy() { dropLeisure(); reset(); made?.destroy(); destroyed = true; asideIs(false); clock.dispose(); removeEventListener("resize", onResize); }
   return { fly, ascend, descend, reset, destroy, later, reduced, warm: (how) => need().warm(how), warmDocs: (how) => need().warmDocs(how),
-    compiled: () => (made ? made.compiled() : Promise.resolve()), aside: () => aside };
+    compiled: () => (made ? made.compiled() : Promise.resolve()), aside: () => aside,
+    /* the verdict on the flight's world (engine.js: verdict, ADR-0002 6.3): with the proper version's load, what a way in waits for */
+    verdict: () => need().verdict() };
 }

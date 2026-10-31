@@ -16,7 +16,7 @@
 import { createFlight, wireProfile, EARTH_PICTURE } from "./engine.js";
 import { PICTURE_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
-import { decodeAside } from "./fitness.js";
+import { decodeAside, rememberedFit } from "./fitness.js";
 import { page } from "./page.js";
 
 /** @import { Profile } from "./engine.js" */
@@ -51,6 +51,16 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   /** @type {(v: unknown) => void} */
   let compiledIs = () => {};
   const compiled = new Promise((r) => { compiledIs = r; });
+  /* the verdict on the world (ADR-0002 6.3, 6.12): a pass remembered on this device, read here on the page at the first
+     warm (the worker reads nothing remembered), or the worker's `verdict`, which the page keeps (page.judged); handed to
+     the page engine on a fallback, as compiled() is */
+  /** @type {(v: unknown) => void} */
+  let verdictIs = () => {};
+  /** @type {Promise<any>} */
+  const verdict = new Promise((r) => { verdictIs = r; });
+  let decided = false, remembered = false;
+  /** @param {unknown} v */
+  const decide = (v) => { if (!decided) { decided = true; verdictIs(v); } };
   /* true once the worker said `up`; false once the flight is on the page before it did (a fallback, or destroyed) */
   /** @type {(v: boolean) => void} */
   let asideIs = () => {};
@@ -74,6 +84,13 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       /* (the worker's console lines, printed as they come: every line reads as it does on the page) */
       case "note": if (m.kind === "verdict") page.verdict(String(m.line)); else page.note(String(m.line)); break;
       case "compiled": compiledIs(!!m.ok); break;
+      /* the worker's judgement (draw-worker.js: judged): kept here, where the memory is, and the verdict if none is in */
+      case "verdict": {
+        const v = { fit: !!m.fit, ms: Number(m.ms), skipped: !!m.skipped, how: String(m.how || (m.skipped ? "skipped" : "tested")) };
+        page.judged(v);
+        decide({ fit: v.fit, ms: v.ms, how: v.how });
+        break;
+      }
       /* a picture's bytes from the worker, decoded here by the image loader and handed back, transferred (ADR-0004 6e.2) */
       case "decode":
         if (!m.blob) { post({ type: "decoded", id: m.id, error: "no picture" }); break; }
@@ -116,6 +133,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     for (const ask of pending.values()) (ask.kind === "warmDocs" ? mine.warmDocs({ prove: ask.prove }) : mine.warm({ prove: ask.prove })).then(ask.resolve);
     pending.clear();
     compiledIs(mine.compiled());
+    decide(mine.verdict());
     /* a flight under way goes on painted from the next frame, from where it was, rather than ending blank */
     if (live) {
       const { P, at, since } = live;
@@ -157,11 +175,15 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   const ask = (kind, prove) => {
     if (engine) return kind === "warmDocs" ? engine.warmDocs({ prove }) : engine.warm({ prove });
     if (destroyed) return Promise.resolve();
+    if (!remembered) { remembered = true; const kept = rememberedFit(); if (kept?.fit) decide({ fit: true, ms: kept.ms, how: "remembered" }); }
     const id = ++ids;
     return new Promise((resolve) => { pending.set(id, { kind, prove, resolve }); post({ type: "warm", id, kind, prove }); });
   };
   return {
     compiled() { return engine ? engine.compiled() : compiled; },
+    verdict() { return engine ? engine.verdict() : verdict; },
+    /* the journey's hold gave up on the world (journey.js: WORLD_FAILED): the worker's engine is told */
+    abandon() { if (engine) { engine.abandon(); return; } post({ type: "abandon" }); },
     aside() { return aside; },
     /* (a world in a worker cannot stall the page: the journey keeps real time, 6a.3) */
     get drawingWorld() { return engine ? engine.drawingWorld : false; },
