@@ -20,6 +20,7 @@
       "assets/site.css",
       "assets/js/main.js",
       "assets/js/ring.js",
+      "assets/js/places.js",
       "assets/js/tilt.js",
       "sw.js",
       "assets/img/door/**",
@@ -36,10 +37,12 @@
       "assets/js/tour.js",
       "assets/js/data.js",
       "assets/js/law.js",
-      "assets/js/lock.js"
+      "assets/js/lock.js",
+      "assets/js/places.js"
     ],
     "docs": [
       "assets/js/pads.js",
+      "assets/js/places.js",
       "assets/docs/**",
       "tools/docs-sources.json"
     ],

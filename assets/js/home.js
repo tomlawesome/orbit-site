@@ -5,6 +5,7 @@
 import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId, createDate } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
+import { createPlaces } from "./places.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -12,6 +13,9 @@ const f1 = (n) => (Math.round(n * 10) / 10).toString();
 const C = law.DIAL_CENTRE;
 
 export const state = { camera: "willow", open: null, skyCams: null, flying: false };
+/* whether a sky flight is in the air (a pending ask counts: it is flown when this one lands) */
+export function flying() { return state.flying; }
+const places = createPlaces();
 const listeners = new Set();
 export function onChange(fn) { listeners.add(fn); }
 let muted = false;
@@ -171,8 +175,8 @@ export function renderGalaxy() {
     el("circle", { class: "msring", cx: 0, cy: 0, r: 34 }, svg);
     for (const [px, py, pr, tone] of law.constellationPlanetsOf(h.items)) el("circle", { cx: px, cy: py, r: pr, fill: `var(${tone})` }, svg);
     const hit = el("circle", { class: "hit", cx: 0, cy: 0, r: 44, fill: "transparent", role: "button", tabindex: "0", "aria-label": `Fly to ${h.name}` }, svg);
-    hit.addEventListener("click", () => flyTo(h.id));
-    hit.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flyTo(h.id); } });
+    hit.addEventListener("click", () => visit(h.id));
+    hit.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); visit(h.id); } });
     host.appendChild(node);
   }
   const chips = $("#chips");
@@ -180,7 +184,7 @@ export function renderGalaxy() {
   for (const h of Object.values(households)) {
     if (h.id === cam.id) continue;
     const b = document.createElement("button");
-    b.type = "button"; b.textContent = h.name; b.addEventListener("click", () => flyTo(h.id));
+    b.type = "button"; b.textContent = h.name; b.addEventListener("click", () => visit(h.id));
     chips.appendChild(b);
   }
 }
@@ -198,20 +202,31 @@ export function setCamera(id) {
 /* The camera flight (v18, one motion): the old chart leaves with the camera,
    the destination rides home to the exact centre, and the new chart grows out
    of the shared centre. */
-let flight = null;
+let flight = null, pending = null;
 /* ends a flight in the air without landing it: its timers are cleared, the flying look is taken off, the camera is
    left where it was (the caller puts it where it wants), and the flight's done is called so what awaits it carries on */
 export function cancelFlight() {
   if (!flight) return;
   const { timers, done } = flight; flight = null;
+  const asked = pending; pending = null;
   timers.forEach(clearTimeout);
   const hero = $("#hero"); hero.classList.remove("flying", "arriving");
   document.querySelectorAll(".minisys.target").forEach((m) => m.classList.remove("target"));
   state.flying = false;
   if (done) done();
+  if (asked?.done) asked.done();
+}
+/* a tap on another household's mini system or chip: from the visitor's own sky it is one entry above it, from another's
+   the entry is changed in place (your sky and another's are the two levels); the address stays what it was (ADR-0006) */
+function visit(id) {
+  if (id === state.camera) return;
+  if (state.camera === "willow" && !history.state?.sky) places.stack({ sky: id }); else places.hop({ sky: id });
+  flyTo(id);
 }
 export function flyTo(id, done) {
-  if (state.flying || id === state.camera) return;
+  /* asked for in the air: the last one asked is flown when this one lands */
+  if (state.flying) { if (pending?.done) pending.done(); pending = { id, done }; return; }
+  if (id === state.camera) return;
   const hero = $("#hero");
   const target = $(`.minisys[data-id="${id}"]`);
   const dx = Number(target?.dataset.dx || 0), dy = Number(target?.dataset.dy || 0);
@@ -231,7 +246,7 @@ export function flyTo(id, done) {
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
     /* the corner says where it goes: from your own sky, down to the dawn; from another's, back to yours */
     $("#back").textContent = id === "willow" ? "— the dawn" : "— your sky";
-    timers.push(setTimeout(() => { flight = null; hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); }, reduced ? 50 : 900));
+    timers.push(setTimeout(() => { flight = null; hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); const next = pending; pending = null; if (next) { if (next.id === state.camera) next.done?.(); else flyTo(next.id, next.done); } }, reduced ? 50 : 900));
   };
   timers.push(setTimeout(land, reduced ? 50 : 1250));
 }
@@ -562,7 +577,7 @@ export function mountHome(skyCams) {
   /* a burst of resizes draws the galaxy once, after the burst (as the docs chart does) */
   let galaxyTimer; addEventListener("resize", () => { clearTimeout(galaxyTimer); galaxyTimer = setTimeout(() => { if (!state.flying) renderGalaxy(); }, 150); });
   /* from another household, back to yours; from yours, back to the dawn (main.js says how) */
-  $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") flyTo("willow"); else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
+  $("#back").addEventListener("click", (e) => { e.preventDefault(); if (state.camera !== "willow") { if (history.state?.sky) { try { history.back(); } catch { /* fine */ } } else flyTo("willow"); } else if (backHome) backHome(); else scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawers(); hideBodyCallout(); } });
   /* a tap anywhere else, or a scroll, lets the callout go */
   document.addEventListener("pointerdown", (e) => { if (armedBody && !e.target.closest(".body-link") && !e.target.closest("#body-callout")) hideBodyCallout(); });
