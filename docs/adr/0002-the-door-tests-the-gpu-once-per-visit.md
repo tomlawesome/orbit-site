@@ -311,9 +311,11 @@ in the same context says `remembered off …, tested again` and still enables th
 `flight world: off: frame N ms`. Control: the first load's verdict line did not say `flight world: remembered` (the site's own `prove: at once (nothing remembered)` says the word too, and is not that line). Real-GPU control, by hand: the owner's desktop,
 first load after clearing the key: the gate after the verdict line; second load: the gate before it, the verdict line
 later, the key's `t` renewed. L5 (6.5): the store seeded by an init script with a pass under the key of 6.4 (the
-renderer read first, as `freeze.mjs` reads it): the console says `prove: at leisure (remembered on, N d ago)` and the
-gate is enabled before the verdict line; control, the store empty: `prove: at once (nothing remembered)` and the gate
-enabled only after the verdict line. L6 (6.8): arriving at `?gpu=force&fit=skip#docs`, `#docspad .back.dawn` carries
+renderer read first, as `freeze.mjs` reads it): the console says `prove: at leisure (remembered on, N d ago)` and
+`flight world: remembered on (frame N ms, N d ago)`, the second before any verdict line, and it is already on the console
+when the gate is first enabled (the order against this visit's own verdict line is not checked: that is the leisure
+re-test, which on a fast or software renderer can land first, pipeline 3271); control, the store empty: `prove: at once
+(nothing remembered)`, no `flight world: remembered` line, and the gate enabled only after the verdict line. L6 (6.8): arriving at `?gpu=force&fit=skip#docs`, `#docspad .back.dawn` carries
 `aria-disabled` and `tabindex="-1"`; clicked then, the body carries none of the journey's classes at the moment the
 control opens (the attributes gone); clicked after, the descent runs (`showdawn`, then `#door.shown`). Control: a
 plain load, `?gpu=force&fit=skip` and no hash, read as soon as the gate is enabled (the gate and the backs open in the

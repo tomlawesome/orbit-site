@@ -350,9 +350,12 @@ const landings = async (prefix) => {
   });
 
   /* L5: a pass remembered under the key of 6.4 (the renderer read first): the proof is left to leisure and the gate opens
-     before the verdict line; with nothing remembered the proof is at once and the gate opens only after the line */
+     on the remembered pass, which the console says before any verdict line of this visit's own test; with nothing
+     remembered the proof is at once and the gate opens only after the verdict line. Whether the gate opened before the
+     verdict line is not checked for the remembered case: that test is the leisure re-test, and on a fast or a software
+     renderer it can land first (pipeline 3271), while the gate also waits for the flight's load */
   for (const remembered of [true, false]) {
-    await step(`L5 #116: ${remembered ? "a remembered pass opens the gate before the verdict line" : "control, nothing remembered: the gate opens only after the verdict line"}${prefix ? " (preview)" : ""}`, async () => {
+    await step(`L5 #116: ${remembered ? "a remembered pass is what the gate opens on, said before any verdict line" : "control, nothing remembered: the gate opens only after the verdict line"}${prefix ? " (preview)" : ""}`, async () => {
       await withGL(async (p, octx) => {
         if (remembered) {
           const key = await p.evaluate(() => {
@@ -370,9 +373,18 @@ const landings = async (prefix) => {
         const prove = lines.filter((t) => /prove: /.test(t));
         const want = remembered ? /prove: at leisure \(remembered on, \d+ d ago\)/ : /prove: at once \(nothing remembered\)/;
         if (!prove.some((t) => want.test(t))) throw new Error(`want ${want}; the console said ${JSON.stringify(prove)}`);
+        const REMEMBERED = /flight world: remembered on \(frame \d+ ms, \d+ d ago\)/;
+        if (remembered) {
+          const said = lines.findIndex((t) => REMEMBERED.test(t)), verdict = lines.findIndex((t) => VERDICT.test(t));
+          if (said < 0) throw new Error(`want ${REMEMBERED}; the console said ${JSON.stringify(lines.filter((t) => /flight world/.test(t)))}`);
+          if (verdict >= 0 && said > verdict) throw new Error(`the remembered pass was said after this visit's verdict line: ${JSON.stringify(lines.filter((t) => /flight world/.test(t)))}`);
+          const g = await firstEnabled(p);
+          if (!g || !g.lines.some((t) => REMEMBERED.test(t))) throw new Error(`the gate was enabled before the remembered pass was said: ${JSON.stringify(g && g.lines.filter((t) => /flight world/.test(t)))}`);
+          return;
+        }
+        if (lines.some((t) => /flight world: remembered/.test(t))) throw new Error(`nothing was kept, yet the console said the flight world was remembered: ${JSON.stringify(lines.filter((t) => /flight world: remembered/.test(t)))}`);
         const atLine = await stateAt(p, VERDICT);
-        if (remembered && atLine !== false) throw new Error(`the gate was still disabled when the verdict line was said (${atLine}): a remembered pass should have opened it already`);
-        if (!remembered && atLine !== true) throw new Error(`the gate was already enabled when the verdict line was said (${atLine}): with nothing remembered it should wait for it`);
+        if (atLine !== true) throw new Error(`the gate was already enabled when the verdict line was said (${atLine}): with nothing remembered it should wait for it`);
       });
     });
   }
