@@ -55,9 +55,15 @@ let page = null;
 /* set only while the deliberate no-such-page visit runs: Chromium logs its
    404 as a console error, which is expected there and nowhere else */
 let expectNotFound = false;
+const inFlight = new WeakMap();
 const fresh = async () => {
   await page?.close();
   page = await ctx.newPage();
+  /* the docs pictures being downloaded now, for picturesDone */
+  const pics = new Set();
+  inFlight.set(page, pics);
+  page.on("request", (r) => { if (r.url().includes("/assets/docs/img/")) pics.add(r); });
+  for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, (r) => pics.delete(r));
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   /* No Gaia picture: the page must not request any galaxy*.webp, and must not
      print the old "is drawn, not Gaia's" credit note. */
@@ -618,11 +624,21 @@ const landings = async (prefix) => {
   };
   /* A docs page's pictures are downloads, and Firefox reports one cut off by leaving or replacing the page as a failed
      request (NS_BINDING_ABORTED), which the global requestfailed check rightly counts. So a step that leaves a docs page
-     it has just opened waits here first, until the reader holds its text and every picture in it has finished. */
+     it has just opened waits here first, until the reader holds its text and no picture it asked for is still coming. */
   const picturesDone = async (p, what) => {
-    try { await p.waitForFunction(() => document.querySelector("#docspad .reader div.body")?.textContent.trim().length > 0 && [...document.querySelectorAll("#docspad .reader div.body img")].every((i) => i.complete), null, { timeout: 30000 }); }
-    catch { throw new Error(`${what}: the docs page's pictures had not finished loading within 30s`); }
+    try { await p.waitForFunction(() => document.querySelector("#docspad .reader div.body")?.textContent.trim().length > 0, null, { timeout: 30000 }); }
+    catch { throw new Error(`${what}: the docs page held no text within 30s`); }
+    /* a lazy picture far down the page is never asked for, so this waits on the downloads under way, not on every
+       picture being complete: none in flight twice running, 250 ms apart, so one the layout starts just after counts */
+    const pics = inFlight.get(p) ?? new Set();
+    const end = Date.now() + 30000;
+    for (let quiet = 0; quiet < 2;) {
+      if (Date.now() > end) throw new Error(`${what}: ${pics.size} docs picture(s) still downloading after 30s`);
+      await p.waitForTimeout(250);
+      quiet = pics.size ? 0 : quiet + 1;
+    }
   };
+
 
   /* B1: from a landing, "— the dawn" is one step back to the door and leaves no second door entry */
   await step(`B1 "— the dawn" from a landing leaves one door entry${sfx}`, async () => {
