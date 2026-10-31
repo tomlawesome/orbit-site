@@ -14,6 +14,12 @@
  *   PW2c  control: draw=page at k 0.3 against 0.6 differ, so the comparison can fail
  *   PW2d  still(0.3, 7) with `decode=img` on both (#113, ADR-0004 6e): no pixel differs, and both say the image loader
  *         decoded the pictures (the worker's come from the page, transferred)
+ *   PW2e  the moon through fetchBitmap under `decode=img` (#113, ADR-0004 6e.1, 6e.5) against the same file through
+ *         createImageBitmap(blob) with the same options, each uploaded to a WebGL texture as the site uploads (no
+ *         premultiply, no colour conversion, no flip) and read back: on the texels whose alpha is 64 to 127 and whose
+ *         red is over 100 in the blob route's, the loader's red over the blob's, averaged, is within 0.97 to 1.03 (the
+ *         defect read 0.39 to 0.40: a premultiplied bitmap uploads premultiplied). Controls: the console said
+ *         `pictures: decoded by the image loader`, and at least 100 texels are in that band
  *
  * Each pair also has its own controls, so a case cannot pass for nothing: under draw=worker the console says `install:
  * drawn in a worker` (not the page's fallback), under draw=page `install: drawn on the page`, and the picture is not
@@ -149,10 +155,72 @@ const pair = (id, name, k, idle, more = "") => judge(id, name, async (want) => {
   want.note(`${r.w}x${r.h}, ${r.lit} lit pixels, ${r.differ} differ`);
 });
 
+/* PW2e: the moon by the two routes, each read back from a texture, on a fresh page with the loader route forced */
+const MOON = "../assets/door/img/flight/moon.webp";
+const moonReads = async () => {
+  const ctx = await browser.newContext({ viewport: VIEW, deviceScaleFactor: 1 });
+  const errors = [], said = [];
+  try {
+    const page = await ctx.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => said.push(m.text()));
+    await page.goto(`${SITE}tests/world.html?${FLAGS}&decode=img`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.worldReady === true, null, { timeout: 60000 });
+    const out = await page.evaluate(async (moon) => {
+      const OPTS = { colorSpaceConversion: "none", premultiplyAlpha: "none" };
+      const url = new URL(moon, location.href).href;
+      const { fetchBitmap } = await import(new URL("../assets/door/index.js", location.href).href);
+      const loader = await fetchBitmap(url, { ...OPTS });
+      const blobBmp = await createImageBitmap(await (await fetch(url)).blob(), { ...OPTS });
+      const read = (bmp) => {
+        const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+        const gl = c.getContext("webgl2", { premultipliedAlpha: false, alpha: true });
+        if (!gl) throw new Error("no WebGL 2 context");
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("framebuffer incomplete");
+        const px = new Uint8Array(bmp.width * bmp.height * 4);
+        gl.readPixels(0, 0, bmp.width, bmp.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px;
+      };
+      const sizes = { loader: [loader.width, loader.height], blob: [blobBmp.width, blobBmp.height] };
+      if (sizes.loader[0] !== sizes.blob[0] || sizes.loader[1] !== sizes.blob[1]) return { sizes };
+      const [a, b] = [read(loader), read(blobBmp)];
+      let n = 0, sum = 0;
+      for (let i = 0; i < b.length; i += 4) {
+        if (b[i + 3] >= 64 && b[i + 3] <= 127 && b[i] > 100) { n++; sum += a[i] / b[i]; }
+      }
+      return { sizes, n, ratio: n ? sum / n : null };
+    }, MOON);
+    return { ...out, said, errors };
+  } finally { await ctx.close(); }
+};
+
 const run = async () => {
   if (wanted("PW2a")) await pair("PW2a", "still(0.3, 7): the worker's picture is the page's, pixel for pixel", 0.3, 7);
   if (wanted("PW2b")) await pair("PW2b", "still(1, 7): the worker's picture is the page's, pixel for pixel", 1, 7);
   if (wanted("PW2d")) await pair("PW2d", "still(0.3, 7), the pictures decoded by the page's image loader: the worker's picture is the page's", 0.3, 7, "&decode=img");
+  if (wanted("PW2e")) {
+    await judge("PW2e", "the moon by the image loader keeps straight alpha: its red on the translucent texels is the blob route's", async (want) => {
+      progress("PW2e moon");
+      const r = await moonReads();
+      want(!r.errors.length, `page error: ${r.errors[0]}`);
+      want(r.said.some((l) => /pictures: decoded by the image loader/.test(l)), `control: with decode=img the console never said "pictures: decoded by the image loader" (it said ${JSON.stringify(r.said.filter((l) => /pictures/.test(l)))}), so the loader route may not have been taken`);
+      want(r.n !== undefined, `the two routes gave different sizes (${JSON.stringify(r.sizes)})`);
+      if (r.n === undefined) return;
+      want(r.n >= 100, `control: only ${r.n} texels have alpha 64-127 and red over 100 in the blob route's picture (want at least 100), so the picture or the filter is wrong`);
+      want(r.ratio !== null && r.ratio >= 0.97 && r.ratio <= 1.03, `the loader's red over the blob route's, mean over ${r.n} texels (alpha 64-127, red over 100), is ${r.ratio === null ? "undefined" : r.ratio.toFixed(4)}, outside 0.97 to 1.03`);
+      want.note(`${r.n} texels, mean red ratio ${r.ratio === null ? "n/a" : r.ratio.toFixed(4)}`);
+    });
+  }
   if (wanted("PW2c")) {
     await judge("PW2c", "control: draw=page at k 0.3 and at 0.6 differ, so the comparison can fail", async (want) => {
       const [a, b] = [await shoot("page", 0.3, 7), await shoot("page", 0.6, 7)];
