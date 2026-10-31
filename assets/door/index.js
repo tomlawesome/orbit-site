@@ -19,6 +19,9 @@ export { uploadBanded } from "./upload.js";
 export { probe, level, liveDoor, lateDoor } from "./capability.js";
 /* whether the page may use the GPU at all, decided once from one context (fitness.js), and the renderer names it refuses */
 export { gpu, isSoftware, FIT_MS } from "./fitness.js";
+/* and the verdict on the flight's world remembered on this device for a week (ADR-0002 6.4): a host decides by it
+   whether the proof waits for leisure or is asked at once */
+export { rememberedFit, WEEK } from "./fitness.js";
 /* whether the flight is drawn in a worker (fitness.js), for a host that puts its own drawing beside it */
 export { drawnAside } from "./fitness.js";
 /* and whether the pictures are decoded by the image loader (fitness.js), which a host's worker is told, and answers a worker's ask for (chores.js) */

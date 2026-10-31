@@ -43,7 +43,7 @@ import { page } from "./page.js";
 /** @typedef {{ w: number, P: number[], R: number[], prevP?: number[], prevR?: number[], gain: number, starK?: number, page?: number }} Galaxy3d the docs' galaxy camera */
 /** @typedef {{ t: number, v: number, K: number, vp: number[], rmax: number, tint: number[], progress: number, world: World | null, bloom?: number, bloomPt?: number[], tu?: number, star?: boolean, dt?: number, moon?: boolean, galaxy3d?: Galaxy3d, cstars?: number[][] }} Frame one frame of the flight (draw) */
 /** @typedef {{ fit: boolean, ms: number, skipped?: boolean }} Verdict */
-/** @typedef {{ canvas: HTMLCanvasElement, resize: (w: number, h: number) => void, draw: (s: Frame) => void, advance: (v: number, dt: number, K: number) => void, clear: () => void, warm: (opts?: { prove?: boolean }) => Promise<void>, warmDocs: (opts?: { prove?: boolean }) => Promise<void>, stop: () => void, made: Promise<boolean>, galaxy: Promise<void | null>, readonly ready: boolean, readonly dead: boolean, reset: () => void }} Voyage the flight's world */
+/** @typedef {{ canvas: HTMLCanvasElement, resize: (w: number, h: number) => void, draw: (s: Frame) => void, advance: (v: number, dt: number, K: number) => void, clear: () => void, warm: (opts?: { prove?: boolean }) => Promise<void>, warmDocs: (opts?: { prove?: boolean }) => Promise<void>, stop: () => void, made: Promise<boolean>, galaxy: Promise<void | null>, judged: Promise<Verdict>, readonly ready: boolean, readonly dead: boolean, reset: () => void }} Voyage the flight's world */
 
 /* the pictures, where the host says they are (settings.js: image), resolved once they are first wanted, never at load */
 /** @type {Pictures | null} */
@@ -1360,10 +1360,17 @@ export function createVoyage(under, { restFor }) {
     }
   };
   /* the verdict: whether the world is drawn, said once a visit. The first proof to get here (the flight's, or the docs' on its
-     own galaxy: 6d.1) takes the fitness test; the other reads its result. `tag` is the chores the test is queued as */
-  let judged = /** @type {Promise<void> | null} */ (null);
+     own galaxy: 6d.1) takes the fitness test; the other reads its result. `tag` is the chores the test is queued as.
+     `judged` (the world's surface) is the verdict as measured, for the engine to keep and to open the ways in on
+     (ADR-0002 6.3, 6.4): resolved only when the test was taken on a world still there, before an unfit one is retired;
+     a world lost or never made never resolves it (the engine hears that from `dead`) */
+  let judging = /** @type {Promise<void> | null} */ (null);
+  /** @type {(v: Verdict) => void} */
+  let judgedIs = () => {};
+  /** @type {Promise<Verdict>} */
+  const judged = new Promise((r) => { judgedIs = r; });
   /** @param {string} tag @returns {Promise<void>} */
-  const judge = (tag) => (judged ??= fitWhenShown(tag).then(({ fit: fits, ms, skipped }) => {
+  const judge = (tag) => (judging ??= fitWhenShown(tag).then(({ fit: fits, ms, skipped }) => {
     if (gone) return;
     fit = fits;
     ready = ok && !dead && fit;
@@ -1372,6 +1379,7 @@ export function createVoyage(under, { restFor }) {
     else if (fit) sayVerdict(skipped ? "on (fitness skipped)" : `on (frame ${Math.round(ms)} ms)`);
     else sayOff(Number.isFinite(ms) ? `frame ${Math.round(ms)} ms` : "a frame failed to draw");
     note(`flight: world ${ready ? "proved" : dead ? (madeOk ? "lost" : "not made") : "too slow here, drawn without it"}`);
+    if (!dead) judgedIs({ fit: fits, ms, skipped: !!skipped });
     if (ok && !fit) retire();
   }));
   /* the maps, the warm-up and the measure, asked for once. `prove: false` (the door's, speculative, ADR-0002) makes the
@@ -1426,7 +1434,8 @@ export function createVoyage(under, { restFor }) {
         .then(() => chore(() => touch({ ...ST(), world: { cx: W / 2, cy: H * 3, R: H * 2.4, alpha: 1, c: 0.1 }, tu: 900 }), 60, "flight"))
         /* and whether this machine can draw it at all (Orbit's #1253): whole frames, the median judged. A world that
            cannot would make every frame a long stall, and the journey's clock would stretch the climb to many times its
-           length: it is let go, and the flight draws on its own canvas, as it always could. Every visit, never kept */
+           length: it is let go, and the flight draws on its own canvas, as it always could. Every visit; the engine keeps
+           the verdict a week (ADR-0002 6.4), which changes when a way in opens, never what is drawn: only this decides that */
         .then(() => judge("flight"));
       /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
       warming.then(() => chore(calibrate, 200, "measure"));
@@ -1469,7 +1478,7 @@ export function createVoyage(under, { restFor }) {
   }
   /* the fitness test: whole frames at the heaviest point of the flight, at the smallest drawing the measure would ever
      choose, warmed first and judged on their median (fitness.js: frameCost); fit if that leaves room for about 30
-     frames a second. Returns { fit, ms } (not kept: asked on every visit); warm says the verdict */
+     frames a second. Returns { fit, ms }, taken on every visit (what the engine remembers of it never reaches here); warm says the verdict */
   /** @returns {Verdict} */
   function fitness() {
     if (!ok) return { fit: false, ms: Infinity };
@@ -1738,7 +1747,7 @@ export function createVoyage(under, { restFor }) {
     for (const o of [maps, fields]) for (const k of Object.keys(o)) delete o[k];
     glowT = null; sunTex = null;
   }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() {
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, judged, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() {
     off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = [];
     /* the start of a flight, before its first frame: the one place besides the warm chore where stale stars are remade */
     if (starsStale && !gone) { try { remakeStars(); makeStars(); } catch { /* drawn without them */ } }

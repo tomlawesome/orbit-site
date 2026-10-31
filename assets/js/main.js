@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu } from "../door/index.js";
+import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu, rememberedFit } from "../door/index.js";
 import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -100,7 +100,8 @@ let warmingAll = null, compiledAll = null, doorCompiled = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
   if (MAINTENANCE) return (warmingAll = Promise.resolve());
-  if (saveData()) { openWays(["install", "docs", "info"], true); return (warmingAll = Promise.resolve()); }
+  /* (under save-data every way in opens at once on its cheaper version, the flights painted: ADR-0002 6.9) */
+  if (saveData()) { openWays(["install", "docs", "info", "back"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page; where the browser compiles on the page's own thread,
      the compiles are chores too, asked for at the first light and done under the ring: compileFirst); the work each
@@ -114,15 +115,20 @@ function warmJourneys() {
     PADS.info.world?.prepare?.(),      /* 4. the information's world */
   ];
   warmingAll = Promise.all(all.map((p) => Promise.resolve(p).catch(() => {})));
+  /* the flight's proof: with nothing remembered, asked now, behind the load (ADR-0002 6.5) */
+  prove();
   loseGate();
-  /* each way in opens as its journey is readied (or has failed, and goes as it can): the planets show from the
-     first but take no click until then, and the gate is not shown at all */
+  /* each way in opens as its journey is readied (or has failed, and goes as it can) and, for the flight's, once its
+     verdict is in (ADR-0002 6.3: remembered, tested, refused or failed; never "not yet"): the planets show from the
+     first but take no click until then, and the gate and the backs to the dawn are not shown at all. Under reduced
+     motion the flights draw no world, so they wait for no verdict (6.10) */
   const settled = (p) => Promise.resolve(p).catch(() => {});
+  const verdictIn = journey.reduced ? null : settled(journey.verdict());
   /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
   settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
-  settled(all[1]).then(() => openWays([], true));
+  Promise.all([settled(all[1]), verdictIn]).then(() => openWays(["back"], true));
   /* (the docs' way in opens on its own galaxy, not the flight's maps: ADR-0004 6d.1) */
-  Promise.all([settled(all[2]), settled(journey.warmDocs({ prove: false }))]).then(() => openWays(["docs"]));
+  Promise.all([settled(all[2]), settled(journey.warmDocs({ prove: false })), verdictIn]).then(() => openWays(["docs"]));
   settled(PADS.info.world?.baked ?? all[3]).then(() => openWays(["info"]));
   /* the shaders the likeliest journeys need, compiled: on a first visit the ring keeps running until they are. Where
      the browser compiles on the page's own thread, every one of them, the docs' galaxy's and the live door's too
@@ -147,7 +153,7 @@ function loseGate() {
   }).catch(() => {});
 }
 /* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
-   shows once the flight is */
+   shows once the flight is, and the backs to the dawn (id "back") fade in then (ADR-0002 6.8) */
 let planetsIn = Promise.resolve();
 function openWays(ids, gate = false) {
   /* never before the planets themselves are in: a label that came before its planet would read as the other way round */
@@ -156,9 +162,20 @@ function openWays(ids, gate = false) {
 function openNow(ids, gate) {
   for (const id of ids) { const p = $(`#door .planet[data-section="${id}"]`); if (!p) continue; p.classList.add("ready"); p.removeAttribute("tabindex"); p.removeAttribute("aria-disabled"); }
   if (gate) { document.body.classList.add("ready-flight"); $("#gate").disabled = false; }
+  if (ids.includes("back")) for (const b of BACKS()) {
+    if (b.getAttribute("aria-disabled") !== "true") continue;
+    b.removeAttribute("tabindex"); b.removeAttribute("aria-disabled");
+    /* (faded in on filter, not opacity: the landings' and the home's own fades are on opacity, site.css) */
+    if (!journey.reduced) b.animate?.([{ filter: "opacity(0)" }, { filter: "opacity(1)" }], { duration: 600, easing: "ease" });
+  }
 }
 /* until then */
 for (const p of document.querySelectorAll("#door .planet")) { p.setAttribute("tabindex", "-1"); p.setAttribute("aria-disabled", "true"); }
+/* the descents' controls, the landings' backs to the dawn and the home's two (its corner and the goodbye), closed
+   and not shown until the flight's way in opens (ADR-0002 6.8, owner 3a); a click on one then does nothing */
+const BACKS = () => document.querySelectorAll(".pad .back.dawn, #back, #signout");
+if (!MAINTENANCE) for (const b of BACKS()) { b.setAttribute("tabindex", "-1"); b.setAttribute("aria-disabled", "true"); }
+document.addEventListener("click", (e) => { const b = e.target.closest?.(".pad .back.dawn, #back, #signout"); if (b?.getAttribute("aria-disabled") === "true") { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 /* (a planet not yet ready takes no click, from a pointer, the keyboard or a script: its link does not fire) */
 $("#door .planets")?.addEventListener("click", (e) => { const a = e.target.closest(".planet"); if (a && !a.classList.contains("ready")) { e.preventDefault(); e.stopPropagation(); } }, true);
 if (!MAINTENANCE) $("#gate").disabled = true;
@@ -300,7 +317,7 @@ function showDoor() {
           (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
         }));
         warmJourneys();
-        proveLater(4000);
+        prove(4000);
       },
       /* the live door's canvas and its context's first textures are the GPU's, so they wait with the rest of the chores */
       onOpen() { if (DOOR3D) doorLive().then((live) => { if (live) liveDoorOf(); }); },
@@ -332,16 +349,23 @@ const doorFocus = (id) => focusOn(id === "home" ? $("#gate") : $(`#door .planet[
    mid-dive) waits for the first to land. It lets go by itself if a journey never reports landing */
 /* the journeys readied and the chores opened: what the door's first light does, and what a descent that comes back to the
    door does in its place when it has dropped the leisure ask above */
-function readyDoor() { warmJourneys(); openChores(); proveLater(2000); }
-/* the flight's world proved (assets/door/engine.js: warm, the default) at leisure, a few seconds after the door is lit or
-   the journeys are readied, on an accepted GPU: the speed test (a few milliseconds of whole frames) is then done before
-   anyone flies, and a flight or a descent never waits for it (ADR-0002, owner decision 12d). A flight up that is asked
-   first proves it itself, behind its hold; a flight or a descent that begins before this drops it (journey.later), and a
-   descent then flies painted. Not in maintenance or under save-data, where nothing is readied; where the GPU was
-   refused it resolves at once, having done nothing */
-function proveLater(after) {
+function readyDoor() { warmJourneys(); openChores(); prove(2000); }
+/* the flight's world proved (assets/door/engine.js: warm, the default), the speed test (a few milliseconds of whole
+   frames, ADR-0002 owner decision 12d). With a pass remembered on this device (fitness.js: rememberedFit, a week;
+   ADR-0002 6.5) the ways in open on that and the test is the quiet re-test, at leisure: `after` ms after the door is
+   lit or the journeys are readied, dropped by a flight or a descent that begins first (journey.later), which proves it
+   itself behind its hold. With none (a first visit, a week on, a cleared store, a remembered unfit) the ways in wait
+   for it, so it is asked at once behind the load (warmJourneys); its frames are chores, and still wait for the door's
+   reveal to be over (chores.js). Not in maintenance or under save-data, where nothing is readied; where the GPU was
+   refused it resolves at once, having done nothing. Which it took is said once */
+let provedHow = null;
+function prove(after) {
   if (MAINTENANCE || saveData()) return;
-  journey.later(() => { journey.warm(); journey.warmDocs(); }, { after });
+  const kept = rememberedFit();
+  const how = kept?.fit ? `at leisure (remembered on, ${Math.floor((Date.now() - kept.t) / 86400e3)} d ago)` : "at once (nothing remembered)";
+  if (!provedHow) { provedHow = how; note(`prove: ${how}`); }
+  if (!kept?.fit) { journey.warmDocs(); journey.warm(); return; }
+  if (after !== undefined) journey.later(() => { journey.warm(); journey.warmDocs(); }, { after });
 }
 const lock = createLock();
 let letGo = 0, after = null;
@@ -472,7 +496,8 @@ function backToDawn() {
     pad.flown = docsFlight({ get rect() { return carry()?.rect; }, get geometry() { return carry()?.geometry; } });
   }
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
-  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, on: {
+  /* (held at its first beat until the flight's world is proved: ADR-0002 6.8) */
+  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); try { history.replaceState(null, "", " "); } catch { /* fine */ } readyDoor(); },
   } });
@@ -520,8 +545,9 @@ function signOut() {
   home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   const token = begin(); if (!token) return;
+  hurryChores("flight");
   const h = home.household();
-  journey.descend({ title: h.name, on: { farewell() { done(token); current = "dusk"; player.hide(); } } });
+  journey.descend({ title: h.name, ready: journey.warm(), on: { farewell() { done(token); current = "dusk"; player.hide(); } } });
 }
 
 /* from the sky back to the dawn: the climb run backwards, landing on the door as the landings' "— the dawn" does */
@@ -529,7 +555,8 @@ function homeToDawn() {
   const token = current === "home" ? begin() : 0; if (!token) return;
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
-  journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", on: {
+  hurryChores("flight");
+  journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
       done(token);

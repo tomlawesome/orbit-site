@@ -84,6 +84,8 @@ function hello(m) {
     baseURI: () => m.baseURI,
     note(line) { post({ type: "note", line, kind: "note" }); },
     verdict(line) { post({ type: "note", line, kind: "verdict" }); },
+    /* (the memory of the verdict is the page's, ADR-0002 6.12: the page keeps it, and opens its ways in on it) */
+    judged(v) { post({ type: "verdict", fit: v.fit, ms: v.ms, skipped: !!v.skipped, how: v.how }); },
     shared: () => false,
   });
   configure({ flags: m.flags || {}, image: (p) => images[p] ?? p, typingWait: 0, settle: m.settle });
@@ -146,6 +148,7 @@ function handle(m) {
     }
     case "stop": current = m.seq; want = 0; e.stop(); break;
     case "clear": current = m.seq; want = 0; e.clear(); break;
+    case "abandon": e.abandon(); break;
   }
 }
 

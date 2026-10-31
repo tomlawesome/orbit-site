@@ -124,7 +124,7 @@ removes the resize listeners.
 
 `canvas` is `#warp`, `name` is `#launchname`, the glyphs are functions
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
-destroy, later, reduced, warm, warmDocs, compiled, aside }`. `journey()` takes no
+destroy, later, reduced, warm, warmDocs, compiled, verdict, aside }`. `journey()` takes no
 context of `canvas`: its 2D context is taken at the first `warm`, `warmDocs`,
 `fly` or `descend` (ADR-0004 6a.4: a canvas with a context can never be handed
 to a worker), and `destroy()` before any of them takes none. `compiled()`
@@ -135,19 +135,25 @@ it was given (the worker's fallback, below), so a host keeps no reference to it
 - `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
   `ready`, a promise the clock holds for just before the canvas comes up, at
-  most eight seconds. Hooks, each optional, in order: `release` (the surface
+  most `WORLD_FAILED` (30 s, `journey.js`): past that the world has failed, the
+  hold lets go, the flight goes on painted and the engine is told (`abandon()`:
+  `flight world: off: not ready in 30 s`, the world remade by the next `warm()`). Hooks, each optional, in order: `release` (the surface
   flown from may go), `land` (the bare sky is readable), `settled` (the
   instrument has arrived).
-- `descend({ title, subtitle, onto, from, homes, on, at })`: the descent, `onto`
+- `descend({ title, subtitle, onto, from, homes, ready, on, at })`: the descent, `onto`
   `"dusk"` or `"dawn"`, `from` the profile flown up (mirrored on the way
   down). `homes`: the other households met again on the way down,
   `mirrored(homeProps(homes))` added to the end of the props, whatever the
   base; with `from`, only if the climb did not carry them (both would pass
   them twice). Left out, the descent is exactly as before. Hooks:
-  `released`, `surface` (the dusk or the dawn comes up), `farewell`. A
-  descent never waits for the flight's world: at its warp it draws the world
-  if the verdict on it is in and fit, and otherwise flies painted (a descent
-  made before the host's leisure warm-up has proved the world is painted).
+  `released`, `surface` (the dusk or the dawn comes up), `farewell`. `ready`
+  (ADR-0002 6.8), as `fly` has it: the clock holds at the descent's first beat,
+  before the surface flown from withdraws (so it stays as it is while it
+  waits), `holding` set meanwhile, with the same `WORLD_FAILED` backstop; not
+  under reduced motion nor when pinned. A host passes `ready: journey.warm()`.
+  At its warp it draws the world if the verdict on it is in and fit, and
+  otherwise flies painted (a refused or failed world, or a descent given no
+  `ready`).
 - On the worker path a profile is posted by name (`engine.js`: `wireProfile`):
   one given to `fly` must carry `UP`'s or `DOWN`'s curves (`speed`, `atm`,
   `duskMix`; everything else is data), and any other throws
@@ -163,14 +169,23 @@ it was given (the worker's fallback, below), so a host keeps no reference to it
   below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
   `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
   put on the GPU (as chores, so as the host opens them), and no frame drawn, no pixel read back. The default
-  proves it: the host asks it at leisure once the door is lit (`later`), so the verdict is in before anyone flies, and
+  proves it: the host asks it at leisure once the door is lit (`later`) where a pass is remembered (`rememberedFit()`,
+  below), and at once behind the load where none is, so the verdict is in before anyone flies, and
   a flight up asked first holds on it (`ready`); it draws the
-  warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
+  warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, a remembered verdict never
+  deciding what is drawn. Under save-data (`navigator.connection.saveData`) there is no world: nothing is made or
+  fetched, the GPU is not asked, and `verdict()` is in at once (`refused`, `flight world: off: save-data`). The
   world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
   own canvas, as it always could. A world lost after it was made is replaced by the next `warm()`. No picture is
   waited for longer than `PICTURE_WAIT` (20 s, `chores.js`): a download that never finishes is given up and asked
   again by the next ask, and an Earth's picture that has not come by then settles `warm()` without proving the
   world, which the next `warm()` does once the picture is in.
+- `verdict()` → `Promise<{ fit, ms, how }>` (ADR-0002 6.3): what a way in onto the flight waits for, with its
+  proper version's load (the site's gate: `Promise.all([warm({ prove: false }), verdict()])`). In at the first of: a
+  remembered pass read at the first `warm` (`how: "remembered"`), this visit's judgement (`"tested"`, or `"skipped"`
+  under `fit: "skip"`), the GPU refused or save-data (`"refused"`, at once), the world not made, lost or abandoned before
+  any judgement (`"failed"`). Never on a remembered unfit, and never "not yet". Renewed when a lost or abandoned world
+  is remade.
 - `later(fn, { after = 4000 })` → `stop()`: `fn` at leisure, `after` ms from now and once the page's painted
   animations have finished; never called if `stop()` is, or if a `fly()` or `descend()` begins first (both drop
   every pending `later`: a compile on the page's own thread, started mid-flight, would be a pause in the middle
@@ -197,8 +212,9 @@ leisure warm-up. Like any `fly()` or `descend()`, a pinned one drops every
 pending `later`; a host that pins and still wants the warm-up asks for it
 again.
 
-A `fly()` whose `ready` never settles holds the clock at most eight
-seconds; a `descend()`, `reset()` or later `fly()` lets the hold go at once.
+A `fly()` or `descend()` whose `ready` never settles holds the clock at most
+`WORLD_FAILED` (30 s), and that is a failure (above); a `descend()`, `reset()`
+or later `fly()` lets a flight's hold go at once.
 
 The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
 `showwarp`, `launching`, `bare`, `instrument`, `withdrawing`, `dispersing`,
@@ -333,7 +349,15 @@ nothing is made and it resolves `{ ok: false }` without a console line, and `lev
 in a worker, below.
 `FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
 (in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the
-verdict: `flight world: on (frame N ms)`, or `off: frame N ms`. No verdict is stored.
+verdict: `flight world: on (frame N ms)`, or `off: frame N ms`.
+
+The verdict is kept a week (ADR-0002 6.4): localStorage key `<storagePrefix>-fit <renderer> <w>x<h>@<dpr>` (the
+gate's renderer, the screen and the device pixel ratio), value `{ t, fit, ms }`, valid while
+`t <= Date.now() && Date.now() - t < WEEK`; written at every measured judgement, either way; neither read nor written
+under `fit: "skip"` or save-data. `rememberedFit()` → `{ fit, ms, t } | null`: the kept verdict, read once a page (on
+the page, never in a worker), after the gate; the console says `flight world: remembered on (frame N ms, D d ago)` or
+`remembered off (frame N ms), tested again`. Only a pass opens a way in ahead of this visit's test; the host decides
+by it whether the proof is at leisure or at once. `WEEK` (exported, and the probe's too: `capability.js`).
 
 ### The flight in a worker (ADR-0004 6a; Firefox)
 
@@ -350,7 +374,11 @@ false), no `navigator.userAgentData` (Chromium keeps the page), the gate not
 forced (`gpu: "force"`: every live test keeps the page), a `Worker`, an
 `OffscreenCanvas` and a canvas that can be handed over, not under save-data.
 On the worker path the gate's context stays on the page, idle, and the world's
-is made in the worker: two contexts, one of them holding nothing.
+is made in the worker: two contexts, one of them holding nothing. The worker
+posts its judgement (`verdict { fit, ms, skipped, how }`), which the page keeps
+and resolves `verdict()` on; the page reads the kept verdict itself, and
+`abandon` is posted to the worker. A fallback to the page hands `verdict()` to
+the page's engine.
 
 The console says which, once, when the host gave a worker: `orbit · flight:
 drawn in a worker` or `orbit · flight: drawn on the page: <why>`. Every other
