@@ -19,7 +19,7 @@
  * NASA Earth Observatory. Reduced to small maps for here (img/flight in this folder).
  */
 
-import { chore, fetchOnce, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
+import { chore, fetchOnce, fetchBitmap, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
@@ -110,8 +110,7 @@ function sharpen() {
   if (!todo.length) return;
   sharp.busy = true;
   for (const w of todo) w.served = true;
-  fetchOnce(/** @type {Strip} */ (strip).url)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  fetchBitmap(/** @type {Strip} */ (strip).url, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => chore(() => {
       for (const w of todo) { try { if (!w.left) /** @type {StripTake} */ (w.take)(bm); } catch (e) { console.warn("orbit: the strip stays small", e); } }
       /* the fade's start, the same moment for all of them */
@@ -1283,6 +1282,9 @@ export function createVoyage(under, { restFor }) {
   /** @type {WebGLTexture | null} */
   let glowT = null;
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+  /* the card's limit asked once, here, before anything is queued: in Firefox every getParameter waits on the GPU process
+     for all the calls queued before it, 340-660 ms when it was asked per texture behind an upload (#113) */
+  const anisoK = aniso ? Math.min(16, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 0;
   /* each picture is fetched and decoded as soon as it is asked for (off the page's thread), and put on the GPU a band
      at a time (upload.js: soft chores, which may run during the reveal), its mipmaps after, a chore of their own */
   /** @param {string} key @returns {(g: WebGL2RenderingContext) => void} */
@@ -1292,7 +1294,7 @@ export function createVoyage(under, { restFor }) {
   };
   /* the ground is seen almost edge on at first: without this the cities blur into the coarsest maps */
   /** @param {WebGL2RenderingContext} g */
-  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
+  const sharper = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
   /* the sharper strip, put on the GPU whole (sharpStrip: in every context in the one chore, its fade started on the
      same clock; the last chore of all, never during the reveal) */
   /** @param {string} key @param {ImageBitmap} bm @returns {WebGLTexture} */
@@ -1313,8 +1315,7 @@ export function createVoyage(under, { restFor }) {
   /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
      only once its mipmaps are made */
   /** @param {string} key @returns {Promise<void>} */
-  const load = (key) => fetchOnce(pictures()[key])
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       /** @type {[number, number]} */

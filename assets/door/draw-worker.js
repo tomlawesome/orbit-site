@@ -4,14 +4,15 @@
  * world (voyage.js) run here as the modules they are, on this thread's own frames, with page.js answering for the page
  * from what the page last said. The handshake: `hello` (the settings, the pictures' addresses, the fonts, the size),
  * then `canvases`; once both contexts are made and the fonts loaded, `up`, and the world is made at once: there is no
- * page here to freeze, so no compile is spaced or held (6a.5). Every console line goes to the page as a `note`.
+ * page here to freeze, so no compile is spaced or held (6a.5). Every console line goes to the page as a `note`. Where
+ * the `hello` says `decode: "page"` the pictures are decoded by the page (6e.2): a `decode` posted up, a `decoded` back.
  *
  * What arrives before `up` waits for it, in order. An exception handling a message is `dead`: the page falls back.
  */
 import { setPage, page } from "./page.js";
 import { configure } from "./settings.js";
 import { createFlight, unwireProfile } from "./engine.js";
-import { fetchOnce, openChores, pace } from "./chores.js";
+import { fetchBitmap, askPage, openChores, pace } from "./chores.js";
 import { gpu } from "./fitness.js";
 
 /** @typedef {{ add(face: FontFace): unknown }} FontSet */
@@ -42,6 +43,8 @@ let want = 0, current = 0, ready = false, gone = false;
 const waiting = [];
 /** @type {WebGL2RenderingContext | null} */
 let glNow = null;
+/** @type {ReturnType<typeof askPage> | null} */
+let asker = null;
 
 /* a lost context where the canvas says nothing of it (OffscreenCanvas fires webglcontextlost from Firefox 125): looked
    at before every frame and every message, and told to the world as the event would have (voyage.js) */
@@ -56,6 +59,7 @@ const backstop = () => {
 function hello(m) {
   const images = /** @type {Record<string, string>} */ (m.images || {});
   size = m.size; hidden = !!m.hidden;
+  asker = m.decode === "page" ? askPage(post) : null;
   setPage({
     size: () => size,
     /* (the page styles both canvases itself on every size) */
@@ -66,10 +70,11 @@ function hello(m) {
     picture(url, loaded) {
       /** @type {ImageBitmap | null} */
       let bitmap = null, done = false;
-      const settled = fetchOnce(url).then((blob) => createImageBitmap(blob))
+      const settled = fetchBitmap(url)
         .then((b) => { bitmap = b; loaded(b, b.width, b.height); }, () => {}).finally(() => { done = true; });
       return { settled, done: () => done, drawable: () => bitmap };
     },
+    ...(asker ? { decode: asker.decode } : {}),
     canvas: (w, h) => /** @type {HTMLCanvasElement} */ (/** @type {unknown} */ (new OffscreenCanvas(w, h))),
     /* (the world's context, on the canvas handed over; the page's gate has judged already) */
     gate: () => (canvases ? { canvas: canvases.warpgl, check: false } : null),
@@ -159,6 +164,8 @@ scope.onmessage = (ev) => guard(() => {
     case "hello": hello(m); break;
     case "canvases": canvases = { warp: m.warp, warpgl: m.warpgl }; size = m.size || size; fontsIn.then(() => guard(bringUp), () => no("the fonts did not load")); break;
     case "size": size = { W: m.W, H: m.H, dpr: m.dpr }; engine?.resize(); break;
+    /* (an answer is heard at once: the pictures it holds are what the flight waits for) */
+    case "decoded": asker?.heard(m); break;
     case "visible": hidden = !!m.hidden; if (!hidden) for (const fn of [...shown]) fn(); break;
     case "destroy": gone = true; engine?.destroy(); scope.close(); break;
     default: if (gone) break; if (ready) handle(m); else waiting.push(m);

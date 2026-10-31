@@ -46,7 +46,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
@@ -370,23 +370,42 @@ same attributes, `#warpgl` removed, the worker terminated, the pending warm-ups
 asked again of a page engine, and a flight under way picked up where it was.
 The console says `orbit · flight: drawn on the page: <why>`.
 
+### Where the pictures are decoded (ADR-0004 6e; Firefox)
+
+Firefox decodes a blob's picture on the page's thread, whichever thread asked, and stalls it for the decode's length.
+So where the family tell says Firefox (`fitness.js`: `decodeAside()`: the gate accepted the page, `parallel` false, no
+`navigator.userAgentData`; `gpu: "force"` does not change it) the pictures are decoded by the browser's image loader:
+an `<img>` on a `blob:` URL, `decode()` awaited, the bitmap wrapped from it. `decode: "img"` takes that route anywhere,
+`decode: "blob"` keeps `createImageBitmap(blob, options)` (the control). The console says `orbit · pictures: decoded by
+the image loader` once, when taken. On that route only the resize options (`resizeWidth`, `resizeHeight`,
+`resizeQuality`) reach the wrap: `colorSpaceConversion` and `premultiplyAlpha` are dropped, as either makes Firefox
+decode again on the page's thread. A decode or wrap that fails is made the old way. The flight's and the install's
+workers ask the page for it (`hello.decode`, `"page"` or `"here"`; the `decode` and `decoded` messages) and receive the
+bitmap transferred. Nothing a host does changes with this beyond the exports below.
+
 ### Also exported from `index.js`
 
 For a host's own worlds and skies, so their work takes its turn with the
-door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
+door's: the chores (`chore`, `fetchOnce`, `fetchBitmap(url, options)` (a picture fetched once and decoded by the route
+above, in place of `createImageBitmap` of the blob), `linked`, `counted`, `note`,
 `noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
 `hurryChores`, `programs`, `compilesAside`, `holdReveal`, `moving`, and the wait limit for
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
-(`drawnAside()`, for a host that puts its own drawing beside it), the capability probe
+(`drawnAside()`, for a host that puts its own drawing beside it), whether the pictures are decoded by the image loader
+(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
 For a host's own worker, which must answer for the page and run its queue
 unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
-answers replaced by the worker's) and `pace("none")` (`chores.js`: the rests
-and the one-band-a-frame uploads dropped). All three are optional: a host that
-uses none of them has the door as before.
+answers replaced by the worker's), `pace("none")` (`chores.js`: the rests
+and the one-band-a-frame uploads dropped) and `askPage(post)` (`chores.js`: the worker's `decode(blob, options)`
+for `setPage`, which asks the page and falls back to decoding here, and `heard(message)` for the page's `decoded`).
+All of them are optional: a host that uses none of them has the door as before.
+`page.decode(blob, options)` (`page.js`) is an additive change to the page interface (#113), and `picture`'s `loaded`
+is called once the picture's `decode()` has settled rather than at `load`. A host's own page adapter given to `setPage`
+need not have `decode`: `setPage` only replaces what it names.
 `page.yield(fn)` (`page.js`) is an additive change to that page interface (#101):
 the next task with no clamp (a `MessageChannel` message, else `setTimeout(fn, 0)`),
 which the chore queue hops on during the door's reveal instead of 0 ms timers. A host's own

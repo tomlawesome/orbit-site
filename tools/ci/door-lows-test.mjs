@@ -138,10 +138,15 @@ const RECORD = ([seed]) => {
     }
     return res;
   };
+  /* a blob: address made from a fetched picture keeps its name, so an <img> decoded from it (the image loader's route,
+     ADR-0004 6e) is still known by the picture it came from */
+  const blobNames = new Map();
+  const cou = URL.createObjectURL;
+  URL.createObjectURL = function (o) { const s = cou.call(this, o); const u = o && tag.get(o); if (u) blobNames.set(s, u); return s; };
   const cib = window.createImageBitmap;
   window.createImageBitmap = async function (src, ...rest) {
     const b = await cib.call(this, src, ...rest);
-    const u = (src && tag.get(src)) || (src?.src && name(src.src));
+    const u = (src && tag.get(src)) || (src?.src && (blobNames.get(src.src) || name(src.src)));
     if (u) tag.set(b, u);
     return b;
   };

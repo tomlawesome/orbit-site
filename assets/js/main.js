@@ -30,6 +30,9 @@ FLAGS.fit = /[?&]fit=skip\b/.test(location.search) ? "skip" : null;
 /* ?draw=worker|page: where the flight is drawn, whatever the door's rule says (assets/door/fitness.js: drawnAside; the
    worker is Firefox's by the rule, ADR-0004 6a.4) */
 FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
+/* ?decode=img|blob: how the pictures are decoded, whatever the door's rule says (assets/door/fitness.js: decodeAside; the
+   browser's image loader is Firefox's by the rule, ADR-0004 6e.1; blob is today's route, the A/B control) */
+FLAGS.decode = location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null;
 const door = createDoor({
   image: (p) => `assets/door/img/${p}`, flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face

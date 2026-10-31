@@ -34,6 +34,7 @@
       gpu: /[?&]gpu=force\b/.test(location.search) ? "force" : null,
       fit: /[?&]fit=skip\b/.test(location.search) ? "skip" : null,
       draw: location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null,
+      decode: location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null,
     };
     createDoor({
       image: (path) => `../assets/door/img/${path}`, flags: FLAGS,

@@ -2249,6 +2249,50 @@ tm_case "(t14) a map test with no browser" fail "csp([^-]|$)" ":" 'm.tests.csp.b
 tm_case "(t15) a map test gating in a browser it does not run in" fail "freeze" ":" 'm.tests.freeze.gates = ["chromium", "firefox"];'
 tm_case "(t16) a map test with no seconds for one of its browsers" fail "csp([^-]|$)" ":" 'delete m.tests.csp.seconds.firefox;'
 
+# Cases (p8a)-(p8h) judge the picture-decoding rule of the same section's neighbours (#113, ADR-0004 6e.2, test P8): under
+# assets/door/ and assets/js/, a createImageBitmap( whose first argument is a blob (the spellings createImageBitmap(b,
+# createImageBitmap(b) createImageBitmap(blob and .then(createImageBitmap)) may be written in assets/door/page.js only:
+# every other site picture goes through fetchBitmap, so the route (the image loader on Firefox) is chosen in one place.
+# A planted occurrence elsewhere fails the lint with a line naming the file; a crop from a bitmap (first argument a
+# bitmap) and the same call in page.js pass, and so does the committed tree. The whole lint runs, whichever section holds
+# the rule.
+p8_case() { # p8_case <label> <file> <line> <named>: the line appended to the file must fail the lint, naming <named>
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -ne 0 ] && grep -q -- "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want non-zero naming $4)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+p8_ok() { # p8_ok <label> <file> <line>: the line appended to the file must leave the whole lint passing
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+p8_case "(p8a) createImageBitmap(b, ...) of a blob in assets/js/world.js" assets/js/world.js 'export const P8A = (/** @type {Blob} */ b) => createImageBitmap(b, { premultiplyAlpha: "none" });' "assets/js/world.js"
+p8_case "(p8b) createImageBitmap(b) of a blob in assets/js/world.js" assets/js/world.js 'export const P8B = (/** @type {Blob} */ b) => createImageBitmap(b);' "assets/js/world.js"
+p8_case "(p8c) createImageBitmap(blob in assets/js/world.js" assets/js/world.js 'export const P8C = (/** @type {Blob} */ blob) => createImageBitmap(blob, {});' "assets/js/world.js"
+p8_case "(p8d) .then(createImageBitmap) in assets/js/world.js" assets/js/world.js 'export const P8D = (/** @type {Promise<Blob>} */ p) => p.then(createImageBitmap);' "assets/js/world.js"
+p8_case "(p8e) createImageBitmap(b, ...) of a blob in a door module other than page.js" assets/door/stars.js 'export const P8E = (/** @type {Blob} */ b) => createImageBitmap(b, {});' "assets/door/stars.js"
+p8_case "(p8f) createImageBitmap(blob) in assets/js/planets3d.js" assets/js/planets3d.js 'export const P8F = (/** @type {Blob} */ blob) => createImageBitmap(blob);' "assets/js/planets3d.js"
+p8_ok "(p8g) a crop from a bitmap in assets/js/world.js" assets/js/world.js 'export const P8G = (/** @type {ImageBitmap} */ bmp) => createImageBitmap(bmp, 0, 0, 64, 64);'
+p8_ok "(p8h) the blob call in assets/door/page.js, where it belongs" assets/door/page.js 'export const P8H = (/** @type {Blob} */ blob) => createImageBitmap(blob, {});'
+lint_to_out
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (p8i) the committed tree passes the whole lint"
+else
+  echo "FAIL (p8i) the committed tree passes the whole lint (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+fi
+
 rm -f "$cspjs"
 
 rm -f "$out"

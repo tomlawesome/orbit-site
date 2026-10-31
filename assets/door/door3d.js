@@ -37,7 +37,7 @@
  * it. The rich weight's two passes (the clouds' field, the cities' glow: voyage.js, cloudField, cityGlow) are drawn
  * by the rich program itself, so they are made once it is there, before its first measure.
  */
-import { chore, fetchOnce, note, quiet, linked, counted, compilesAside, compiledWithin } from "./chores.js";
+import { chore, fetchOnce, fetchBitmap, note, quiet, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { flag } from "./settings.js";
 import { sceneHead, PASS_SWITCH, pictures, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
@@ -246,8 +246,7 @@ export function liveDoor(world) {
   /* each map put on the GPU a band at a time (upload.js: soft chores), its mipmaps after; drawable from its last band
      (its first level alone, LINEAR: the canvas is not on the page until every map is in, mipmaps and all) */
   /** @param {string} key */
-  const load = (key) => fetchOnce(pictures()[key])
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (dead) { bm.close?.(); return; }
       const wh = /** @type {[number, number]} */ ([bm.width, bm.height]);

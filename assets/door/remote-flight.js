@@ -16,6 +16,7 @@
 import { createFlight, wireProfile, EARTH_PICTURE } from "./engine.js";
 import { PICTURE_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
+import { decodeAside } from "./fitness.js";
 import { page } from "./page.js";
 
 /** @import { Profile } from "./engine.js" */
@@ -59,7 +60,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   /** @type {Worker | null} */
   let worker = null;
   /** @param {object} m @param {Transferable[]} [transfer] */
-  const post = (m, transfer = []) => { if (worker && !engine) worker.postMessage(m, transfer); };
+  const post = (m, transfer = []) => { if (!(worker && !engine)) return false; worker.postMessage(m, transfer); return true; };
   const style = () => { const { W, H } = page.size(); for (const c of [warp, gl]) if (c) page.css(c, W, H); };
   const sizeNow = () => { const { W, H, dpr } = page.size(); return { W, H, dpr }; };
   const onVisibility = () => post({ type: "visible", hidden: page.hidden() });
@@ -73,6 +74,12 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       /* (the worker's console lines, printed as they come: every line reads as it does on the page) */
       case "note": if (m.kind === "verdict") page.verdict(String(m.line)); else page.note(String(m.line)); break;
       case "compiled": compiledIs(!!m.ok); break;
+      /* a picture's bytes from the worker, decoded here by the image loader and handed back, transferred (ADR-0004 6e.2) */
+      case "decode":
+        if (!m.blob) { post({ type: "decoded", id: m.id, error: "no picture" }); break; }
+        page.decode(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]) || bitmap.close(),  // gone meanwhile: let it go
+          (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
+        break;
       case "warmed": { const ask = pending.get(m.id); if (ask) { pending.delete(m.id); ask.resolve(); } break; }
       case "frame": if (m.seq === seq) warp.dataset.drawn = String(m.seq); break;
       case "lost": page.note("orbit · flight: the world's context was lost in the worker"); break;
@@ -131,7 +138,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     const images = Object.fromEntries([...Object.values(PICTURE_PATHS), EARTH_PICTURE].map((p) => [p, abs(image(p))]));
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     const fonts = (settings.fonts || []).map((f) => ({ family: f.family, weight: f.weight, url: abs(f.url) }));
-    post({ type: "hello", flags, images, fonts, baseURI: base, settle: settings.settle, size: sizeNow(), hidden: page.hidden() });
+    post({ type: "hello", decode: decodeAside() ? "page" : "here", flags, images, fonts, baseURI: base, settle: settings.settle, size: sizeNow(), hidden: page.hidden() });
     /* #warpgl made and placed beneath #warp, both styled, then both handed over */
     gl = document.createElement("canvas");
     page.mount(gl, warp);

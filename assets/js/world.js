@@ -16,7 +16,7 @@
  * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
  * view can carry its look from wherever it is built (ADR-0004 6b.2).
  */
-import { fetchOnce, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
+import { fetchOnce, fetchBitmap, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -533,6 +533,9 @@ export function createWorld(canvas, opts = {}) {
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
+  /* the card's limit asked once, here, before anything is queued: in Firefox every getParameter waits on the GPU process
+     for all the calls queued before it, 340-660 ms when it was asked per texture behind an upload (#113) */
+  const anisoK = aniso ? Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 0;
   const { small, MAP, RINGS, MOON } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
   const LOOK = lookOf(opts);
@@ -593,7 +596,7 @@ export function createWorld(canvas, opts = {}) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     return t;
   };
-  const sharp = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); };
+  const sharp = (g) => { if (aniso) g.texParameterf(g.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, anisoK); };
   const mip = (t) => {
     gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -631,19 +634,16 @@ export function createWorld(canvas, opts = {}) {
   /* a failed load is not kept: bake() reports it once, and the next bake() asks for the map again (as fetchOnce does for
      the fetch) */
   let mapLoad = null;
-  const loadMap = () => mapLoad || (mapLoad = fetchOnce(MAP)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const loadMap = () => mapLoad || (mapLoad = fetchBitmap(MAP, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); }));
   loadMap().catch(() => {});   /* asked for now; a failure is bake()'s to report */
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const loadRings = fetchOnce(RINGS)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) }))
+  const loadRings = fetchBitmap(RINGS, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) })
     /* (in a texture of its own, the drawn rings' let go once it is in) */
     .then((img) => banded(img, "rings", gl.CLAMP_TO_EDGE).then((t) => { gl.deleteTexture(ringT); ringT = t; }),
       (e) => warn("orbit: the rings are drawn, not photographed", e));
   let moonT = null;
-  const loadMoon = fetchOnce(MOON)
-    .then((b) => createImageBitmap(b, { colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const loadMoon = fetchBitmap(MOON, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
       (e) => warn("orbit: the moon is drawn, not photographed", e));
   /* the galaxy painted, a strip a frame */

@@ -22,6 +22,21 @@
  *   stop      a live `start` superseded by `stop` posts no `frame` for the old `seq`
  *   destroy   `destroy` calls close()
  *
+ * And #113 (ADR-0004 6e, tests W1-W4; `hello.decode` is the page's verdict, "page" or "here"), written from the
+ * specification alone. The worker's fetch gives each picture its own blob object (recorded), createImageBitmap logs
+ * the calls made with one of them, and the recording GL logs what is uploaded:
+ *
+ *   w1  `decode: "page"`: for every picture fetched one `decode { id, blob, options }` is posted (the blob the very
+ *       object fetched) and the worker's own createImageBitmap is not called with a blob while no answer has come;
+ *       `decoded { id, bitmap }` lets that picture's upload proceed (texImage2D with that bitmap); one with an
+ *       unknown id changes nothing. Control: "here", and no `decode` field: no `decode` posted, each blob decoded here
+ *   w2  `decoded { id, error }`: the worker decodes that blob itself, once, with the ask's options, and uploads the
+ *       result; no `dead`. Control: a good answer: no blob call for that id
+ *   w3  no answer: nothing decoded by the worker before PICTURE_WAIT (chores.js) has passed, one blob call after, and
+ *       the upload proceeds. Control: an answer just before the bound: no blob call, and none later
+ *   w4  the Earth's picture (dawn/dawn.webp) is fetched once and asked for like the maps, and drawn once answered
+ *       (a drawImage with the bitmap). Control: "here"
+ *
  * One fresh Node process a case; virtual clock only, nothing waits on the runner. The page's side of the wire is what
  * ADR-0004 6a.3 says: a missing module or an unreadable message is reported as such, not as a stack.
  */
@@ -179,7 +194,127 @@ async function destroy() {
   return { closed: w.closed, ...common(w) };
 }
 
-const CASES = guarded({ up, compile, warm, pictures, fonts, size, visible, pinned, live, stop, destroy });
+
+/* #113: what the worker fetches, decodes itself and uploads, with the 2D draws that carry a picture */
+function spy(w) {
+  const s = { blobs: [], blobCalls: [], tex: [], draws: [] };
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const r = await prev(url);
+    const blob = { size: 1, type: "image/webp", url: String(url) };
+    s.blobs.push(blob);
+    return { ...r, blob: async () => blob };
+  };
+  const orig = globalThis.createImageBitmap;
+  globalThis.createImageBitmap = async (src, ...r) => {
+    const out = await orig(src, ...r);
+    if (s.blobs.includes(src)) { out.fromBlob = true; s.blobCalls.push({ blob: src, opts: r[0], result: out }); }
+    return out;
+  };
+  const tex = w.page.glBase.texImage2D;
+  w.page.glBase.texImage2D = (...a) => { s.tex.push(a[a.length - 1]); return tex(...a); };
+  const track = (ctx) => new Proxy(ctx, { get: (t, k) => (k === "drawImage" ? (...a) => { s.draws.push(a); return t.drawImage(...a); } : Reflect.get(t, k)) });
+  const gc = w.warp.getContext;
+  w.warp.getContext = (kind) => { const c = gc.call(w.warp, kind); return kind === "webgl2" ? c : track(c); };
+  const c2d = w.page.ctx2d;
+  w.page.ctx2d = (c) => track(c2d(c));
+  s.asks = () => w.of("decode");
+  s.uploaded = (bmp) => s.tex.includes(bmp);
+  s.callsFor = (blob) => s.blobCalls.filter((c) => c.blob === blob);
+  return s;
+}
+const BM = (name) => ({ width: 64, height: 64, name, close() {} });
+const isDawn = (b) => /dawn\/dawn\.webp$/.test(b.url);
+const waitFor = async (w, f, ms = 4000) => { await w.run(ms, f); return f(); };
+
+async function decodeBoot(decode) {
+  const w = await boot();
+  const s = spy(w);
+  const { PICTURE_WAIT } = await import("../../assets/door/chores.js");
+  if (typeof PICTURE_WAIT !== "number") throw plainError("assets/door/chores.js exports no PICTURE_WAIT");
+  w.send(w.hello(decode === undefined ? {} : { decode }));
+  w.send(w.canvases());
+  await w.run(0);
+  w.send({ type: "warm", id: 1, kind: "warm", prove: false });
+  return { w, s, PICTURE_WAIT };
+}
+const seen = (w, s) => ({
+  asks: s.asks().map((m) => ({ id: m.id, hasBlob: s.blobs.includes(m.blob), url: m.blob && m.blob.url, options: m.options ?? null })),
+  fetched: s.blobs.length, blobCalls: s.blobCalls.length, cloneErrors: w.cloneErrors, deads: w.of("dead").map((m) => m.why),
+});
+
+async function w1() {
+  const { w, s } = await decodeBoot("page");
+  await waitFor(w, () => s.asks().length > 0);
+  await w.run(1000);
+  const before = { ...seen(w, s), distinctIds: new Set(s.asks().map((m) => m.id)).size, uploads: s.tex.filter((x) => x && !x.probe && !ArrayBuffer.isView(x)).length, optionsSeen: s.asks().some((m) => m.options && m.options.premultiplyAlpha === "none") };
+  /* an answer for an id nobody asked: nothing happens */
+  const stray = BM("stray");
+  let threw = null;
+  try { w.send({ type: "decoded", id: 987654, bitmap: stray }); } catch (e) { threw = String(e && e.message); }
+  await w.run(500);
+  const afterStray = { uploaded: s.uploaded(stray), uploads: s.tex.filter((x) => x && !x.probe && !ArrayBuffer.isView(x)).length, blobCalls: s.blobCalls.length, deads: w.of("dead").length, threw };
+  const ask = s.asks().find((m) => !isDawn(m.blob));
+  const good = BM("good");
+  if (ask) w.send({ type: "decoded", id: ask.id, bitmap: good });
+  await w.run(1500);
+  return { before, afterStray, answered: !!ask, uploadedGood: s.uploaded(good), blobCallForAsk: ask ? s.callsFor(ask.blob).length : null, after: seen(w, s) };
+}
+async function w1control(decode) {
+  const { w, s } = await decodeBoot(decode);
+  await w.run(20000, () => w.of("warmed").length >= 1);
+  await w.run(1000);
+  const decoded = s.blobs.filter((b) => s.callsFor(b).length >= 1).length;
+  return { asks: s.asks().length, fetched: s.blobs.length, decodedHere: decoded, ...common(w) };
+}
+async function w2(answer) {
+  const { w, s } = await decodeBoot("page");
+  await waitFor(w, () => s.asks().some((m) => !isDawn(m.blob)));
+  await w.run(500);
+  const ask = s.asks().find((m) => !isDawn(m.blob));
+  if (!ask) return { none: "the worker posted no `decode` for a map" };
+  const good = BM("good");
+  w.send(answer === "error" ? { type: "decoded", id: ask.id, error: "no" } : { type: "decoded", id: ask.id, bitmap: good });
+  await w.run(1500);
+  const calls = s.callsFor(ask.blob);
+  return { calls: calls.length, optsEqual: calls.length === 1 && JSON.stringify(calls[0].opts ?? null) === JSON.stringify(ask.options ?? null), uploadedResult: calls.length > 0 && s.uploaded(calls[0].result), uploadedGood: s.uploaded(good), ...common(w) };
+}
+async function w3(how) {
+  const { w, s, PICTURE_WAIT } = await decodeBoot("page");
+  await waitFor(w, () => s.asks().some((m) => !isDawn(m.blob)));
+  const t0 = performance.now();
+  const ask = s.asks().find((m) => !isDawn(m.blob));
+  if (!ask) return { none: "the worker posted no `decode` for a map" };
+  const good = BM("good");
+  await w.run(PICTURE_WAIT - 2000 - (performance.now() - t0));
+  const early = { calls: s.callsFor(ask.blob).length, anyCalls: s.blobCalls.length };
+  if (how === "late-answer") w.send({ type: "decoded", id: ask.id, bitmap: good });
+  await w.run(1000);
+  await w.run(PICTURE_WAIT + 4000 - (performance.now() - t0));
+  const calls = s.callsFor(ask.blob);
+  return { early, calls: calls.length, uploadedResult: calls.length > 0 && s.uploaded(calls[0].result), uploadedGood: s.uploaded(good), ...common(w) };
+}
+async function w4(decode) {
+  const { w, s } = await decodeBoot(decode);
+  const dawnAsked = () => s.asks().find((m) => isDawn(m.blob));
+  await waitFor(w, () => (decode === "page" ? !!dawnAsked() : s.blobs.some(isDawn) && s.blobCalls.some((c) => isDawn(c.blob))), 6000);
+  const good = BM("dawn");
+  const ask = dawnAsked();
+  if (decode === "page" && ask) w.send({ type: "decoded", id: ask.id, bitmap: good });
+  await w.run(500);
+  w.send({ type: "start", seq: 1, profile: w.wired, at: 1500 });
+  await w.run(3000);
+  const dawnBlob = s.blobs.find(isDawn);
+  const result = dawnBlob && s.callsFor(dawnBlob)[0] ? s.callsFor(dawnBlob)[0].result : null;
+  return {
+    fetchedDawn: w.fetched.filter((u) => /dawn\/dawn\.webp$/.test(u)).length, asked: s.asks().filter((m) => isDawn(m.blob)).length, askedAny: s.asks().length,
+    drawnWith: decode === "page" ? s.draws.some((a) => a.includes(good)) : !!result && s.draws.some((a) => a.includes(result)), blobCalls: dawnBlob ? s.callsFor(dawnBlob).length : 0, ...common(w),
+  };
+}
+
+const CASES = guarded({ up, compile, warm, pictures, fonts, size, visible, pinned, live, stop, destroy,
+  w1, w1here: () => w1control("here"), w1none: () => w1control(undefined), w2: () => w2("error"), w2good: () => w2("good"), w3: () => w3("silence"), w3late: () => w3("late-answer"),
+  w4: () => w4("page"), w4here: () => w4("here") });
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -246,6 +381,39 @@ const near = (x, y) => Math.abs(x - y) / y < 0.01;
   chk("D5 (control) a live `start` posts one `frame` with its `seq`, and paints", r, (r) => [r.frames.length === 1 && r.frames[0].seq === 4 && r.drawn2d > 0, `frames ${show(r.frames)}, 2D draw calls ${r.drawn2d}`]);
   const s = run("stop");
   chk("D5 a `start` superseded by `stop` posts no `frame` for the old `seq`", s, (r) => [r.frames.every((m) => m.seq !== 5), `frames ${show(r.frames)}`]);
+}
+
+{
+  const r = run("w1");
+  const clean1 = (x) => x.cloneErrors.length === 0 && x.deads.length === 0;
+  chk("W1 `decode: \"page\"`: a `decode` is posted (with an id, the fetched blob and the options) for every picture fetched", r, (r) => [r.before.asks.length > 0 && r.before.asks.length === r.before.fetched && r.before.asks.every((a) => a.id !== undefined && a.hasBlob) && r.before.distinctIds === r.before.asks.length, `fetched ${r.before.fetched}, asked ${show(r.before.asks.map((a) => ({ id: a.id, hasBlob: a.hasBlob })))}`]);
+  chk("W1 ... the caller's options go with the ask (the maps' premultiplyAlpha \"none\")", r, (r) => [r.before.optionsSeen, `options of the asks ${show(r.before.asks.map((a) => a.options))}`]);
+  chk("W1 ... the worker's own createImageBitmap is not called with a blob while no answer has come", r, (r) => [r.before.blobCalls === 0 && r.before.uploads === 0, `blob calls ${r.before.blobCalls}, picture uploads ${r.before.uploads}`]);
+  chk("W1 ... a `decoded` with an unknown id changes nothing (no upload, no error, no `dead`)", r, (r) => [!r.afterStray.uploaded && r.afterStray.uploads === r.before.uploads && r.afterStray.blobCalls === 0 && r.afterStray.deads === 0 && r.afterStray.threw === null, show(r.afterStray)]);
+  chk("W1 ... `decoded { id, bitmap }` lets that picture's upload proceed (texImage2D with that bitmap), with no blob call for it", r, (r) => [r.answered && r.uploadedGood && r.blobCallForAsk === 0 && clean1(r.after), `answered ${r.answered}, uploaded ${r.uploadedGood}, blob calls for it ${r.blobCallForAsk}, ${show({ c: r.after.cloneErrors, d: r.after.deads })}`]);
+  for (const [name, label] of [["w1here", "\"here\""], ["w1none", "no `decode` field"]]) {
+    const c = run(name);
+    chk(`W1 control: ${label}: no \`decode\` is ever posted`, c, (c) => [c.asks === 0 && c.fetched > 0 && c.cloneErrors.length === 0 && c.deads.length === 0, `asks ${c.asks}, fetched ${c.fetched}`]);
+    chk(`W1 control: ${label}: createImageBitmap is called with each blob`, c, (c) => [c.fetched > 0 && c.decodedHere === c.fetched, `${c.decodedHere} of ${c.fetched} blobs decoded here`]);
+  }
+}
+{
+  const r = run("w2"), g = run("w2good");
+  chk("W2 `decoded { id, error }`: the worker calls createImageBitmap with that blob, once, with the ask's options", r, (r) => [r.calls === 1 && r.optsEqual, `blob calls for it ${r.calls}, options equal ${r.optsEqual}`]);
+  chk("W2 ... the upload proceeds with the result, and no `dead`", r, (r) => [r.uploadedResult && r.deads.length === 0 && r.cloneErrors.length === 0, `uploaded the result ${r.uploadedResult}, dead ${show(r.deads)}`]);
+  chk("W2 control: a good answer: no blob call for that id, the page's bitmap uploaded", g, (g) => [g.calls === 0 && g.uploadedGood, `blob calls ${g.calls}, uploaded the page's bitmap ${g.uploadedGood}`]);
+}
+{
+  const r = run("w3"), l = run("w3late");
+  chk("W3 no answer: before PICTURE_WAIT has passed the worker has not decoded the picture itself", r, (r) => [r.early.calls === 0 && r.early.anyCalls === 0, show(r.early)]);
+  chk("W3 ... once it has passed it has (one blob call) and the upload proceeds", r, (r) => [r.calls === 1 && r.uploadedResult && r.deads.length === 0, `blob calls ${r.calls}, uploaded ${r.uploadedResult}, dead ${show(r.deads)}`]);
+  chk("W3 control: an answer just before the bound: no blob call, the page's bitmap uploaded", l, (l) => [l.early.calls === 0 && l.calls === 0 && l.uploadedGood, `blob calls after the bound ${l.calls}, uploaded the page's bitmap ${l.uploadedGood}`]);
+}
+{
+  const r = run("w4"), c = run("w4here");
+  chk("W4 `decode: \"page\"`: dawn/dawn.webp is fetched once and asked for like the maps", r, (r) => [r.fetchedDawn === 1 && r.asked === 1, `fetched ${r.fetchedDawn} time(s), asked ${r.asked} time(s)`]);
+  chk("W4 ... and drawn (a drawImage with the bitmap) once answered", r, (r) => [r.drawnWith && r.blobCalls === 0 && r.deads.length === 0, `drawn with the page's bitmap ${r.drawnWith}, blob calls for it ${r.blobCalls}, dead ${show(r.deads)}`]);
+  chk("W4 control: \"here\": no `decode` posted, the picture decoded here and drawn", c, (c) => [c.fetchedDawn === 1 && c.askedAny === 0 && c.blobCalls === 1 && c.drawnWith, `fetched ${c.fetchedDawn}, decodes asked ${c.askedAny}, blob calls ${c.blobCalls}, drawn ${c.drawnWith}`]);
 }
 chk("D5 `destroy` calls close()", run("destroy"), (r) => [r.closed === 1, `close() calls ${r.closed}`]);
 finish();

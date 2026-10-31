@@ -85,6 +85,13 @@ node -e '
     const src = strip(fs.readFileSync(f, "utf8"));
     for (const sp of specifiers(src)) if (/(^|\/)door\//.test(sp) && sp !== "../door/index.js") bad(`${f}: imports ${sp}; a site module imports assets/door/index.js alone`);
   }
+  // picture bytes are decoded in one place (#113, ADR-0004 6e.2): createImageBitmap( of a blob is written in page.js
+  // alone, so the route (the image loader on Firefox) is chosen there; the rest asks fetchBitmap (chores.js).
+  // A crop from a bitmap (its first argument a bitmap) is not a decode and is free anywhere
+  for (const f of [...js("assets/door"), ...js("assets/js")]) {
+    if (f === "assets/door/page.js") continue;
+    if (/\bcreateImageBitmap\s*\(\s*(?:b\b|blob\w*)|\.then\(\s*createImageBitmap\s*\)/.test(strip(fs.readFileSync(f, "utf8")))) bad(`${f}: decodes a blob with createImageBitmap (a picture is decoded by fetchBitmap, chores.js; only page.js calls createImageBitmap on a blob)`);
+  }
 ' || fail=1
 # its stylesheet reaches nothing outside the folder either: every url() in it is a fragment, data, or a file in it
 for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^url\("?//; s/"?\)$//' | sort -u); do
