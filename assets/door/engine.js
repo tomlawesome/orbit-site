@@ -1380,7 +1380,7 @@ export function createFlight(canvas, options = {}) {
          the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
       /* (one judged too slow is retired for the visit, never made again) */
       if (world3d?.dead && unfit) drop();
-      if ((world3d?.dead || again) && !destroyed) { round++; if (world3d) letGo(); again = false; madeOk = false; warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; renewVerdict(); }
+      if ((world3d?.dead || again) && !destroyed) { fail("failed"); round++; if (world3d) letGo(); again = false; madeOk = false; warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; renewVerdict(); }
       /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
       else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.done()) askEarth(); warmed = settle(made); }
       if (!warmed) {
