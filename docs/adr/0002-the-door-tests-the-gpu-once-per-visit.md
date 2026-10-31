@@ -269,6 +269,10 @@ Readiness of the ways in (`journey` on the stub, the fake world):
 - R9 the host's choice (6.5) is live, L5 below: the site says which it took.
 - R10 save-data stubbed true: no `webgl2` context asked, no map fetched, no key read or written, the ways in open at
   once, `fly(UP)` starts painted with no hold. Control: save-data false, the gate waits as R1.
+- R11 (6.5, owner 2a's condition) a first visit, the proof asked at once behind the load with the door's reveal not yet
+  over (`chores.js` not `open`): none of the proof's chores (its touch frames, fitness, calibrate) runs until the queue
+  opens; once it opens they run. Control: the same with `open` already true, they run at once. Behaviour only: which
+  chores ran before `open`, never how long anything took.
 
 Holds (`journey`, virtual clock):
 
@@ -340,15 +344,15 @@ in `tools/ci/*.mjs` first; (d) `rememberedFit()` must be read after `gpu()` has 
 the first `warm`, never at module load; (e) the two stores (`-probe`, `-fit`) are cleared together by a visitor clearing
 site data, which is the intended "first visit" path.
 
-### Questions for the owner (#116): 1 and 3 answered, 2 open
+### Questions for the owner (#116): all answered
 
 **1** Save-data (6.9): answered **1a** (owner, 2026-10-31): "if they're using low data mode, respect it and play
 the cheap flights everywhere there is one."
 
-**2** A first visit's proof (6.5): **2a** (recommended) at once behind the load, the docs' galaxy proof first, so the
-gate is not held by 4 s of leisure it would otherwise wait for; the fairness the leisure bought is kept by the chores'
-reveal hold and by the next visit's quiet re-test; **2b** keep the 4 s leisure on a first visit too (ADR-0002 12d as
-written), the gate waiting on it.
+**2** A first visit's proof (6.5): answered **2a** (owner, 2026-10-31): "2a but if it causes the door's opening
+stutter then we're back to having an issue. From the users perspective it MUST be smooth." The proof's frames are
+ordinary chores, so they wait for `open` (only soft upload bands and compiles run before it, `chores.js` `may`); R11
+holds that. The owner judges smoothness on real devices before the merge.
 
 **3** The landings' back controls closed until ready (6.8): answered **3a** (owner, 2026-10-31): "just fade the
 button in as soon as it's ready."
