@@ -113,7 +113,7 @@ answer. The ways in and what each waits for:
 | The gate (`#gate`) | `journey.warm({ prove: false })`: the Earth's picture, the world made, its maps on the GPU | opens on that alone (`main.js` `openWays([], true)`) | and `journey.verdict()` (6.3) |
 | The docs' planet | its ring ready and `journey.warmDocs({ prove: false })` (ADR-0004 6d.1) | opens on those | and `journey.verdict()` |
 | The install's and the information's planets | their world baked (`PADS.*.ring.baked`, `world?.baked`) | open on that; the dive holds on `shot.form` until the world is formed (`install.js`); their only cheaper version is where `gpu()` refused | none: they already meet 18a |
-| The landings' back controls (`.back.dawn`), the home's "back to the dawn" and the goodbye (the descent) | the flight's world, as the gate's | always open; a descent before the proof is painted (`journey.js` `descend`: "never waits") | closed until the gate's own condition holds (6.8); a descent asked anyway (history Back) holds |
+| The docs' back control (`#docspad .back.dawn`), the home's "back to the dawn" and the goodbye (the descent; the install's and the information's backs are no flight, `leaveWorld`, so they stay open) | the flight's world, as the gate's | always open; a descent before the proof is painted (`journey.js` `descend`: "never waits") | closed until the gate's own condition holds (6.8); a descent asked anyway (history Back) holds |
 | The live door (`?door3d`) | its first frame drawn unseen and measured (`door3d.js`), on the probe's level | shown only then; the probe is stored a week already | none |
 
 **6.2 The memory changes when a way in opens, never what a flight draws.** `ready` on the world keeps its meaning,
@@ -170,8 +170,8 @@ its own backstop. A flight held for a world that then fails (`dead` while holdin
 **6.8 The descent holds, and its ways in close.** `descend({ ready })` gains `ready` as `fly` has it: the clock holds
 at the descent's first beat (before `withdraw`, so the landing stays as it is: nothing has dispersed to leave a blank
 wait), `body.holding` set and cleared as `fly` does, not under reduced motion (no world drawn) nor when pinned (`at`).
-Every host call passes `ready: journey.warm()` (`main.js` `backToDawn`, the goodbye and `homeToDawn`). The landings'
-`.back.dawn` controls and the home's two are closed until the gate's own condition holds (6.3), with the planets'
+Every host call passes `ready: journey.warm()` (`main.js` `backToDawn`, the goodbye and `homeToDawn`). The docs'
+`.back.dawn` control and the home's two are closed until the gate's own condition holds (6.3), with the planets'
 idiom (`aria-disabled`, `tabindex -1`, the click swallowed) and not shown: each fades in the moment it opens (owner
 3a, 2026-10-31: "just fade the button in as soon as it's ready"), opened by `openWays` with a fourth id, `back`; a history
 Back before then holds at the landing. The readying 4 s after arriving straight at a landing (`main.js`
@@ -309,10 +309,12 @@ first load after clearing the key: the gate after the verdict line; second load:
 later, the key's `t` renewed. L5 (6.5): the store seeded by an init script with a pass under the key of 6.4 (the
 renderer read first, as `freeze.mjs` reads it): the console says `prove: at leisure (remembered on, N d ago)` and the
 gate is enabled before the verdict line; control, the store empty: `prove: at once (nothing remembered)` and the gate
-enabled only after the verdict line. L6 (6.8): arriving at `?gpu=force&fit=skip#install`, `.back.dawn` carries
+enabled only after the verdict line. L6 (6.8): arriving at `?gpu=force&fit=skip#docs`, `#docspad .back.dawn` carries
 `aria-disabled` and `tabindex="-1"`; clicked then, the body carries none of the journey's classes at the moment the
 control opens (the attributes gone); clicked after, the descent runs (`showdawn`, then `#door.shown`). Control: the
-same arrival with the flight already readied by a previous step: open on arrival.
+same arrival with the flight already readied by a previous step: open on arrival. L6b: arriving at `#install`, its
+back is open at once (no flight; corrected at review, 2026-10-31: the install's and the information's way back is
+`leaveWorld`, so closing it made the visitor wait for nothing).
 
 ### Build notes, in order
 

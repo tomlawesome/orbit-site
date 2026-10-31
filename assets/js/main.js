@@ -171,11 +171,11 @@ function openNow(ids, gate) {
 }
 /* until then */
 for (const p of document.querySelectorAll("#door .planet")) { p.setAttribute("tabindex", "-1"); p.setAttribute("aria-disabled", "true"); }
-/* the descents' controls, the landings' backs to the dawn and the home's two (its corner and the goodbye), closed
+/* the descents' controls, the docs' back to the dawn and the home's two (its corner and the goodbye), closed
    and not shown until the flight's way in opens (ADR-0002 6.8, owner 3a); a click on one then does nothing */
-const BACKS = () => document.querySelectorAll(".pad .back.dawn, #back, #signout");
+const BACKS = () => document.querySelectorAll("#docspad .back.dawn, #back, #signout");
 if (!MAINTENANCE) for (const b of BACKS()) { b.setAttribute("tabindex", "-1"); b.setAttribute("aria-disabled", "true"); }
-document.addEventListener("click", (e) => { const b = e.target.closest?.(".pad .back.dawn, #back, #signout"); if (b?.getAttribute("aria-disabled") === "true") { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+document.addEventListener("click", (e) => { const b = e.target.closest?.("#docspad .back.dawn, #back, #signout"); if (b?.getAttribute("aria-disabled") === "true") { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 /* (a planet not yet ready takes no click, from a pointer, the keyboard or a script: its link does not fire) */
 $("#door .planets")?.addEventListener("click", (e) => { const a = e.target.closest(".planet"); if (a && !a.classList.contains("ready")) { e.preventDefault(); e.stopPropagation(); } }, true);
 if (!MAINTENANCE) $("#gate").disabled = true;

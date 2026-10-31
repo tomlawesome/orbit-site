@@ -376,13 +376,15 @@ const landings = async (prefix) => {
     });
   }
 
-  /* L6 (6.8): arriving at a pad by its address before the flight is ready, its Back is closed (aria-disabled,
-     tabindex -1); pressed then it does nothing, and the attributes go when the flight is ready; pressed after, the descent runs */
+  /* L6 (6.8): arriving at the docs by their address before the flight is ready, their Back (a flight down through the
+     world) is closed (aria-disabled, tabindex -1); pressed then it does nothing, and the attributes go when the flight is
+     ready; pressed after, the descent runs. The install's and the information's Backs are no flight (main.js leaveWorld),
+     so they are open from the first (L6b) */
   const JOURNEY_CLASSES = ["showwarp", "withdrawing", "showdawn", "dispersing", "farewell", "holding"];
-  await step(`L6 #116: a pad's Back is closed until the flight is ready, then opens${prefix ? " (preview)" : ""}`, async () => {
+  await step(`L6 #116: the docs' Back is closed until the flight is ready, then opens${prefix ? " (preview)" : ""}`, async () => {
     await withGL(async (p) => {
-      await p.goto(flags("&fit=skip#install"), { waitUntil: "load" });
-      const back = "#installpad .back.dawn";
+      await p.goto(flags("&fit=skip#docs"), { waitUntil: "load" });
+      const back = "#docspad .back.dawn";
       await p.locator(back).waitFor({ state: "attached", timeout: 30000 });
       /* pressed while closed: the attributes are read and the control clicked in one go, then watched until it opens */
       const closed = await p.evaluate(([sel, classes]) => {
@@ -409,15 +411,23 @@ const landings = async (prefix) => {
       if (!seen.includes("showdawn")) throw new Error(`the descent never showed the dawn (body classes seen: ${JSON.stringify(seen)})`);
     });
   });
-  await step(`L6 #116 control: with the flight already ready, a pad's Back is open on arrival${prefix ? " (preview)" : ""}`, async () => {
+  await step(`L6 #116 control: with the flight already ready, the docs' Back is open on arrival${prefix ? " (preview)" : ""}`, async () => {
     await withGL(async (p) => {
       await p.goto(flags("&fit=skip"), { waitUntil: "load" });
       await waitGate(p);
-      await p.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
-      await p.evaluate(() => document.querySelector("#door .planet[data-section=install]").click());
-      await p.locator("#installpad").waitFor({ state: "visible", timeout: 30000 });
-      const at = await p.evaluate(() => { const el = document.querySelector("#installpad .back.dawn"); return { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex") }; });
-      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the flight was ready, yet the pad's Back arrived closed: ${JSON.stringify(at)}`);
+      await p.locator("#door .planet[data-section=docs].ready").waitFor({ state: "attached", timeout: 60000 });
+      await p.evaluate(() => document.querySelector("#door .planet[data-section=docs]").click());
+      await p.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
+      const at = await p.evaluate(() => { const el = document.querySelector("#docspad .back.dawn"); return { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex") }; });
+      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the flight was ready, yet the docs' Back arrived closed: ${JSON.stringify(at)}`);
+    });
+  });
+  await step(`L6b #116: the install's Back, no flight, is open on arrival before the flight is ready${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p) => {
+      await p.goto(flags("&fit=skip#install"), { waitUntil: "load" });
+      await p.locator("#installpad .back.dawn").waitFor({ state: "attached", timeout: 30000 });
+      const at = await p.evaluate(() => { const el = document.querySelector("#installpad .back.dawn"); return { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex"), ready: document.body.classList.contains("ready-flight") }; });
+      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the install's Back arrived closed: ${JSON.stringify(at)}`);
     });
   });
   /* #113 (ADR-0004 6e, J1): where the door's pictures are decoded is said once a page, on the console, and the pictures
