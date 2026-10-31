@@ -230,6 +230,6 @@ element, never a time:
 
 ## Questions for the owner
 
-None that block the build. One to confirm at the phone run: a direct arrival keeps the browser's meaning of Back
-(decision: leaves the site; "— the dawn" is the way to the door). The alternative, a synthetic door entry, does not
-work on Chromium or Safari, so there is no second option to offer.
+Answered. A direct arrival keeps the browser's meaning of Back: it leaves the site, and "— the dawn" is the way to
+the door (owner, 2026-10-31, answer 9a, chosen over a door entry added at the visitor's first tap). No made-up door
+entry, on load or later.
