@@ -93,8 +93,9 @@ export const page = {
   },
   /** a fetched picture as an ImageBitmap (chores.js: fetchBitmap). Under the image-loader route (fitness.js: decodeAside)
       the browser's own background decode: an <img> on a blob: URL, decode() awaited, the bitmap wrapped from it, so the
-      page's thread is not held; only the resize options go to the wrap, as any other makes Firefox decode again. A decode or
-      a wrap that fails is made the other way. Elsewhere createImageBitmap(blob, options) as it always was. A worker's adapter
+      page's thread is not held; only the resize options go to the <img> wrap, as any other makes Firefox decode again. That
+      wrap is premultiplied, and WebGL does not undo it on upload, so where premultiplyAlpha "none" was asked the bitmap is
+      wrapped once more with it: a copy, not a decode (ADR-0004 6e.1). A decode or a wrap that fails is made the other way. Elsewhere createImageBitmap(blob, options) as it always was. A worker's adapter
       (draw-worker.js) asks the page instead; with no <img> here the blob is decoded here
       @param {Blob} blob @param {ImageBitmapOptions} [options] @returns {Promise<ImageBitmap>} */
   async decode(blob, options) {
@@ -106,7 +107,9 @@ export const page = {
       img.decoding = "async";
       img.src = url;
       await img.decode();
-      return await createImageBitmap(img, resizeOnly(options));
+      const wrapped = await createImageBitmap(img, resizeOnly(options));
+      if (options?.premultiplyAlpha !== "none") return wrapped;
+      try { return await createImageBitmap(wrapped, { premultiplyAlpha: "none" }); } finally { wrapped.close(); }
     } catch { return await decodeHere(blob, options); } finally { if (url) URL.revokeObjectURL(url); }
   },
   /** a scratch canvas @param {number} w @param {number} h @returns {HTMLCanvasElement} */
