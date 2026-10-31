@@ -12,6 +12,8 @@
  *   PW2a  still(0.3, 7): no pixel differs
  *   PW2b  still(1, 7): no pixel differs
  *   PW2c  control: draw=page at k 0.3 against 0.6 differ, so the comparison can fail
+ *   PW2d  still(0.3, 7) with `decode=img` on both (#113, ADR-0004 6e): no pixel differs, and both say the image loader
+ *         decoded the pictures (the worker's come from the page, transferred)
  *
  * Each pair also has its own controls, so a case cannot pass for nothing: under draw=worker the console says `install:
  * drawn in a worker` (not the page's fallback), under draw=page `install: drawn on the page`, and the picture is not
@@ -131,9 +133,11 @@ const keep = (name, files) => {
   return SHOTS_DIR;
 };
 
-/* a frame under both paths: the controls, then no pixel differs */
-const pair = (id, name, k, idle) => judge(id, name, async (want) => {
-  const [page, worker] = [await shoot("page", k, idle), await shoot("worker", k, idle)];
+/* a frame under both paths: the controls, then no pixel differs. `more` adds flags to both addresses (PW2d: the
+   pictures decoded by the page's image loader, ADR-0004 6e, so the worker asks the page and is handed each bitmap) */
+const pair = (id, name, k, idle, more = "") => judge(id, name, async (want) => {
+  const [page, worker] = [await shoot(`page${more}`, k, idle), await shoot(`worker${more}`, k, idle)];
+  if (more) want([page, worker].every((s) => s.said.some((l) => /pictures: decoded by the image loader/.test(l))), `control: with ${more} the console never said "pictures: decoded by the image loader" on both paths, so the image loader may not have decoded these`);
   want(worker.said.some((l) => /install: drawn in a worker/.test(l)), `control: under draw=worker the console never said "install: drawn in a worker" (it said ${JSON.stringify(worker.said.filter((l) => /install: drawn/.test(l)))}), so the worker may not have drawn this`);
   want(page.said.some((l) => /install: drawn on the page/.test(l)), `control: under draw=page the console never said "install: drawn on the page" (it said ${JSON.stringify(page.said.filter((l) => /install: drawn/.test(l)))})`);
   want(!worker.said.some((l) => /install: drawn on the page/.test(l)), `control: under draw=worker the console also said the world was drawn on the page (${worker.said.find((l) => /install: drawn on the page/.test(l))}), a fallback`);
@@ -148,6 +152,7 @@ const pair = (id, name, k, idle) => judge(id, name, async (want) => {
 const run = async () => {
   if (wanted("PW2a")) await pair("PW2a", "still(0.3, 7): the worker's picture is the page's, pixel for pixel", 0.3, 7);
   if (wanted("PW2b")) await pair("PW2b", "still(1, 7): the worker's picture is the page's, pixel for pixel", 1, 7);
+  if (wanted("PW2d")) await pair("PW2d", "still(0.3, 7), the pictures decoded by the page's image loader: the worker's picture is the page's", 0.3, 7, "&decode=img");
   if (wanted("PW2c")) {
     await judge("PW2c", "control: draw=page at k 0.3 and at 0.6 differ, so the comparison can fail", async (want) => {
       const [a, b] = [await shoot("page", 0.3, 7), await shoot("page", 0.6, 7)];
