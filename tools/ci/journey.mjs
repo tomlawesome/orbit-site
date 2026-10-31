@@ -381,6 +381,277 @@ const landings = async (prefix) => {
       if (seen.hash !== "") throw new Error(`location.hash is ${JSON.stringify(seen.hash)} after Back, want ""`);
     });
   });
+  /* #117 (ADR-0006, B1-B8): the browser's Back and Forward follow the site's own back controls. Back and Forward are
+     pressed with history.back() and history.forward(): the browsers' rule that skips an entry a page added without a
+     user activation applies to their own buttons only, so it is held by the home test (H1) and B6, not here. Every
+     wait is for the element or the address, never for a time. The visitor's previous page is the site's 404.html, so
+     "Back leaves the page" is an address that is no longer the site's. B9 (phone Safari) is the owner's, by hand. */
+  const sfx = prefix ? " (preview)" : "";
+  const FROM = SITE + "404.html";
+  const seenOf = async (p) => {
+    try {
+      return await p.evaluate(() => {
+        const shown = (sel) => { const el = document.querySelector(sel); if (!el) return false; const r = el.getBoundingClientRect(), cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none"; };
+        return {
+          url: location.href, hash: location.hash, length: history.length, state: JSON.stringify(history.state),
+          door: shown("#door"), install: shown("#installpad"), docs: shown("#docspad"), info: shown("#infopad"), home: shown("#home"), dusk: shown("#dusk"),
+          reader: shown("#docspad .reader"), arrived: document.body.classList.contains("arrived"), atDoorClass: document.body.classList.contains("at-door"),
+          flying: !!document.querySelector("#hero.flying"), back: document.querySelector("#back")?.textContent ?? "", dial: document.querySelector("#dial-name")?.textContent ?? "",
+        };
+      });
+    } catch { return null; }   /* the page is between documents */
+  };
+  const seeing = async (p, what, ok, ms = 60000) => {
+    const t0 = Date.now();
+    let seen = await seenOf(p);
+    while (!(seen && ok(seen)) && Date.now() - t0 < ms) { await p.waitForTimeout(100); seen = await seenOf(p); }
+    if (!(seen && ok(seen))) throw new Error(`${what}, within ${ms / 1000}s: ${JSON.stringify(seen)}`);
+    return seen;
+  };
+  const leftSite = (s) => new URL(s.url).pathname.endsWith("/404.html");
+  const atDoor = (s) => s.door && !s.install && !s.docs && !s.info && !s.home && !s.dusk && s.hash === "";
+  const onPad = (id) => (s) => s[id] && s.arrived;
+  const onSky = (s) => s.home && !s.atDoorClass && !s.flying;
+  const ownSky = (name) => (s) => onSky(s) && s.back === "— the dawn" && s.dial === name;
+  const otherSky = (name) => (s) => onSky(s) && s.back === "— your sky" && s.dial === name;
+  const pressBack = (p) => p.evaluate(() => history.back()).catch(() => {});
+  const pressForward = (p) => p.evaluate(() => history.forward()).catch(() => {});
+  /* the visitor arrives from the previous page; `flag` is the returning visitor's session flag. Gives history.length before the arrival */
+  const arriveAt = async (p, url, flag = false) => {
+    await p.goto(FROM, { waitUntil: "load" });
+    if (flag) await p.evaluate(() => sessionStorage.setItem("orbit-site-arrived", "1"));
+    const before = await p.evaluate(() => history.length);
+    await p.goto(SITE + prefix + url, { waitUntil: "load" });
+    return before;
+  };
+  const planetReady = (p, id) => p.locator(`#door .planet[data-section=${id}].ready`).waitFor({ state: "attached", timeout: 60000 });
+  /* the planets keep turning, so a pointer click never finds one stable */
+  const clickPlanet = async (p, id) => { await planetReady(p, id); await p.evaluate((i) => document.querySelector(`#door .planet[data-section=${i}]`).click(), id); };
+  /* through the gate to the visitor's own sky; gives the other households as [id, name] and the own household's name */
+  const enterSky = async (p) => {
+    await p.locator("#gate").click({ timeout: 60000 });
+    const s = await seeing(p, "the gate did not bring up the visitor's sky", onSky);
+    const others = await p.evaluate(() => [...document.querySelectorAll("#galaxy .minisys")].map((n) => [n.dataset.id, n.querySelector("text.mslabel")?.textContent ?? ""]));
+    if (others.length < 2) throw new Error(`the sky shows ${others.length} other household(s), want 2 or more`);
+    return { name: s.dial, others };
+  };
+  const clickMini = (p, id) => p.evaluate((i) => document.querySelector(`#galaxy .minisys[data-id="${i}"] circle.hit`).dispatchEvent(new MouseEvent("click", { bubbles: true })), id);
+  const clickChip = (p, name) => p.evaluate((n) => [...document.querySelectorAll("#chips button")].find((b) => b.textContent === n).click(), name);
+  const clickDawn = (p, sel) => p.evaluate((q) => document.querySelector(q).click(), sel);
+
+  /* B1: from a landing, "— the dawn" is one step back to the door and leaves no second door entry */
+  await step(`B1 "— the dawn" from a landing leaves one door entry${sfx}`, async () => {
+    const p = page;
+    await arriveAt(p, "");
+    await clickPlanet(p, "install");
+    await seeing(p, "the install landing did not settle", onPad("install"));
+    await clickDawn(p, "#installpad .back.dawn");
+    await seeing(p, 'after "— the dawn" the door is not shown with the address ""', atDoor);
+    await pressBack(p);
+    await seeing(p, "Back at the door did not leave the page (a dead press on a second door entry?)", leftSite, 15000);
+    await pressForward(p);
+    await seeing(p, "Forward did not bring the door back", (s) => !leftSite(s) && s.door && s.hash === "");
+    await planetReady(p, "install");
+    await pressForward(p);
+    await seeing(p, "Forward from the door did not fly to the install landing", (s) => onPad("install")(s) && s.hash === "#install");
+  });
+
+  /* B2: from a docs page two entries above the door, "— the dawn" reaches the door in one step and Forward replays the docs */
+  await step(`B2 "— the dawn" from a docs page reaches the door in one step${sfx}`, async () => {
+    const p = page;
+    const before = await arriveAt(p, "");
+    await clickPlanet(p, "docs");
+    await seeing(p, "the docs landing did not settle", (s) => onPad("docs")(s) && !s.reader);
+    await seeing(p, "the docs landing's entry does not say it is one press above the door", (s) => s.state === '{"orbit":1}');
+    await p.locator("#docspad .entry").first().waitFor({ state: "attached", timeout: 30000 });
+    await p.evaluate(() => document.querySelector("#docspad .entry").click());
+    const page1 = await seeing(p, "a page opened from the index did not show in the reader", (s) => s.reader && s.hash.startsWith("#docs/"));
+    const slug = JSON.parse(page1.state)?.docs;
+    if (!slug || JSON.parse(page1.state).orbit !== 2) throw new Error(`the docs page's entry is ${page1.state}, want { docs, anchor, orbit: 2 }`);
+    if (page1.length !== before + 3) throw new Error(`${page1.length} entries after opening a page, want ${before + 3}`);
+    await clickDawn(p, "#docspad .back.dawn");
+    const door = await seeing(p, 'after "— the dawn" from the page the door is not shown with the address ""', atDoor);
+    if (door.length !== before + 3) throw new Error(`${door.length} entries at the door, want ${before + 3} (nothing added or dropped)`);
+    await pressForward(p);
+    await seeing(p, "the first Forward from the door did not show the docs index", (s) => onPad("docs")(s) && !s.reader && s.hash === "#docs");
+    await pressForward(p);
+    await seeing(p, "the second Forward did not show the docs page", (s) => s.docs && s.reader && s.hash === page1.hash);
+    /* control: Back from the page is the docs' own, to the index, not to the door */
+    await pressBack(p);
+    const index = await seeing(p, "Back from the page did not show the docs index", (s) => s.docs && !s.reader && s.hash === "#docs");
+    if (index.door) throw new Error("Back from the page shows the door too, want the docs index alone");
+    /* the index is closed to by the reader's own control, and the entry it pushes carries the count */
+    await p.evaluate(() => document.querySelector("#docspad .entry").click());
+    await seeing(p, "the page did not open again", (s) => s.reader);
+    await clickDawn(p, "#docspad .readhead .todocs");
+    const closed = await seeing(p, "the reader's way back to the index did not show the index", (s) => s.docs && !s.reader && s.hash === "#docs");
+    if (JSON.parse(closed.state)?.orbit !== 3) throw new Error(`the index entry after closing a page is ${closed.state}, want orbit 3 (landing 1, page 2, index 3)`);
+  });
+
+  /* B3: another household's sky is one entry under the visitor's own */
+  await step(`B3 Back from another household's sky flies to your own, then to the door${sfx}`, async () => {
+    const p = page;
+    await arriveAt(p, "");
+    await planetReady(p, "install");
+    const own = await enterSky(p);
+    const [otherId, otherName] = own.others[0], [, thirdName] = own.others[1];
+    const before = (await seenOf(p)).length;
+    await clickMini(p, otherId);
+    const there = await seeing(p, `the click on ${otherName} did not land on its sky`, otherSky(otherName));
+    if (there.length !== before + 1) throw new Error(`${there.length} entries after the click on a mini system, want ${before + 1}`);
+    await pressBack(p);
+    const home = await seeing(p, "Back from another's sky did not fly to the visitor's own", ownSky(own.name));
+    if (home.length !== before + 1) throw new Error(`${home.length} entries after Back, want ${before + 1} (Back moves, it adds nothing)`);
+    await pressBack(p);
+    await seeing(p, "the second Back did not reach the door", atDoor);
+    await pressForward(p);
+    await seeing(p, "Forward from the door did not fly in to the visitor's sky", ownSky(own.name));
+    await pressForward(p);
+    await seeing(p, `the second Forward did not fly out to ${otherName}'s sky again`, otherSky(otherName));
+    /* control: a hop from there to a third household's chip adds no entry, and Back is still to the visitor's own sky */
+    await clickChip(p, thirdName);
+    const hopped = await seeing(p, `the chip for ${thirdName} did not land on its sky`, otherSky(thirdName));
+    if (hopped.length !== before + 1) throw new Error(`${hopped.length} entries after a hop to a third household, want ${before + 1} (a replace, not a push)`);
+    await pressBack(p);
+    await seeing(p, "Back from the third household's sky did not fly to the visitor's own", ownSky(own.name));
+  });
+
+  /* B4: a direct arrival has no entry below it: Back leaves, and "— the dawn" shows the door with the entries unchanged */
+  for (const [label, url, flag, pad, dawn] of [
+    ["#install", "#install", false, "install", "#installpad .back.dawn"],
+    ["#home (a returning visitor)", "#home", true, "home", "#back"],
+    ["#docs/readme", "#docs/readme", false, "docs", "#docspad .back.dawn"],
+  ]) {
+    const landed = (s) => (pad === "home" ? s.home && !s.flying : pad === "docs" ? s.docs && s.reader : onPad(pad)(s));
+    await step(`B4 a direct arrival at ${label}: Back leaves the page; the dawn first shows the door${sfx}`, async () => {
+      const before = await arriveAt(page, url, flag);
+      await seeing(page, `the direct arrival at ${label} did not land`, landed);
+      await pressBack(page);
+      await seeing(page, `Back from a direct arrival at ${label} did not leave the page`, leftSite, 15000);
+      await fresh();
+      await arriveAt(page, url, flag);
+      await seeing(page, `the direct arrival at ${label} did not land the second time`, landed);
+      await clickDawn(page, dawn);
+      const door = await seeing(page, `"— the dawn" from a direct arrival at ${label} did not show the door with the address ""`, atDoor);
+      if (door.length !== before + 1) throw new Error(`${door.length} entries at the door, want ${before + 1} (the one entry rewritten, none added)`);
+      await pressBack(page);
+      await seeing(page, `Back at the door after a direct arrival at ${label} did not leave the page (a dead press?)`, leftSite, 15000);
+    });
+  }
+  /* the docs' entries above a direct arrival carry no count to the door: closing a page there pushes orbit 0 */
+  await step(`B4 above a direct arrival the docs' entries count 0${sfx}`, async () => {
+    await arriveAt(page, "#docs/readme");
+    await seeing(page, "the direct arrival at #docs/readme did not show the page", (s) => s.docs && s.reader);
+    await clickDawn(page, "#docspad .readhead .todocs");
+    const index = await seeing(page, "the reader's way back to the index did not show the index", (s) => s.docs && !s.reader && s.hash === "#docs");
+    if (JSON.parse(index.state)?.orbit !== 0) throw new Error(`the index entry above a direct arrival is ${index.state}, want orbit 0`);
+  });
+
+  /* B5: a reload on a landing flown to from the door keeps its entry, so Back after it shows the door */
+  for (const [label, how] of [["#install", "planet"], ["#home", "gate"]]) {
+    await step(`B5 after a reload on ${label} flown to from the door, Back shows the door${sfx}`, async () => {
+      await arriveAt(page, "");
+      if (how === "planet") { await clickPlanet(page, "install"); await seeing(page, "the install landing did not settle", onPad("install")); }
+      else { await planetReady(page, "install"); await enterSky(page); }
+      await page.reload({ waitUntil: "load" });
+      await seeing(page, `after the reload ${label} did not come back`, how === "planet" ? onPad("install") : onSky);
+      await pressBack(page);
+      await seeing(page, `Back after a reload on ${label} did not show the door`, (s) => !leftSite(s) && atDoor(s));
+    });
+  }
+
+  /* B6: nothing is pushed or replaced on load, or by the walk; a click on a planet is what grows the entries */
+  await step(`B6 a load of the door adds no entry; a click on a planet adds one${sfx}`, async () => {
+    const p = page;
+    const before = await arriveAt(p, "");
+    await planetReady(p, "install");
+    const loaded = await seenOf(p);
+    if (loaded.length !== before + 1) throw new Error(`${loaded.length} entries after loading the door, want ${before + 1} (the load itself)`);
+    await clickPlanet(p, "install");
+    const landed = await seeing(p, "the install landing did not settle", onPad("install"));
+    if (landed.length !== before + 2) throw new Error(`${landed.length} entries after a click on a planet, want ${before + 2}`);
+  });
+  await step(`B6 a load of #install adds no entry${sfx}`, async () => {
+    const before = await arriveAt(page, "#install");
+    const landed = await seeing(page, "the direct arrival at #install did not land", onPad("install"));
+    if (landed.length !== before + 1) throw new Error(`${landed.length} entries after loading #install, want ${before + 1} (the load itself)`);
+  });
+  await step(`B6 a returning visitor's load and the walk add no entry; a click on a mini system does${sfx}`, async () => {
+    const p = page;
+    const before = await arriveAt(p, "", true);
+    const up = await seeing(p, "the returning visitor's sky did not come up", (s) => s.home && !s.flying);
+    if (up.length !== before + 1) throw new Error(`${up.length} entries after a returning visitor's load, want ${before + 1} (the load itself)`);
+    const name = up.dial;
+    /* the walk, at the chapter that flies to another household */
+    await p.evaluate(() => {
+      window.__skies = new Set();
+      const dial = document.querySelector("#dial-name");
+      new MutationObserver(() => window.__skies.add(dial.textContent)).observe(dial, { childList: true, characterData: true, subtree: true });
+    });
+    await p.locator("#tp-play").click({ force: true, timeout: 60000 });
+    await p.waitForFunction(() => /pause/i.test(document.querySelector("#tp-play").getAttribute("aria-label") || ""), null, { timeout: 10000 });
+    await p.locator('#transport .tick[aria-label="Other households"]').first().click({ force: true, timeout: 30000 });
+    try { await p.waitForFunction((own) => [...window.__skies].some((n) => n !== own), name, { timeout: 90000 }); }
+    catch { throw new Error("the walk never flew to another household, so the walk's entries were not tested"); }
+    await p.locator("#tp-stop").click({ force: true, timeout: 30000 });
+    const stopped = await seeing(p, "stopping the walk did not bring the visitor's own sky back", (s) => s.home && !s.flying && s.dial === name);
+    if (stopped.length !== before + 1) throw new Error(`${stopped.length} entries after the walk stopped, want ${before + 1}`);
+    /* control: a click on a mini system is what adds one */
+    const others = await p.evaluate(() => [...document.querySelectorAll("#galaxy .minisys")].map((n) => n.dataset.id));
+    await clickMini(p, others[0]);
+    const clicked = await seeing(p, "the click on a mini system did not land", (s) => s.home && !s.flying && s.dial !== name);
+    if (clicked.length !== before + 2) throw new Error(`${clicked.length} entries after a click on a mini system, want ${before + 2}`);
+  });
+
+  /* B7: a Back during a flight in the demo is honoured when the flight lands (the door's is the step above) */
+  await step(`B7 control: without Back the other household's sky lands${sfx}`, async () => {
+    const p = page;
+    await arriveAt(p, "");
+    await planetReady(p, "install");
+    const own = await enterSky(p);
+    const [otherId, otherName] = own.others[0];
+    await clickMini(p, otherId);
+    await seeing(p, `the click on ${otherName} did not land on its sky`, otherSky(otherName));
+  });
+  await step(`B7 Back during a flight to another household's sky returns to your own${sfx}`, async () => {
+    const p = page;
+    await arriveAt(p, "");
+    await planetReady(p, "install");
+    const own = await enterSky(p);
+    const [otherId, otherName] = own.others[0];
+    const started = await p.evaluate((id) => {
+      document.querySelector(`#galaxy .minisys[data-id="${id}"] circle.hit`).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const flying = !!document.querySelector("#hero.flying");
+      requestAnimationFrame(() => history.back());
+      return flying;
+    }, otherId);
+    if (!started) throw new Error(`the click on ${otherName} did not start a flight, so Back mid-flight was not tested`);
+    const end = await seeing(p, "after Back mid-flight the visitor's own sky did not come back", ownSky(own.name));
+    if (end.hash !== "#home") throw new Error(`location.hash is ${JSON.stringify(end.hash)} after Back, want "#home"`);
+  });
+
+  /* B8: signing out drops the sky's entries: Back at the goodbye leaves; "Sign back in" shows the door, and Forward flies in */
+  const signedOut = async (p) => {
+    await arriveAt(p, "");
+    await planetReady(p, "install");
+    await enterSky(p);
+    await p.evaluate(() => document.querySelector("#signout").click());
+    await seeing(p, "the goodbye did not show", (s) => s.dusk);
+    await seeing(p, 'the goodbye did not clear the address (the sky\'s entries are still there)', (s) => s.dusk && s.hash === "");
+  };
+  await step(`B8 Back at the goodbye leaves the page${sfx}`, async () => {
+    await signedOut(page);
+    await pressBack(page);
+    await seeing(page, "Back at the goodbye did not leave the page", leftSite, 15000);
+  });
+  await step(`B8 "Sign back in" shows the door; Forward flies in to the sky${sfx}`, async () => {
+    const p = page;
+    await signedOut(p);
+    await p.locator("#gate-back").click({ timeout: 30000 });
+    await seeing(p, '"Sign back in" did not show the door', (s) => s.door && !s.dusk && !s.home && s.hash === "");
+    await pressForward(p);
+    await seeing(p, "Forward from the door did not fly in to the sky", onSky);
+  });
 };
 if (maintenance) {
   console.log("     (and the landings, past the door with ?preview)");

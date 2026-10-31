@@ -13,6 +13,10 @@
  * No dependencies and no browser: a small stand-in page (elements, a selector matcher, an HTML reader for the page's
  * markup and for what home.js writes as innerHTML, events that bubble) and a virtual clock for home.js's timers.
  * Reduced motion is on, so a flight is two 50 ms steps.
+ *
+ * #117 (ADR-0006, H1-H5): the history calls a visit makes are recorded on a stand-in `history`; a click on another
+ * household pushes one entry, a hop from there replaces it, the corner is history.back() when the entry says a sky, a
+ * flight asked for mid-flight is flown when it lands, and the walk's way (flyTo, restoreState) touches no entry.
  */
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -242,8 +246,19 @@ const document = {
   removeEventListener() {},
 };
 const reloads = [], scrolls = [];
+/* history: records every call, keeps `state` as pushState and replaceState set it (a browser keeps a copy; the calls here
+   carry plain data, so the object is kept as given). back() and go() only record: nothing here plays the browser's pop. */
+const hist = {
+  state: null, calls: [],
+  pushState(state, title, url) { hist.calls.push({ kind: "push", state, url }); hist.state = state; },
+  replaceState(state, title, url) { hist.calls.push({ kind: "replace", state, url }); hist.state = state; },
+  go(n) { hist.calls.push({ kind: "go", n }); },
+  back() { hist.calls.push({ kind: "back" }); },
+  forward() { hist.calls.push({ kind: "forward" }); },
+  reset(state = null) { hist.state = state; hist.calls.length = 0; },
+};
 Object.assign(globalThis, {
-  document, Event, MouseEvent,
+  document, Event, MouseEvent, history: hist,
   window: globalThis,
   innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1,
   matchMedia: (q) => ({ matches: q.includes("reduced-motion") && !MOTION, addEventListener() {} }),
@@ -708,8 +723,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   $$("#chips button").find((b) => b.textContent === seaside.name).click();
   check("a chip starts a flight toward its household", hero.classList.contains("flying") && node.classList.contains("target") && home.state.flying && hero.style.getPropertyValue("--flyx") === `${node.dataset.dx}px`, `hero ${hero.className}, --flyx ${hero.style.getPropertyValue("--flyx")} (want ${node.dataset.dx}px)`);
   check("the flight closes the open row and moves the sky", !$(".item.open") && skyCams.far.style.transform === `translate(${(-seaside.pos[0] * 0.18).toFixed(0)}px,${(-seaside.pos[1] * 0.18).toFixed(0)}px)`, `far ${skyCams.far.style.transform}`);
-  home.flyTo("grans");
-  check("a second flight is not started mid-flight", home.state.camera === "willow" && !$('.minisys[data-id="grans"]').classList.contains("target"), `camera ${home.state.camera}`);
+  /* (a flight asked for mid-flight is kept and flown when this one lands: H4 below, not here) */
   advance(50);
   check("it lands: the dial is the household's, the corner leads back to yours", home.state.camera === "seaside" && $("#dial-name").textContent === seaside.name && $("#back").textContent === "— your sky" && hero.classList.contains("arriving") && $("#dial").classList.contains("bloom"), `camera ${home.state.camera}, back ${show($("#back").textContent)}`);
   check("there, the other systems include yours, not its own", !$('.minisys[data-id="seaside"]') && !!$('.minisys[data-id="willow"]'), $$(".minisys").map((m) => m.dataset.id).join());
@@ -731,6 +745,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   home.cancelFlight();
   check("cancelling with no flight does nothing", landed === 1, `done called ${landed} time(s)`);
 
+  hist.reset();   /* no sky in the entry: the corner flies (with a sky in it, the corner is history.back(): H3) */
   $("#back").click();
   advance(100);
   check("the corner, away from home, flies back to yours", home.state.camera === "willow" && $("#back").textContent === "— the dawn", `camera ${home.state.camera}, back ${show($("#back").textContent)}`);
@@ -750,6 +765,104 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   check("the stopped flight does not land later", home.state.camera === "narrow", `camera ${home.state.camera}`);
   home.restoreState({ ...data.serialise(), camera: "willow" });
   check("restoreState back home says the corner leads to the dawn", home.state.camera === "willow" && $("#back").textContent === "— the dawn", `camera ${home.state.camera}`);
+}
+
+/* ── #117 (ADR-0006): the entries a visit makes, H1-H5 ───────────────────────────────────────────────── */
+{
+  const hero = $("#hero");
+  const chipOf = (id) => $$("#chips button").find((b) => b.textContent === households[id].name);
+  const hitOf = (id) => $(`.minisys[data-id="${id}"] circle.hit`);
+  const kinds = (k) => hist.calls.filter((c) => c.kind === k);
+  const flyingNow = () => hero.classList.contains("flying") && home.state.flying;
+  const calls = () => show(hist.calls);
+  /* each case starts with the camera put where it needs, so one that fails does not fail the next (restoreState is the walk's way: no entry) */
+  const at = (id, state = null) => { home.cancelFlight(); home.restoreState({ ...data.serialise(), camera: id }); advance(200); hist.reset(state); };
+  at("willow");
+
+  /* H1: a click on another household from the visitor's own sky is one entry, with that sky in its state */
+  hist.reset({ orbit: 1 });
+  fire(hitOf("seaside"), "click");
+  check("H1 a click on another household's mini system pushes one entry with that sky, the address argument undefined", kinds("push").length === 1 && hist.calls.length === 1 && kinds("push")[0].state?.sky === "seaside" && kinds("push")[0].url === undefined, `calls ${calls()}`);
+  advance(200);
+  check("H1 and the flight went on to it", home.state.camera === "seaside", `camera ${home.state.camera}`);
+  at("seaside", { orbit: 1, sky: "seaside" });
+  home.flyTo("willow");
+  advance(200);
+  check("H1 control: flyTo called by script (the walk's way) pushes nothing, and flies", home.state.camera === "willow" && hist.calls.length === 0, `camera ${home.state.camera}, calls ${calls()}`);
+  at("willow", { orbit: 1 });
+  chipOf("grans").click();
+  check("H1 a chip pushes one entry with that sky, the address argument undefined", kinds("push").length === 1 && hist.calls.length === 1 && kinds("push")[0].state?.sky === "grans" && kinds("push")[0].url === undefined, `calls ${calls()}`);
+  advance(200);
+
+  /* H2: from another's sky, a click on a third replaces the entry: no push, sky the third, orbit kept */
+  at("grans", { orbit: 1, sky: "grans" });
+  chipOf("seaside").click();
+  check("H2 a click on a third household replaces the entry: no push, the sky the third's, orbit kept", kinds("push").length === 0 && kinds("replace").length === 1 && hist.calls.length === 1 && kinds("replace")[0].state?.sky === "seaside" && kinds("replace")[0].state?.orbit === 1, `calls ${calls()}`);
+  advance(200);
+  at("seaside", { orbit: 1, sky: "seaside" });
+  fire(hitOf("grans"), "click");
+  check("H2 the same from a mini system on another's sky", kinds("push").length === 0 && kinds("replace").length === 1 && kinds("replace")[0].state?.sky === "grans" && kinds("replace")[0].state?.orbit === 1, `calls ${calls()}`);
+  advance(200);
+
+  /* H3: the corner, on another's sky, is history.back() when the entry says a sky, else a flight to willow */
+  at("grans", { orbit: 1, sky: "grans" });
+  check("H3 setup: the camera is on another household's sky, the corner leads to yours", home.state.camera === "grans" && $("#back").textContent === "— your sky", `camera ${home.state.camera}, back ${show($("#back").textContent)}`);
+  $("#back").click();
+  check("H3 with a sky in the entry's state, the corner calls history.back() and does not fly", show(hist.calls) === show([{ kind: "back" }]) && !flyingNow() && home.state.camera === "grans", `calls ${calls()}, flying ${flyingNow()}, camera ${home.state.camera}`);
+  advance(200);
+  check("H3 and nothing flies later", home.state.camera === "grans" && !home.state.flying, `camera ${home.state.camera}`);
+  at("grans", { orbit: 1 });
+  $("#back").click();
+  check("H3 with no sky in the state, the corner flies to willow and calls nothing on history", flyingNow() && hist.calls.length === 0, `calls ${calls()}, flying ${flyingNow()}`);
+  advance(200);
+  check("H3 and lands on willow", home.state.camera === "willow" && $("#back").textContent === "— the dawn", `camera ${home.state.camera}, back ${show($("#back").textContent)}`);
+  let backs = 0;
+  home.onBackHome(() => backs++);
+  at("willow", { orbit: 1 });
+  $("#back").click();
+  check("H3 control: on the visitor's own sky the corner calls backHome, and nothing on history", backs === 1 && hist.calls.length === 0 && home.state.camera === "willow", `backHome ${backs}, calls ${calls()}`);
+
+  /* H4: a flight asked for mid-flight is kept and flown when the flight lands (the last one asked) */
+  {
+    const landed = { b: 0 };
+    const cameras = [];
+    let always = true;
+    at("willow");
+    home.flyTo("seaside");
+    home.flyTo("grans", () => landed.b++);
+    for (let i = 0; i < 100 && !(home.state.camera === "grans" && !home.state.flying); i++) {
+      if (home.flying?.() !== true) always = false;
+      if (cameras[cameras.length - 1] !== home.state.camera) cameras.push(home.state.camera);
+      if (home.state.camera !== "grans" && landed.b !== 0) always = false;
+      advance(10);
+    }
+    check("H4 a flyTo(b) during a flight to a lands on a and then flies to b", show(cameras) === show(["willow", "seaside", "grans"]) && home.state.camera === "grans", `cameras seen ${show(cameras)}, camera ${home.state.camera}`);
+    check("H4 flying() is true throughout, b's done was not called before b landed", always, typeof home.flying !== "function" ? "flying() is not exported" : always ? "never false, b's done not early" : "flying() was false at some moment, or b's done was early");
+    advance(200);
+    check("H4 b's done is called once, and flying() is false after", landed.b === 1 && home.flying?.() === false && !flyingNow(), `done ${landed.b} time(s), flying() ${show(home.flying?.())}`);
+  }
+  at("willow");
+  home.flyTo("seaside");
+  advance(200);
+  check("H4 control: a flyTo(b) after a has landed flies at once", home.state.camera === "seaside" && home.flying?.() === false, `camera ${home.state.camera}`);
+  home.flyTo("willow");
+  check("H4 control: and flying() is true while it goes", flyingNow() && home.flying?.() === true, `flying ${flyingNow()}, flying() ${show(home.flying?.())}`);
+  at("willow");
+  home.flyTo("seaside");
+  home.flyTo("grans");
+  home.cancelFlight();
+  advance(500);
+  check("H4 control: cancelFlight during a leaves b unflown", home.state.camera === "willow" && !home.state.flying && !hero.classList.contains("flying") && !$(".minisys.target"), `camera ${home.state.camera}`);
+
+  /* H5: the walk's restoreState pushes and replaces nothing (control: H1's click does) */
+  at("willow", { orbit: 1 });
+  home.flyTo("mumdad");
+  home.restoreState({ ...data.serialise(), camera: "narrow" });
+  advance(200);
+  const onNarrow = home.state.camera === "narrow";
+  home.restoreState({ ...data.serialise(), camera: "willow" });
+  check("H5 restoreState puts the camera on another sky and back, and touches no entry", onNarrow && home.state.camera === "willow" && hist.calls.length === 0, `camera ${home.state.camera}, calls ${calls()}`);
+  hist.reset();
 }
 
 /* ── the sky redrawn on resize, after the burst ────────────────────────── */
