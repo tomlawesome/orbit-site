@@ -23,6 +23,13 @@
  *   lost      `webglcontextlost` on the OffscreenCanvas posts `lost`
  *   destroy   `destroy` calls close()
  *
+ * And #113 (ADR-0004 6e.2), written from the specification alone:
+ *
+ *   decodePage  `hello { decode: "page" }`: for each picture fetched one `decode { id, blob, options }` is posted; each is
+ *             answered by `decoded { id, bitmap }` and that bitmap is the source of a texImage2D; a `decoded` for an id never
+ *             asked has its bitmap closed and posts no `dead`. Control: no `decode` in the hello posts no `decode`, and the
+ *             pictures still go up
+ *
  * One fresh Node process a case; virtual clock only, nothing waits on the runner. A missing module is said in plain words.
  */
 import { installPage, installClock, installWorkerSelf, namedUniforms, BASE, childMain, runCase, chk, finish } from "./door-stub.mjs";
@@ -236,8 +243,51 @@ async function destroy() {
   await w.run(500);
   return { closed: w.closed, ...common(w) };
 }
+/* #113: the page decodes (`decode: "page"`) or the worker does (no `decode`); a fake bitmap per picture, closes counted */
+async function decodePage(decode) {
+  const w = await boot();
+  const SIZES = [[/planet/, 2048, 1024], [/rings/, 1024, 1], [/moon/, 512, 512]];
+  const sizeOf = (url) => SIZES.find(([re]) => re.test(String(url))) || [null, 64, 64];
+  const fake = (url) => { const s = sizeOf(url); const b = { width: s[1], height: s[2], closes: 0, close() { b.closes++; } }; return b; };
+  const blobs = [];
+  globalThis.fetch = async (url) => { w.fetched.push(String(url)); const blob = { size: 1, type: "image/webp", url: String(url) }; blobs.push(blob); return { ok: true, status: 200, blob: async () => blob }; };
+  const here = [];
+  globalThis.createImageBitmap = async (src, ...r) => { const b = fake(src && src.url); here.push(b); return b; };
+  const sources = [];
+  const img = w.page.glBase.texImage2D;
+  w.page.glBase.texImage2D = (...a) => { if (a.length === 6) sources.push(a[5]); return img(...a); };
+  w.send(w.hello(decode === undefined ? {} : { decode }));
+  w.send({ type: "canvas", canvas: w.warp });
+  await w.run(0);
+  w.send({ type: "bake", id: 1 });
+  /* the page's side: answer each ask once, as it comes, with a fake bitmap */
+  const answered = [];
+  for (let i = 0; i < 400 && !w.of("baked").some((m) => m.id === 1); i++) {
+    await w.run(100);
+    for (const m of w.of("decode")) {
+      if (answered.some((a) => a.id === m.id)) continue;
+      const bitmap = fake(m.blob && m.blob.url);
+      answered.push({ id: m.id, bitmap });
+      w.send({ type: "decoded", id: m.id, bitmap });
+    }
+  }
+  await w.run(500);
+  const asks = w.of("decode");
+  const deadsBefore = w.of("dead").length, upsBefore = sources.length;
+  const stray = fake(URLS.map);
+  w.send({ type: "decoded", id: 987654, bitmap: stray });
+  await w.run(500);
+  return {
+    asks: asks.map((m) => ({ id: m.id, idKind: typeof m.id, hasBlob: !!m.blob && typeof m.blob === "object", hasOptions: "options" in m })),
+    distinctIds: new Set(asks.map((m) => m.id)).size, fetched: blobs.length, baked: w.of("baked").map((m) => m.ok),
+    unuploaded: answered.filter((a) => !sources.includes(a.bitmap)).length, answered: answered.length,
+    hereUploaded: here.filter((b) => sources.includes(b)).length, here: here.length, uploads: sources.length,
+    stray: { closes: stray.closes, uploaded: sources.includes(stray), newUploads: sources.length - upsBefore, newDeads: w.of("dead").length - deadsBefore },
+    ...common(w),
+  };
+}
 
-const CASES = guarded({ up, noGl, compile, pictures, whole, bake, frames, runOff, measure, resize, warn, lost, destroy });
+const CASES = guarded({ up, noGl, compile, pictures, whole, bake, frames, runOff, measure, resize, warn, lost, destroy, decodePage: () => decodePage("page"), decodePageNone: () => decodePage(undefined) });
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -313,4 +363,16 @@ const clean = (r) => r.cloneErrors.length === 0 && r.deads.length === 0;
   chk("W5 the worker listens for `webglcontextlost` on its canvas, and posts `lost` when it comes", r, (r) => [r.handlers >= 1 && r.before === 0 && r.lost === 1, `listeners ${r.handlers}, lost posted before ${r.before}, after ${r.lost}`]);
 }
 chk("W5 `destroy` calls close()", run("destroy"), (r) => [r.closed === 1, `close() calls ${r.closed}`]);
+{
+  const r = run("decodePage");
+  chk("decodePage (precondition) the bake was answered true", r, (r) => [show(r.baked) === show([true]), `baked ${show(r.baked)}`]);
+  chk("decodePage `decode: \"page\"`: a `decode { id, blob, options }` is posted for each picture fetched (numeric ids, each different)", r, (r) => [r.asks.length > 0 && r.asks.length === r.fetched && r.distinctIds === r.asks.length && r.asks.every((a) => a.idKind === "number" && a.hasBlob && a.hasOptions), `fetched ${r.fetched}, asked ${show(r.asks)}`]);
+  chk("decodePage ... each answered bitmap is the source of a texImage2D (the page's answer is what goes up)", r, (r) => [r.answered > 0 && r.unuploaded === 0, `answered ${r.answered}, not uploaded ${r.unuploaded}`]);
+  chk("decodePage ... a `decoded` for an id never asked has its bitmap closed, and posts no `dead`", r, (r) => [r.stray.closes === 1 && !r.stray.uploaded && r.stray.newDeads === 0 && clean(r), `stray closes ${r.stray.closes}, uploaded ${r.stray.uploaded}, new dead ${r.stray.newDeads}, clone errors ${show(r.cloneErrors)}, dead ${show(r.deads)}`]);
+}
+{
+  const r = run("decodePageNone");
+  chk("decodePage control: no `decode` in the hello posts no `decode`", r, (r) => [r.asks.length === 0 && r.fetched > 0 && clean(r), `asked ${r.asks.length}, fetched ${r.fetched}`]);
+  chk("decodePage ... and the pictures still go up (each decoded here is a texImage2D source)", r, (r) => [r.here > 0 && r.hereUploaded === r.here && show(r.baked) === show([true]), `decoded here ${r.here}, uploaded ${r.hereUploaded}, baked ${show(r.baked)}`]);
+}
 finish();
