@@ -1535,20 +1535,13 @@ console stays a few ms), and the worker's unpaced queue still puts a picture on 
 | `?door3d` (page only) | the page | the page's `<img>` route | the page, as today | the page, in bands |
 | the Earth's picture (`engine.js` `askEarth`, `page.picture`) | the page's `<img>` as today / the worker's `fetchOnce` | the page: `decode()` awaited before `loaded` / the page, asked | as today | drawn on the 2D canvas |
 
-The options the call sites pass (`colorSpaceConversion: "none"`, `premultiplyAlpha: "none"`) are **dropped on the
-image-loader route**, deliberately: Firefox keys its cache of decoded pictures on those two flags, so a wrap asking for either misses the background decode and decodes again, synchronously, on the page's thread: the stall back under another name. Step 0 measured it: `colorSpaceConversion: "none"` decodes again on every picture (212-471 ms on the two large maps); `premultiplyAlpha: "none"` decodes again only on a picture with alpha (the moon: 35-40 ms, the length of its whole decode, against a 5 ms wrap), because on an opaque picture the flag changes nothing and Firefox shares the entry. The alpha option is therefore free exactly where it does nothing and costs a synchronous decode exactly where it would act, so it is dropped with the other. The consequences: the maps are opaque lossy WebP with no colour
-profile, so their pixels are unchanged; the moon and the rings carry alpha and arrive premultiplied, which WebGL
-un-premultiplies on upload (the usual `<img>` texture path, a small loss at low alpha on two small pictures);
-Firefox's colour management applies to these pictures as it does to every `<img>` on the page. Resize options
-(`resizeWidth`, `resizeHeight`, `resizeQuality`: the rings on a small GPU, the planets under `?door3d`) are kept on
-both routes. The decoded picture stays in Firefox's image cache after the wrap until the cache expires or needs the
-room (the bitmap itself is closed by `uploadBanded` as today): a transient cost of the size of the pictures, accepted.
+Of the options the call sites pass, `colorSpaceConversion: "none"` is **dropped** on the image-loader route: Firefox keys its cache of decoded pictures on the wrap's flags, so an `<img>` wrap asking it misses the background decode and decodes again, synchronously, on the page's thread (step 0: 212-471 ms on the two large maps); the maps are lossy WebP with no colour profile, so their pixels are unchanged, and Firefox's colour management applies to them as to every `<img>`. `premultiplyAlpha: "none"` is kept **off the `<img>` wrap** for the same reason (step 0: the moon decoded again, 35-40 ms) and **honoured on the bitmap**: the wrap is premultiplied, and a premultiplied ImageBitmap goes onto the GPU premultiplied (measured 2026-10-31 in Chromium and Firefox: `UNPACK_PREMULTIPLY_ALPHA_WEBGL` false leaves it as it is; nothing un-premultiplies on upload), which would hand the moon's shader an albedo multiplied by its height map (texels at 0.39-0.40 of the blob route's) and the rings' colour by their density. So where the caller asked `"none"`, `decode` wraps once more, `createImageBitmap(bitmap, { premultiplyAlpha: "none" })`, a copy of the surface and never a decode (0-3 ms on Firefox's page thread for every map, the 4096x2048 ones included; 2-9 ms in Chromium, not its route), and closes the first. The picture is then straight alpha within the rounding of a premultiply and its undoing (moon texels mean 2 levels off the blob route's, more at alpha near zero) and the same on both paths: the page's bands are cut with `"none"` from a straight picture, a lossless copy, and the worker puts that picture on whole (Chromium, `?decode=img`, `tests/world.html` `still(0.3, 7)`: page and worker 0 pixels apart; each 137 of 1,024,000 from the blob route, by at most 9 levels, on the rings and the moon). Resize options stay on the `<img>` wrap (a resize in premultiplied space is the right one for a picture with alpha). The decoded picture stays in Firefox's image cache after the wrap until it expires or needs the room (the bitmaps are closed by `uploadBanded` as today): a transient cost of the pictures' size, accepted.
 
 #### 6e.2 What changes where
 
 - `assets/door/page.js`: the adapter gains `decode(blob, options) → Promise<ImageBitmap>`. On the page: under
   `decodeAside()`, `URL.createObjectURL(blob)` into a new `Image` (`decoding = "async"`), `await img.decode()`,
-  `createImageBitmap(img, resizeOnly(options))`, the URL revoked in `finally`; a `decode()` that rejects, or a wrap
+  `createImageBitmap(img, resizeOnly(options))`, re-wrapped with `{ premultiplyAlpha: "none" }` where the options asked it, the URL revoked in `finally`; a `decode()` that rejects, or a wrap
   that throws, falls back to `createImageBitmap(blob, options)` (today's call, correct everywhere, slow in Firefox);
   not under `decodeAside()`, `createImageBitmap(blob, options)` as today. `picture(url, loaded)` calls `loaded` only
   once `img.decode()` has settled (resolved or rejected) after `load`, so the Earth's picture is never decoded by its
@@ -1601,7 +1594,7 @@ As built (3ba0fc5, b3afb8f): four exports, not one. The install and info worlds'
 6e's cases are in the design note on #113 (ids P1-P6, W1-W6, L1, J1): each with a control, each on the Node stub
 (`tools/ci/door-stub.mjs`, whose `Image` has `decode()`, whose `createImageBitmap` records its source, and whose
 `URL.createObjectURL`/`revokeObjectURL` are logged), the route chosen by `?decode=` or by the stub's family tell.
-No case reads a clock. Coverage floors unchanged.
+No case reads a clock. Coverage floors unchanged. Added 2026-10-31 (the alpha defect, #113): P9, on the stub, under `decode=img` a call asking `premultiplyAlpha: "none"` wraps the `<img>` with resize options only, then re-wraps that bitmap with `{ premultiplyAlpha: "none" }` and closes the first; without the option no second wrap. PW2d (`world-pixels-test.mjs`): page and worker 0 pixels apart under `decode=img`. PW2e (live Chromium): the moon through `fetchBitmap` under `decode=img` and through `createImageBitmap(blob)` with the same options, each read back from a texture: on texels with alpha 64-127 and red over 100, the reds agree within 3% (the defect read 0.39-0.40).
 
 #### 6e.6 What the owner measures (M7): Firefox first, the phone behind the flag
 
@@ -1632,7 +1625,7 @@ No case reads a clock. Coverage floors unchanged.
 - **Step 0 (before any code, the scratch `ab/cbm.mjs` extended, figures on #113):** in the same Firefox, with the
   page's 2 ms timer running, (i) `createImageBitmap(blob)` of `earth-lights.webp` called **from a worker**: the
   page's longest timer gap; (ii) the `<img>` + `decode()` + `createImageBitmap(img)` route on the page: its gap;
-  (iii) route (ii) with `premultiplyAlpha: "none"` on the wrap: its gap. Measured 2026-10-30 (figures on #113): (i) 318-543 ms, the worker half is built; (ii) under 25 ms; (iii) 5-8 ms on the opaque maps but the whole decode again on `moon.webp` (35-40 ms), and with `colorSpaceConversion: "none"` added, 212-471 ms on every picture: both options stay dropped (6e.1). If (i) shows
+  (iii) route (ii) with `premultiplyAlpha: "none"` on the wrap: its gap. Measured 2026-10-30 (figures on #113): (i) 318-543 ms, the worker half is built; (ii) under 25 ms; (iii) 5-8 ms on the opaque maps but the whole decode again on `moon.webp` (35-40 ms), and with `colorSpaceConversion: "none"` added, 212-471 ms on every picture: `colorSpaceConversion` stays dropped; `premultiplyAlpha: "none"` moves off the `<img>` wrap onto a re-wrap of the bitmap (6e.1). If (i) shows
   no gap, the worker half (`hello.decode`, the two messages) is left out and the page half built alone; if (ii)
   stalls, stop and report: the design's premise fails and the alternative is a decode in the worker by other means.
 - Batch 1, the page half: `fitness.js`, `settings.js`, `main.js`, `page.js`, `chores.js`, `index.js`, the six call
