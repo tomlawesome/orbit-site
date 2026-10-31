@@ -6,9 +6,12 @@
  */
 import { reduced, seededRng } from "./sky.js";
 import { chore } from "../door/index.js";
+import { createPlaces } from "./places.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
+/* the docs' own entries sit above the landing's, carrying its count of Back presses to the door (places.js) */
+const places = createPlaces();
 
 export const SECTIONS = {
   install: { title: "Orbit", subtitle: "the install" },
@@ -372,7 +375,7 @@ export function createDocs(pad) {
     reader.classList.remove("in"); void reader.offsetWidth; reader.classList.add("in");
     pageChart(slug, doc); otherCharts(slug);   /* once shown, so the margin's names can be measured */
     remember(hrefOf(slug, doc.sections.some((s) => s.id === anchor) ? anchor : "top"));
-    if (push) { try { history.pushState({ docs: slug, anchor }, "", hrefOf(slug, anchor || "top")); } catch { /* fine */ } }
+    if (push) places.stack({ docs: slug, anchor }, hrefOf(slug, anchor || "top"));
     const target = anchor && reader.querySelector(`#${CSS.escape(anchor)}`);
     scroll.scrollTop = 0;
     if (target) requestAnimationFrame(() => { const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - 96; scroll.scrollTop = Math.max(0, y); });
@@ -383,7 +386,7 @@ export function createDocs(pad) {
     reader.hidden = true; index.hidden = false; pad.classList.remove("reading");
     tocWatch?.disconnect(); tocWatch = null;
     scroll.scrollTop = indexScroll; indexScroll = 0;
-    if (push) { try { history.pushState(null, "", "#docs"); } catch { /* fine */ } }
+    if (push) places.stack({}, "#docs");
   }
   /* the page's own constellation: its sections as a line of stars down the
      margin, in reading order, the one being read lit */
