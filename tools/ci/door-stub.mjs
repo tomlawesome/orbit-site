@@ -577,7 +577,8 @@ export function installDom(page, { baseURI = BASE } = {}) {
  * structured clone could not carry), counts terminate(), and says what it is told with say(msg) (a message event) or
  * fail() (an error event), through onmessage / addEventListener alike. `auto` makes the common answers by itself, on
  * the clock: up (after `canvases`), warmed (after `warm`) and frame (after `start`), the last two only once it has
- * said `up` (a worker answers in order when it is ready); a case sets host.auto.x = null to say nothing.
+ * said `up` (a worker answers in order when it is ready); a case sets host.auto.x = null to say nothing. host.auto.verdict
+ * ({ fit, ms, skipped }) makes a proving warm answered by a `verdict` message first (ADR-0002 6.12).
  */
 export function fakeWorkers(auto = {}) {
   const host = { made: 0, list: [], auto: { up: { ok: true, renderer: "stub renderer" }, warmed: true, frame: true, ...auto } };
@@ -600,6 +601,9 @@ export function fakeWorkers(auto = {}) {
       const a = host.auto;
       if (!msg || (msg.type !== "warm" && msg.type !== "start")) return;
       if (!this.upSaid) { this.waiting.push(msg); return; }
+      /* (a proving warm is where the worker judges its world: `verdict { fit, ms, skipped }` comes before `warmed`, ADR-0002 6.12;
+         set host.auto.verdict to say one, nothing is said by default) */
+      if (msg.type === "warm" && msg.prove !== false && a.verdict) setTimeout(() => this.say({ type: "verdict", ...a.verdict }), 0);
       if (msg.type === "warm" && a.warmed) setTimeout(() => this.say({ type: "warmed", id: msg.id, ok: true }), 0);
       if (msg.type === "start" && a.frame) setTimeout(() => this.say({ type: "frame", seq: msg.seq, world: true }), 0);
     }

@@ -267,6 +267,159 @@ const landings = async (prefix) => {
       if (fell.length) throw new Error(`a world fell back to drawn textures: ${fell[0]}`);
     } finally { await wctx.close(); }
   });
+  /* #116 (ADR-0002 section 6, cases L1-L6): the ways in open only when the flight's proper version is loaded and the
+     verdict on the world is in; the verdict is remembered on the device for a week. Each step has its own context
+     (so its storage is its own) and no motion reduced, as the world step above; where WebGL2 is missing it is skipped,
+     unless WEBGL=required. Behaviour only: order and state, no step reads a time. The page's console lines are
+     recorded in the page with the gate's state at the moment of each, and every change of the gate's `disabled` is
+     recorded with the lines said so far, so "before" and "after" are read from the page and not from a race. */
+  const WATCH = () => {
+    const lines = (window.__lines = []), gate = (window.__gate = []);
+    for (const k of ["log", "info", "debug"]) {
+      const o = console[k].bind(console);
+      console[k] = (...a) => { try { lines.push({ text: a.map(String).join(" "), disabled: document.getElementById("gate")?.disabled ?? null }); } catch { /* the page's own line goes on */ } o(...a); };
+    }
+    new MutationObserver(() => {
+      const g = document.getElementById("gate");
+      if (g) gate.push({ disabled: g.disabled, lines: lines.map((l) => l.text) });
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["disabled"] });
+  };
+  const SKIPPED = /flight world: on \(fitness skipped\)/, FLIGHT_READY = /flight: ready/;
+  const VERDICT = /flight world: (?:on \(frame \d+|off: frame \d+)/;
+  const gl2 = (p) => p.evaluate(() => !!document.createElement("canvas").getContext("webgl2"));
+  const withGL = async (fn) => {
+    await inOwnContext({}, async (p, octx) => {
+      if (!(await gl2(p))) {
+        if (process.env.WEBGL === "required") throw new Error(`no WebGL2 in ${BROWSER}: the ways in are never tested`);
+        console.log("     (no WebGL2 here: the ways in are not tested)");
+        return;
+      }
+      p.on("console", (m) => { if (m.type() === "error") problems.push(`console.error: ${m.text()}`); });
+      await p.addInitScript(WATCH);
+      await fn(p, octx);
+    });
+  };
+  const flags = (extra) => SITE + (prefix ? prefix + "&gpu=force" : "?gpu=force") + extra;
+  const linesOf = (p) => p.evaluate(() => window.__lines.map((l) => l.text));
+  const waitLine = (p, re, ms = 120000) => p.waitForFunction((src) => window.__lines.some((l) => new RegExp(src).test(l.text)), re.source, { timeout: ms });
+  const waitGate = (p, ms = 120000) => p.waitForFunction(() => { const g = document.getElementById("gate"); return g && !g.disabled; }, null, { timeout: ms });
+  /* the first time the gate was enabled: the lines that had been said by then, and the gate's state at each line */
+  const firstEnabled = (p) => p.evaluate(() => (window.__gate.find((g) => !g.disabled) || null));
+  const stateAt = (p, re) => p.evaluate((src) => { const l = window.__lines.find((x) => new RegExp(src).test(x.text)); return l ? l.disabled : undefined; }, re.source);
+
+  await step(`L1, L2 #116: the gate waits for the world and the flight, then flies; nothing is stored under fit=skip${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p) => {
+      await p.goto(flags("&fit=skip"), { waitUntil: "load" });
+      await waitGate(p);
+      const g = await firstEnabled(p);
+      if (!g) throw new Error("the gate was enabled but no change of it was seen");
+      if (!g.lines.some((t) => SKIPPED.test(t))) throw new Error(`the gate was enabled before 'flight world: on (fitness skipped)' was on the console: ${JSON.stringify(g.lines.filter((t) => /flight/.test(t)))}`);
+      if (!g.lines.some((t) => FLIGHT_READY.test(t))) throw new Error(`the gate was enabled before 'flight: ready' was on the console: ${JSON.stringify(g.lines.filter((t) => /flight/.test(t)))}`);
+      await p.locator("#gate").click();
+      try { await p.locator("#warpgl").waitFor({ state: "attached", timeout: 30000 }); }
+      catch { throw new Error("the gate was enabled and clicked, but the flight never drew #warpgl"); }
+      const keys = await p.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("orbit-fit")));
+      if (keys.length) throw new Error(`fit=skip stored a verdict: ${JSON.stringify(keys)}`);
+    });
+  });
+
+  /* L4: the software renderer is unfit, so a load without fit=skip leaves { fit: false } under its key; the next load
+     in the same context says it remembered the off and tested again, and the gate still waits for the new verdict */
+  await step(`L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p) => {
+      await p.goto(flags(""), { waitUntil: "load" });
+      await waitLine(p, /flight world: off: frame \d+ ms/);
+      await waitGate(p);
+      const first = await linesOf(p);
+      if (first.some((t) => /remembered/.test(t))) throw new Error(`the first load (nothing kept) said something was remembered: ${JSON.stringify(first.filter((t) => /remembered/.test(t)))}`);
+      const kept = await p.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith("orbit-fit"))));
+      const keys = Object.keys(kept);
+      if (keys.length !== 1 || !/llvmpipe|softpipe|swiftshader/i.test(keys[0])) throw new Error(`want one orbit-fit key, under the software renderer's name; kept ${JSON.stringify(keys)}`);
+      let v; try { v = JSON.parse(kept[keys[0]]); } catch { v = null; }
+      if (!v || v.fit !== false) throw new Error(`want { fit: false } under ${keys[0]}; kept ${JSON.stringify(kept[keys[0]])}`);
+      /* the second load, the same context */
+      await p.goto(flags(""), { waitUntil: "load" });
+      await waitLine(p, /flight world: off: frame \d+ ms/);
+      await waitGate(p);
+      const second = await linesOf(p);
+      if (!second.some((t) => /flight world: remembered off \(frame \d+ ms\), tested again/.test(t))) throw new Error(`the second load did not say 'remembered off (frame N ms), tested again': ${JSON.stringify(second.filter((t) => /flight/.test(t)))}`);
+      const g = await firstEnabled(p);
+      if (!g || !g.lines.some((t) => /flight world: off: frame \d+ ms/.test(t))) throw new Error(`the gate was enabled on the second load before 'flight world: off: frame N ms': ${JSON.stringify(g && g.lines.filter((t) => /flight/.test(t)))}`);
+    });
+  });
+
+  /* L5: a pass remembered under the key of 6.4 (the renderer read first): the proof is left to leisure and the gate opens
+     before the verdict line; with nothing remembered the proof is at once and the gate opens only after the line */
+  for (const remembered of [true, false]) {
+    await step(`L5 #116: ${remembered ? "a remembered pass opens the gate before the verdict line" : "control, nothing remembered: the gate opens only after the verdict line"}${prefix ? " (preview)" : ""}`, async () => {
+      await withGL(async (p, octx) => {
+        if (remembered) {
+          const key = await p.evaluate(() => {
+            const gl = document.createElement("canvas").getContext("webgl2");
+            const e = gl.getExtension("WEBGL_debug_renderer_info");
+            const renderer = String(e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+            return `orbit-fit ${renderer} ${screen.width}x${screen.height}@${devicePixelRatio}`;
+          });
+          await octx.addInitScript(([k]) => { try { localStorage.setItem(k, JSON.stringify({ t: Date.now() - 2 * 864e5, fit: true, ms: 12 })); } catch { /* about:blank has none */ } }, [key]);
+        }
+        await p.goto(flags(""), { waitUntil: "load" });
+        await waitLine(p, VERDICT);
+        await waitGate(p);
+        const lines = await linesOf(p);
+        const prove = lines.filter((t) => /prove: /.test(t));
+        const want = remembered ? /prove: at leisure \(remembered on, \d+ d ago\)/ : /prove: at once \(nothing remembered\)/;
+        if (!prove.some((t) => want.test(t))) throw new Error(`want ${want}; the console said ${JSON.stringify(prove)}`);
+        const atLine = await stateAt(p, VERDICT);
+        if (remembered && atLine !== false) throw new Error(`the gate was still disabled when the verdict line was said (${atLine}): a remembered pass should have opened it already`);
+        if (!remembered && atLine !== true) throw new Error(`the gate was already enabled when the verdict line was said (${atLine}): with nothing remembered it should wait for it`);
+      });
+    });
+  }
+
+  /* L6 (6.8): arriving at a pad by its address before the flight is ready, its Back is closed (aria-disabled,
+     tabindex -1); pressed then it does nothing, and the attributes go when the flight is ready; pressed after, the descent runs */
+  const JOURNEY_CLASSES = ["showwarp", "withdrawing", "showdawn", "dispersing", "farewell", "holding"];
+  await step(`L6 #116: a pad's Back is closed until the flight is ready, then opens${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p) => {
+      await p.goto(flags("&fit=skip#install"), { waitUntil: "load" });
+      const back = "#installpad .back.dawn";
+      await p.locator(back).waitFor({ state: "attached", timeout: 30000 });
+      /* pressed while closed: the attributes are read and the control clicked in one go, then watched until it opens */
+      const closed = await p.evaluate(([sel, classes]) => {
+        const el = document.querySelector(sel);
+        const was = { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex") };
+        window.__seen = new Set(document.body.classList);
+        new MutationObserver(() => { for (const c of document.body.classList) window.__seen.add(c); }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+        window.__opened = null;
+        new MutationObserver(() => {
+          if (window.__opened === null && el.getAttribute("aria-disabled") !== "true") window.__opened = { classes: classes.filter((c) => document.body.classList.contains(c)), tabindex: el.getAttribute("tabindex") };
+        }).observe(el, { attributes: true, attributeFilter: ["aria-disabled", "tabindex"] });
+        if (was.ariaDisabled === "true") el.click();
+        return was;
+      }, [back, JOURNEY_CLASSES]);
+      if (closed.ariaDisabled !== "true" || closed.tabindex !== "-1") throw new Error(`on arrival, before the flight was ready, ${back} should carry aria-disabled="true" and tabindex="-1"; it carried ${JSON.stringify(closed)}`);
+      await p.waitForFunction(() => window.__opened !== null, null, { timeout: 120000 });
+      const opened = await p.evaluate(() => window.__opened);
+      if (opened.classes.length) throw new Error(`the click made while closed started the journey: at the moment the control opened the body carried ${JSON.stringify(opened.classes)}`);
+      if (opened.tabindex === "-1") throw new Error("the control opened but still carries tabindex=\"-1\"");
+      /* pressed after: the descent runs */
+      await p.locator(back).click();
+      await p.locator("#door.shown").waitFor({ state: "attached", timeout: 60000 });
+      const seen = await p.evaluate(() => [...window.__seen]);
+      if (!seen.includes("showdawn")) throw new Error(`the descent never showed the dawn (body classes seen: ${JSON.stringify(seen)})`);
+    });
+  });
+  await step(`L6 #116 control: with the flight already ready, a pad's Back is open on arrival${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p) => {
+      await p.goto(flags("&fit=skip"), { waitUntil: "load" });
+      await waitGate(p);
+      await p.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
+      await p.evaluate(() => document.querySelector("#door .planet[data-section=install]").click());
+      await p.locator("#installpad").waitFor({ state: "visible", timeout: 30000 });
+      const at = await p.evaluate(() => { const el = document.querySelector("#installpad .back.dawn"); return { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex") }; });
+      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the flight was ready, yet the pad's Back arrived closed: ${JSON.stringify(at)}`);
+    });
+  });
   /* #113 (ADR-0004 6e, J1): where the door's pictures are decoded is said once a page, on the console, and the pictures
      still arrive. In Firefox they are decoded by the browser's image loader (the page path, ?gpu=force as above); in
      Chromium they are not; Firefox with &decode=blob is the control, today's route. Behaviour only: no step reads a frame

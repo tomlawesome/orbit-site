@@ -331,6 +331,8 @@ try {
       info(`localStorage keys: ${short(keys)}`);
       want(!keys.includes("orbit-flight-fitness"), "no orbit-flight-fitness key in localStorage");
       want(!keys.some((k) => k.startsWith("orbit-probe")), `no "orbit-probe ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-probe")))}`);
+      /* #116 (ADR-0002 6.4, L3): the refused machine keeps no verdict either: a software renderer is never remembered */
+      want(!keys.some((k) => k.startsWith("orbit-fit")), `no "orbit-fit ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-fit")))}`);
     });
 
     await scenario("4 software GL: the gate flies on the 2D canvas, with no further WebGL context", async (want, info) => {
