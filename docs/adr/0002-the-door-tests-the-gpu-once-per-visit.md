@@ -172,14 +172,17 @@ at the descent's first beat (before `withdraw`, so the landing stays as it is: n
 wait), `body.holding` set and cleared as `fly` does, not under reduced motion (no world drawn) nor when pinned (`at`).
 Every host call passes `ready: journey.warm()` (`main.js` `backToDawn`, the goodbye and `homeToDawn`). The landings'
 `.back.dawn` controls and the home's two are closed until the gate's own condition holds (6.3), with the planets'
-idiom (`aria-disabled`, `tabindex -1`, the click swallowed), opened by `openWays` with a fourth id, `back`; a history
+idiom (`aria-disabled`, `tabindex -1`, the click swallowed) and not shown: each fades in the moment it opens (owner
+3a, 2026-10-31: "just fade the button in as soon as it's ready"), opened by `openWays` with a fourth id, `back`; a history
 Back before then holds at the landing. The readying 4 s after arriving straight at a landing (`main.js`
 `journey.later(readyDoor, { after: 4000 })`) stands: the landing's own world comes first.
 
 **6.9 Save-data: no world.** Today a click under save-data asks the GPU, loads the maps and holds 8 s. With 6.7 that
 hold would be 30 s against the visitor's own ask for less data. So under save-data the flight is painted outright:
 `gpu()` is not asked, nothing of the world is fetched, the memory is neither read nor written, the ways in open at
-once as today. Classed with 5a's refusals: the visitor's own. (Question 1, below.)
+once as today. Classed with 5a's refusals: the visitor's own. Every journey with a cheaper version takes it: the
+flights up and down and the docs' flight painted, the install's and the information's dives on their refused-GPU
+version (owner 1a, 2026-10-31: "play the cheap flights everywhere there is one").
 
 **6.10 Reduced motion.** The reduced flights draw no world (`timeline.js` `ascentBeatsReduced`, no `warp`), so there
 is nothing to prove and no hold; the ways in open on load, as today. The proof still runs by 6.5 and refreshes the
@@ -337,16 +340,15 @@ in `tools/ci/*.mjs` first; (d) `rememberedFit()` must be read after `gpu()` has 
 the first `warm`, never at module load; (e) the two stores (`-probe`, `-fit`) are cleared together by a visitor clearing
 site data, which is the intended "first visit" path.
 
-### Questions for the owner (#116)
+### Questions for the owner (#116): 1 and 3 answered, 2 open
 
-**1** Save-data (6.9): **1a** (recommended) the painted flight outright, nothing of the world fetched, the ways in open
-at once, classed as the visitor's own refusal; **1b** load and prove on the click, held with no let-go (30 s on a slow
-connection, against the visitor's ask).
+**1** Save-data (6.9): answered **1a** (owner, 2026-10-31): "if they're using low data mode, respect it and play
+the cheap flights everywhere there is one."
 
 **2** A first visit's proof (6.5): **2a** (recommended) at once behind the load, the docs' galaxy proof first, so the
 gate is not held by 4 s of leisure it would otherwise wait for; the fairness the leisure bought is kept by the chores'
 reveal hold and by the next visit's quiet re-test; **2b** keep the 4 s leisure on a first visit too (ADR-0002 12d as
 written), the gate waiting on it.
 
-**3** The landings' back controls closed until ready (6.8): **3a** (recommended) yes, the planets' idiom, a history
-Back holding at the landing; **3b** leave them open and hold every early descent at its first beat.
+**3** The landings' back controls closed until ready (6.8): answered **3a** (owner, 2026-10-31): "just fade the
+button in as soon as it's ready."
