@@ -616,6 +616,13 @@ const landings = async (prefix) => {
     await p.waitForFunction((q) => { const el = document.querySelector(q); return !!el && el.getAttribute("aria-disabled") !== "true"; }, sel, { timeout: 120000 });
     await p.evaluate((q) => document.querySelector(q).click(), sel);
   };
+  /* A docs page's pictures are downloads, and Firefox reports one cut off by leaving or replacing the page as a failed
+     request (NS_BINDING_ABORTED), which the global requestfailed check rightly counts. So a step that leaves a docs page
+     it has just opened waits here first, until the reader holds its text and every picture in it has finished. */
+  const picturesDone = async (p, what) => {
+    try { await p.waitForFunction(() => document.querySelector("#docspad .reader div.body")?.textContent.trim().length > 0 && [...document.querySelectorAll("#docspad .reader div.body img")].every((i) => i.complete), null, { timeout: 30000 }); }
+    catch { throw new Error(`${what}: the docs page's pictures had not finished loading within 30s`); }
+  };
 
   /* B1: from a landing, "— the dawn" is one step back to the door and leaves no second door entry */
   await step(`B1 "— the dawn" from a landing leaves one door entry${sfx}`, async () => {
@@ -647,6 +654,7 @@ const landings = async (prefix) => {
     const slug = JSON.parse(page1.state)?.docs;
     if (!slug || JSON.parse(page1.state).orbit !== 2) throw new Error(`the docs page's entry is ${page1.state}, want { docs, anchor, orbit: 2 }`);
     if (page1.length !== before + 3) throw new Error(`${page1.length} entries after opening a page, want ${before + 3}`);
+    await picturesDone(p, "before leaving the page by \"— the dawn\"");
     await clickDawn(p, "#docspad .back.dawn");
     const door = await seeing(p, 'after "— the dawn" from the page the door is not shown with the address ""', atDoor);
     if (door.length !== before + 3) throw new Error(`${door.length} entries at the door, want ${before + 3} (nothing added or dropped)`);
@@ -654,6 +662,7 @@ const landings = async (prefix) => {
     await seeing(p, "the first Forward from the door did not show the docs index", (s) => onPad("docs")(s) && !s.reader && s.hash === "#docs");
     await pressForward(p);
     await seeing(p, "the second Forward did not show the docs page", (s) => s.docs && s.reader && s.hash === page1.hash);
+    await picturesDone(p, "before Back from the replayed page");
     /* control: Back from the page is the docs' own, to the index, not to the door */
     await pressBack(p);
     const index = await seeing(p, "Back from the page did not show the docs index", (s) => s.docs && !s.reader && s.hash === "#docs");
@@ -661,6 +670,7 @@ const landings = async (prefix) => {
     /* the index is closed to by the reader's own control, and the entry it pushes carries the count */
     await p.evaluate(() => document.querySelector("#docspad .entry").click());
     await seeing(p, "the page did not open again", (s) => s.reader);
+    await picturesDone(p, "before the reader's way back to the index");
     await clickDawn(p, "#docspad .readhead .todocs");
     const closed = await seeing(p, "the reader's way back to the index did not show the index", (s) => s.docs && !s.reader && s.hash === "#docs");
     if (JSON.parse(closed.state)?.orbit !== 3) throw new Error(`the index entry after closing a page is ${closed.state}, want orbit 3 (landing 1, page 2, index 3)`);
@@ -704,11 +714,13 @@ const landings = async (prefix) => {
     await step(`B4 a direct arrival at ${label}: Back leaves the page; the dawn first shows the door${sfx}`, async () => {
       const before = await arriveAt(page, url, flag);
       await seeing(page, `the direct arrival at ${label} did not land`, landed);
+      if (pad === "docs") await picturesDone(page, "before Back from the direct arrival");
       await pressBack(page);
       await seeing(page, `Back from a direct arrival at ${label} did not leave the page`, leftSite, 15000);
       await fresh();
       await arriveAt(page, url, flag);
       await seeing(page, `the direct arrival at ${label} did not land the second time`, landed);
+      if (pad === "docs") await picturesDone(page, `before "— the dawn" from the direct arrival`);
       await clickDawn(page, dawn);
       const door = await seeing(page, `"— the dawn" from a direct arrival at ${label} did not show the door with the address ""`, atDoor);
       if (door.length !== before + 1) throw new Error(`${door.length} entries at the door, want ${before + 1} (the one entry rewritten, none added)`);
@@ -720,6 +732,7 @@ const landings = async (prefix) => {
   await step(`B4 above a direct arrival the docs' entries count 0${sfx}`, async () => {
     await arriveAt(page, "#docs/readme");
     await seeing(page, "the direct arrival at #docs/readme did not show the page", (s) => s.docs && s.reader);
+    await picturesDone(page, "before the reader's way back to the index");
     await clickDawn(page, "#docspad .readhead .todocs");
     const index = await seeing(page, "the reader's way back to the index did not show the index", (s) => s.docs && !s.reader && s.hash === "#docs");
     if (JSON.parse(index.state)?.orbit !== 0) throw new Error(`the index entry above a direct arrival is ${index.state}, want orbit 0`);
