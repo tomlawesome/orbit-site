@@ -273,6 +273,10 @@ Readiness of the ways in (`journey` on the stub, the fake world):
   over (`chores.js` not `open`): none of the proof's chores (its touch frames, fitness, calibrate) runs until the queue
   opens; once it opens they run. Control: the same with `open` already true, they run at once. Behaviour only: which
   chores ran before `open`, never how long anything took.
+- R12 (6.3) the flight's world dies before any verdict (its shaders not compiled in time) and `warm()` is asked again:
+  the first `verdict()` promise (A) settles `how: "failed"`, `fit: false`, so the gate, the docs and the backs open
+  (the site holds A, `main.js` `warmJourneys`); a `verdict()` taken after the re-warm is a new promise for the new
+  round. Control: R7's case, death with no re-warm, still settles failed.
 
 Holds (`journey`, virtual clock):
 
@@ -304,15 +308,16 @@ then the flight flies with `#warpgl`; L2 `localStorage` holds no `orbit-fit` key
 `freeze.mjs` check 3 adds the `orbit-fit` key to "nothing kept" on the refused machine; L4 a load with `?gpu=force`
 and no `fit=skip` (unfit on software GL) leaves `{ fit: false }` under the llvmpipe renderer's key, and a second load
 in the same context says `remembered off …, tested again` and still enables the gate only after
-`flight world: off: frame N ms`. Control: the first load said nothing of "remembered". Real-GPU control, by hand: the owner's desktop,
+`flight world: off: frame N ms`. Control: the first load's verdict line did not say `flight world: remembered` (the site's own `prove: at once (nothing remembered)` says the word too, and is not that line). Real-GPU control, by hand: the owner's desktop,
 first load after clearing the key: the gate after the verdict line; second load: the gate before it, the verdict line
 later, the key's `t` renewed. L5 (6.5): the store seeded by an init script with a pass under the key of 6.4 (the
 renderer read first, as `freeze.mjs` reads it): the console says `prove: at leisure (remembered on, N d ago)` and the
 gate is enabled before the verdict line; control, the store empty: `prove: at once (nothing remembered)` and the gate
 enabled only after the verdict line. L6 (6.8): arriving at `?gpu=force&fit=skip#docs`, `#docspad .back.dawn` carries
 `aria-disabled` and `tabindex="-1"`; clicked then, the body carries none of the journey's classes at the moment the
-control opens (the attributes gone); clicked after, the descent runs (`showdawn`, then `#door.shown`). Control: the
-same arrival with the flight already readied by a previous step: open on arrival. L6b: arriving at `#install`, its
+control opens (the attributes gone); clicked after, the descent runs (`showdawn`, then `#door.shown`). Control: a
+plain load, `?gpu=force&fit=skip` and no hash, read as soon as the gate is enabled (the gate and the backs open in the
+same call, `main.js` `openWays`, so no flight is flown to read them): the docs' back carries neither attribute. L6b: arriving at `#install`, its
 back is open at once (no flight; corrected at review, 2026-10-31: the install's and the information's way back is
 `leaveWorld`, so closing it made the visitor wait for nothing).
 

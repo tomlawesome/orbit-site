@@ -331,7 +331,8 @@ const landings = async (prefix) => {
       await waitLine(p, /flight world: off: frame \d+ ms/);
       await waitGate(p);
       const first = await linesOf(p);
-      if (first.some((t) => /remembered/.test(t))) throw new Error(`the first load (nothing kept) said something was remembered: ${JSON.stringify(first.filter((t) => /remembered/.test(t)))}`);
+      /* (the verdict line only: the site's own `prove: at once (nothing remembered)` says the word too) */
+      if (first.some((t) => /flight world: remembered/.test(t))) throw new Error(`the first load (nothing kept) said the flight world was remembered: ${JSON.stringify(first.filter((t) => /flight world: remembered/.test(t)))}`);
       const kept = await p.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith("orbit-fit"))));
       const keys = Object.keys(kept);
       if (keys.length !== 1 || !/llvmpipe|softpipe|swiftshader/i.test(keys[0])) throw new Error(`want one orbit-fit key, under the software renderer's name; kept ${JSON.stringify(keys)}`);
@@ -411,15 +412,13 @@ const landings = async (prefix) => {
       if (!seen.includes("showdawn")) throw new Error(`the descent never showed the dawn (body classes seen: ${JSON.stringify(seen)})`);
     });
   });
-  await step(`L6 #116 control: with the flight already ready, the docs' Back is open on arrival${prefix ? " (preview)" : ""}`, async () => {
+  await step(`L6 #116 control: with the flight already ready, the docs' Back is open${prefix ? " (preview)" : ""}`, async () => {
     await withGL(async (p) => {
       await p.goto(flags("&fit=skip"), { waitUntil: "load" });
+      /* (the gate and the backs open in the same call, main.js openWays(["back"], true): no flight is needed to read them) */
       await waitGate(p);
-      await p.locator("#door .planet[data-section=docs].ready").waitFor({ state: "attached", timeout: 60000 });
-      await p.evaluate(() => document.querySelector("#door .planet[data-section=docs]").click());
-      await p.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
       const at = await p.evaluate(() => { const el = document.querySelector("#docspad .back.dawn"); return { ariaDisabled: el.getAttribute("aria-disabled"), tabindex: el.getAttribute("tabindex") }; });
-      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the flight was ready, yet the docs' Back arrived closed: ${JSON.stringify(at)}`);
+      if (at.ariaDisabled === "true" || at.tabindex === "-1") throw new Error(`the gate was open, yet the docs' Back stayed closed: ${JSON.stringify(at)}`);
     });
   });
   await step(`L6b #116: the install's Back, no flight, is open on arrival before the flight is ready${prefix ? " (preview)" : ""}`, async () => {
@@ -600,7 +599,11 @@ const landings = async (prefix) => {
   };
   const clickMini = (p, id) => p.evaluate((i) => document.querySelector(`#galaxy .minisys[data-id="${i}"] circle.hit`).dispatchEvent(new MouseEvent("click", { bubbles: true })), id);
   const clickChip = (p, name) => p.evaluate((n) => [...document.querySelectorAll("#chips button")].find((b) => b.textContent === n).click(), name);
-  const clickDawn = (p, sel) => p.evaluate((q) => document.querySelector(q).click(), sel);
+  /* (#116 keeps the flight's backs closed and swallows a click until the flight is ready, so wait for that first, as L6 does) */
+  const clickDawn = async (p, sel) => {
+    await p.waitForFunction((q) => { const el = document.querySelector(q); return !!el && el.getAttribute("aria-disabled") !== "true"; }, sel, { timeout: 120000 });
+    await p.evaluate((q) => document.querySelector(q).click(), sel);
+  };
 
   /* B1: from a landing, "— the dawn" is one step back to the door and leaves no second door entry */
   await step(`B1 "— the dawn" from a landing leaves one door entry${sfx}`, async () => {

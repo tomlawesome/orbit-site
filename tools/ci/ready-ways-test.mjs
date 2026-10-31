@@ -1,6 +1,6 @@
 /*
  * Test for #116 ("no way in plays a cheaper version because its proper one is not ready yet"), ADR-0002 section 6,
- * cases R1-R11 and H1-H4, written from the specification alone, before the code. A way in opens when its proper version
+ * cases R1-R12 and H1-H4, written from the specification alone, before the code. A way in opens when its proper version
  * is loaded AND the verdict on the world is in (journey.verdict(), 6.3): a remembered pass (6.4), this visit's test, the
  * gate's refusal, or the world's failure. A flight held for a world that does not come is let go at 30 s as a failure
  * (6.7), and a descent holds for it as a flight does (6.8).
@@ -26,6 +26,9 @@
  *       Control: gpu: "force" with fit: "skip": how "skipped", nothing stored
  *   R7  the world dies before any proof: how "failed", the gate opens, the next warm() makes a new world and verdict()
  *       is a new promise for it
+ *   R12 the world dies before any verdict and warm() is asked again at once: the first verdict() promise settles
+ *       { fit: false, how: "failed" } (the site holds it: the gate, the docs and the backs wait on it), and a verdict()
+ *       taken after the re-warm is a new promise for the new round. Control: R7, death with no re-warm
  *   R8  the docs' way in: warmDocs({ prove: false }) and verdict() settle before warm({ prove: false }) does when the
  *       proof is in and the maps are not. Control: proof pending, not settled
  *   R10 save-data: no webgl2 context asked, no map fetched, no key read or written, the ways in open at once, the
@@ -178,6 +181,32 @@ const CASES = {
     if (w2) { w2.releasePlain(); w2.settle({ fit: true, ms: 15 }); }
     await b.clock.advance(1000);
     return { before, first, made, pending, second: { state: v2.state, value: v2.value ?? null }, stoppedFirst: w1.stopCalls };
+  },
+
+  async r12() {
+    const b = await bootWays({ holdPlain: true });
+    const j = b.journey;
+    const a = j.verdict();                                         /* promise A: what the site holds (main.js warmJourneys) */
+    const gate = track(gateOf(j)), va = track(a);
+    j.warm();
+    await b.clock.advance(1000);
+    const w1 = b.world(0);
+    if (!w1) return { none: "no world was made" };
+    w1.releasePlain();
+    await b.clock.advance(1000);
+    const before = { gate: gate.state, verdict: va.state };
+    w1.die();                                                      /* lost before its proof settled, no verdict in */
+    j.warm();                                                      /* asked again before anything has heard of the death */
+    const bb = j.verdict();
+    const vb = track(bb);
+    await b.clock.advance(1000);
+    const afterA = { state: va.state, value: va.value ?? null };
+    const fresh = bb !== a;
+    const made = b.worlds().length, pendingB = vb.state;
+    const w2 = b.world(1);
+    if (w2) { w2.releasePlain(); w2.settle({ fit: true, ms: 15 }); }
+    await b.clock.advance(1000);
+    return { before, afterA, fresh, made, pendingB, second: { state: vb.state, value: vb.value ?? null } };
   },
 
   async r8() {
@@ -380,6 +409,13 @@ chk("R7 the world dies before any proof: the gate was pending, then opens with h
 chk("R7 the next warm() asks a new world, and verdict() is a new promise for it", c("r7"),
   (r) => [r.made === 2 && r.pending === "pending" && r.second.state === "resolved" && r.second.value && r.second.value.how === "tested" && r.second.value.fit === true,
     `worlds ${r.made}, new verdict first ${r.pending}, then ${J(r.second)}`]);
+
+/* R12 */
+chk("R12 the world dies before any verdict and warm() is asked again: the first verdict() promise settles failed (fit false)", c("r12"),
+  (r) => [r.before.verdict === "pending" && r.afterA.state === "resolved" && r.afterA.value && r.afterA.value.how === "failed" && r.afterA.value.fit === false, `before ${J(r.before)}, first promise after the re-warm ${J(r.afterA)}`]);
+chk("R12 a verdict() taken after the re-warm is a new promise for the new round, pending until it is judged", c("r12"),
+  (r) => [r.fresh && r.made === 2 && r.pendingB === "pending" && r.second.state === "resolved" && r.second.value && r.second.value.how === "tested" && r.second.value.fit === true,
+    `new promise ${r.fresh}, worlds ${r.made}, new verdict first ${r.pendingB}, then ${J(r.second)}`]);
 
 /* R8 */
 chk("R8 the docs' way in, the proof pending: not settled (control)", c("r8"), (r) => [r.control.docs === "pending" && r.control.flight === "pending", J(r.control)]);

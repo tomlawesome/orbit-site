@@ -191,7 +191,8 @@ element, never a time:
   other's sky again. Control: entries grow by one at the click on the mini system, and by none at a hop from there to
   a third household's chip.
 - B4. A direct arrival at `#install` (and `#home`, `#docs/<slug>`): Back leaves the page; "— the dawn" first then shows
-  the door with address `""` and entries unchanged, and Back then leaves. Control: B1.
+  the door with address `""` and entries unchanged, and Back then leaves. Control: B1. (The test clicks "— the dawn" only
+  once its `aria-disabled` has gone: #116 keeps the flight's backs closed, and swallows a click, until the flight is ready.)
 - B5. Reload on a landing flown to from the door (`#install`; `#home`): after the reload, Back shows the door.
   Control: B4's direct arrival.
 - B6. Load of `/`, of `#install` and of a returning visitor's `/` (the session flag set): entries unchanged by the load
