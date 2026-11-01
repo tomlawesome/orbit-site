@@ -195,6 +195,13 @@ scan:gitleaks:
 # name the assistant's account, which no path entry can allow.
 private-details:
   stage: lint
+  needs: []
+  # the template names the image by tag only; pinned here by digest, the same
+  # gitleaks release scan:gitleaks runs, so a repointed tag cannot run with the
+  # checkout, the mounted rules and the job token
+  image:
+    name: $CI_IMAGE_CACHE_GHCR/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
   variables:
     PRIVATE_DETAILS_SINCE: 37d5d31f0deb512e6b98fbf23074ec955ec91d17
   rules:
