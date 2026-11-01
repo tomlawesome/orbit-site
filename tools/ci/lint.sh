@@ -373,6 +373,11 @@ else {
     else if (pin[2] !== want) bad(`assets/js/pads.js: MERMAID's integrity does not match ${pin[1]} (the file is ${want}); if the file is the release's own (the command is beside MERMAID), set integrity: "${want}"`);
   }
   for (const f of vendored) if (f !== pin[1]) bad(`${f}: not the Mermaid assets/js/pads.js pins (${pin[1]}); remove it`);
+  // .gitleaksignore names the bundle by path and finding line, so a version bump must change it too (#102)
+  for (const l of fs.existsSync(".gitleaksignore") ? fs.readFileSync(".gitleaksignore", "utf8").split("\n") : []) {
+    const m = /^(assets\/vendor\/mermaid-[^:]*\.js):/.exec(l);
+    if (m && m[1] !== pin[1]) bad(`.gitleaksignore: names ${m[1]}, but assets/js/pads.js pins ${pin[1]}; move the entry to the pinned file (its finding line may change: run gitleaks on it)`);
+  }
 }
 LOADS_EOF
 fi

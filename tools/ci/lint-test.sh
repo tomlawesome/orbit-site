@@ -1714,6 +1714,20 @@ else
   vendor_case "the mermaid pin without an integrity key"
 fi
 
+# Case (v3), #102: .gitleaksignore names the Mermaid bundle by path, so a bump that leaves it on the old version
+# fails section "loads", naming .gitleaksignore.
+echo 'assets/vendor/mermaid-0.0.1.min.js:generic-api-key:636' >> .gitleaksignore
+commit_all "gitleaksignore on another mermaid version"
+lint_to_out loads
+if [ "$rc" -eq 1 ] && grep -q '^   \.gitleaksignore: names assets/vendor/mermaid-0\.0\.1' "$out"; then
+  echo "ok   a .gitleaksignore entry for another mermaid version fails"
+else
+  echo "FAIL a .gitleaksignore entry for another mermaid version fails (exit $rc, want 1 naming .gitleaksignore)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
 # Cases n1-n3: section "no real names, host logins or private addresses" (#56).
 # The private address is built from parts, so this file holds no literal one
 # and does not trip the guard it tests.
