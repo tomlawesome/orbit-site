@@ -51,7 +51,7 @@ special: `all` selects every test, `none` selects nothing but counts as mapped. 
 
 | Group | Paths | Why |
 | --- | --- | --- |
-| `all` | `assets/door/**`, `.gitlab-ci.yml`, `tools/ci/test-map.json`, `tools/ci/test-select.mjs`, `tools/ci/live-run.mjs`, `tools/ci/live-lib.mjs`, `tools/ci/serve.mjs`, `tools/ci/coverage-hook.mjs`, `tools/package.json`, `tools/package-lock.json` | every page uses the door (ADR-0001); the test machinery itself |
+| `all` | `assets/door/*.js`, `assets/door/*.css`, `assets/door/img/**`, `.gitlab-ci.yml`, `tools/ci/test-map.json`, `tools/ci/test-select.mjs`, `tools/ci/live-run.mjs`, `tools/ci/live-lib.mjs`, `tools/ci/serve.mjs`, `tools/ci/coverage-hook.mjs`, `tools/package.json`, `tools/package-lock.json` | every page uses the door (ADR-0001); the test machinery itself |
 | `page` | `index.html`, `install.html`, `404.html`, `assets/site.css`, `assets/js/main.js`, `assets/js/tilt.js`, `sw.js`, `assets/img/door/**`, `assets/fonts/**`, `assets/vendor/**` | the page every live test opens; `main.js` is the switch between every stage |
 | `home` | `assets/js/home.js`, `sky.js`, `tour.js`, `data.js`, `law.js`, `lock.js` | the sky, the dial, the walk |
 | `docs` | `assets/js/pads.js`, `assets/docs/**`, `tools/docs-sources.json` | the docs landing and its pages |
@@ -93,7 +93,7 @@ initial groups, from each test's own header:
 | `world-pixels` | harness, worlds | Chromium (added with #93 batch 3: the worlds' worker path's pixel identity, ADR-0004 6b.7 PW2) |
 | `world-live` | page, worlds | Firefox (added with #93 batch 3: PW1 and PW3) |
 
-(`pin` leaves the browser: section 5.) `assets/door/**` is in `all`, so no door-only test needs a door path.
+(`pin` leaves the browser: section 5.) The door's scripts, stylesheet and pictures are in `all` (its `README.md` is `none`), so no door-only test needs a door path.
 
 **The selection rule** (`test-select.mjs`, printed at the top of every live job's log):
 
