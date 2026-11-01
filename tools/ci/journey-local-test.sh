@@ -192,6 +192,28 @@ want_rc 64; want_calls 0
 [ -s "$err" ] || why="$why no usage on stderr;"
 verdict "an unknown option after --browser exits 64, running nothing"
 
+# Case 10b (#102): a bare --changed is the change since dev, like no argument.
+run --changed
+want_rc 0; want_calls 1; want_args "$pre|firefox|--changed|--base|dev"
+verdict "a bare --changed runs live-run.mjs firefox --changed --base dev"
+
+# Case 10c (#102): BROWSER sets the default browser; --browser wins; a stray value is refused.
+extra="ORBIT_DIR=$orbit BROWSER=chromium"
+run
+want_rc 0; want_calls 1; want_args "$pre|chromium|--changed|--base|dev"
+want_every "BROWSER=chromium" 1
+verdict "BROWSER=chromium runs live-run.mjs chromium"
+extra="ORBIT_DIR=$orbit BROWSER=chromium"
+run --browser firefox --all
+want_rc 0; want_calls 1; want_args "$pre|firefox|--all"
+want_every "BROWSER=firefox" 1
+verdict "--browser firefox wins over BROWSER=chromium"
+extra="ORBIT_DIR=$orbit BROWSER=chrome"
+run
+want_rc 64; want_calls 0
+[ -s "$err" ] || why="$why no usage on stderr;"
+verdict "BROWSER=chrome exits 64 with the usage, running nothing"
+
 # Case 11: PLAYWRIGHT_ROOT, when set, is used as it is.
 mkdir -p "$tmp/custom"
 extra="ORBIT_DIR=$orbit PLAYWRIGHT_ROOT=$tmp/custom"

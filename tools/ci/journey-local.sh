@@ -8,7 +8,7 @@
 #
 # No argument is --changed against dev (the selection is printed first);
 # --all is the gate's full run in that browser; TEST names are the map's
-# (tools/ci/test-map.json). Firefox by default.
+# (tools/ci/test-map.json). Firefox by default, or $BROWSER if set; --browser wins.
 #
 # Playwright comes from $PLAYWRIGHT_ROOT, or else the newest copy in Orbit's
 # pnpm store ($ORBIT_DIR, default: the orbit checkout beside this one, or, from a
@@ -20,7 +20,9 @@ usage() {
   exit 64
 }
 
-browser=firefox
+# $BROWSER sets the default (a stray value is refused, not silently run as Firefox); --browser wins over it
+browser=${BROWSER:-firefox}
+case $browser in firefox|chromium) ;; *) echo "journey-local: BROWSER must be firefox or chromium, not $browser" >&2; usage ;; esac
 if [ "${1-}" = --browser ]; then
   [ "$#" -ge 2 ] || usage
   case $2 in firefox|chromium) browser=$2 ;; *) usage ;; esac
