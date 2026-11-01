@@ -1340,6 +1340,51 @@ yaml_pass_case "p175: GIT_DEPTH: 1 with a trailing comment in publish_docs" '
   y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: 1 # one clone commit\n");'
 yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
   y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n\n# Renovate", "\n# Renovate").replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  script:\n    - sh tools/ci/nightly-publish.sh\n  stage: publish\n");'
+# Cases p177-p207 (#110) judge the top-level include. Exactly one is allowed: a list of one entry whose
+# keys are exactly project: ai/agent-infra, file: scripts/private-details/ci-template.yml and ref: a full
+# 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
+# project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
+# bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
+# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case() {
+  if [ "$2" = pass ]; then
+    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+  else
+    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+  fi
+}
+inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
+inc_case "p181: an include with a branch as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: main\n"
+inc_case "p182: an include with a 7-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456\n"
+inc_case "p183: an include with a 39-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p184: an include with a 41-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef012345678\n"
+inc_case "p185: an include with an uppercase sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789ABCDEF0123456789ABCDEF01234567\n"
+inc_case "p186: an include with a 40-character ref that is not all hex" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456g\n"
+inc_case "p187: an include with no ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n"
+inc_case "p188: an include entry with an extra inputs key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    inputs:\n      a: b\n"
+inc_case "p189: an include entry with an extra rules key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    rules:\n      - when: always\n"
+inc_case "p190: an include entry with an extra local key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    local: other.yml\n"
+inc_case "p191: an include entry with file as a list" refuse "  - project: ai/agent-infra\n    file:\n      - scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p192: the allowed entry twice" refuse "$inc_pass$inc_pass"
+inc_case "p193: the allowed entry and a second project entry" refuse "$inc_pass  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p194: the allowed entry and a local entry" refuse "$inc_pass  - local: other.yml\n"
+inc_case "p195: an empty include list" refuse " []\n"
+inc_case "p196: a bare string include" refuse " other.yml\n"
+inc_case "p197: a bare string include in a list" refuse "  - other.yml\n"
+inc_case "p198: an include that is a mapping, not a list" refuse "  project: ai/agent-infra\n  file: scripts/private-details/ci-template.yml\n  ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p199: a local include" refuse "  - local: other.yml\n"
+inc_case "p200: a remote include" refuse "  - remote: https://example.invalid/ci.yml\n"
+inc_case "p201: a template include" refuse "  - template: Auto-DevOps.gitlab-ci.yml\n"
+inc_case "p202: a component include" refuse "  - component: gitlab.example.invalid/group/proj/comp@1.0\n"
+inc_case "p203: a local include as a mapping" refuse "  local: other.yml\n"
+inc_case "p204: a remote include as a bare string" refuse " https://example.invalid/ci.yml\n"
+inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
