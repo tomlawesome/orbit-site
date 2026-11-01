@@ -1,0 +1,6 @@
+# ruff's security rules only (flake8-bandit, S), over the repository's Python
+# (#120). Ruff 0.17's default rules are not run: `select` replaces them, so
+# style findings do not block. Accepted findings go in per-file-ignores below,
+# each with a reason; none today.
+[lint]
+select = ["S"]

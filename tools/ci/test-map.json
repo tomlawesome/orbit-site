@@ -110,6 +110,7 @@
       ".gitleaksignore",
       ".jscpd.json",
       ".trivyignore.yaml",
+      "ruff.toml",
       ".private-details-allow.toml",
       ".nojekyll",
       ".github/**",

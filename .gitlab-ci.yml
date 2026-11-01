@@ -224,6 +224,31 @@ scan:actionlint:
   script:
     - actionlint -no-color
 
+# shellcheck over every `*.sh` in the tree and ruff's security rules (S) over
+# the Python (ruff.toml). Both use the publisher's -alpine image, since the
+# plain ones hold no shell for the runner to start the job in. Accepted
+# shellcheck findings are `# shellcheck disable=SCxxxx # reason` comments at the
+# command (or at the top of a file whose quoting is deliberate throughout).
+scan:shellcheck:
+  stage: lint
+  image:
+    name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*' -print0 | xargs -0 shellcheck
+
+scan:ruff:
+  stage: lint
+  image:
+    name: ghcr.io/astral-sh/ruff:0.17.3-alpine@sha256:ee6d979c4e410a67b3057b6918bf8c0a7a36dbe6357e21cefb41d3f46d0b9c46
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - ruff check --no-cache .
+
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in real browsers: the door,
 # each landing, the docs, the worlds, the 404; nothing thrown, nothing

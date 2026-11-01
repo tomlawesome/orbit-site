@@ -63,6 +63,7 @@
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
 # Works on a scratch copy of the current commit, so the checkout is untouched.
+# shellcheck disable=SC2016 # the single quotes in this file hold JavaScript for node and fault text planted in a scratch copy, where the $ is literal
 set -eu
 
 root=$(git rev-parse --show-toplevel)
@@ -2048,7 +2049,7 @@ attr_hit "a Generated with line naming $c1" "Generated with [$c1 Code](https://e
 attr_hit "a lower-case generated with line naming $c1" "generated with $c1"
 attr_hit "an upper-case GENERATED WITH AI line" "GENERATED WITH AI TOOLS"
 attr_hit "a $c1-Session line" "$c1-Session: https://example.invalid/session/1"
-attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr 'A-Z' 'a-z')-session: abc123"
+attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr '[:upper:]' '[:lower:]')-session: abc123"
 attr_clean "a Co-authored-by trailer naming a person" "Co-authored-by: Pat Example <pat@example.invalid>"
 attr_clean "a Generated with line that names neither $c1 nor AI" "Generated with care from the template."
 attr_clean "a commit message that only mentions $c1 in prose" "Document how $c1 reads the project file."
@@ -2128,7 +2129,7 @@ login_email() { # login_email LABEL AUTHOR_EMAIL COMMITTER_EMAIL PART NOTPART
 }
 login_email "a banned login as the local part of the author email" "$nl@anyhost.local" t@t author committer
 login_email "a banned login as the local part of the committer email" t@t "$nl@anyhost.local" committer author
-login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr 'a-z' 'A-Z')@Anyhost.Local" t@t author committer
+login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr '[:lower:]' '[:upper:]')@Anyhost.Local" t@t author committer
 GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="${nl}xyz@anyhost.local" GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
 names_run "" "$nl_d" ""
 n_clean "a longer login as the local part of the author email is not the banned one"
@@ -2172,8 +2173,8 @@ msg_addr "a narrower private IPv6 range in a commit body" "address probe" "Use t
 ml="Fa""ble Op""us Son""net Hai""ku G""PT Chat""GPT Open""AI Cod""ex Gem""ini Copi""lot"
 for m in $ml; do
   attr_hit "a Co-authored-by trailer naming $m" "Co-authored-by: $m 4 <noreply@example.invalid>"
-  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr 'a-z' 'A-Z') <noreply@example.invalid>"
-  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr 'A-Z' 'a-z') Bot <bot@example.invalid>"
+  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr '[:lower:]' '[:upper:]') <noreply@example.invalid>"
+  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr '[:upper:]' '[:lower:]') Bot <bot@example.invalid>"
 done
 attr_hit "a Co-authored-by trailer with only an open""ai.com address" "Co-authored-by: Helper <helper@open""ai.com>"
 attr_hit "a Co-authored-by trailer with only an OPEN""AI.COM address" "Co-Authored-By: Helper <helper@OPEN""AI.COM>"
@@ -2193,7 +2194,7 @@ trailer_clean "a banned word in the name of a Signed-off-by trailer" "Signed-off
 trailer_clean "a banned word in the name of a lower-case signed-off-by trailer" "signed-off-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Reviewed-by trailer" "Reviewed-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Co-authored-by trailer" "Co-authored-by: $nwc Tester <t@example.invalid>"
-trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr 'a-z' 'A-Z') <t@example.invalid>"
+trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr '[:lower:]' '[:upper:]') <t@example.invalid>"
 hist_case "a banned word in the body next to a trailer holding the word in a name" t t "message probe" "The $nw remark.
 
 Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
@@ -2214,6 +2215,7 @@ rm -f "$names_out"
 tm_map=tools/ci/test-map.json
 tm_base=$(git rev-parse HEAD)
 tm_back() { git add -A; git reset -q --hard "$tm_base"; }
+# shellcheck disable=SC2329 # called through eval in tm_case
 tm_node_test() { # tm_node_test NAME: add NAME to node-tests.sh's list
   sed -i "s/; do\$/ $1; do/" tools/ci/node-tests.sh && grep -q " $1; do\$" tools/ci/node-tests.sh
 }

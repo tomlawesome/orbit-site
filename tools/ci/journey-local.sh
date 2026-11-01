@@ -41,6 +41,7 @@ cd "$root"
 if [ -z "${PLAYWRIGHT_ROOT-}" ]; then
   orbit=${ORBIT_DIR:-$(dirname "$root")/orbit}
   tried=$orbit
+  # shellcheck disable=SC2012 # ls -d only prints the globbed directory names for sort -V, which find lacks
   PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
     sort -V | tail -n 1)
   if [ -z "$PLAYWRIGHT_ROOT" ] && [ -z "${ORBIT_DIR-}" ]; then
@@ -50,6 +51,7 @@ if [ -z "${PLAYWRIGHT_ROOT-}" ]; then
     if [ -n "$common" ] && [ -d "$common/.." ]; then
       orbit=$(dirname "$(cd "$common/.." && pwd)")/orbit
       tried="$tried or $orbit"
+      # shellcheck disable=SC2012 # ls -d only prints the globbed directory names for sort -V, which find lacks
       PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
         sort -V | tail -n 1)
     fi

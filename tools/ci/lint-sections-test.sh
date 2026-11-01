@@ -51,7 +51,7 @@ fi
 # L2 --list prints the ids and runs nothing
 d="--list: exit 0, the 17 ids in file order, no '== ' or 'lint:' line"
 run_lint list --list
-want=$(printf '%s\n' $ids)
+want=$(printf '%s\n' "$ids" | tr ' ' '\n')
 got=$(cat "$tmp/list.out")
 if [ "$rc" -eq 0 ] && [ "$got" = "$want" ] && ! grep -q '^== \|^lint:' "$tmp/list.out"; then
     pass L2 "$d"
