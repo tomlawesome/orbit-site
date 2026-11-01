@@ -136,6 +136,8 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 | `lint:test` | lint | every pipeline; runs `lint-test.sh` only when `test-select.mjs --group tooling` says so, else prints "not selected" and passes in seconds | - | as today (7.5 min when it runs) |
 | `lint:import` | lint | same shape, group `import` | - | `nightly-import-test.sh`, `import-docs-test.mjs`, `raw-heading-test.mjs` (about 2.5 min) |
 | `lint:duplication` | lint | every pipeline but schedules | - | `jscpd` over the JavaScript and shell in `assets/` and `tools/` against the threshold in `.jscpd.json` (#121); a few seconds |
+| `scan:gitleaks`, `scan:shellcheck`, `scan:ruff`, `scan:zizmor`, `scan:actionlint` | lint | every pipeline but schedules | - | secrets in history, shell scripts, Python security rules, the GitHub workflow; each image pinned by digest, blocking (#120) |
+| `scan:trivy` | lint | every pipeline but schedules, and the `TRIVY=true` daily schedule | - | vulnerabilities, secrets and licences, HIGH or CRITICAL; accepted findings in `.trivyignore.yaml` (#120) |
 | `live:firefox` | live | every pipeline but schedules; `parallel: 2` | `[]` | `xvfb-run` one Xvfb, `node tools/ci/live-run.mjs firefox`: selects, takes its shard, runs |
 | `live:chromium` | live | same; `parallel: 3` | `[]` | the same in Chromium, V8 coverage recorded, `coverage/` as an artifact |
 | `coverage` | check (new stage) | same | `lint`, `live:chromium` | the ratchet on the union (section 6) |

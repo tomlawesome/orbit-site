@@ -176,8 +176,8 @@ scan:gitleaks:
     - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
 
 # Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
-# across the tree, blocking only on HIGH or CRITICAL findings that have a fix.
-# It also runs from the daily schedule (a schedule with TRIVY=true), so a
+# across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they
+# have a fix, secrets and licences always. It also runs from the daily schedule (a schedule with TRIVY=true), so a
 # newly published CVE fails that run and not an unrelated merge request.
 # Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
 # database is fetched at run time and kept in GitLab's cache, never committed.
