@@ -67,7 +67,8 @@ sed -i 's/^EXPECT_HOST=.*/EXPECT_HOST=gitlab.invalid/' "$tmp/tools/ci/nightly-pu
 cd "$tmp"
 git init -q
 git add -A
-git -c user.name=t -c user.email=t@t commit -q -m base
+# --no-verify: the host's own commit hooks must not judge the made-up values the cases plant (#114)
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m base
 base=$(git rev-parse --abbrev-ref HEAD)
 realgit=$(command -v git)
 realnode=$(command -v node)
@@ -89,13 +90,6 @@ check() { # check <description> <condition: 0 = held>
     echo "FAIL $1"
     failed=1
   fi
-}
-# make the checkout's pages differ from main's, as a changed import would
-change_docs() {
-  APPEND_FILE="$appendfile" "$realnode" -e '
-    const fs = require("fs"), f = process.env.APPEND_FILE;
-    const j = JSON.parse(fs.readFileSync(f, "utf8")); j.imported = process.pid;
-    fs.writeFileSync(f, JSON.stringify(j));'
 }
 # back to a clean copy of the commit
 reset_tree() {
@@ -250,6 +244,7 @@ open(out + '.imgs', 'w').write(''.join(n + '\n' for n, d, m in sorted(pics)))
 PY
 # the page the scenarios add html to, and the pictures the commit already holds (none before #72's first import)
 page=$("$realpython" -W ignore "$aux/mkzip.py" --page "$aux/docs-head")
+# shellcheck disable=SC2012 # lists a scratch directory whose file names this test wrote itself
 headpics=$(ls "$aux/docs-head/img" 2>/dev/null | sort || true)
 nhead=$(printf '%s' "$headpics" | grep -c . || true)
 
@@ -491,7 +486,12 @@ route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
-    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi ;;
+    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
+    # #91: the lookup of the branch's opened merge request; in mroplost the first create was made and its answer lost
+    case $path in *source_branch=*) if [ "$SCENARIO" = mroplost ]; then
+      sb=$(printf '%s' "$path" | sed -n 's/.*source_branch=\([^&]*\).*/\1/p; ' | sed 's,%2F,/,')
+      body='[{"iid":42,"source_branch":"'$sb'","source_project_id":1,"target_project_id":1}]'; fi ;;
+    esac ;;
   "GET /repository/branches") code=200; body='[]'
     if [ -n "$STALE" ]; then
       now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
@@ -509,12 +509,12 @@ case "$method $route" in
       mropen400always) code=400; body='{"message":"test-refusal-body"}' ;;
       mropen400long) code=400
         body='{"message":"'$(printf 'x%.0s' $(seq 1 400))'TAIL-MARK-BEYOND-CUT"}' ;;
-      mropenconnonce) if [ "$pn" -eq 1 ]; then code=000; body=; connfail=1; fi ;;
+      mropenconnonce|mroplost) if [ "$pn" -eq 1 ]; then code=000; body=; connfail=1; fi ;;
     esac ;;
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    okmerge=; case $SCENARIO in mropen400once|mropenconnonce) okmerge=1; n=2 ;; esac
+    okmerge=; case $SCENARIO in mropen400once|mropenconnonce|mroplost) okmerge=1; n=2 ;; esac
     case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
@@ -595,6 +595,7 @@ prepare() {
   case $1 in
     hook) # what could be left in .git: none of it may run
       for h in pre-commit commit-msg post-commit post-checkout reference-transaction pre-push pre-receive; do
+        # shellcheck disable=SC2016 # the hook script written below expands $0 when it runs, not now
         printf '#!/bin/sh\necho "$0" >> "%s/hook-ran"\n' "$aux" > ".git/hooks/$h"
         chmod +x ".git/hooks/$h"
       done
@@ -744,8 +745,8 @@ run_push() { # run_push <outfile> <scenario>
   tip=$("$realgit" for-each-ref --format='%(objectname)' 'refs/heads/docs/import-*' | head -n 1)
   merge_calls=$(grep -c '^hdr=' "$aux/merge.log" || true)
   hdr_missing=$(grep -vc '^hdr=yes ' "$aux/merge.log" || true)
-  no_timeouts=$(grep -v 'flags=.*connect-timeout' "$aux/merge.log" | wc -l)
-  no_maxtime=$(grep -v 'flags=.*max-time' "$aux/merge.log" | wc -l)
+  no_timeouts=$(grep -vc 'flags=.*connect-timeout' "$aux/merge.log" || true)
+  no_maxtime=$(grep -vc 'flags=.*max-time' "$aux/merge.log" || true)
   sha_wrong=$(grep -vc "sha=$tip\$" "$aux/merge.log" || true)
   if grep -q UNEXPECTED "$aux/api.log"; then
     echo "     note: unexpected API calls in this run:"; grep UNEXPECTED "$aux/api.log" | sed 's/^/       /'
@@ -844,7 +845,10 @@ check "job 2: the variables read from .gitlab-ci.yml are not empty and hold NODE
 # (none holds a space, so word splitting is safe)
 realvars="$(printf '%s' "$ci_vars" | tr '\n' ' ') NODE_VERSION=22.0.0 YARN_VERSION=1.22.22 IMPORT_DOCS=true GITLAB_CI=true GITLAB_USER_LOGIN=x FF_USE_FASTZIP=true CI_JOB_NAME=publish_docs CI_ENVIRONMENT_NAME=docs-import CI_RUNNER_ID=1 CI_SERVER_TLS_CA_FILE=/ca.pem"
 # E1: the real variables, all at once
-set -f; set -- $realvars; set +f
+set -f
+# shellcheck disable=SC2086 # intended splitting of a list of names; globbing is off (set -f)
+set -- $realvars
+set +f
 passes_guard "the pipeline's real variables" "$@"
 # E2: NODE_IMAGE alone
 passes_guard "NODE_IMAGE alone" NODE_IMAGE=docker.io/library/node:22-bookworm@sha256:0000
@@ -852,12 +856,18 @@ passes_guard "NODE_IMAGE alone" NODE_IMAGE=docker.io/library/node:22-bookworm@sh
 for v in NODE_OPTIONS=--require=/x NODE_PATH=/x NODE_EXTRA_CA_CERTS=/x NODE_REPL_EXTERNAL_MODULE=/x LD_PRELOAD=/x.so \
   LD_LIBRARY_PATH=/x PYTHONPATH=/x PYTHONSTARTUP=/x GIT_EXEC_PATH=/x GIT_CONFIG_GLOBAL=/x GIT_SSH_COMMAND=x BASH_ENV=/x \
   OPENSSL_CONF=/x SSL_CERT_FILE=/other.pem; do
-  set -f; set -- $realvars "$v"; set +f
+  set -f
+  # shellcheck disable=SC2086 # intended splitting of a list of names; globbing is off (set -f)
+  set -- $realvars "$v"
+  set +f
   pinned "with ${v%%=*} set beside the pipeline's real variables" "$tmp" "refusing to run: ${v%%=*} is set" "$@"
 done
 # E4: a NODE_ variable added to the YAML is refused by name (and E1 above is the
 # lint-time gate: it fails on any new NODE_ variable in the YAML)
-set -f; set -- $realvars NODE_FUTURE=1; set +f
+set -f
+# shellcheck disable=SC2086 # intended splitting of a list of names; globbing is off (set -f)
+set -- $realvars NODE_FUTURE=1
+set +f
 pinned "with a new NODE_FUTURE beside the pipeline's real variables" "$tmp" "refusing to run: NODE_FUTURE is set" "$@"
 
 # Round 4 (#60) item 6: the script checks GIT_STRATEGY=clone itself, at the point of use, in
@@ -872,7 +882,10 @@ pinned "with GIT_STRATEGY=fetch" "$tmp" "refusing to run: GIT_STRATEGY is not cl
 pinned "with GIT_STRATEGY=none" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=none
 pinned "with GIT_STRATEGY=Clone (not exactly clone)" "$tmp" "refusing to run: GIT_STRATEGY is not clone" GIT_STRATEGY=Clone
 pinned "with GIT_STRATEGY=clone and a space after it" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "GIT_STRATEGY=clone "
-set -f; set -- $realvars GIT_STRATEGY=fetch; set +f
+set -f
+# shellcheck disable=SC2086 # intended splitting of a list of names; globbing is off (set -f)
+set -- $realvars GIT_STRATEGY=fetch
+set +f
 pinned "with GIT_STRATEGY=fetch beside the pipeline's real variables" "$tmp" "refusing to run: GIT_STRATEGY is not clone" "$@"
 passes_guard "GIT_STRATEGY=clone" GIT_STRATEGY=clone
 
@@ -914,6 +927,7 @@ check_merge_calls "run 6"
 rc=0; [ ! -s "$aux/npm.log" ] && ! grep -qv -e '^node -e$' -e '^node tools/ci/docs-shape.mjs$' -e '^node tools/ci/docs-markup.mjs$' "$aux/node.log" && [ ! -s "$aux/node-bad.log" ] || rc=1
 check "job 2: no npm, node only for -e and the shape and markup checks, and never with a token file on disk" "$rc"
 [ "$rc" -eq 0 ] || { cat "$aux/npm.log" "$aux/node.log" "$aux/node-bad.log" | sed 's/^/     /'; }
+# shellcheck disable=SC2015 # deliberate: the sed prints the output whenever the check does not hold
 [ "$rc3" -ne 0 ] && grep -q 'HTTP 405' "$out" || sed 's/^/     /' "$out"
 
 # Run 7: GitLab refuses once, then accepts (200). The job succeeds and stops.
@@ -995,6 +1009,24 @@ rcm=$rc
 n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
 rc=0; [ "$rcm" -eq 0 ] && [ "$n_posts" -eq 2 ] && [ "$sleeps" -eq 1 ] || rc=1
 check "job 2: a first try with no answer is tried again and then succeeds (exit $rcm, $n_posts POSTs, $sleeps sleeps)" "$rc"
+
+# #91: the first create was made but its answer lost (a create slower than 30 s). The retry asks for the branch's
+# opened merge requests first, finds !42, and neither POSTs again nor fails; the rest goes on as for a first success.
+run_push "$out" mroplost
+rcm=$rc
+n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
+n_gets=$(grep -c '^GET /merge_requests' "$aux/api.log" || true)
+rc=0; [ "$rcm" -eq 0 ] && [ "$n_posts" -eq 1 ] || rc=1
+check "job 2: a create whose answer was lost is found by the retry, not made twice (exit $rcm, $n_posts POSTs)" "$rc"
+rc=0; grep -q 'is already open for docs/import-' "$out" && grep -q '!42' "$out" || rc=1
+check "job 2: the log says the earlier try had opened !42" "$rc"
+rc=0; [ "$n_gets" -ge 2 ] || rc=1
+check "job 2: the lookup is a GET of the merge requests (saw $n_gets GETs)" "$rc"
+rc=0; grep -q 'set to merge when the pipeline passes' "$out" && [ "$merge_puts" -eq 1 ] || rc=1
+check "job 2: the found merge request is set to merge (saw $merge_puts merge PUTs)" "$rc"
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
+check "job 2: the token is in neither the output nor any log after the lookup" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
 # every try refused: 5 tries, 4 waits, a failing job that says why, nothing closed
 run_push "$out" mropen400always
@@ -1095,6 +1127,7 @@ for pair in increl:include.path incwork:include.path incgit:include.path include
   # the listing file lives in the script's own scratch folder: nothing is left in TMPDIR
   rc=0; [ -z "$(ls -A scratch-tmp)" ] || rc=1
   check "job 2: after refusing $sc, nothing is left in TMPDIR" "$rc"
+  # shellcheck disable=SC2012 # a debug listing of a scratch directory, printed on failure
   [ "$rc" -eq 0 ] || ls -A scratch-tmp | sed 's/^/     left: /'
 done
 run_push "$out" nlval
@@ -1205,7 +1238,7 @@ rc13=$rc
 changed=$("$realgit" diff --name-only "$basecommit" "$tip" 2>/dev/null || true)
 rc=0; [ "$rc13" -eq 0 ] || rc=1
 check "job 2: the job succeeds when other files are staged in the checkout (exit $rc13)" "$rc"
-rc=0; [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -v -e '^assets/docs/')" ] || rc=1
+rc=0; [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qv -e '^assets/docs/' || rc=1
 check "job 2: the commit changes only assets/docs" "$rc"
 [ "$rc" -eq 0 ] || printf '%s\n' "$changed" | sed 's/^/     changed: /'
 rc=0; ! "$realgit" cat-file -e "$tip:evil.txt" 2>/dev/null || rc=1
@@ -1439,7 +1472,7 @@ warn_ok warn-some "an archive with warnings for two sources"
 issue_after_merge warn-some
 rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && [ "$(issue_posts)" -eq 0 ] || rc=1
 check "W2 warn-some: the bot's issue !5 is updated with a PUT" "$rc"
-rc=0; [ -f "$body" ] && [ "$(grep -c '^### ' "$body")" -eq 2 ] && [ -z "$(grep '^#' "$body" | grep -vxF -f "$aux/headings")" ] || rc=1
+rc=0; [ -f "$body" ] && [ "$(grep -c '^### ' "$body")" -eq 2 ] && ! grep '^#' "$body" | grep -qvxF -f "$aux/headings" || rc=1
 check "W2 warn-some: the body has two ### <repo>/<path> headings, both listed sources" "$rc"
 rc=0; [ -f "$body" ] && [ "$(grep -cx '````' "$body")" -eq 4 ] && [ "$(fence_lines)" -eq 3 ] || rc=1
 check "W2 warn-some: two four-backtick fences hold the three lines, each starting with its kind and two spaces" "$rc"
@@ -1464,7 +1497,7 @@ check "W10 warn-some: the body is sent from a file (description@file), never as 
 rc=0; [ -f "$body" ] && ! grep -q -e "$fake" -e "$fakejob" "$body" && ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
 check "W10 warn-some: no token is in the body file, the output or any log" "$rc"
 rc=0; [ -n "$tip" ] && ! "$realgit" ls-tree -r --name-only "$tip" | grep -qx 'import-warnings.txt' \
-  && [ -z "$("$realgit" diff --name-only "$basecommit" "$tip" | grep -v '^assets/docs/')" ] || rc=1
+  && ! "$realgit" diff --name-only "$basecommit" "$tip" | grep -qv '^assets/docs/' || rc=1
 check "W10 warn-some: import-warnings.txt is not in the pushed commit, which changes only assets/docs" "$rc"
 
 # W3: mentions, references and quick actions in a message stay inside the fence
@@ -1472,13 +1505,13 @@ warn_ok warn-mention "an archive whose warning holds @someone, #1, !2, Closes #1
 rc=0; in_fence '@someone' && in_fence 'Closes #1' && in_fence '/close' || rc=1
 check "W3 warn-mention: @someone, Closes #1 and /close appear only inside the fence" "$rc"
 [ "$rc" -eq 0 ] || show_body
-rc=0; [ -f "$body" ] && ! grep -q '^[/@!]' "$body" && [ -z "$(grep '^#' "$body" | grep -vxF -f "$aux/headings")" ] || rc=1
+rc=0; [ -f "$body" ] && ! grep -q '^[/@!]' "$body" && ! grep '^#' "$body" | grep -qvxF -f "$aux/headings" || rc=1
 check "W3 warn-mention: no body line starts with /, @ or !, and none with # but a ### <repo>/<path> heading" "$rc"
 [ "$rc" -eq 0 ] || show_body
 
 # W4: backticks in a message cannot close the fence
 warn_ok warn-fence "an archive whose warning holds four and twelve backticks"
-rc=0; [ -f "$body" ] && [ -z "$(grep '`' "$body" | grep -vx '````')" ] || rc=1
+rc=0; [ -f "$body" ] && ! grep '`' "$body" | grep -qvx '````' || rc=1
 check "W4 warn-fence: no backtick survives in the body but the fences" "$rc"
 rc=0; [ -f "$body" ] && [ "$(grep -cx '````' "$body")" -eq $((2 * $(grep -c '^### ' "$body"))) ] && [ "$(grep -c '^### ' "$body")" -eq 1 ] || rc=1
 check "W4 warn-fence: exactly two fence lines for the one source" "$rc"

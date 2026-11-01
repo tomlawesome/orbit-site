@@ -5,9 +5,9 @@ section 4's pre-warm is not built, and the door folder's interface is unchanged.
 **Amended:** 2026-10-27, section 6a: the detailed design of section 6 (#85), for the owner's review before any code;
 questions 3 to 6 answered. 2026-10-28, section 6b: the install and info worlds in a worker (#93), the detailed design
 for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-28. 2026-10-29, section 6c: the pacing
-of the flight's chores on the page (#101), for the owner's review before any code; questions 101-1 and 101-2 open;
-the same day, during the build: which `install.js` loops mark moving (6c.4, S10) and the cap timer (6c.2). 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
-frame's share of chores runs inside the frame callback, with a backstop (#101), for the owner's review before any code; section 6d.6 the same day, after CI: a hard chore may
+of the flight's chores on the page (#101); question 101-1 answered 1a, 101-2 left moot: built in !96, then reverted
+2026-10-29 (owner 11a, #105), and kept as the record. 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
+frame's share of chores runs inside the frame callback, with a backstop (#101); approved for build (owner 9a) and merged in !100; section 6d.6 the same day, after CI: a hard chore may
 start from the backstop, and `freeze.mjs` check 5 says so (owner 10a). 2026-10-30, section 6e: the maps decoded by the browser's image loader on Firefox (#113; owner 13a).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
@@ -53,7 +53,7 @@ version independently (caniuse shows only its current version, 158), so that num
 **Chromium (Edge, Chrome): the page path, unchanged.** A worker's compile stalls it (measured) and its page compiles
 are already in the background with a shared cache. Nothing to gain, something to lose.
 
-**Firefox: the page path for now; the full move is deferred to its own issue, not rejected.** The drawing must move for
+**Firefox: the page path at first; the full move was deferred to its own issue, not rejected, and was built as section 6a (#85, closed in M4).** The drawing must move for
 Firefox to gain anything (measured: no shared cache, and a page canvas drawing WebGL stalls during a worker's
 compile), and that is the largest rebuild of the door since ADR-0001: `voyage.js` (107 KB) and the engine's 2D canvas
 both run in the worker, every page touch in them (`document`, `innerWidth`, `devicePixelRatio`, `document.hidden`,
@@ -62,7 +62,8 @@ the interface Orbit copies, and every flight is verified pixel-identical against
 (PERFORMANCE.md's estimate) against the 15,000 unaudited-line ceiling, for a gain the late lean door and the
 under-the-ring compiles already contain in part (ring 8.7 s and 15.4 s on the two machines; target 4 s). Firefox for Android
 has only just gained the capability, so no phone gains. Section 6 keeps the outline so the work is not designed
-twice. Deferred to #85, after M3 (owner, 2026-10-22, question 2 answered 2a).
+twice. Deferred to #85 (owner, 2026-10-22, question 2 answered 2a); built after the sixth audit, with M3 taken on a real
+desktop 2026-10-30 (the numbers are on #85).
 
 **Safari: the pre-warm in a worker, if and only if the page's own compile is measured to stall the page (M1).**
 *Outcome (2026-10-22): M1 on a real phone, twice, showed no stall (rich compile 550 and 398 ms, frame gaps 29-34 ms
@@ -216,7 +217,7 @@ Tests (Node, same harness):
   flight's `start` and its end (a flight on the virtual clock sees one star buffer throughout).
 - P5 the docs sky's portrait picture test (`docs-sky-portrait-test.mjs`) still passes: the rest point it reads did not move.
 
-## 6. Deferred, in outline: the drawing in a worker for Firefox (#85, after M3)
+## 6. The drawing in a worker for Firefox, in outline (#85; built as 6a)
 
 Both canvases handed over (`#warp` 2D and `#warpgl`), the engine and the world running in a module worker as the
 modules they are, behind one page adapter for what they read of the page (size, pixel ratio, hidden, animations); the
@@ -431,7 +432,7 @@ The page path keeps every one of these as it is. On the worker path:
 | The flight's world made as a `"compile"` chore, and the galaxy's as another, each a frame plus 20 ms after the last (`engine.js` `warm`, `voyage.js` `galaxy`; `chores.js` `end`) | each compile freezes the page, so they are spaced and put under the ring | **dropped**: in the worker `compilesAside()` reads true (no page, nothing to freeze), so the world is made at once on `up`, its galaxy with it, back to back on the worker's thread |
 | The reveal hold (`chores.js` `open`: 2.4 s measured): the flight's star buffers, warm-up draws, fitness test and, bar the soft bands, its uploads wait for `drawnIn` | they touch the page's thread and the GPU under a reveal still being painted | **dropped** for the flight's chores: the worker's queue is opened at `hello` (`openChores()` there), nothing of the flight waits for the page's reveal. The page's queue is unchanged for what stays on the page |
 | The rests between chores (a frame, plus up to 20 ms; `resting` 3.4 s measured) and the one-band-a-frame pacing of the uploads (`upload.js`, `openSoft`) | whatever is moving on the page keeps moving | **dropped**: `chores.js` gains `pace("none")`, under which `end` schedules the next chore at once and `pump` ignores the opening and the typing wait, and `uploadBanded` puts a picture on whole (the `whole()` path it already has). The measures keep their 200 ms rest: they time the drawing, and a chore beside them is still not the drawing's time |
-| The ring's wait for `compiledAll`, 8 s cap, at least a lap, on every visit (`main.js` `waitCompiled`, `dawn.js` `minLaps`) | the compiles stall the page, better under the ring | **kept** while the install/info world compiles on the page (6a.1); the flight's and the galaxy's share of it goes. It becomes the Chromium shape (a first visit only; Chromium's cap is 9 s, `main.js` `asideHere ? 9000 : 8000`) when nothing compiles on the page: the follow-up's |
+| The ring's wait for `compiledAll`, 8 s cap, at least a lap, on every visit (`ring.js` `ringWaits`, which `main.js` applies as `waitCompiled`; `dawn.js` `minLaps`) | the compiles stall the page, better under the ring | **kept** while the install/info world compiles on the page (6a.1); the flight's and the galaxy's share of it goes. It becomes the Chromium shape (a first visit only; Chromium's cap is 9 s, `ring.js` `aside && !drawnAside ? 9000 : 8000`) when nothing compiles on the page: the follow-up's |
 | The journey's stall cap while the world draws (`journeyClock` `stalls`) | a slow world on the page's thread paused the beats | **dropped** (real time, 6a.3) |
 | The leisure proof 4 s after lit, 2 s after a descent back (`proveLater`; ADR-0002 12d, question 1 answered 1a) | the fitness verdict is not taken on a busy page | **kept**: it is a timing policy about the verdict's fairness, not a compile freeze (section 2's last decision), and its revisit condition stands |
 | The climb's 8 s hold for `ready`, the hidden-tab wait, `PICTURE_WAIT`, `COMPILE_WAIT` | the world may still be readying, hidden, or lost | **kept**, unchanged |
@@ -1636,7 +1637,7 @@ No case reads a clock. Coverage floors unchanged. Added 2026-10-31 (the alpha de
 
 - **Compile in a worker, keep drawing on the page, on Firefox:** measured no shared cache; the page would pay twice.
 - **Move the drawing everywhere:** Chromium is already smooth and stalls on a worker's compile; Safari has the cheaper
-  lever; only Firefox gains, and it is deferred with reasons.
+  lever; only Firefox gains, and it was deferred with reasons, then built (6a).
 - **A measured rule in place of the family tell:** costs Chromium the very stall it avoids, every visit (section 2).
 - **Loading the worker from a Blob URL to avoid a file:** `worker-src 'self'` refuses `blob:`; a file in the folder
   is also what Orbit's copy can serve.
@@ -1665,7 +1666,8 @@ No case reads a clock. Coverage floors unchanged. Added 2026-10-31 (the alpha de
   `flight: warmed in a worker in N ms`, `flight: shaders compiled in N ms` (expected tens of ms where it was hundreds),
   `flight: first second N frames, worst N ms`; then the same with `?warm=off`. The eye on the reveal and on the gate's
   flight, both ways.
-- **M3, Firefox, unchanged by this ADR:** nothing to measure until section 6 is funded.
+- **M3, Firefox:** 6a.10 (it replaced this line's placeholder, "nothing to measure until section 6 is funded").
+  *Taken 2026-10-30 on a real desktop Firefox, with 6b.10 (numbers on #85).*
 
 ## Questions for the owner
 

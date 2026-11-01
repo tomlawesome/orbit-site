@@ -400,8 +400,15 @@ for (const k of Object.keys(doc)) {
 for (const k of ["before_script", "after_script", "cache", "services", "image", "hooks"]) {
   if (Object.hasOwn(doc, k)) bad(`.gitlab-ci.yml: has a top-level ${k}, a deprecated global keyword GitLab still applies to every job, publish_docs included; put it under default:, which this check judges`);
 }
-// another file could add a job this check never sees
-if ("include" in doc) bad(".gitlab-ci.yml: has a top-level include; a job in another file would escape this check");
+// another file could add a job this check never sees, so the only include allowed is
+// the shared private-details template, pinned to a full commit (#110): a list of one
+// entry with exactly the keys project, file and ref, and nothing else
+if ("include" in doc) {
+  const inc = doc.include, e = Array.isArray(inc) && inc.length === 1 ? inc[0] : undefined;
+  const ok = isObj(e) && Object.keys(e).sort().join() === "file,project,ref" && e.project === "ai/agent-infra"
+    && e.file === "scripts/private-details/ci-template.yml" && typeof e.ref === "string" && /^[0-9a-f]{40}$/.test(e.ref);
+  if (!ok) bad(".gitlab-ci.yml: has a top-level include that is not the one allowed; a job in another file would escape this check, so the only include is a list of one entry: project: ai/agent-infra, file: scripts/private-details/ci-template.yml and ref: a full 40-character lowercase hex commit");
+}
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
 // whether the job writes it, extends it or takes it by !reference
 for (const k of Object.keys(doc)) {

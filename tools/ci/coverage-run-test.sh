@@ -9,7 +9,7 @@
 #   sh tools/ci/coverage-run-test.sh        run from anywhere
 #
 # A stub node stands first on PATH and logs each call's arguments with the
-# COVERAGE_DIR and NODE_V8_COVERAGE it was given, then exits 0: no test, no
+# COVERAGE_DIR and NODE_V8_COVERAGE it was given, then exits 0 (1 for live-run.mjs when FAKE_FAIL_LIVE is set): no test, no
 # browser and no check really runs. A stub xvfb-run drops its own options and
 # runs the rest. The scripts are copied into a scratch directory, so the
 # checkout is untouched.
@@ -35,6 +35,8 @@ cat > "$bin/node" <<'STUB'
   printf 'ARGS'; for a in "$@"; do printf '|%s' "$a"; done
   printf ' ## COVERAGE_DIR=%s ## NODE_V8_COVERAGE=%s\n' "${COVERAGE_DIR-<unset>}" "${NODE_V8_COVERAGE-<unset>}"
 } >> "$FAKE_LOG"
+# FAKE_FAIL_LIVE set: the browser run fails, as a browser test that failed does
+case " $* " in *" tools/ci/live-run.mjs "*) [ -z "${FAKE_FAIL_LIVE-}" ] || exit 1 ;; esac
 exit 0
 STUB
 cat > "$bin/xvfb-run" <<'STUB'
@@ -61,7 +63,7 @@ run() {
   rm -f "$log"
   rc=0
   ( cd "$site" && env -u NODE_V8_COVERAGE PATH="$bin:$PATH" FAKE_LOG="$log" COVERAGE_DIR="$cov" \
-      PLAYWRIGHT_ROOT="$tmp/pw" sh tools/ci/coverage-run.sh "$@" ) > "$out" 2> "$err" || rc=$?
+      PLAYWRIGHT_ROOT="$tmp/pw" FAKE_FAIL_LIVE="${fail_live-}" sh tools/ci/coverage-run.sh "$@" ) > "$out" 2> "$err" || rc=$?
 }
 calls() { { grep '^ARGS' "$log" 2>/dev/null || true; }; }
 # the line number of the first call whose ARGS match the pattern (grep -E), or 0
@@ -120,6 +122,27 @@ n=$(calls | wc -l | tr -d ' ')
 [ "$n" -eq 1 ] || why="$why $n node calls (want 1);"
 calls | grep -qE -- '\|(\./)?tools/ci/coverage\.mjs\|' || why="$why the call is not coverage.mjs;"
 verdict "check runs coverage.mjs and nothing else"
+
+# Case 4 (#102): a failed Chromium run is reported, and the check still runs on what was recorded.
+fail_live=1
+run
+fail_live=
+want_rc 0
+live='^ARGS(\|[^|]*)*\|(\./)?tools/ci/live-run\.mjs\|'
+at_live=$(nth "$live")
+at_check=$(nth '\|(\./)?tools/ci/coverage\.mjs(\||$| ##)')
+[ "$at_live" -gt 0 ] && [ "$at_check" -gt "$at_live" ] || why="$why coverage.mjs (call $at_check) was not called after the failed live-run.mjs (call $at_live);"
+grep -q 'a browser test failed in Chromium' "$out" || why="$why the failure was not reported;"
+verdict "a failed Chromium run exits 0, says so, and still runs coverage.mjs"
+
+# Case 5 (#102): the full run clears what an earlier run left in $COVERAGE_DIR before recording.
+mkdir -p "$cov/node" "$cov/chromium"
+: > "$cov/node/stale.json"
+: > "$cov/chromium/stale.json"
+run
+want_rc 0
+[ ! -e "$cov/node/stale.json" ] && [ ! -e "$cov/chromium/stale.json" ] || why="$why a stale record survived the run;"
+verdict "no argument clears stale records from \$COVERAGE_DIR first"
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

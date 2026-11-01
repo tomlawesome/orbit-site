@@ -9,6 +9,18 @@
 # Runner lanes (ai/agent-infra#3): `light` is 4 CPU / 6 GB, one hour.
 # Nothing here needs Docker or `big`.
 
+# The shared check for personal details (ai/agent-infra#32, #110): one set of
+# rules for every project, kept on the agent host and read by the job from a
+# file the runner host mounts. The include is the only one ci-split allows
+# (ADR-0005). The ref is the commit the tag names, not the tag: a protected
+# tag can be deleted and made again on other code, a commit cannot move.
+# PRIVATE_DETAILS_SHA below names the same commit, so the script the job runs
+# is the pinned one too. Moving to a new tag moves both and the comment together.
+include:
+  - project: ai/agent-infra
+    ref: 7430d171259104c4623040c2360699585d601bf5 # private-details/v4
+    file: scripts/private-details/ci-template.yml
+
 stages:
   - lint
   - live
@@ -27,12 +39,13 @@ workflow:
     # Tags publish nothing here: Pages serves a branch.
     - if: $CI_COMMIT_TAG
       when: never
-    # A scheduled pipeline is the docs-import lane or the Renovate lane.
-    # `import_docs`, `publish_docs` and `renovate` are the only jobs that opt
-    # in, so a schedule without its variable would make a pipeline with no
-    # jobs; refusing it here says why.
+    # A scheduled pipeline is the docs-import lane, the Renovate lane or the
+    # daily Trivy scan. `import_docs`, `publish_docs`, `renovate` and
+    # `scan:trivy` are the only jobs that opt in, so a schedule without its
+    # variable would make a pipeline with no jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -50,6 +63,8 @@ workflow:
   when: never
 
 variables:
+  # The commit of the include above (private-details/v4); see the include.
+  PRIVATE_DETAILS_SHA: 7430d171259104c4623040c2360699585d601bf5
   # Docker Hub by plain name, pinned by digest. The runner hosts' Docker
   # daemons mirror Docker Hub through the runner image cache
   # (ai/agent-infra#14, #65), which needs no login, so every pipeline pulls
@@ -135,6 +150,137 @@ lint:import:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/ci/test-select.mjs
     - '[ "$(node tools/ci/test-select.mjs --group import)" = no ] || { sh tools/ci/nightly-import-test.sh && node tools/ci/import-docs-test.mjs && node tools/ci/raw-heading-test.mjs; }'
+
+# Duplication (#121): jscpd 5.4.2, pinned in tools/package.json, over the
+# JavaScript and shell under assets/ and tools/ (.jscpd.json). The threshold
+# sits just above the share duplicated when it was set, so a change that adds
+# copied code fails and one that removes some leaves room. Blocking.
+lint:duplication:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/node_modules/jscpd/run-jscpd.js -c .jscpd.json --no-tips
+
+# Scanners (#120). One job per tool, each run from its official image pinned
+# by digest (never a Marketplace action or setup script), blocking from day
+# one: what they found when they were added is fixed, or listed in the tool's
+# own ignore file with a reason. They read the checkout only; the one network
+# use besides the image pull is Trivy's vulnerability database. `entrypoint:
+# [""]` because the runner starts each job's shell in the container, and these
+# images' entrypoint is the tool.
+#
+# gitleaks: the whole history (GIT_DEPTH 0), secrets redacted in the log.
+# .gitleaksignore holds the accepted fingerprints.
+scan:gitleaks:
+  stage: lint
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+    - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
+
+# private-details: the job is defined by the template; the stage and the rules
+# are set here, and it blocks. The scan starts after this commit, the last on
+# dev before the check was adopted (#110), because older messages and authors
+# name the assistant's account, which no path entry can allow.
+private-details:
+  stage: lint
+  needs: []
+  # the template names the image by tag only; pinned here by digest, the same
+  # gitleaks release scan:gitleaks runs, so a repointed tag cannot run with the
+  # checkout, the mounted rules and the job token
+  image:
+    name: $CI_IMAGE_CACHE_GHCR/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    PRIVATE_DETAILS_SINCE: 37d5d31f0deb512e6b98fbf23074ec955ec91d17
+  rules:
+    - *not_scheduled
+    - when: on_success
+
+# Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
+# across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they
+# have a fix, secrets and licences always. It also runs from the daily schedule (a schedule with TRIVY=true), so a
+# newly published CVE fails that run and not an unrelated merge request.
+# Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
+# database is fetched at run time and kept in GitLab's cache, never committed.
+scan:trivy:
+  stage: lint
+  image:
+    name: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    entrypoint: [""]
+  variables:
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+  cache:
+    key: trivy-db
+    paths:
+      - .trivycache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - when: on_success
+  script:
+    - trivy fs --no-progress --scanners vuln,secret,license --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+
+# zizmor and actionlint: the GitHub workflows the mirror keeps (CodeQL).
+# zizmor runs offline, since an online audit would need a GitHub token.
+scan:zizmor:
+  stage: lint
+  image:
+    name: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - zizmor --no-progress --offline .github/workflows/
+
+scan:actionlint:
+  stage: lint
+  image:
+    name: docker.io/rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - actionlint -no-color
+
+# shellcheck over every `*.sh` in the tree and ruff's security rules (S) over
+# the Python (ruff.toml). Both use the publisher's -alpine image, since the
+# plain ones hold no shell for the runner to start the job in. Accepted
+# shellcheck findings are `# shellcheck disable=SCxxxx # reason` comments at the
+# command (or at the top of a file whose quoting is deliberate throughout).
+scan:shellcheck:
+  stage: lint
+  image:
+    name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*' -print0 | xargs -0 shellcheck
+
+scan:ruff:
+  stage: lint
+  image:
+    name: ghcr.io/astral-sh/ruff:0.17.3-alpine@sha256:ee6d979c4e410a67b3057b6918bf8c0a7a36dbe6357e21cefb41d3f46d0b9c46
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - ruff check --no-cache .
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in real browsers: the door,

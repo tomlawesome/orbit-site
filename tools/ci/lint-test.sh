@@ -63,6 +63,7 @@
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
 # Works on a scratch copy of the current commit, so the checkout is untouched.
+# shellcheck disable=SC2016 # the single quotes in this file hold JavaScript for node and fault text planted in a scratch copy, where the $ is literal
 set -eu
 
 root=$(git rev-parse --show-toplevel)
@@ -75,6 +76,9 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 [ ! -d "$root/tools/node_modules" ] || export NODE_PATH="$root/tools/node_modules"
 cd "$tmp"
 git init -q
+# the scratch repo never leaves $tmp: the host's own commit hooks (the private-details check, set in the global
+# git config) must not judge the made-up addresses the cases plant (#114)
+export GIT_CONFIG_GLOBAL=/dev/null
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
 
@@ -1336,6 +1340,51 @@ yaml_pass_case "p175: GIT_DEPTH: 1 with a trailing comment in publish_docs" '
   y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: 1 # one clone commit\n");'
 yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
   y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n\n# Renovate", "\n# Renovate").replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  script:\n    - sh tools/ci/nightly-publish.sh\n  stage: publish\n");'
+# Cases p177-p207 (#110) judge the top-level include. Exactly one is allowed: a list of one entry whose
+# keys are exactly project: ai/agent-infra, file: scripts/private-details/ci-template.yml and ref: a full
+# 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
+# project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
+# bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
+# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case() {
+  if [ "$2" = pass ]; then
+    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+  else
+    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+  fi
+}
+inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
+inc_case "p181: an include with a branch as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: main\n"
+inc_case "p182: an include with a 7-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456\n"
+inc_case "p183: an include with a 39-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p184: an include with a 41-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef012345678\n"
+inc_case "p185: an include with an uppercase sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789ABCDEF0123456789ABCDEF01234567\n"
+inc_case "p186: an include with a 40-character ref that is not all hex" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456g\n"
+inc_case "p187: an include with no ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n"
+inc_case "p188: an include entry with an extra inputs key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    inputs:\n      a: b\n"
+inc_case "p189: an include entry with an extra rules key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    rules:\n      - when: always\n"
+inc_case "p190: an include entry with an extra local key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    local: other.yml\n"
+inc_case "p191: an include entry with file as a list" refuse "  - project: ai/agent-infra\n    file:\n      - scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p192: the allowed entry twice" refuse "$inc_pass$inc_pass"
+inc_case "p193: the allowed entry and a second project entry" refuse "$inc_pass  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p194: the allowed entry and a local entry" refuse "$inc_pass  - local: other.yml\n"
+inc_case "p195: an empty include list" refuse " []\n"
+inc_case "p196: a bare string include" refuse " other.yml\n"
+inc_case "p197: a bare string include in a list" refuse "  - other.yml\n"
+inc_case "p198: an include that is a mapping, not a list" refuse "  project: ai/agent-infra\n  file: scripts/private-details/ci-template.yml\n  ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p199: a local include" refuse "  - local: other.yml\n"
+inc_case "p200: a remote include" refuse "  - remote: https://example.invalid/ci.yml\n"
+inc_case "p201: a template include" refuse "  - template: Auto-DevOps.gitlab-ci.yml\n"
+inc_case "p202: a component include" refuse "  - component: gitlab.example.invalid/group/proj/comp@1.0\n"
+inc_case "p203: a local include as a mapping" refuse "  local: other.yml\n"
+inc_case "p204: a remote include as a bare string" refuse " https://example.invalid/ci.yml\n"
+inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -1711,6 +1760,20 @@ else
   vendor_case "the mermaid pin without an integrity key"
 fi
 
+# Case (v3), #102: .gitleaksignore names the Mermaid bundle by path, so a bump that leaves it on the old version
+# fails section "loads", naming .gitleaksignore.
+echo 'assets/vendor/mermaid-0.0.1.min.js:generic-api-key:636' >> .gitleaksignore
+commit_all "gitleaksignore on another mermaid version"
+lint_to_out loads
+if [ "$rc" -eq 1 ] && grep -q '^   \.gitleaksignore: names assets/vendor/mermaid-0\.0\.1' "$out"; then
+  echo "ok   a .gitleaksignore entry for another mermaid version fails"
+else
+  echo "FAIL a .gitleaksignore entry for another mermaid version fails (exit $rc, want 1 naming .gitleaksignore)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
+
 # Cases n1-n3: section "no real names, host logins or private addresses" (#56).
 # The private address is built from parts, so this file holds no literal one
 # and does not trip the guard it tests.
@@ -2031,7 +2094,7 @@ attr_hit "a Generated with line naming $c1" "Generated with [$c1 Code](https://e
 attr_hit "a lower-case generated with line naming $c1" "generated with $c1"
 attr_hit "an upper-case GENERATED WITH AI line" "GENERATED WITH AI TOOLS"
 attr_hit "a $c1-Session line" "$c1-Session: https://example.invalid/session/1"
-attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr 'A-Z' 'a-z')-session: abc123"
+attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr '[:upper:]' '[:lower:]')-session: abc123"
 attr_clean "a Co-authored-by trailer naming a person" "Co-authored-by: Pat Example <pat@example.invalid>"
 attr_clean "a Generated with line that names neither $c1 nor AI" "Generated with care from the template."
 attr_clean "a commit message that only mentions $c1 in prose" "Document how $c1 reads the project file."
@@ -2111,7 +2174,7 @@ login_email() { # login_email LABEL AUTHOR_EMAIL COMMITTER_EMAIL PART NOTPART
 }
 login_email "a banned login as the local part of the author email" "$nl@anyhost.local" t@t author committer
 login_email "a banned login as the local part of the committer email" t@t "$nl@anyhost.local" committer author
-login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr 'a-z' 'A-Z')@Anyhost.Local" t@t author committer
+login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr '[:lower:]' '[:upper:]')@Anyhost.Local" t@t author committer
 GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="${nl}xyz@anyhost.local" GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
 names_run "" "$nl_d" ""
 n_clean "a longer login as the local part of the author email is not the banned one"
@@ -2155,8 +2218,8 @@ msg_addr "a narrower private IPv6 range in a commit body" "address probe" "Use t
 ml="Fa""ble Op""us Son""net Hai""ku G""PT Chat""GPT Open""AI Cod""ex Gem""ini Copi""lot"
 for m in $ml; do
   attr_hit "a Co-authored-by trailer naming $m" "Co-authored-by: $m 4 <noreply@example.invalid>"
-  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr 'a-z' 'A-Z') <noreply@example.invalid>"
-  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr 'A-Z' 'a-z') Bot <bot@example.invalid>"
+  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr '[:lower:]' '[:upper:]') <noreply@example.invalid>"
+  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr '[:upper:]' '[:lower:]') Bot <bot@example.invalid>"
 done
 attr_hit "a Co-authored-by trailer with only an open""ai.com address" "Co-authored-by: Helper <helper@open""ai.com>"
 attr_hit "a Co-authored-by trailer with only an OPEN""AI.COM address" "Co-Authored-By: Helper <helper@OPEN""AI.COM>"
@@ -2176,7 +2239,7 @@ trailer_clean "a banned word in the name of a Signed-off-by trailer" "Signed-off
 trailer_clean "a banned word in the name of a lower-case signed-off-by trailer" "signed-off-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Reviewed-by trailer" "Reviewed-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Co-authored-by trailer" "Co-authored-by: $nwc Tester <t@example.invalid>"
-trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr 'a-z' 'A-Z') <t@example.invalid>"
+trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr '[:lower:]' '[:upper:]') <t@example.invalid>"
 hist_case "a banned word in the body next to a trailer holding the word in a name" t t "message probe" "The $nw remark.
 
 Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
@@ -2197,6 +2260,7 @@ rm -f "$names_out"
 tm_map=tools/ci/test-map.json
 tm_base=$(git rev-parse HEAD)
 tm_back() { git add -A; git reset -q --hard "$tm_base"; }
+# shellcheck disable=SC2329 # called through eval in tm_case
 tm_node_test() { # tm_node_test NAME: add NAME to node-tests.sh's list
   sed -i "s/; do\$/ $1; do/" tools/ci/node-tests.sh && grep -q " $1; do\$" tools/ci/node-tests.sh
 }

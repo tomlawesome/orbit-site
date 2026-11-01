@@ -1344,8 +1344,8 @@ export function createVoyage(under, { restFor }) {
      left registered either way) */
   /** @returns {Promise<void> | undefined} */
   const whenVisible = () => (!page.hidden() || gone ? undefined : /** @type {Promise<void>} */ (new Promise((resolve) => {
-    const off = page.onVisible(() => done());
-    const done = () => { off(); unhide = null; resolve(); };
+    const unwatch = page.onVisible(() => done());
+    const done = () => { unwatch(); unhide = null; resolve(); };
     unhide = done;
   })));
   /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed

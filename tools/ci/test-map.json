@@ -2,7 +2,9 @@
   "hand": ["tools/ci/docsky-test.mjs"],
   "groups": {
     "all": [
-      "assets/door/**",
+      "assets/door/*.js",
+      "assets/door/*.css",
+      "assets/door/img/**",
       ".gitlab-ci.yml",
       "tools/ci/test-map.json",
       "tools/ci/test-select.mjs",
@@ -52,6 +54,7 @@
       "assets/js/remote-world.js",
       "assets/js/world-worker.js",
       "assets/js/planets3d.js",
+      "assets/js/pads.js",
       "assets/img/install/**"
     ],
     "flight": [
@@ -59,7 +62,9 @@
       "assets/img/docs/**"
     ],
     "harness": [
-      "tests/*.html"
+      "tests/*.html",
+      "tests/t-*.js",
+      "tests/common.js"
     ],
     "import": [
       "tools/import-docs.mjs",
@@ -71,7 +76,8 @@
       "tools/ci/docs-markup.mjs",
       "tools/ci/nightly-import-test.sh",
       "tools/ci/import-docs-test.mjs",
-      "tools/ci/raw-heading-test.mjs"
+      "tools/ci/raw-heading-test.mjs",
+      "tools/docs-sources.json"
     ],
     "tooling": [
       "tools/ci/lint.sh",
@@ -88,6 +94,10 @@
       "tools/ci/door-timing.mjs",
       "tools/fonts.mjs",
       "tools/ci/lint-test.sh",
+      "index.html",
+      "sw.js",
+      "404.html",
+      "install.html",
       "renovate.json"
     ],
     "none": [
@@ -98,13 +108,14 @@
       ".gitignore",
       ".gitattributes",
       ".gitleaksignore",
+      ".jscpd.json",
+      ".trivyignore.yaml",
+      "ruff.toml",
       ".private-details-allow.toml",
       ".nojekyll",
       ".github/**",
       "tools/*.py",
       "tools/*.cjs",
-      "tests/t-*.js",
-      "tests/common.js",
       "tests/worker.js",
       "tests/index.html",
       "tests/gate.html",
@@ -147,7 +158,7 @@
     },
     "freeze": {
       "file": "tools/ci/freeze.mjs",
-      "groups": ["page", "worlds"],
+      "groups": ["page", "worlds", "harness"],
       "browsers": ["chromium"],
       "gates": ["chromium"],
       "seconds": { "chromium": 205 }

@@ -85,6 +85,7 @@ WARN_TITLE="Docs import warnings"
 # lock on that door, and for LD_PRELOAD it can only be a check after the fact.)
 # The names come from awk's ENVIRON, not `env` read line by line, where a value
 # holding a newline would read as more names (#52).
+# shellcheck disable=SC2013 # awk prints one valid variable name per line (its pattern allows nothing else), so splitting on words is exact
 for name in $(awk 'BEGIN { for (k in ENVIRON) if (k ~ /^[A-Za-z_][A-Za-z0-9_]*$/) print k }'); do
   case $name in
     # the runner's git settings, the image's version stamp and the pipeline's
@@ -195,6 +196,7 @@ check_git() {
   if ! cgit config --list --show-scope -z > "$cfg" 2>/dev/null; then
     echo "refusing to run: git could not list the checkout's config"; exit 1
   fi
+  # shellcheck disable=SC2016 # the single quotes hold JavaScript for node, not shell
   CFG=$cfg WANT="$top.tmp/.gitlab-runner.ext.conf" node -e '
     const fs = require("fs");
     const allowed = /^(include\.path|lfs\.repositoryformatversion|core\.(repositoryformatversion|filemode|bare|logallrefupdates|symlinks|ignorecase|precomposeunicode)|extensions\.objectformat|remote\.origin\.(url|fetch|tagopt)|branch\..+\.(remote|merge)|init\.defaultbranch|fetch\.recursesubmodules|fetch\.uriprotocols|credential\.interactive|gc\.(auto|autodetach)|transfer\.bundleuri|http\.(useragent|extraheader)|http\..+\.(proactiveauth|extraheader)|url\..+\.insteadof|credential\..+\.helper)$/is;
@@ -437,6 +439,7 @@ update_warnings_issue() {
   found=$(apij 'const m = j.filter((x) => x && x.title === "'"$WARN_TITLE"'" && x.author && x.author.id === '"$uid"' && Array.isArray(x.labels) && x.labels.includes("docs-import"));
     console.log(m.length, m.length === 1 && Number.isInteger(m[0].iid) ? m[0].iid : "-", m.length === 1 && m[0].state === "closed" ? "closed" : "open")' \
     GET "/issues?labels=docs-import&author_id=$uid&state=all&per_page=100" --connect-timeout 10 --max-time 30) || return 1
+  # shellcheck disable=SC2086 # intended splitting of the three words the node snippet above printed (count, iid, state)
   set -- $found
   count=${1:-}; iid=${2:-}; state=${3:-}
   case $count in ''|*[!0-9]*) return 1 ;; esac
@@ -630,8 +633,11 @@ main() {
 
   echo "== merge request"
   # GitLab can refuse the open for a moment (#75): it is tried up to 5 times in
-  # all, 3 seconds apart, the same way as the auto-merge below. Each refusal is
-  # logged with its status and answer, cut to 300 characters, never the request.
+  # all, 3 seconds apart (the auto-merge below is 30 tries, 10 seconds apart).
+  # Each refusal is logged with its status and answer, cut to 300 characters,
+  # never the request. Before each try after the first, the branch's opened
+  # merge requests are asked for: a create that took longer than its 30 seconds
+  # may have been made all the same, and a second would be a duplicate (#91).
   # The header file is on disk only while one try runs, never across the waits,
   # and the answer is parsed only once it is gone.
   mrans="$scratch/mr-answer"
@@ -641,6 +647,14 @@ main() {
   mrtries=5
   for i in $(seq 1 "$mrtries"); do
     rm -f "$mrans" "$mrans.err"
+    if [ "$i" -gt 1 ]; then
+      found=$(apij "const m = j.find((m) => m.source_branch === '$branch'); console.log(m ? m.iid : '')" \
+        GET "/merge_requests?state=opened&source_branch=docs%2Fimport-$stamp&per_page=100" --connect-timeout 10 --max-time 30) || found=
+      case $found in ''|*[!0-9]*) ;; *)
+        echo "   try $((i - 1)) had opened it: !$found is already open for $branch"
+        printf '{"iid":%s}\n' "$found" > "$mrans"; code=200; break ;;
+      esac
+    fi
     hdr_on
     code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$mrans" -w '%{http_code}' \
       -X POST -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests" \

@@ -11,7 +11,6 @@
  * context of its own, so a fresh one is told from the lost one. Cases:
  *   control   a live door shown with a healthy context: it asked for a context of its own and is "live"
  *   lost      the same, then the context is lost, the dawn destroyed, a second dawn mounted and started
- *   restore   as `lost`, then the context comes back (restoreContext) before the second dawn: the same context is fine
  * LIMIT: the fake context cannot make the capability probe say ok, so the live door runs as its "lean" one (see
  * door-live-teardown-test.mjs). The control says whether the lean door even asks for a context and shows `.live`.
  */
@@ -66,7 +65,6 @@ async function run({ lose }) {
   out.freshAsked = all.length > out.firstContexts;
   out.firstStillLost = first ? first.gl.isContextLost() : null;
   out.secondLive = second.world.classes.has("live");
-  out.liveWhileLost = seen.filter((s) => s.live && s.lostContexts > 0 && !s.fresh).length;
   /* `.live` while the only live-door context there is, is the lost one */
   out.liveOnLostOnly = seen.filter((s) => s.live && s.lostContexts >= s.fresh).length;
   return out;

@@ -1,0 +1,9 @@
+{
+  "path": ["assets", "tools"],
+  "format": ["javascript", "bash"],
+  "ignore": ["**/node_modules/**", "assets/vendor/**", "assets/docs/**"],
+  "gitignore": true,
+  "reporters": ["console"],
+  "silent": false,
+  "threshold": 4.8
+}

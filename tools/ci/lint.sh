@@ -2,6 +2,7 @@
 # The cheap checks: every module parses, every file the page and the
 # service worker name exists, and nothing has been left in the tree that
 # Pages would serve by accident. Runs in CI (lint stage) and by hand.
+# shellcheck disable=SC2016 # the single quotes in this file hold JavaScript for node, where the $ is literal
 set -eu
 cd "$(dirname "$0")/../.."
 fail=0
@@ -11,7 +12,7 @@ fail=0
 # that plants one fault pays for one section (#65); `--list` names them. An
 # unknown name runs nothing and exits 2, so a typo cannot pass.
 sections="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins test-map"
-if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' $sections; exit 0; fi
+if [ "$#" = 1 ] && [ "$1" = --list ]; then printf '%s\n' "$sections" | tr ' ' '\n'; exit 0; fi
 for s in "$@"; do
   case " $sections " in *" $s "*) ;; *) echo "lint.sh: no section named '$s' (sections: $sections)"; exit 2 ;; esac
 done
@@ -94,6 +95,7 @@ node -e '
   }
 ' || fail=1
 # its stylesheet reaches nothing outside the folder either: every url() in it is a fragment, data, or a file in it
+# shellcheck disable=SC2013 # one word per url: the pattern excludes quotes, and the case below judges each
 for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^url\("?//; s/"?\)$//' | sort -u); do
   case "$ref" in \#*|data:*) continue ;; /*|../*|*://*) echo "   assets/door/door.css -> $ref reaches outside the folder"; fail=1; continue ;; esac
   [ -e "assets/door/$ref" ] || { echo "   assets/door/door.css -> $ref is missing"; fail=1; }
@@ -373,6 +375,11 @@ else {
     else if (pin[2] !== want) bad(`assets/js/pads.js: MERMAID's integrity does not match ${pin[1]} (the file is ${want}); if the file is the release's own (the command is beside MERMAID), set integrity: "${want}"`);
   }
   for (const f of vendored) if (f !== pin[1]) bad(`${f}: not the Mermaid assets/js/pads.js pins (${pin[1]}); remove it`);
+  // .gitleaksignore names the bundle by path and finding line, so a version bump must change it too (#102)
+  for (const l of fs.existsSync(".gitleaksignore") ? fs.readFileSync(".gitleaksignore", "utf8").split("\n") : []) {
+    const m = /^(assets\/vendor\/mermaid-[^:]*\.js):/.exec(l);
+    if (m && m[1] !== pin[1]) bad(`.gitleaksignore: names ${m[1]}, but assets/js/pads.js pins ${pin[1]}; move the entry to the pinned file (its finding line may change: run gitleaks on it)`);
+  }
 }
 LOADS_EOF
 fi
@@ -440,4 +447,4 @@ echo "== the test map is complete: every file in a group, every pattern live, ev
 node tools/ci/test-map-check.mjs || fail=1
 fi
 
-[ "$fail" = 0 ] && echo "lint: ok" || { echo "lint: failed"; exit 1; }
+if [ "$fail" = 0 ]; then echo "lint: ok"; else echo "lint: failed"; exit 1; fi

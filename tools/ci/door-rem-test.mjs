@@ -7,10 +7,10 @@
  *   node tools/ci/door-rem-test.mjs
  *
  * No dependencies and no browser: door.css is read as text.
- *   R1 each of the seven fixed font sizes is in rem and equals the old px / 16
+ *   R1 each of the seven fixed font sizes is in rem and equals the old px / 16 (so, at a 16px root, nothing changes: the
+ *      control beside it checks that the rem written is the old px / 16)
  *   R2 no font: shorthand or font-size: gives a bare px size outside clamp()/min()/max()/calc()
  *   R3 the calc() placing `#dusk.asdawn .gate` uses .8125rem for the text-line term and no 13px
- *   R4 at a 16px root nothing changes: each converted value x 16 is the old px value
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -53,12 +53,11 @@ const SEVEN = [
   ["the dusk release line", "#dusk:not(.asdawn) .lockup .release", 11, ".6875rem"],
 ];
 
-/* R1 and R4, one pair per selector */
+/* R1, with its control, per selector */
 for (const [what, selector, px, rem] of SEVEN) {
   const got = sizeOf(selector);
   check(`control: ${rem} is ${px}px / 16 (${what})`, parseFloat(rem) * 16 === px, `${parseFloat(rem) * 16}px`);
   check(`R1: ${what} (${selector}) is sized in rem, ${rem}`, !!got && got.text === rem, got ? `found ${got.text}` : "no font size found");
-  check(`R4: ${what} is ${px}px at a 16px root`, !!got && got.unit === "rem" && got.value * 16 === px, got ? `${got.text} is ${got.unit === "rem" ? got.value * 16 + "px" : "not rem"} at 16px` : "no font size found");
 }
 
 /* R2: take every font: / font-size: value, drop the clamp()/min()/max()/calc() calls (var() first), then no px size may be left */

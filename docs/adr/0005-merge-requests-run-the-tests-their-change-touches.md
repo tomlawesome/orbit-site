@@ -51,7 +51,7 @@ special: `all` selects every test, `none` selects nothing but counts as mapped. 
 
 | Group | Paths | Why |
 | --- | --- | --- |
-| `all` | `assets/door/**`, `.gitlab-ci.yml`, `tools/ci/test-map.json`, `tools/ci/test-select.mjs`, `tools/ci/live-run.mjs`, `tools/ci/live-lib.mjs`, `tools/ci/serve.mjs`, `tools/ci/coverage-hook.mjs`, `tools/package.json`, `tools/package-lock.json` | every page uses the door (ADR-0001); the test machinery itself |
+| `all` | `assets/door/*.js`, `assets/door/*.css`, `assets/door/img/**`, `.gitlab-ci.yml`, `tools/ci/test-map.json`, `tools/ci/test-select.mjs`, `tools/ci/live-run.mjs`, `tools/ci/live-lib.mjs`, `tools/ci/serve.mjs`, `tools/ci/coverage-hook.mjs`, `tools/package.json`, `tools/package-lock.json` | every page uses the door (ADR-0001); the test machinery itself |
 | `page` | `index.html`, `install.html`, `404.html`, `assets/site.css`, `assets/js/main.js`, `assets/js/tilt.js`, `sw.js`, `assets/img/door/**`, `assets/fonts/**`, `assets/vendor/**` | the page every live test opens; `main.js` is the switch between every stage |
 | `home` | `assets/js/home.js`, `sky.js`, `tour.js`, `data.js`, `law.js`, `lock.js` | the sky, the dial, the walk |
 | `docs` | `assets/js/pads.js`, `assets/docs/**`, `tools/docs-sources.json` | the docs landing and its pages |
@@ -79,7 +79,7 @@ initial groups, from each test's own header:
 | `csp` | page, docs | both |
 | `phone-door` | page, worlds | both |
 | `site-browser` | page, home, docs, worlds | both (B7 flakes in Chromium, `docs/flakes.md`: `gates: ["firefox"]` until it has an issue and a fix) |
-| `freeze` | page, worlds | Chromium |
+| `freeze` | page, worlds, harness | Chromium |
 | `flight-context-loss` | page, flight | both |
 | `docs-planet` | page, worlds, flight | Chromium |
 | `docs-sky-portrait-live` | page, flight | Chromium |
@@ -93,7 +93,7 @@ initial groups, from each test's own header:
 | `world-pixels` | harness, worlds | Chromium (added with #93 batch 3: the worlds' worker path's pixel identity, ADR-0004 6b.7 PW2) |
 | `world-live` | page, worlds | Firefox (added with #93 batch 3: PW1 and PW3) |
 
-(`pin` leaves the browser: section 5.) `assets/door/**` is in `all`, so no door-only test needs a door path.
+(`pin` leaves the browser: section 5.) The door's scripts, stylesheet and pictures are in `all` (its `README.md` is `none`), so no door-only test needs a door path.
 
 **The selection rule** (`test-select.mjs`, printed at the top of every live job's log):
 
@@ -135,14 +135,18 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 | `lint` | lint | every pipeline but schedules | - | as today minus the import and tool tests: `lint.sh`, the three small lint tests, `door-timing-lookup`, `no-real-names`, `node-tests.sh` (coverage to the artifact), `coverage-test`, `glow-banding`. About 3 min |
 | `lint:test` | lint | every pipeline; runs `lint-test.sh` only when `test-select.mjs --group tooling` says so, else prints "not selected" and passes in seconds | - | as today (7.5 min when it runs) |
 | `lint:import` | lint | same shape, group `import` | - | `nightly-import-test.sh`, `import-docs-test.mjs`, `raw-heading-test.mjs` (about 2.5 min) |
+| `lint:duplication` | lint | every pipeline but schedules | - | `jscpd` over the JavaScript and shell in `assets/` and `tools/` against the threshold in `.jscpd.json` (#121); a few seconds |
+| `scan:gitleaks`, `scan:shellcheck`, `scan:ruff`, `scan:zizmor`, `scan:actionlint` | lint | every pipeline but schedules | - | secrets in history, shell scripts, Python security rules, the GitHub workflow; each image pinned by digest, blocking (#120) |
+| `scan:trivy` | lint | every pipeline but schedules, and the `TRIVY=true` daily schedule | - | vulnerabilities, secrets and licences, HIGH or CRITICAL; accepted findings in `.trivyignore.yaml` (#120) |
+| `private-details` | lint | every pipeline but schedules | - | the shared personal-details check over history after the adoption commit; defined by the include, rules on the runner host, blocking (#110) |
 | `live:firefox` | live | every pipeline but schedules; `parallel: 2` | `[]` | `xvfb-run` one Xvfb, `node tools/ci/live-run.mjs firefox`: selects, takes its shard, runs |
 | `live:chromium` | live | same; `parallel: 3` | `[]` | the same in Chromium, V8 coverage recorded, `coverage/` as an artifact |
 | `coverage` | check (new stage) | same | `lint`, `live:chromium` | the ratchet on the union (section 6) |
 | `import_docs`, `publish_docs`, `renovate` | unchanged | | | |
 
 Why the jobs always start and select inside, rather than `rules:changes` on each: one source of truth (the map), the
-fail-safe rule lives in code, and `.gitlab-ci.yml` stays static, which the ci-split lint needs (it refuses `include`
-and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
+fail-safe rule lives in code, and `.gitlab-ci.yml` stays static, which the ci-split lint needs (it refuses every `include`
+but the one pinned personal-details template, and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
 that starts, selects nothing and stops: about 15 s on this runner (image cached, `npm i playwright` 3 s). Question 16
 offers the other route.
 
@@ -162,7 +166,7 @@ report-only and Firefox's gate; with the browsers side by side the default is bo
 
 **Lint guards kept.** `publish_docs` is untouched (its one script line, variables, `needs` with `artifacts: false`,
 environment, no `parallel`, no rule variables); no job but it names `docs-import`, none but `renovate` names
-`renovate`; `NODE_IMAGE` once in the global variables; no `include`, no `trigger`; the workflow rules keep their
+`renovate`; `NODE_IMAGE` once in the global variables; one `include` and no other: the shared personal-details template of ai/agent-infra, one list entry with exactly `project`, `file` and `ref`, the ref a full lowercase commit sha (owner, 2026-11-01, answer 21a, #110: a tag can be moved, a commit cannot, and any other include would let a job escape the lint); no `trigger`; the workflow rules keep their
 order (the docs-import and bot rules before the general ones). `parallel:` is on the live jobs only, which hold no
 token. The one change to the workflow rules is none: push pipelines on `dev` and `main` are still created and
 decide what to run inside (question 17).

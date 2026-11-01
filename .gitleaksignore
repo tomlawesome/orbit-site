@@ -1,1 +1,4 @@
+# The vendored Mermaid bundle (assets/vendor, pinned by assets/js/pads.js) is minified: gitleaks flags one
+# line of it as a generic-api-key, which is not a secret. The entry names the file and the line, so a Mermaid
+# bump changes three places: the file, MERMAID in pads.js, and this path and line (lint.sh checks the path).
 assets/vendor/mermaid-12.2.0.min.js:generic-api-key:636

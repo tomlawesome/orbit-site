@@ -258,7 +258,7 @@ export const mirror = (t) => UPDUR * (1 - Math.min(1, Math.max(0, t / DOWNDUR)))
    faster, to the start of the way in (engine: milkyWay). Shared with the journey (journey.js), so the mark's ring
    grows with the galaxy, exactly, as it becomes its rim. */
 export const MARK_RING = 166.4 * 72 / 200, FAR_T0 = 1080, FAR_T1 = 1750;
-/* the way in: from out beyond the disc, down into it, to rest among the stars of an arm (voyage.js: REST) */
+/* the way in: from out beyond the disc, down into it, to rest among the stars of an arm: the last point, which createVoyage is given as `restFor` */
 export const PATH = [[0.7, 2.35, 1.85], [0.95, 0.95, 1.35], [0.82, 0.1, 0.42], [0.56, 0.006, 0]];
 /* on a portrait screen (taller than wide: width / height <= 10/11, the door's own threshold) the way in stops short of
    the disc: above it, 1.1 from the core and looking down at it from 55 degrees off its axis, where the whole spiral
