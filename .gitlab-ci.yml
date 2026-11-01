@@ -9,6 +9,18 @@
 # Runner lanes (ai/agent-infra#3): `light` is 4 CPU / 6 GB, one hour.
 # Nothing here needs Docker or `big`.
 
+# The shared check for personal details (ai/agent-infra#32, #110): one set of
+# rules for every project, kept on the agent host and read by the job from a
+# file the runner host mounts. The include is the only one ci-split allows
+# (ADR-0005). The ref is the commit the tag names, not the tag: a protected
+# tag can be deleted and made again on other code, a commit cannot move.
+# PRIVATE_DETAILS_SHA below names the same commit, so the script the job runs
+# is the pinned one too. Moving to a new tag moves both and the comment together.
+include:
+  - project: ai/agent-infra
+    ref: 7430d171259104c4623040c2360699585d601bf5 # private-details/v4
+    file: scripts/private-details/ci-template.yml
+
 stages:
   - lint
   - live
@@ -51,6 +63,8 @@ workflow:
   when: never
 
 variables:
+  # The commit of the include above (private-details/v4); see the include.
+  PRIVATE_DETAILS_SHA: 7430d171259104c4623040c2360699585d601bf5
   # Docker Hub by plain name, pinned by digest. The runner hosts' Docker
   # daemons mirror Docker Hub through the runner image cache
   # (ai/agent-infra#14, #65), which needs no login, so every pipeline pulls
@@ -174,6 +188,18 @@ scan:gitleaks:
   script:
     - git config --global --add safe.directory "$CI_PROJECT_DIR"
     - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
+
+# private-details: the job is defined by the template; the stage and the rules
+# are set here, and it blocks. The scan starts after this commit, the last on
+# dev before the check was adopted (#110), because older messages and authors
+# name the assistant's account, which no path entry can allow.
+private-details:
+  stage: lint
+  variables:
+    PRIVATE_DETAILS_SINCE: 37d5d31f0deb512e6b98fbf23074ec955ec91d17
+  rules:
+    - *not_scheduled
+    - when: on_success
 
 # Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
 # across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they

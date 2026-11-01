@@ -138,14 +138,15 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 | `lint:duplication` | lint | every pipeline but schedules | - | `jscpd` over the JavaScript and shell in `assets/` and `tools/` against the threshold in `.jscpd.json` (#121); a few seconds |
 | `scan:gitleaks`, `scan:shellcheck`, `scan:ruff`, `scan:zizmor`, `scan:actionlint` | lint | every pipeline but schedules | - | secrets in history, shell scripts, Python security rules, the GitHub workflow; each image pinned by digest, blocking (#120) |
 | `scan:trivy` | lint | every pipeline but schedules, and the `TRIVY=true` daily schedule | - | vulnerabilities, secrets and licences, HIGH or CRITICAL; accepted findings in `.trivyignore.yaml` (#120) |
+| `private-details` | lint | every pipeline but schedules | - | the shared personal-details check over history after the adoption commit; defined by the include, rules on the runner host, blocking (#110) |
 | `live:firefox` | live | every pipeline but schedules; `parallel: 2` | `[]` | `xvfb-run` one Xvfb, `node tools/ci/live-run.mjs firefox`: selects, takes its shard, runs |
 | `live:chromium` | live | same; `parallel: 3` | `[]` | the same in Chromium, V8 coverage recorded, `coverage/` as an artifact |
 | `coverage` | check (new stage) | same | `lint`, `live:chromium` | the ratchet on the union (section 6) |
 | `import_docs`, `publish_docs`, `renovate` | unchanged | | | |
 
 Why the jobs always start and select inside, rather than `rules:changes` on each: one source of truth (the map), the
-fail-safe rule lives in code, and `.gitlab-ci.yml` stays static, which the ci-split lint needs (it refuses `include`
-and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
+fail-safe rule lives in code, and `.gitlab-ci.yml` stays static, which the ci-split lint needs (it refuses every `include`
+but the one pinned personal-details template, and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
 that starts, selects nothing and stops: about 15 s on this runner (image cached, `npm i playwright` 3 s). Question 16
 offers the other route.
 
@@ -165,7 +166,7 @@ report-only and Firefox's gate; with the browsers side by side the default is bo
 
 **Lint guards kept.** `publish_docs` is untouched (its one script line, variables, `needs` with `artifacts: false`,
 environment, no `parallel`, no rule variables); no job but it names `docs-import`, none but `renovate` names
-`renovate`; `NODE_IMAGE` once in the global variables; no `include`, no `trigger`; the workflow rules keep their
+`renovate`; `NODE_IMAGE` once in the global variables; one `include` and no other: the shared personal-details template of ai/agent-infra, one list entry with exactly `project`, `file` and `ref`, the ref a full lowercase commit sha (owner, 2026-11-01, answer 21a, #110: a tag can be moved, a commit cannot, and any other include would let a job escape the lint); no `trigger`; the workflow rules keep their
 order (the docs-import and bot rules before the general ones). `parallel:` is on the live jobs only, which hold no
 token. The one change to the workflow rules is none: push pipelines on `dev` and `main` are still created and
 decide what to run inside (question 17).
