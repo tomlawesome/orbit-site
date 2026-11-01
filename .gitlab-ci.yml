@@ -27,12 +27,13 @@ workflow:
     # Tags publish nothing here: Pages serves a branch.
     - if: $CI_COMMIT_TAG
       when: never
-    # A scheduled pipeline is the docs-import lane or the Renovate lane.
-    # `import_docs`, `publish_docs` and `renovate` are the only jobs that opt
-    # in, so a schedule without its variable would make a pipeline with no
-    # jobs; refusing it here says why.
+    # A scheduled pipeline is the docs-import lane, the Renovate lane or the
+    # daily Trivy scan. `import_docs`, `publish_docs`, `renovate` and
+    # `scan:trivy` are the only jobs that opt in, so a schedule without its
+    # variable would make a pipeline with no jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -149,6 +150,79 @@ lint:duplication:
   script:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - node tools/node_modules/jscpd/run-jscpd.js -c .jscpd.json --no-tips
+
+# Scanners (#120). One job per tool, each run from its official image pinned
+# by digest (never a Marketplace action or setup script), blocking from day
+# one: what they found when they were added is fixed, or listed in the tool's
+# own ignore file with a reason. They read the checkout only; the one network
+# use besides the image pull is Trivy's vulnerability database. `entrypoint:
+# [""]` because the runner starts each job's shell in the container, and these
+# images' entrypoint is the tool.
+#
+# gitleaks: the whole history (GIT_DEPTH 0), secrets redacted in the log.
+# .gitleaksignore holds the accepted fingerprints.
+scan:gitleaks:
+  stage: lint
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+    - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
+
+# Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
+# across the tree, blocking only on HIGH or CRITICAL findings that have a fix.
+# It also runs from the daily schedule (a schedule with TRIVY=true), so a
+# newly published CVE fails that run and not an unrelated merge request.
+# Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
+# database is fetched at run time and kept in GitLab's cache, never committed.
+scan:trivy:
+  stage: lint
+  image:
+    name: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    entrypoint: [""]
+  variables:
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+  cache:
+    key: trivy-db
+    paths:
+      - .trivycache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - when: on_success
+  script:
+    - trivy fs --no-progress --scanners vuln,secret,license --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+
+# zizmor and actionlint: the GitHub workflows the mirror keeps (CodeQL).
+# zizmor runs offline, since an online audit would need a GitHub token.
+scan:zizmor:
+  stage: lint
+  image:
+    name: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - zizmor --no-progress --offline .github/workflows/
+
+scan:actionlint:
+  stage: lint
+  image:
+    name: docker.io/rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - actionlint -no-color
 
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in real browsers: the door,

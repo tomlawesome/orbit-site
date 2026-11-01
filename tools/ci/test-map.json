@@ -109,6 +109,7 @@
       ".gitattributes",
       ".gitleaksignore",
       ".jscpd.json",
+      ".trivyignore.yaml",
       ".private-details-allow.toml",
       ".nojekyll",
       ".github/**",

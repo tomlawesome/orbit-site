@@ -1,0 +1,23 @@
+# Trivy's accepted findings (#120). Each entry names one finding, where it is
+# found, why it is accepted and when it is looked at again: after expired_at
+# the finding fails the scan again, so the choice is made again, not forgotten.
+licenses:
+  # sharp's prebuilt libvips and its WebAssembly and Windows builds are LGPL-3.0.
+  # They are optional packages of sharp (tools/package.json), used only by the docs
+  # import job on the CI runner to resize pictures; nothing is linked into, copied
+  # into or served by the site, so the LGPL's terms on distribution do not apply.
+  - id: LGPL-3.0-or-later
+    paths:
+      - tools/package-lock.json
+    statement: sharp's libvips builds; used by the docs import on the runner, never distributed
+    expired_at: 2027-05-01
+  - id: Apache-2.0 AND LGPL-3.0-or-later AND MIT
+    paths:
+      - tools/package-lock.json
+    statement: sharp's WebAssembly build; same as above
+    expired_at: 2027-05-01
+  - id: Apache-2.0 AND LGPL-3.0-or-later
+    paths:
+      - tools/package-lock.json
+    statement: sharp's Windows builds; same as above
+    expired_at: 2027-05-01
