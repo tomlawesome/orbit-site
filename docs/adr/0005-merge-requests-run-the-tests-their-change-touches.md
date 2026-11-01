@@ -79,7 +79,7 @@ initial groups, from each test's own header:
 | `csp` | page, docs | both |
 | `phone-door` | page, worlds | both |
 | `site-browser` | page, home, docs, worlds | both (B7 flakes in Chromium, `docs/flakes.md`: `gates: ["firefox"]` until it has an issue and a fix) |
-| `freeze` | page, worlds | Chromium |
+| `freeze` | page, worlds, harness | Chromium |
 | `flight-context-loss` | page, flight | both |
 | `docs-planet` | page, worlds, flight | Chromium |
 | `docs-sky-portrait-live` | page, flight | Chromium |
