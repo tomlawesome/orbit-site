@@ -391,14 +391,12 @@ await b.close();
     writeFileSync(join(bin, "node"), '#!/bin/sh\necho called >> "$FAKE_NODE_MARK"\nexit 1\n', { mode: 0o755 });
     const runSh = (mode, cov) => spawnSync("sh", [join(root, "tools/ci/coverage-run.sh"), mode], { encoding: "utf8", cwd: root, timeout: 60000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, COVERAGE_DIR: cov, FAKE_NODE_MARK: join(dir, "mark") } });
 
-    for (const mode of ["check"]) {
-      const nonode = join(dir, "nonode-" + mode);
-      mkdirSync(nonode);
-      writeFileSync(join(nonode, "browser-old-1.json"), "{}");
-      const r = runSh(mode, nonode);
-      check(`coverage-run.sh ${mode} stops with a clear message when ${"$COVERAGE_DIR"}/node is missing`, r.status !== 0 && /no Node coverage in/.test(out(r)) && out(r).includes(nonode) && /lint job/i.test(out(r)), `exit ${r.status}: ${JSON.stringify(out(r).split("\n").filter(Boolean).slice(-3))}`);
-      check(`... and ${mode} did not start the runs`, !/recording coverage/.test(out(r)), JSON.stringify(out(r).split("\n").filter(Boolean).slice(0, 2)));
-    }
+    const nonode = join(dir, "nonode-check");
+    mkdirSync(nonode);
+    writeFileSync(join(nonode, "browser-old-1.json"), "{}");
+    const r = runSh("check", nonode);
+    check("coverage-run.sh check stops with a clear message when $COVERAGE_DIR/node is missing", r.status !== 0 && /no Node coverage in/.test(out(r)) && out(r).includes(nonode) && /lint job/i.test(out(r)), `exit ${r.status}: ${JSON.stringify(out(r).split("\n").filter(Boolean).slice(-3))}`);
+    check("... and check did not start the runs", !/recording coverage/.test(out(r)), JSON.stringify(out(r).split("\n").filter(Boolean).slice(0, 2)));
     const withNode = join(dir, "withnode");
     mkdirSync(join(withNode, "node"), { recursive: true });
     check("(control) with a node directory, check does not say the Node coverage is missing", !/no Node coverage/.test(out(runSh("check", withNode))), "no message");
