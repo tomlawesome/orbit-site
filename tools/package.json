@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "harfbuzzjs": "1.6.4",
+    "jscpd": "5.4.2",
     "typescript": "7.0.2",
     "wawoff2": "2.0.1"
   }

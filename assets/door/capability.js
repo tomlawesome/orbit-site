@@ -62,7 +62,7 @@ const FAILED = { background: null, compileMs: null, msPerMpx: null, ok: false };
 /* the salt is code, not a comment (Safari hashes the source without its comments): no cache answers for the compiler */
 /** @param {string} src */
 const salted = (src) => src.replace(/out vec4 o;/, `out vec4 o; const float SALT=${Math.random().toFixed(6)};`)
-  .replace(/o=vec4\(([^;]*)\);\s*}\s*$/, (m, inner) => `o=vec4(${inner})+vec4(SALT*1e-6); }`);
+  .replace(/o=vec4\(([^;]*)\);\s*}\s*$/, (_m, inner) => `o=vec4(${inner})+vec4(SALT*1e-6); }`);
 /* a small texture of noise, for the probe's maps */
 /** @param {WebGL2RenderingContext} gl @param {number} w @param {number} h @param {number} seed */
 function noise(gl, w, h, seed) {

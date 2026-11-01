@@ -136,6 +136,20 @@ lint:import:
     - node tools/ci/test-select.mjs
     - '[ "$(node tools/ci/test-select.mjs --group import)" = no ] || { sh tools/ci/nightly-import-test.sh && node tools/ci/import-docs-test.mjs && node tools/ci/raw-heading-test.mjs; }'
 
+# Duplication (#121): jscpd 5.4.2, pinned in tools/package.json, over the
+# JavaScript and shell under assets/ and tools/ (.jscpd.json). The threshold
+# sits just above the share duplicated when it was set, so a change that adds
+# copied code fails and one that removes some leaves room. Blocking.
+lint:duplication:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/node_modules/jscpd/run-jscpd.js -c .jscpd.json --no-tips
+
 # ---------------------------------------------------------------- live --
 # The site served as Pages serves it, visited in real browsers: the door,
 # each landing, the docs, the worlds, the 404; nothing thrown, nothing

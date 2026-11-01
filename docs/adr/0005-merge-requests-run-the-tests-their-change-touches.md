@@ -135,6 +135,7 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 | `lint` | lint | every pipeline but schedules | - | as today minus the import and tool tests: `lint.sh`, the three small lint tests, `door-timing-lookup`, `no-real-names`, `node-tests.sh` (coverage to the artifact), `coverage-test`, `glow-banding`. About 3 min |
 | `lint:test` | lint | every pipeline; runs `lint-test.sh` only when `test-select.mjs --group tooling` says so, else prints "not selected" and passes in seconds | - | as today (7.5 min when it runs) |
 | `lint:import` | lint | same shape, group `import` | - | `nightly-import-test.sh`, `import-docs-test.mjs`, `raw-heading-test.mjs` (about 2.5 min) |
+| `lint:duplication` | lint | every pipeline but schedules | - | `jscpd` over the JavaScript and shell in `assets/` and `tools/` against the threshold in `.jscpd.json` (#121); a few seconds |
 | `live:firefox` | live | every pipeline but schedules; `parallel: 2` | `[]` | `xvfb-run` one Xvfb, `node tools/ci/live-run.mjs firefox`: selects, takes its shard, runs |
 | `live:chromium` | live | same; `parallel: 3` | `[]` | the same in Chromium, V8 coverage recorded, `coverage/` as an artifact |
 | `coverage` | check (new stage) | same | `lint`, `live:chromium` | the ratchet on the union (section 6) |
