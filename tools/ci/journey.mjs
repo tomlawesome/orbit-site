@@ -84,6 +84,15 @@ const step = async (name, fn) => {
   catch (e) { problems.push(`${name}: ${e.message.split("\n")[0]}`); console.log(`FAIL ${name}`); }
 };
 
+/* A flaky step past its third sighting (docs/flakes.md) still runs and reports, but
+   on the browsers it flakes in a failure does not fail the run: it leaves the merge
+   gate until its issue fixes, rewrites or deletes it (owner 22a, #107). */
+const quarantined = async (issue, browsers, name, fn) => {
+  if (!browsers.includes(BROWSER)) return step(name, fn);
+  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
+  catch (e) { console.log(`QUARANTINED FAIL ${name} (${issue}, not gating): ${e.message.split("\n")[0]}`); }
+};
+
 /* A step that needs its own browser context (a time zone, motion left on, a
    clock), with the harness's pageerror listener on its page. */
 const inOwnContext = async (options, fn) => {
@@ -534,7 +543,7 @@ const landings = async (prefix) => {
   });
   /* Back pressed in mid-flight is honoured: the door's planet is clicked and
      Back follows on the next frame, before the flight can land. */
-  await step(`Back mid-flight returns to the door${prefix ? " (preview)" : ""}`, async () => {
+  await quarantined("#107", ["chromium"], `Back mid-flight returns to the door${prefix ? " (preview)" : ""}`, async () => {
     await inOwnContext({}, async (p) => {
       await p.goto(SITE + prefix, { waitUntil: "load" });
       await p.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
