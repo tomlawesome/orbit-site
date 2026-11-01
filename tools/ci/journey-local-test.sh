@@ -197,7 +197,7 @@ run --changed
 want_rc 0; want_calls 1; want_args "$pre|firefox|--changed|--base|dev"
 verdict "a bare --changed runs live-run.mjs firefox --changed --base dev"
 
-# Case 10c (#102): BROWSER sets the default browser; --browser wins; a stray value is refused.
+# Case 10c (#102): BROWSER sets the default browser; --browser wins; a stray value falls back to Firefox with a note.
 extra="ORBIT_DIR=$orbit BROWSER=chromium"
 run
 want_rc 0; want_calls 1; want_args "$pre|chromium|--changed|--base|dev"
@@ -208,11 +208,12 @@ run --browser firefox --all
 want_rc 0; want_calls 1; want_args "$pre|firefox|--all"
 want_every "BROWSER=firefox" 1
 verdict "--browser firefox wins over BROWSER=chromium"
-extra="ORBIT_DIR=$orbit BROWSER=chrome"
+extra="ORBIT_DIR=$orbit BROWSER=/usr/bin/chrome"
 run
-want_rc 64; want_calls 0
-[ -s "$err" ] || why="$why no usage on stderr;"
-verdict "BROWSER=chrome exits 64 with the usage, running nothing"
+want_rc 0; want_calls 1; want_args "$pre|firefox|--changed|--base|dev"
+want_every "BROWSER=firefox" 1
+grep -q 'ignoring BROWSER' "$err" || why="$why no note on stderr;"
+verdict "BROWSER=/usr/bin/chrome is ignored with a note and runs Firefox"
 
 # Case 11: PLAYWRIGHT_ROOT, when set, is used as it is.
 mkdir -p "$tmp/custom"

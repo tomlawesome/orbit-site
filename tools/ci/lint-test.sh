@@ -75,9 +75,9 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 [ ! -d "$root/tools/node_modules" ] || export NODE_PATH="$root/tools/node_modules"
 cd "$tmp"
 git init -q
-# the scratch repo never leaves $tmp: the host's own commit hooks (the private-details check) must not judge the
-# made-up addresses the cases plant (#114)
-git config core.hooksPath /dev/null
+# the scratch repo never leaves $tmp: the host's own commit hooks (the private-details check, set in the global
+# git config) must not judge the made-up addresses the cases plant (#114)
+export GIT_CONFIG_GLOBAL=/dev/null
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
 

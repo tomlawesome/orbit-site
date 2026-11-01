@@ -67,7 +67,8 @@ sed -i 's/^EXPECT_HOST=.*/EXPECT_HOST=gitlab.invalid/' "$tmp/tools/ci/nightly-pu
 cd "$tmp"
 git init -q
 git add -A
-git -c user.name=t -c user.email=t@t commit -q -m base
+# --no-verify: the host's own commit hooks must not judge the made-up values the cases plant (#114)
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m base
 base=$(git rev-parse --abbrev-ref HEAD)
 realgit=$(command -v git)
 realnode=$(command -v node)

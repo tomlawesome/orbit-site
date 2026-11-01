@@ -20,9 +20,10 @@ usage() {
   exit 64
 }
 
-# $BROWSER sets the default (a stray value is refused, not silently run as Firefox); --browser wins over it
+# $BROWSER sets the default when it is firefox or chromium; anything else (often a
+# desktop's own browser path) is ignored with a note. --browser wins over it.
 browser=${BROWSER:-firefox}
-case $browser in firefox|chromium) ;; *) echo "journey-local: BROWSER must be firefox or chromium, not $browser" >&2; usage ;; esac
+case $browser in firefox|chromium) ;; *) echo "journey-local: ignoring BROWSER=$browser (not firefox or chromium); using firefox" >&2; browser=firefox ;; esac
 if [ "${1-}" = --browser ]; then
   [ "$#" -ge 2 ] || usage
   case $2 in firefox|chromium) browser=$2 ;; *) usage ;; esac
