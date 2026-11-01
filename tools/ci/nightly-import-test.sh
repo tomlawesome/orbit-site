@@ -491,7 +491,12 @@ route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
-    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi ;;
+    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
+    # #91: the lookup of the branch's opened merge request; in mroplost the first create was made and its answer lost
+    case $path in *source_branch=*) if [ "$SCENARIO" = mroplost ]; then
+      sb=$(printf '%s' "$path" | sed -n 's/.*source_branch=\([^&]*\).*/\1/p; ' | sed 's,%2F,/,')
+      body='[{"iid":42,"source_branch":"'$sb'","source_project_id":1,"target_project_id":1}]'; fi ;;
+    esac ;;
   "GET /repository/branches") code=200; body='[]'
     if [ -n "$STALE" ]; then
       now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
@@ -509,12 +514,12 @@ case "$method $route" in
       mropen400always) code=400; body='{"message":"test-refusal-body"}' ;;
       mropen400long) code=400
         body='{"message":"'$(printf 'x%.0s' $(seq 1 400))'TAIL-MARK-BEYOND-CUT"}' ;;
-      mropenconnonce) if [ "$pn" -eq 1 ]; then code=000; body=; connfail=1; fi ;;
+      mropenconnonce|mroplost) if [ "$pn" -eq 1 ]; then code=000; body=; connfail=1; fi ;;
     esac ;;
   "PUT /merge_requests/42/merge")
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
-    okmerge=; case $SCENARIO in mropen400once|mropenconnonce) okmerge=1; n=2 ;; esac
+    okmerge=; case $SCENARIO in mropen400once|mropenconnonce|mroplost) okmerge=1; n=2 ;; esac
     case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
@@ -995,6 +1000,24 @@ rcm=$rc
 n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
 rc=0; [ "$rcm" -eq 0 ] && [ "$n_posts" -eq 2 ] && [ "$sleeps" -eq 1 ] || rc=1
 check "job 2: a first try with no answer is tried again and then succeeds (exit $rcm, $n_posts POSTs, $sleeps sleeps)" "$rc"
+
+# #91: the first create was made but its answer lost (a create slower than 30 s). The retry asks for the branch's
+# opened merge requests first, finds !42, and neither POSTs again nor fails; the rest goes on as for a first success.
+run_push "$out" mroplost
+rcm=$rc
+n_posts=$(grep -c '^POST /merge_requests' "$aux/api.log" || true)
+n_gets=$(grep -c '^GET /merge_requests' "$aux/api.log" || true)
+rc=0; [ "$rcm" -eq 0 ] && [ "$n_posts" -eq 1 ] || rc=1
+check "job 2: a create whose answer was lost is found by the retry, not made twice (exit $rcm, $n_posts POSTs)" "$rc"
+rc=0; grep -q 'is already open for docs/import-' "$out" && grep -q '!42' "$out" || rc=1
+check "job 2: the log says the earlier try had opened !42" "$rc"
+rc=0; [ "$n_gets" -ge 2 ] || rc=1
+check "job 2: the lookup is a GET of the merge requests (saw $n_gets GETs)" "$rc"
+rc=0; grep -q 'set to merge when the pipeline passes' "$out" && [ "$merge_puts" -eq 1 ] || rc=1
+check "job 2: the found merge request is set to merge (saw $merge_puts merge PUTs)" "$rc"
+rc=0; ! grep -rq --exclude-dir=pristine -e "$fake" -e "$fakejob" "$out" "$aux" || rc=1
+check "job 2: the token is in neither the output nor any log after the lookup" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
 # every try refused: 5 tries, 4 waits, a failing job that says why, nothing closed
 run_push "$out" mropen400always

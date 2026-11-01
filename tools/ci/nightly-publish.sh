@@ -630,8 +630,11 @@ main() {
 
   echo "== merge request"
   # GitLab can refuse the open for a moment (#75): it is tried up to 5 times in
-  # all, 3 seconds apart, the same way as the auto-merge below. Each refusal is
-  # logged with its status and answer, cut to 300 characters, never the request.
+  # all, 3 seconds apart (the auto-merge below is 30 tries, 10 seconds apart).
+  # Each refusal is logged with its status and answer, cut to 300 characters,
+  # never the request. Before each try after the first, the branch's opened
+  # merge requests are asked for: a create that took longer than its 30 seconds
+  # may have been made all the same, and a second would be a duplicate (#91).
   # The header file is on disk only while one try runs, never across the waits,
   # and the answer is parsed only once it is gone.
   mrans="$scratch/mr-answer"
@@ -641,6 +644,14 @@ main() {
   mrtries=5
   for i in $(seq 1 "$mrtries"); do
     rm -f "$mrans" "$mrans.err"
+    if [ "$i" -gt 1 ]; then
+      found=$(apij "const m = j.find((m) => m.source_branch === '$branch'); console.log(m ? m.iid : '')" \
+        GET "/merge_requests?state=opened&source_branch=docs%2Fimport-$stamp&per_page=100" --connect-timeout 10 --max-time 30) || found=
+      case $found in ''|*[!0-9]*) ;; *)
+        echo "   try $((i - 1)) had opened it: !$found is already open for $branch"
+        printf '{"iid":%s}\n' "$found" > "$mrans"; code=200; break ;;
+      esac
+    fi
     hdr_on
     code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$mrans" -w '%{http_code}' \
       -X POST -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests" \
