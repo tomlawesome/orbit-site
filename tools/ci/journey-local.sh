@@ -11,7 +11,8 @@
 # (tools/ci/test-map.json). Firefox by default.
 #
 # Playwright comes from $PLAYWRIGHT_ROOT, or else the newest copy in Orbit's
-# pnpm store ($ORBIT_DIR, default: the orbit checkout beside this one).
+# pnpm store ($ORBIT_DIR, default: the orbit checkout beside this one, or, from a
+# worktree, beside the main checkout; the path used is printed).
 set -eu
 
 usage() {
@@ -36,12 +37,25 @@ cd "$root"
 
 if [ -z "${PLAYWRIGHT_ROOT-}" ]; then
   orbit=${ORBIT_DIR:-$(dirname "$root")/orbit}
+  tried=$orbit
   PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
     sort -V | tail -n 1)
+  if [ -z "$PLAYWRIGHT_ROOT" ] && [ -z "${ORBIT_DIR-}" ]; then
+    # From a worktree the orbit checkout sits beside the main checkout, not beside the worktree (#111):
+    # the main checkout is the parent of the common git dir.
+    common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+    if [ -n "$common" ] && [ -d "$common/.." ]; then
+      orbit=$(dirname "$(cd "$common/.." && pwd)")/orbit
+      tried="$tried or $orbit"
+      PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
+        sort -V | tail -n 1)
+    fi
+  fi
   if [ -z "$PLAYWRIGHT_ROOT" ]; then
-    echo "journey-local: no playwright found under $orbit; set PLAYWRIGHT_ROOT or ORBIT_DIR" >&2
+    echo "journey-local: no playwright found under $tried; set PLAYWRIGHT_ROOT or ORBIT_DIR" >&2
     exit 2
   fi
+  echo "journey-local: playwright from $PLAYWRIGHT_ROOT" >&2
 fi
 
 if ! command -v xvfb-run >/dev/null 2>&1; then

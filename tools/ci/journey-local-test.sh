@@ -217,6 +217,16 @@ run
 want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$tmp/work/orbit" 1.20.0)" 1
 verdict "ORBIT_DIR defaults to the orbit directory beside the repository"
 
+# Case 14b (#111): from a worktree the default is beside the main checkout ($orbit), and the path used is printed.
+git -C "$site" add -A
+git -C "$site" -c user.name=t -c user.email=t@t commit -q -m script > /dev/null 2>&1
+git -C "$site" worktree add -q "$tmp/wt/site" -b wt
+extra=""; sc=$tmp/wt/site/tools/ci/journey-local.sh
+run
+want_rc 0; want_every "PLAYWRIGHT_ROOT=$(pwpath "$orbit" 1.52.0)" 1
+grep -qF "$(pwpath "$orbit" 1.52.0)" "$err" || why="$why the path used was not printed;"
+verdict "from a worktree the orbit checkout beside the main checkout is used, and named"
+
 # Case 15: no Playwright anywhere -> exit 2 naming the variables, no run.
 extra="ORBIT_DIR=$tmp/empty"
 run

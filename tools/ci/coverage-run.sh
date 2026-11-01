@@ -10,7 +10,7 @@
 #   sh tools/ci/coverage-run.sh check   only the check, on what is in $COVERAGE_DIR (which needs node/)
 #
 # COVERAGE_DIR defaults to ./coverage (ignored by git). Playwright is found as
-# journey-local.sh finds it. Floors are raised from three full CI runs, never
+# journey-local.sh finds it (beside the main checkout, from a worktree). Floors are raised from three full CI runs, never
 # local ones: sh tools/ci/coverage-fetch.sh JOB JOB JOB, then the
 # `node tools/ci/coverage.mjs --raise ...` it prints.
 set -eu
@@ -31,12 +31,25 @@ export COVERAGE_DIR
 if [ "$mode" = all ]; then
   if [ -z "${PLAYWRIGHT_ROOT-}" ]; then
     orbit=${ORBIT_DIR:-$(dirname "$root")/orbit}
+    tried=$orbit
     PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
       sort -V | tail -n 1)
+    if [ -z "$PLAYWRIGHT_ROOT" ] && [ -z "${ORBIT_DIR-}" ]; then
+      # From a worktree the orbit checkout sits beside the main checkout, not beside the worktree (#111):
+      # the main checkout is the parent of the common git dir.
+      common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+      if [ -n "$common" ] && [ -d "$common/.." ]; then
+        orbit=$(dirname "$(cd "$common/.." && pwd)")/orbit
+        tried="$tried or $orbit"
+        PLAYWRIGHT_ROOT=$(ls -d "$orbit"/node_modules/.pnpm/playwright@*/node_modules/playwright 2>/dev/null |
+          sort -V | tail -n 1)
+      fi
+    fi
     if [ -z "$PLAYWRIGHT_ROOT" ]; then
-      echo "coverage-run: no playwright found under $orbit; set PLAYWRIGHT_ROOT or ORBIT_DIR" >&2
+      echo "coverage-run: no playwright found under $tried; set PLAYWRIGHT_ROOT or ORBIT_DIR" >&2
       exit 2
     fi
+    echo "coverage-run: playwright from $PLAYWRIGHT_ROOT" >&2
   fi
   if ! command -v xvfb-run >/dev/null 2>&1; then
     echo "coverage-run: xvfb-run is not on PATH" >&2
