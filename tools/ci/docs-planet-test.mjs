@@ -8,7 +8,7 @@
  * "tappable" at the first in-page sample (every 150 ms) where its label is shown and one of nine points spread over
  * its hit area (centre first) lands on it. Times are from the page's own clock (performance.now(), 0 = the page opens).
  * The tap is a real touch (page.touchscreen.tap) at the point just found; "opens" means #docspad becomes visible within
- * 45 s of it (the flight between).
+ * OPEN_MS of it (the flight between; a hang limit, not a budget, so a loaded host is not tripped by it).
  *
  * Safari's background shader compiling is faked by an init script: the `KHR_parallel_shader_compile` extension is
  * reported (getSupportedExtensions, getExtension) and every program's and shader's COMPLETION_STATUS_KHR (0x91B1) is
@@ -32,13 +32,15 @@
  *        fill fewer frames there, never more. So a slow runner does not trip it, but the page doing more work before the
  *        docs planet is ready does. Measured 2026-11-02 on the agent host, Chromium, 10 invocations (30 runs): the
  *        docs planet was never later than the others, at most 0 frames after (14 of 30 at exactly 0, the rest 1 to 34
- *        frames before). F1 = 30 frames, a floor chosen by hand because 2x the largest seen is 0 (provisional, #98).
+ *        frames before). On a host loaded with a busy loop per core (4 invocations, 12 runs): again never later (-1 to -85 frames, i.e. before), while the ms
+ *        grew to 5-13 s. F1 = 30 frames, a floor chosen by hand because 2x the largest seen is 0; a break check (the docs planet
+ *        held 8 s before it opens) makes it fail by ~100 frames in every run.
  *   D1c  controls, fast, every run: install and information both become tappable (within 60 s), so the harness sees a working
  *        door; the faking took (the extension was asked for and handed out, statuses were polled, some turned true).
  *   D2   stuck: the docs planet is labelled and tappable no later than F2 animation frames after the page opens, and
  *        a tap on it opens the docs (as a picture, a 2D chart, if the galaxy is not drawn). Frames, for the reason given
  *        under D1. Measured 2026-11-02, same 10 invocations: 406 to 745 frames.
- *        F2 = 1500, about 2x the largest. Today, without the time limit on the compile waits, it never comes.
+ *        Loaded: 371 to 409. F2 = 1500, about 2x the largest. Today, without the time limit on the compile waits, it never comes.
  *   D2c  control, stuck: the faking took (the extension was handed out, statuses were polled, none ever turned true).
  *   D2d  control, stuck (the spec's working door): install and information both become tappable (within 60 s). Today
  *        they never do either: with every status stuck nothing on the door becomes ready (explored 2026-10-13), so a
@@ -72,6 +74,7 @@ const F2 = 1500;               /* D2: docs no later than this many animation fra
 const D2_WATCH_MS = 60000;     /* D2: how long the stuck page is watched (a harness limit, not a budget) */
 const PLAIN_BY_MS = 20000;     /* C: every planet no later than this after the page opens */
 const OTHERS_BY_MS = 60000;    /* controls: install and information within this */
+const OPEN_MS = 240000;       /* a tap: #docspad visible within this (a hang limit; the flight takes 45+ s on a host loaded with a spinner per core) */
 const COMPILE_MS = 160;        /* fast: a program's status turns true this long after it was linked */
 const FIRST_MS = Number(process.env.FIRST_MS || 503); /* fast: the first compile of a fresh context (Safari, CAPABILITIES.md) */
 const FROM = process.env.FROM || "link"; /* fast: the 160 ms counted from the link ("link") or the first poll ("poll") */
@@ -99,23 +102,17 @@ const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const fr = (f) => (f == null ? "never" : `frame ${f}`);
 const s = (ms) => (ms == null ? "never" : `${(ms / 1000).toFixed(1)} s`);
 
-const judge = (id, name, fn, issue = null) => {
+const judge = (id, name, fn) => {
   const problems = [], notes = [];
   const want = (ok, msg) => { if (!ok) problems.push(msg); };
   want.note = (msg) => notes.push(msg);
   try { fn(want); } catch (e) { problems.push(`could not be judged: ${String(e.message || e).split("\n")[0]}`); }
-  const verdict = !problems.length ? "ok  " : issue ? "QUARANTINED FAIL" : "FAIL";
-  console.log(`${verdict} ${id} ${name}${problems.length && issue ? ` (${issue}, not gating)` : ""}`);
+  const verdict = !problems.length ? "ok  " : "FAIL";
+  console.log(`${verdict} ${id} ${name}`);
   for (const n of notes) console.log(`       ${id}: (${n})`);
   for (const p of problems) console.log(`       ${id}: ${p}`);
-  results.push({ id, problems: issue ? [] : problems });
+  results.push({ id, problems });
 };
-
-/* A case past its third sighting (docs/flakes.md) still runs and reports, but on the
-   browsers it flakes in a failure does not fail the run: it leaves the merge gate
-   until its issue fixes, rewrites or deletes it, as journey.mjs's quarantined()
-   (#106). tools/ci/flake-gate.sh reads the issue from each call. */
-const quarantined = (issue, browsers, id, name, fn) => judge(id, name, fn, browsers.includes(BROWSER) ? issue : null);
 
 /* In every page before its own scripts: the fake (if asked) and the sampler. */
 const INIT = ([mode, compileMs, from, firstMs]) => {
@@ -234,7 +231,7 @@ const observe = async (label, query, until, mode = label) => {
           !!document.querySelector("#docspad") && getComputedStyle(document.querySelector("#docspad")).display !== "none" && document.querySelector("#docspad").getBoundingClientRect().height > 0,
         null, { timeout: 3000 }).then(() => true, () => false);
         if (!started) continue;
-        tap.opened = await page.locator("#docspad").waitFor({ state: "visible", timeout: 45000 }).then(() => true, () => false);
+        tap.opened = await page.locator("#docspad").waitFor({ state: "visible", timeout: OPEN_MS }).then(() => true, () => false);
         if (tap.opened) tap.openedIn = Date.now() - at;
         break;
       }
@@ -257,7 +254,7 @@ const others = (want, o, what) => {
 };
 const opened = (want, o, run = "") => {
   want(o.tap.opened, run + (o.tap.tried
-    ? `a tap on the docs planet (${o.tap.tried} tried, the first at ${s(o.tap.at)}) did not open the docs: #docspad not visible within 45 s`
+    ? `a tap on the docs planet (${o.tap.tried} tried, the first at ${s(o.tap.at)}) did not open the docs: #docspad not visible within ${OPEN_MS / 1000} s`
     : "the docs planet was never tapped: it was never labelled and tappable"));
 };
 const noteRun = (want, o, run = "") => {
@@ -273,7 +270,7 @@ const RUNS = Number(process.env.RUNS || 3);
 const fastSetup = async () => {
   const runs = [];
   for (let n = 1; n <= RUNS; n++) runs.push(await observe(`fast ${n}/${RUNS}`, LIVE, 60000, "fast"));
-  quarantined("#98", ["chromium"], "D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${F1} frames of the later of install and information, and a tap opens it`, (want) => {
+  judge("D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${F1} frames of the later of install and information, and a tap opens it`, (want) => {
     runs.forEach((o, i) => {
       const run = `run ${i + 1}: `;
       needGl(o);
@@ -304,7 +301,7 @@ const fastSetup = async () => {
 
 const stuckSetup = async () => {
   const o = await observe("stuck", LIVE, Math.max(D2_WATCH_MS, OTHERS_BY_MS));
-  quarantined("#98", ["chromium"], "D2", `completion status stuck false: docs labelled and tappable within ${F2} frames of the page opening, and a tap opens it`, (want) => {
+  judge("D2", `completion status stuck false: docs labelled and tappable within ${F2} frames of the page opening, and a tap opens it`, (want) => {
     needGl(o);
     noteRun(want, o);
     want(o.seen.hitF.docs != null && o.seen.hitF.docs <= F2,
