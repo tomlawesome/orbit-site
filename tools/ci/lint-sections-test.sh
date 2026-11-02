@@ -17,7 +17,8 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 cd "$tmp"
 git init -q
 git add -A
-git -c user.name=t -c user.email=t@t commit -q -m base
+# --no-verify: the host's own commit hooks must not judge the copy's planted fixtures (as #114)
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m base
 
 ids="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins test-map"
 failed=0
@@ -128,7 +129,7 @@ fi
 d="stray fault: 'stray' fails, 'ci-split' still passes, no arguments fails"
 echo '{}' >package.json
 git add -A -f
-git -c user.name=t -c user.email=t@t commit -q -m "plant stray package.json"
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m "plant stray package.json"
 run_lint f-stray stray
 rs=$rc
 ls_=$(lastline f-stray)
