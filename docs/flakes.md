@@ -50,3 +50,7 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 - 2026-10-29 · 2756f3b · pipeline 3158, live:chromium 2/3, job 41442 · the same, on the same tree plus one doc line; the third sighting files #107; re-run by this push
 - 2026-10-31 · e6bdea2 · journey-local.sh journey, Chromium, agent host (load average 5-6) · the same, two runs in a row; the change reaches only the Firefox image-loader route, which this journey does not take in Chromium; passed 2 of 2 on the same code straight after, and once with the change reverted
 - 2026-11-01 · 11cb867 · pipeline 3320, live:chromium 2/3, job 43174 · the same, on a batch that does not touch the door's planets or Back; passed on retry (job 43196); the fifth sighting, quarantined
+
+## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
+
+- 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
