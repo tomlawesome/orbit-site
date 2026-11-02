@@ -24,15 +24,21 @@
  *
  *   D1   fast, RUNS times (default 3; the docs planet's lateness depends on how the page's background queue falls,
  *        which varies run to run: explored 2026-10-13, 3 of 4 runs late with the first-compile model, 1 of 5 without):
- *        in every run the docs planet is labelled and tappable no later than 5 s after the later of install and information
- *        became tappable, and a tap on it opens the docs. Why 5 s: once the flight is ready the galaxy is a handful of
- *        programs at 160 ms each, under 2 s even behind the door's own jobs, so 5 s leaves room for a busy host on
- *        software GL and still fails today's ~17 s (#49's run: install 4.0 s, flight 8.5 s, docs 25.1 s).
+ *        in every run the docs planet is labelled and tappable no later than F1 animation frames after the later of
+ *        install and information became tappable, and a tap on it opens the docs. Judged in frames, not ms (#98): the
+ *        sampler counts requestAnimationFrame callbacks from the page opening and records each planet's label and hit
+ *        as a frame as well as in ms (ms is printed, for reading only). On a slower runner each frame takes longer, so
+ *        the frames for the same work stay about the same; the page's own timer waits (COMPILE_WAIT, 5 s, chores.js)
+ *        fill fewer frames there, never more. So a slow runner does not trip it, but the page doing more work before the
+ *        docs planet is ready does. Measured 2026-11-02 on the agent host, Chromium, 10 invocations (30 runs): the
+ *        docs planet was never later than the others, at most 0 frames after (14 of 30 at exactly 0, the rest 1 to 34
+ *        frames before). F1 = 30 frames, a floor chosen by hand because 2x the largest seen is 0 (provisional, #98).
  *   D1c  controls, fast, every run: install and information both become tappable (within 60 s), so the harness sees a working
  *        door; the faking took (the extension was asked for and handed out, statuses were polled, some turned true).
- *   D2   stuck: the docs planet is labelled and tappable no later than 20 s after the page opens, and a tap on it
- *        opens the docs (as a picture, a 2D chart, if the galaxy is not drawn). Why 20 s: well past the ~4-9 s the
- *        other planets and the flight take on this host, short of a visitor's giving up; today it never comes.
+ *   D2   stuck: the docs planet is labelled and tappable no later than F2 animation frames after the page opens, and
+ *        a tap on it opens the docs (as a picture, a 2D chart, if the galaxy is not drawn). Frames, for the reason given
+ *        under D1. Measured 2026-11-02, same 10 invocations: 406 to 745 frames.
+ *        F2 = 1500, about 2x the largest. Today, without the time limit on the compile waits, it never comes.
  *   D2c  control, stuck: the faking took (the extension was handed out, statuses were polled, none ever turned true).
  *   D2d  control, stuck (the spec's working door): install and information both become tappable (within 60 s). Today
  *        they never do either: with every status stuck nothing on the door becomes ready (explored 2026-10-13), so a
