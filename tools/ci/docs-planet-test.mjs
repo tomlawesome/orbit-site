@@ -61,8 +61,9 @@ const BROWSER = process.env.BROWSER || "chromium";
 const DEADLINE_MS = Number(process.env.DEADLINE_MS || 10 * 60e3);
 const DPR = Number(process.env.DPR || 1);
 const ONLY = process.argv.slice(2);
-const D1_AFTER_MS = 5000;      /* D1: docs no later than this after the later of install and information */
-const D2_BY_MS = 20000;        /* D2: docs no later than this after the page opens */
+const F1 = 30;                 /* D1: docs no later than this many animation frames after the later of install and information */
+const F2 = 1500;               /* D2: docs no later than this many animation frames after the page opens */
+const D2_WATCH_MS = 60000;     /* D2: how long the stuck page is watched (a harness limit, not a budget) */
 const PLAIN_BY_MS = 20000;     /* C: every planet no later than this after the page opens */
 const OTHERS_BY_MS = 60000;    /* controls: install and information within this */
 const COMPILE_MS = 160;        /* fast: a program's status turns true this long after it was linked */
@@ -89,6 +90,7 @@ const deadline = setTimeout(() => {
 }, DEADLINE_MS);
 
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const fr = (f) => (f == null ? "never" : `frame ${f}`);
 const s = (ms) => (ms == null ? "never" : `${(ms / 1000).toFixed(1)} s`);
 
 const judge = (id, name, fn, issue = null) => {
@@ -150,7 +152,10 @@ const INIT = ([mode, compileMs, from, firstMs]) => {
     }
   }
   /* ── the sampler: when each planet was first labelled, first tappable; where it can be tapped now ── */
-  const S = (window.__seen = { label: {}, hit: {}, point: {}, before: {}, samples: 0 });
+  const S = (window.__seen = { label: {}, hit: {}, labelF: {}, hitF: {}, point: {}, before: {}, samples: 0, frames: 0 });
+  /* animation frames since the page opened: the budgets D1 and D2 are counted in these, not in ms */
+  const frame = () => { S.frames++; requestAnimationFrame(frame); };
+  requestAnimationFrame(frame);
   const tick = () => {
     S.samples++;
     const t = performance.now();
@@ -159,7 +164,7 @@ const INIT = ([mode, compileMs, from, firstMs]) => {
       const tag = p.querySelector(".tag"), hit = p.querySelector(".hit");
       const ts = tag && getComputedStyle(tag);
       const labelled = !!ts && Number(ts.opacity) > 0 && ts.visibility !== "hidden" && ts.display !== "none" && tag.getBoundingClientRect().width > 0;
-      if (labelled && S.label[sec] == null) S.label[sec] = t;
+      if (labelled && S.label[sec] == null) { S.label[sec] = t; S.labelF[sec] = S.frames; }
       let point = null, first = null;
       const r = hit?.getBoundingClientRect();
       if (r && r.width > 0 && r.height > 0) {
@@ -173,7 +178,7 @@ const INIT = ([mode, compileMs, from, firstMs]) => {
       }
       if (S.before[sec] == null && first != null && !point) S.before[sec] = first;
       S.point[sec] = labelled && point ? point : null;
-      if (labelled && point && S.hit[sec] == null) S.hit[sec] = t;
+      if (labelled && point && S.hit[sec] == null) { S.hit[sec] = t; S.hitF[sec] = S.frames; }
     }
   };
   const go = () => setInterval(tick, 150);
@@ -250,7 +255,7 @@ const opened = (want, o, run = "") => {
     : "the docs planet was never tapped: it was never labelled and tappable"));
 };
 const noteRun = (want, o, run = "") => {
-  want.note(`${run}labelled: ${["install", "info", "docs"].map((k) => `${k} ${s(o.seen.label[k])}`).join(", ")}; tappable: ${["install", "info", "docs"].map((k) => `${k} ${s(o.seen.hit[k])}`).join(", ")}; before docs was tappable a point on it gave ${o.seen.before.docs ?? "-"}; ${o.seen.samples} samples`);
+  want.note(`${run}labelled: ${["install", "info", "docs"].map((k) => `${k} ${s(o.seen.label[k])}`).join(", ")}; tappable: ${["install", "info", "docs"].map((k) => `${k} ${s(o.seen.hit[k])} (${fr(o.seen.hitF[k])})`).join(", ")}; before docs was tappable a point on it gave ${o.seen.before.docs ?? "-"}; ${o.seen.samples} samples, ${o.seen.frames} frames`);
   want.note(`${run}fake: ${JSON.stringify(o.fake)}; galaxy line ${o.galaxyLine ? `at ${s(o.galaxyAt)}: ${o.galaxyLine.slice(0, 80)}` : "never"}; tap: ${JSON.stringify(o.tap)}`);
   if (process.env.VERBOSE) for (const l of o.orbit) if (!/upload:/.test(l)) want.note(`${run}${l}`);
 };
@@ -262,16 +267,18 @@ const RUNS = Number(process.env.RUNS || 3);
 const fastSetup = async () => {
   const runs = [];
   for (let n = 1; n <= RUNS; n++) runs.push(await observe(`fast ${n}/${RUNS}`, LIVE, 60000, "fast"));
-  quarantined("#98", ["chromium"], "D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${D1_AFTER_MS / 1000} s of the later of install and information, and a tap opens it`, (want) => {
+  quarantined("#98", ["chromium"], "D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${F1} frames of the later of install and information, and a tap opens it`, (want) => {
     runs.forEach((o, i) => {
       const run = `run ${i + 1}: `;
       needGl(o);
       noteRun(want, o, run);
       const later = Math.max(o.seen.hit.install ?? Infinity, o.seen.hit.info ?? Infinity);
       want(Number.isFinite(later), `${run}could not be judged: install or information never became tappable (see D1c)`);
+      const laterF = Math.max(o.seen.hitF.install ?? Infinity, o.seen.hitF.info ?? Infinity);
       if (Number.isFinite(later)) {
-        want(o.seen.hit.docs != null && o.seen.hit.docs <= later + D1_AFTER_MS,
-          `${run}the docs planet was labelled and tappable at ${s(o.seen.hit.docs)}, ${o.seen.hit.docs == null ? "never" : s(o.seen.hit.docs - later)} after the later of install and information (${s(later)}); want no later than ${D1_AFTER_MS / 1000} s after (by ${s(later + D1_AFTER_MS)})`);
+        const df = o.seen.hitF.docs, dm = o.seen.hit.docs;
+        want(df != null && df <= laterF + F1,
+          `${run}the docs planet was labelled and tappable at ${fr(df)} (${s(dm)}), ${df == null ? "never" : `${df - laterF} frames, ${s(dm - later)}`} after the later of install and information (${fr(laterF)}, ${s(later)}); want no later than ${F1} frames after (by frame ${laterF + F1})`);
       }
       opened(want, o, run);
       want(!o.errors.length, `${run}page error: ${o.errors[0]}`);
@@ -290,12 +297,12 @@ const fastSetup = async () => {
 };
 
 const stuckSetup = async () => {
-  const o = await observe("stuck", LIVE, Math.max(D2_BY_MS + 5000, OTHERS_BY_MS));
-  quarantined("#98", ["chromium"], "D2", `completion status stuck false: docs labelled and tappable within ${D2_BY_MS / 1000} s of the page opening, and a tap opens it`, (want) => {
+  const o = await observe("stuck", LIVE, Math.max(D2_WATCH_MS, OTHERS_BY_MS));
+  quarantined("#98", ["chromium"], "D2", `completion status stuck false: docs labelled and tappable within ${F2} frames of the page opening, and a tap opens it`, (want) => {
     needGl(o);
     noteRun(want, o);
-    want(o.seen.hit.docs != null && o.seen.hit.docs <= D2_BY_MS,
-      `the docs planet was labelled and tappable at ${s(o.seen.hit.docs)} after the page opened (labelled ${s(o.seen.label.docs)}; a point on it gave ${o.seen.before.docs ?? "-"}); want by ${D2_BY_MS / 1000} s`);
+    want(o.seen.hitF.docs != null && o.seen.hitF.docs <= F2,
+      `the docs planet was labelled and tappable at ${fr(o.seen.hitF.docs)} (${s(o.seen.hit.docs)}) after the page opened (labelled ${fr(o.seen.labelF.docs)}, ${s(o.seen.label.docs)}; a point on it gave ${o.seen.before.docs ?? "-"}); want by frame ${F2}`);
     opened(want, o);
     want(!o.errors.length, `page error: ${o.errors[0]}`);
   });
