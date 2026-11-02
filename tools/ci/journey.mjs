@@ -534,9 +534,9 @@ const landings = async (prefix) => {
       await page.waitForFunction(() => { const i = document.querySelector("#docspad .reader div.body img"); return !!i && i.complete && i.naturalWidth > 0; }, null, { timeout: 30000 });
     } catch { throw new Error(`the README page's first picture (${src}) never loaded within 30s (naturalWidth 0: missing, or refused by the page's policy)`); }
   });
-  /* the diagram is on a page that has one: in the current import only the architecture page holds figure[data-mermaid] */
+  /* the diagram is on a page that has one: in the current import only the overview page holds figure[data-mermaid] */
   await step(`a docs diagram draws${prefix ? " (preview)" : ""}`, async () => {
-    await page.goto(SITE + prefix + "#docs/architecture", { waitUntil: "load" });
+    await page.goto(SITE + prefix + "#docs/overview", { waitUntil: "load" });
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     try { await page.locator("#docspad figure[data-mermaid] svg").first().waitFor({ state: "attached", timeout: 30000 }); }
     catch { throw new Error("the docs diagram (figure[data-mermaid]) never drew an svg within 30s"); }
