@@ -10,7 +10,7 @@
  *   W1  the landing (/), the maintenance door a visitor meets
  *   W2  the landing past the maintenance door (/?preview)
  *   W3  the install section (/?preview#install): #installpad becomes visible
- *   W4  a docs page with a Mermaid diagram (/?preview#docs/architecture/system-context): its figure[data-mermaid]
+ *   W4  a docs page with a Mermaid diagram (/?preview#docs/overview/one-app-standard-parts): its figure[data-mermaid]
  *       is there and the diagram is drawn (an svg inside the figure), on every host, network or none: the library is
  *       the site's own copy, so the page asks the site for it (a request for a mermaid file, answered by the site) and
  *       nobody else (#92)
@@ -164,7 +164,7 @@ const walkAll = async () => {
   await walk("W3", "the install section: no policy violation", "?preview#install", async (page) => {
     await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
   });
-  await walk("W4", "a docs page with a Mermaid diagram: no policy violation, drawn from the site's own copy", "?preview#docs/architecture/system-context", async (page, want, o) => {
+  await walk("W4", "a docs page with a Mermaid diagram: no policy violation, drawn from the site's own copy", "?preview#docs/overview/one-app-standard-parts", async (page, want, o) => {
     await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
     const fig = await page.locator("#docspad figure[data-mermaid]").first().waitFor({ state: "attached", timeout: 30000 }).then(() => true, () => false);
     want(fig, "control: the docs page has no figure[data-mermaid] within 30 s, so there is no diagram to judge");
@@ -310,7 +310,7 @@ const noOutsideRequests = async () => {
     ["the landing", "", async () => {}],
     ["the landing past maintenance", "?preview", async () => {}],
     ["the install section", "?preview#install", async (page) => { await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 }); }],
-    ["the docs diagram", "?preview#docs/architecture/system-context", async (page) => {
+    ["the docs diagram", "?preview#docs/overview/one-app-standard-parts", async (page) => {
       await page.locator("#docspad figure[data-mermaid]").first().waitFor({ state: "attached", timeout: 30000 }).catch(() => {});
       await until(() => page.evaluate(() => !!document.querySelector("#docspad figure[data-mermaid] svg")), (v) => v, 30000, 250);
     }],

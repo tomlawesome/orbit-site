@@ -41,7 +41,7 @@ const DOCS_DIR = "assets/docs/";
    echo "sha384-$(openssl dgst -sha384 -binary assets/vendor/mermaid-$v.min.js | base64 -w0)" */
 const MERMAID = { src: "assets/vendor/mermaid-12.2.0.min.js", integrity: "sha384-8xUhuLNMjW/cI2Dacg3DR4WliYznvIg0LVG1stctThKD/YVrJFI9TNCFxft5NYgp" };
 /* start here: the sections worth a first click, when the import has them */
-const KEYS = ["#docs/readme/quick-start", "#docs/readme/run-with-docker", "#docs/readme/configuration", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
+const KEYS = ["#docs/overview/the-screens", "#docs/installing/install", "#docs/operating/back-up-and-restore", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
 const SEED = 20260929;
 /* a constellation: a gentle walk of N stars inside its box — each step turns
    a little, turns back at the box's edge, and never lands on a star already

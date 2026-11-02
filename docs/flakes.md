@@ -43,9 +43,10 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 - 2026-10-23 · 17824c8 (and dev 8b2d23e) · node-tests.sh under coverage-run.sh, agent host · 0 'flight world: on' lines; 6 of 10 runs with coverage, 2 of 10 without, 4 of 10 on dev's door code
 - Fixed by the next commit: the stub's picture loads on a real timer, and the virtual clock could jump past the picture's limit first; W3 now waits for the new picture before running the clock on (0 of 20 failed; still fails with the door's re-request removed)
 
-## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad ([#107](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/107))
+## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad ([#107](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/107)) — quarantined on Chromium (owner 22a, 2026-11-01): it runs and reports `QUARANTINED FAIL`, but does not fail the job
 
 - 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40862 · the click on the install planet never opened #installpad; cc20922 changes only `coverage-floors.json`, and the same shard passed 3 of 3 on 409c39b (pipeline 3106); retried as job 40991
 - 2026-10-29 · cfedb56 · pipeline 3153, live:chromium 2/3, job 41374 · the same; cfedb56 is the revert of !96, so the site's code is ccd883d's, which this shard passed on pipeline 3149; the second sighting, re-run by this push
 - 2026-10-29 · 2756f3b · pipeline 3158, live:chromium 2/3, job 41442 · the same, on the same tree plus one doc line; the third sighting files #107; re-run by this push
 - 2026-10-31 · e6bdea2 · journey-local.sh journey, Chromium, agent host (load average 5-6) · the same, two runs in a row; the change reaches only the Firefox image-loader route, which this journey does not take in Chromium; passed 2 of 2 on the same code straight after, and once with the change reverted
+- 2026-11-01 · 11cb867 · pipeline 3320, live:chromium 2/3, job 43174 · the same, on a batch that does not touch the door's planets or Back; passed on retry (job 43196); the fifth sighting, quarantined

@@ -663,8 +663,8 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
   mkdirSync(join(repoCopy, "assets", "docs"), { recursive: true });
   const O = "tomlawesome/orbit";
   const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
-  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Quick start\n\nText for ${s2.name}.\n\n## Details\n\nMore text.\n`;
-  const KINDS = new Set(["link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "more"]);
+  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Quick start\n\nText for ${s2.name}.\n\n## Details\n\nMore text.\n` + (s2.skip || []).map((h) => `\n## ${h}\n\nLeft out.\n`).join("");
+  const KINDS = new Set(["link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "skip-unmatched", "more"]);
   const pairs = new Set(sources.map((s2) => `${s2.repo}\t${s2.path}`));
   const BAD = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
   let k = 0;
@@ -758,6 +758,77 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     `kinds ${JSON.stringify([...new Set(mr.map((f) => f[2]))])}; last ${JSON.stringify(mr[mr.length - 1])}`);
   check("L6 the more line says 51 were left out", mr.length > 0 && /\b51\b/.test(mr[mr.length - 1][3] ?? ""), `last ${JSON.stringify(mr[mr.length - 1])}`);
   rmSync(tmp, { recursive: true, force: true });
+}
+
+// ------------------------------------------------- the page set and `skip` (#124) --
+// A source's `skip` lists second-level headings the page leaves out. A `skip` entry that matches no second-level heading
+// of the file is warned about (kind `skip-unmatched`, naming the entry) so an upstream rename cannot quietly put a
+// section back; every section is then kept. An entry that matches drops that section and warns nothing. The scratch
+// copy's tools/docs-sources.json is the real list with the readme given its own `skip`, so the cases do not depend on
+// what the committed list says.
+{
+  const real = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
+  const tmp = mkdtempSync(join(tmpdir(), "import-skip-"));
+  const repoCopy = join(tmp, "repo");
+  cpSync("tools", join(repoCopy, "tools"), { recursive: true, filter: (p) => !/node_modules/.test(p) });
+  symlinkSync(join(process.cwd(), "tools", "node_modules"), join(repoCopy, "tools", "node_modules"));
+  mkdirSync(join(repoCopy, "assets", "docs"), { recursive: true });
+  const O = "tomlawesome/orbit";
+  const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
+  const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Details\n\nText for ${s2.name}.\n`;
+  const readme = ["# Orbit", "", "Landing words.", "", "## Quick start", "", "Start words.", "", "## Contributor notes", "", "Hidden words.", "",
+    "### Quick start", "", "A third-level heading is not a match.", "", "## After", "", "More words.", ""].join("\n");
+  let k = 0;
+  const scenario = (skip) => {
+    const sources = real.map(({ skip: _s, from: _f, ...s2 }) => (s2.slug === "readme" ? { ...s2, skip } : s2));
+    writeFileSync(join(repoCopy, "tools", "docs-sources.json"), JSON.stringify(sources, null, 1) + "\n");
+    const from = join(tmp, `checkout${k}`), fromL = `${from}-launcher`, out = join(tmp, `out${k}`), wf = join(tmp, `warnings${k}.txt`); k++;
+    for (const s2 of sources) put(s2.repo === O ? from : fromL, s2.path, s2.slug === "readme" ? readme : stub(s2));
+    const r = spawnSync(process.execPath, ["tools/import-docs.mjs", "--from", from, "--out", out, "--warnings", wf], { cwd: repoCopy, encoding: "utf8", timeout: 120000, env: { ...process.env, NODE_NO_WARNINGS: "1" } });
+    const file = join(out, "readme.json");
+    const titles = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).sections.map((x) => x.title) : null;
+    const rows = (existsSync(wf) ? readFileSync(wf, "utf8") : "").split("\n").filter(Boolean).map((l) => l.split("\t"));
+    return { status: r.status, stderr: r.stderr ?? "", err: r.error ? String(r.error.message) : "", titles, unmatched: rows.filter((f) => f[2] === "skip-unmatched") };
+  };
+
+  // K1 (a): a skip entry that is no second-level heading -> one skip-unmatched warning naming it; every section is kept
+  {
+    const r = scenario(["Nope"]);
+    const all = ["Orbit", "Quick start", "Contributor notes", "After"];
+    check("K1 a skip entry that matches no heading still imports (exit 0)", r.status === 0, `status ${r.status}${r.err ? " " + r.err : ""}; stderr: ${r.stderr.slice(0, 300)}`);
+    eq("K1 exactly one skip-unmatched warning", r.unmatched.length, 1);
+    check("K1 the skip-unmatched warning names \"Nope\" and the readme", r.unmatched.length === 1 && r.unmatched[0][3].includes("Nope") && r.unmatched[0][0] === O && r.unmatched[0][1] === "README.md",
+      `warnings ${JSON.stringify(r.unmatched)}`);
+    check("K1 every section is kept", JSON.stringify(r.titles) === JSON.stringify(all), `sections ${JSON.stringify(r.titles)} (want ${JSON.stringify(all)})`);
+  }
+  // K2 (b): a skip entry that names a real second-level heading -> that section goes, no skip-unmatched warning
+  {
+    const r = scenario(["Contributor notes"]);
+    check("K2 a skip entry that names a real heading imports (exit 0)", r.status === 0, `status ${r.status}${r.err ? " " + r.err : ""}; stderr: ${r.stderr.slice(0, 300)}`);
+    check("K2 that section is dropped and the others stay", JSON.stringify(r.titles) === JSON.stringify(["Orbit", "Quick start", "After"]), `sections ${JSON.stringify(r.titles)}`);
+    eq("K2 no skip-unmatched warning", r.unmatched.length, 0);
+    check("K2 no skip-unmatched line on stderr", !/skip-unmatched|skip heading/.test(r.stderr), `stderr: ${r.stderr.slice(0, 300)}`);
+  }
+  // K3: a third-level heading of the same text does not satisfy a skip entry
+  {
+    const r = scenario(["Quick start", "Contributor notes", "Nope"]);
+    check("K3 only the entry that matches no second-level heading is warned about", r.unmatched.length === 1 && r.unmatched[0][3].includes("Nope"), `warnings ${JSON.stringify(r.unmatched)}`);
+  }
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+// The real list (#124): the pages of the site, in reading order.
+{
+  const list = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
+  const want = ["readme", "overview", "installing", "operating", "launcher", "sign-in", "administration", "security"];
+  const slugs = list.map((s2) => s2.slug);
+  check("K4 tools/docs-sources.json has exactly these slugs in this order: " + want.join(", "), JSON.stringify(slugs) === JSON.stringify(want), `gave ${JSON.stringify(slugs)}`);
+  const bad = list.filter((s2) => !["slug", "name", "c", "repo", "path"].every((f) => typeof s2[f] === "string" && s2[f] !== ""));
+  check("K4 every entry has slug, name, c, repo and path (non-empty strings)", list.length > 0 && bad.length === 0, `entries missing a field: ${JSON.stringify(bad.map((s2) => s2.slug))}`);
+  const out = list.filter((s2) => ["docs/releasing.md", "docs/supply-chain.md", "docs/architecture.md"].includes(s2.path));
+  check("K4 no path is docs/releasing.md, docs/supply-chain.md or docs/architecture.md", out.length === 0, `still listed: ${JSON.stringify(out.map((s2) => s2.path))}`);
+  const badSkip = list.filter((s2) => "skip" in s2 && !(Array.isArray(s2.skip) && s2.skip.length > 0 && s2.skip.every((x) => typeof x === "string" && x.trim() !== "")));
+  check("K4 every skip present is a non-empty list of strings", badSkip.length === 0, `bad skip in ${JSON.stringify(badSkip.map((s2) => s2.slug))}`);
 }
 
 process.exit(failed ? 1 : 0);

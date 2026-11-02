@@ -162,7 +162,7 @@ if sc == 'dup': extra.append(('assets/docs/readme.json', files['readme.json'], R
 if sc == 'missing': del files['security.json']
 if sc == 'toolarge': files['administration.json'] = b' ' * 3000000
 if sc == 'toomuch':
-    for n in ['administration.json', 'architecture.json', 'launcher.json', 'readme.json', 'releases.json']: files[n] = b' ' * 1900000
+    for n in ['administration.json', 'installing.json', 'launcher.json', 'readme.json', 'operating.json']: files[n] = b' ' * 1900000
 if sc == 'notjson': files['readme.json'] = b'{'
 if sc == 'notobject': files['readme.json'] = b'[]'
 if sc == 'xss': edit('index.json', lambda j: j['sources'][0].update(c='#fff"><img src=x onerror=alert(1)>'))

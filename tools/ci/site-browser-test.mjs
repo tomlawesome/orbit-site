@@ -421,12 +421,12 @@ const docsFaultCase = async () => {
 };
 
 /* ── B9: a docs diagram beside a heading titled "Mermaid" ──────────────────────────────────────────────────── */
-/* the committed architecture page, cut to its first diagram; `withHeading` puts a section whose heading is titled
+/* the committed overview page, cut to its first diagram; `withHeading` puts a section whose heading is titled
    "Mermaid" (id="mermaid") before the diagram */
 const mermaidPage = (withHeading) => {
-  const page = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "architecture.json"), "utf8"));
+  const page = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "overview.json"), "utf8"));
   const diagram = page.sections.find((s) => /data-mermaid/.test(s.html));
-  if (!diagram) throw new Error("assets/docs/architecture.json holds no figure[data-mermaid] to serve");
+  if (!diagram) throw new Error("assets/docs/overview.json holds no figure[data-mermaid] to serve");
   const sections = [page.sections[0]];
   if (withHeading) sections.push({ id: "mermaid", title: "Mermaid", html: '<h2 id="mermaid">Mermaid</h2>\n<p>Diagrams on this page are drawn with the Mermaid library.</p>', summary: "", text: "Mermaid Diagrams on this page are drawn with the Mermaid library.", subs: [] });
   sections.push(diagram);
@@ -438,8 +438,8 @@ const mermaidCase = async () => {
     const visit = async (withHeading) => {
       const page = await open(mctx);
       const body = JSON.stringify(mermaidPage(withHeading));
-      await page.route("**/assets/docs/architecture.json", (route) => route.fulfill({ status: 200, contentType: "application/json", body }));
-      await page.goto(`${SITE}?preview#docs/architecture`, { waitUntil: "load" });
+      await page.route("**/assets/docs/overview.json", (route) => route.fulfill({ status: 200, contentType: "application/json", body }));
+      await page.goto(`${SITE}?preview#docs/overview`, { waitUntil: "load" });
       await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
       await page.locator("#docspad figure[data-mermaid]").first().waitFor({ state: "attached", timeout: 30000 });
       /* settled: the figure holds an svg, or the source is shown as code, or 30 s have gone */
