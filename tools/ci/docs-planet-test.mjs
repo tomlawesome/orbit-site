@@ -91,16 +91,23 @@ const deadline = setTimeout(() => {
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const s = (ms) => (ms == null ? "never" : `${(ms / 1000).toFixed(1)} s`);
 
-const judge = (id, name, fn) => {
+const judge = (id, name, fn, issue = null) => {
   const problems = [], notes = [];
   const want = (ok, msg) => { if (!ok) problems.push(msg); };
   want.note = (msg) => notes.push(msg);
   try { fn(want); } catch (e) { problems.push(`could not be judged: ${String(e.message || e).split("\n")[0]}`); }
-  console.log(`${problems.length ? "FAIL" : "ok  "} ${id} ${name}`);
+  const verdict = !problems.length ? "ok  " : issue ? "QUARANTINED FAIL" : "FAIL";
+  console.log(`${verdict} ${id} ${name}${problems.length && issue ? ` (${issue}, not gating)` : ""}`);
   for (const n of notes) console.log(`       ${id}: (${n})`);
   for (const p of problems) console.log(`       ${id}: ${p}`);
-  results.push({ id, problems });
+  results.push({ id, problems: issue ? [] : problems });
 };
+
+/* A case past its third sighting (docs/flakes.md) still runs and reports, but on the
+   browsers it flakes in a failure does not fail the run: it leaves the merge gate
+   until its issue fixes, rewrites or deletes it, as journey.mjs's quarantined()
+   (#106). tools/ci/flake-gate.sh reads the issue from each call. */
+const quarantined = (issue, browsers, id, name, fn) => judge(id, name, fn, browsers.includes(BROWSER) ? issue : null);
 
 /* In every page before its own scripts: the fake (if asked) and the sampler. */
 const INIT = ([mode, compileMs, from, firstMs]) => {
@@ -255,7 +262,7 @@ const RUNS = Number(process.env.RUNS || 3);
 const fastSetup = async () => {
   const runs = [];
   for (let n = 1; n <= RUNS; n++) runs.push(await observe(`fast ${n}/${RUNS}`, LIVE, 60000, "fast"));
-  judge("D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${D1_AFTER_MS / 1000} s of the later of install and information, and a tap opens it`, (want) => {
+  quarantined("#98", ["chromium"], "D1", `faked background compiles (${RUNS} runs): docs labelled and tappable within ${D1_AFTER_MS / 1000} s of the later of install and information, and a tap opens it`, (want) => {
     runs.forEach((o, i) => {
       const run = `run ${i + 1}: `;
       needGl(o);
@@ -284,7 +291,7 @@ const fastSetup = async () => {
 
 const stuckSetup = async () => {
   const o = await observe("stuck", LIVE, Math.max(D2_BY_MS + 5000, OTHERS_BY_MS));
-  judge("D2", `completion status stuck false: docs labelled and tappable within ${D2_BY_MS / 1000} s of the page opening, and a tap opens it`, (want) => {
+  quarantined("#98", ["chromium"], "D2", `completion status stuck false: docs labelled and tappable within ${D2_BY_MS / 1000} s of the page opening, and a tap opens it`, (want) => {
     needGl(o);
     noteRun(want, o);
     want(o.seen.hit.docs != null && o.seen.hit.docs <= D2_BY_MS,

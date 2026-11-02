@@ -102,6 +102,8 @@
     ],
     "none": [
       "docs/**",
+      "tools/ci/flake-check.sh",
+      "tools/ci/flake-gate.sh",
       "*.md",
       "assets/door/README.md",
       "LICENSE",

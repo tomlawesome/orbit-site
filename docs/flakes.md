@@ -1,24 +1,8 @@
 # Flakes
 
 A check that failed and passed again on unchanged code. One heading per flake, one line per sighting
-(`date · commit · job · symptom`); the third line files the issue.
-
-## freeze.mjs 1-3: a long task over 50 ms in the 10 s after body.lit ([#32](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/32))
-
-- 2026-10-10 · fe7242a · journey-local.sh freeze, agent host (load average 20-30) · 1 task of 74 ms, passed on the next run
-- 2026-10-10 · fe7242a · journey-local.sh freeze, agent host (load average 20-30) · 1 task of 101 ms, passed on the next run
-- 2026-10-11 · f97a9bb · journey-local.sh freeze ×8, agent host (load average 5-34) · failed 1 of 8, 1 task of 50 ms; the third sighting files #32
-- 2026-10-11 · 7c49676 · journey-local.sh (all six), agent host (load average 10-23) · 1 task of 50 ms; the diff touches only teardown, passed on the next run
-- 2026-10-11 · 4e8dd43 · pipeline 2496 live:journey (CI runner, no GPU) · 1 task of 55 ms; the diff touches only teardown, re-run
-- 2026-10-22 · c8c9b71 · pipeline 2888 live:journey job 38457 (CI runner, no GPU) · 1 task of 80 ms; the diff touches only AGENTS.md, and the same site code passed in pipeline 2884; #32 reopened
-- Resolved 2026-10-22: the check timed the runner (the page's own longest task ~21-26 ms); it now counts the work after lit instead (#32)
-
-## dawn-test, Chromium: "every Earth request had finished before ready" in the held-pictures case ([#73](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/73))
-
-- 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · ready +4039 ms, one request's finish event +4045 ms; "not ready while held" passed; passed on the next run
-- 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · same case, failed again on the run after; the test compares the runner-side arrival of Playwright's requestfinished event with ready, and Chromium can deliver that event after the page has used the body (CI runs dawn on Firefox only)
-- 2026-10-20 · 42fbb6e · local Chromium engines pass (fifth audit), agent host · ready +4020 ms, Earth requests finished +4022/4023 ms; the third sighting files #73
-- 2026-10-22 · Fixed by the commit that closes #73: the check now reads the page's own resource timing (each Earth picture's responseEnd) against when the page set ready, so the runner's event delivery no longer matters
+(`date · commit · job · symptom`); the third line files the issue and quarantines the check. `tools/ci/flake-gate.sh` enforces this in CI (#106).
+A fixed flake's heading comes off with the fix; its issue, if any, and git history keep the record.
 
 ## Docker image pull from the dependency proxy: not found
 
@@ -29,7 +13,7 @@ A check that failed and passed again on unchanged code. One heading per flake, o
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
 - 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
 
-## docs-planet D1/D2, Chromium: the docs planet misses its wall-clock budget ([#98](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/98))
+## docs-planet D1/D2, Chromium: the docs planet misses its wall-clock budget ([#98](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/98)) — quarantined on Chromium (#106, 2026-11-02): D1 and D2 run and report `QUARANTINED FAIL`, but do not fail the job
 
 Both cases hold the docs planet to a budget (D2: tappable within 20 s of the page opening; D1: within 5 s of install and information) on a shared runner with software GL; the same commit's code passed in dev's live job 20 minutes before each. The merge request's diff cannot reach this test.
 
@@ -37,11 +21,6 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 - 2026-10-28 · c7bd3ba · pipeline 3071, job 40327 (retry) · D1 run 3: docs tappable 5.2 s after install and information, want 5 s
 - 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40991 (the retry) · journey passed; D2 "completion status stuck false": docs labelled and tappable at 24.3 s, want 20 s; shard took 705 s against 517 planned · the third sighting files #98
 - 2026-10-29 · 273cfb5 · pipeline 3160, live:chromium 2/3, job 41467 · D1 "docs labelled and tappable within 5 s" failed on the revert of !96 (site code ccd883d's); the same shard failed the Back mid-flight flake (#107) on the two pipelines before · fourth sighting, retried
-
-## flight-waits W3: a later warm() does not prove the world
-
-- 2026-10-23 · 17824c8 (and dev 8b2d23e) · node-tests.sh under coverage-run.sh, agent host · 0 'flight world: on' lines; 6 of 10 runs with coverage, 2 of 10 without, 4 of 10 on dev's door code
-- Fixed by the next commit: the stub's picture loads on a real timer, and the virtual clock could jump past the picture's limit first; W3 now waits for the new picture before running the clock on (0 of 20 failed; still fails with the door's re-request removed)
 
 ## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad ([#107](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/107)) — quarantined on Chromium (owner 22a, 2026-11-01): it runs and reports `QUARANTINED FAIL`, but does not fail the job
 
@@ -54,3 +33,7 @@ Both cases hold the docs planet to a budget (D2: tappable within 20 s of the pag
 ## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
 
 - 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
+
+## Runner interrupted mid-job (host)
+
+- 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
