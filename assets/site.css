@@ -944,7 +944,9 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .others .mini .lines line{stroke:var(--c);stroke-opacity:.35;stroke-width:1;transition:stroke-opacity .25s}
 .pad.docs .others .mini .stars circle{fill:var(--ink-mid);transition:fill .25s}
 .pad.docs .others .mini span{display:block;margin-top:2px;font:500 10px var(--mono);letter-spacing:.18em;text-transform:uppercase;transition:color .25s}
-.pad.docs .others .mini:hover,.pad.docs .others .mini:focus-visible{background:var(--panel);color:var(--c);outline:0}
+/* hover brightens the figure only, with no card behind it (#127); keyboard focus keeps the card so it shows where it is */
+.pad.docs .others .mini:hover{color:var(--c)}
+.pad.docs .others .mini:focus-visible{background:var(--panel);color:var(--c);outline:0}
 .pad.docs .others .mini:hover .lines line{stroke-opacity:.85}
 .pad.docs .others .mini:hover .stars circle{fill:var(--c)}
 @media (min-width:1200px){.pad.docs .reader{width:min(1240px,calc(100% - 48px))}.pad.docs .readgrid{grid-template-columns:200px minmax(0,720px) 240px;gap:52px}.pad.docs .others{display:block}}
