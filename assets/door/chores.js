@@ -462,14 +462,13 @@ export const compiledWithin = (gl, par, list, every = 40, stop = () => false) =>
   if (!par) { resolve(true); return; }
   /* (only the time the page is seen counts: a hidden tab's compiles and timers may be held back by the browser, so a
      phone tab put in the background mid-compile does not lose its world for the visit) */
-  /* (#123: a span between two polls counts only if the page was seen at both and never hidden in between, so the
-     first poll after the tab comes back does not credit the time it was away) */
+  /* (#123: a span between two polls counts only if the page was seen at both and not shown again in between, so the
+     first poll after the tab comes back does not credit the time it was away; page.onVisible, which the draw worker
+     answers too) */
   let seen = 0, last = performance.now(), was = !page.hidden(), away = false;
-  const hid = () => { if (page.hidden()) away = true; };
-  const doc = typeof document !== "undefined" ? document : null;
-  doc?.addEventListener("visibilitychange", hid);
+  const unsee = page.onVisible(() => { away = true; });
   /** @param {boolean} ok */
-  const done = (ok) => { doc?.removeEventListener("visibilitychange", hid); resolve(ok); };
+  const done = (ok) => { unsee(); resolve(ok); };
   const poll = () => {
     const now = performance.now(), shown = !page.hidden();
     if (shown && was && !away) seen += now - last;
