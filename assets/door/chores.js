@@ -462,14 +462,21 @@ export const compiledWithin = (gl, par, list, every = 40, stop = () => false) =>
   if (!par) { resolve(true); return; }
   /* (only the time the page is seen counts: a hidden tab's compiles and timers may be held back by the browser, so a
      phone tab put in the background mid-compile does not lose its world for the visit) */
-  let seen = 0, last = performance.now();
+  /* (#123: a span between two polls counts only if the page was seen at both and never hidden in between, so the
+     first poll after the tab comes back does not credit the time it was away) */
+  let seen = 0, last = performance.now(), was = !page.hidden(), away = false;
+  const hid = () => { if (page.hidden()) away = true; };
+  const doc = typeof document !== "undefined" ? document : null;
+  doc?.addEventListener("visibilitychange", hid);
+  /** @param {boolean} ok */
+  const done = (ok) => { doc?.removeEventListener("visibilitychange", hid); resolve(ok); };
   const poll = () => {
-    const now = performance.now();
-    if (!page.hidden()) seen += now - last;
-    last = now;
-    if (gl.isContextLost() || stop()) resolve(false);
-    else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) resolve(true);
-    else if (seen > COMPILE_WAIT) resolve(false);
+    const now = performance.now(), shown = !page.hidden();
+    if (shown && was && !away) seen += now - last;
+    was = shown; away = false; last = now;
+    if (gl.isContextLost() || stop()) done(false);
+    else if (list.every((p) => gl.getProgramParameter(p, par.COMPLETION_STATUS_KHR))) done(true);
+    else if (seen > COMPILE_WAIT) done(false);
     else setTimeout(poll, every);
   };
   poll();
