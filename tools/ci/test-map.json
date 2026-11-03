@@ -179,6 +179,13 @@
       "gates": ["chromium"],
       "seconds": { "chromium": 135 }
     },
+    "docs-img-centre": {
+      "file": "tools/ci/docs-img-centre-test.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 10 }
+    },
     "docs-sky-portrait-live": {
       "file": "tools/ci/docs-sky-portrait-live-test.mjs",
       "groups": ["page", "flight"],
