@@ -112,6 +112,9 @@ async function rasterise(key, svg, w, h) {
 async function keep(key, canvas) {
   /** @type {Blob | null} */ const blob = await new Promise((r) => { try { canvas.toBlob(r, "image/png"); } catch { r(null); } });
   const url = blob ? URL.createObjectURL(blob) : canvas.toDataURL("image/png");
+  /* (two builds of one size under way at once: the first picture kept, the second let go, so none is left unrevoked) */
+  const had = cache.get(key);
+  if (had) { if (url.startsWith("blob:")) URL.revokeObjectURL(url); return had; }
   cache.set(key, url);
   return url;
 }
@@ -196,6 +199,9 @@ const frame = (defs, body, w, h) =>
  */
 export function mountRasters(world, groups, prefix, { until = () => null, drawn = () => {} } = {}) {
   let /** @type {ReturnType<typeof setTimeout> | undefined} */ timer, run = 0, /** @type {Set<string>} */ current = new Set();
+  /* the picture each layer shows now (its cache key), so nothing on screen is let go */
+  /** @type {Map<string, string>} */
+  const shown = new Map();
   /* where the sunrise point (800, 920 in the slice) falls on screen, for the
      layers that turn about it */
   const origin = () => {
@@ -220,9 +226,11 @@ export function mountRasters(world, groups, prefix, { until = () => null, drawn 
       const [key, w, h] = sizes[name];
       /* the sun is painted (paintSun); the rest are drawn from their SVG */
       const url = /** @type {string} */ (await (group === SUN ? paintSun(key, w, h, () => id === run) : rasterise(key, frame(/** @type {Group} */ (group).defs, /** @type {Group} */ (group).body, w, h), w, h)));
-      /* superseded: what it made for a size that is no longer current is let go (the newer build's own sizes are kept) */
-      if (id !== run) { if (url && !current.has(key)) forget(key); return; }
+      /* superseded: what it made for a size that is no longer current is let go (the newer build's own sizes are kept),
+         unless it is a picture still on screen (a cached one it was handed): the newest build lets that go as it ends */
+      if (id !== run) { if (url && !current.has(key) && ![...shown.values()].includes(key)) forget(key); return; }
       world.querySelector(`image[data-raster="${name}"]`)?.setAttribute("href", url);
+      shown.set(name, key);
       drawn(url, name);
       await new Promise((r) => setTimeout(r, 0));
       if (id !== run) return;

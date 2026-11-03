@@ -3,10 +3,11 @@
  *
  *   COVERAGE_DIR=out node --import ./tools/ci/coverage-hook.mjs tools/ci/journey.mjs
  *
- * Loaded before the test, it wraps the Chromium launch of the Playwright the test uses (PLAYWRIGHT_ROOT, as the
- * tests find it): every page of every context then runs with V8's precise coverage (Playwright's page.coverage),
- * read when the page navigates or closes, and at exit the ranges that ran are written to
- * $COVERAGE_DIR/browser-<test>-<pid>.json. Firefox has no such thing, so only Chromium is recorded. Only the site's
+ * Loaded before the test, it wraps the Chromium launch and connect of the Playwright the test uses (PLAYWRIGHT_ROOT,
+ * as the tests find it; a test reaches the live job's shared Chromium by connecting): every page of every context then
+ * runs with V8's precise coverage (Playwright's page.coverage), read when the page navigates or closes, and at exit
+ * the ranges that ran are written to $COVERAGE_DIR/browser-<test>-<CI_NODE_INDEX or 0>-<pid>.json, so the shards of
+ * one job cannot overwrite each other's files in the merged artifact. Firefox has no such thing, so only Chromium is recorded. Only the site's
  * own files are kept (sw.js, assets/js/*.js, assets/door/*.js, from the page's own origin, as they are on disk); tools/ci/coverage.mjs
  * reads the files and reports. A script it skips (the page ran another copy than the file on disk, or the page's source
  * was not available to compare) is named on stderr, once per script per test run, with the reason. Without COVERAGE_DIR the hook does nothing.
@@ -92,14 +93,17 @@ if (dir) {
     return browser;
   };
 
-  const launch = playwright.chromium.launch.bind(playwright.chromium);
-  playwright.chromium.launch = async (...a) => track(await launch(...a));
+  for (const how of ["launch", "connect"]) {
+    if (typeof playwright.chromium[how] !== "function") continue;
+    const orig = playwright.chromium[how].bind(playwright.chromium);
+    playwright.chromium[how] = async (...a) => track(await orig(...a));
+  }
 
   process.on("exit", () => {
     if (!seen.size) return;
     const scripts = {};
     for (const [path, { length, ran }] of seen) scripts[path] = { length, ran: rangesOf(ran) };
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `browser-${basename(process.argv[1] || "test", ".mjs")}-${process.pid}.json`), JSON.stringify({ scripts }));
+    writeFileSync(join(dir, `browser-${basename(process.argv[1] || "test", ".mjs")}-${process.env.CI_NODE_INDEX || 0}-${process.pid}.json`), JSON.stringify({ scripts }));
   });
 }

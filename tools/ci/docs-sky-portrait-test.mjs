@@ -35,8 +35,8 @@
  *   N6  (item 6) the shared door is Orbit-neutral and current: in assets/door/ (*.js, door.css, README.md, all of which
  *       Orbit copies), a citation of this site's issue reads "orbit-site #51", never a bare "#51"; nothing calls the
  *       portrait threshold the site's ("the site's threshold", "site's portrait threshold", "threshold is the site's");
- *       and the comment on voyage.js's `const REST` (the comment block just above it, or on its line) says it is the
- *       landscape rest (names "landscape").
+ *       and voyage.js holds no copy of the rest point (no `const REST`) and takes it from the engine (`restFor`,
+ *       ADR-0004 section 5).
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
@@ -115,10 +115,9 @@ for (const f of doorFiles) {
 check("N6 the door cites this site's issue as \"orbit-site #51\", never a bare \"#51\"", bare.length === 0, bare.length ? `bare #51 at ${bare.join(", ")}` : "none");
 check("N6 the door calls the portrait threshold its own, not the site's", sites.length === 0, sites.length ? `"the site's" threshold at ${sites.join(", ")}` : "none");
 const voyage = readFileSync(resolve(doorDir, "voyage.js"), "utf8").split("\n");
-const at = voyage.findIndex((l) => /^\s*(export\s+)?const REST\b/.test(l));
-let said = at < 0 ? "" : voyage[at].includes("/*") || voyage[at].includes("//") ? voyage[at] : "";
-for (let i = at - 1; at >= 0 && i >= 0 && /^\s*(\/\*|\*|\/\/)|\*\/\s*$/.test(voyage[i]); i--) said = voyage[i] + "\n" + said;
-check("N6 voyage.js's REST comment says it is the landscape rest", at >= 0 && /landscape/i.test(said),
-  at < 0 ? "no `const REST` in voyage.js" : `line ${at + 1}, comment: ${said.trim().replace(/\s+/g, " ").slice(0, 160) || "(none)"}`);
+const hasRest = voyage.some((l) => /^\s*(export\s+)?const REST\b/.test(l));
+const takesRestFor = voyage.some((l) => /\brestFor\b/.test(l));
+check("N6 voyage.js holds no copy of the rest point (no `const REST`) and takes it from the engine (`restFor`)", !hasRest && takesRestFor,
+  hasRest ? "a `const REST` is still in voyage.js" : takesRestFor ? "no `const REST`; restFor present" : "no `restFor` in voyage.js");
 
 process.exit(failed ? 1 : 0);

@@ -16,13 +16,16 @@ and lives in the page.
 - **A changed doc.** The docs are fetched from the Orbit repositories'
   `main` branches over HTTPS and rendered by the import tool; a page is
   never fetched live by the visitor's browser from a third party.
-- **Third-party code.** One script comes from elsewhere: Mermaid, loaded
-  from jsDelivr only when a docs page has a diagram to draw, pinned to a
-  version and checked against its integrity hash, so a changed file is
-  refused rather than run. Fonts come from
-  Google Fonts. Everything else is this repository's own, served from the
-  same origin. The import and CI dependencies (`marked`, `sharp`,
-  `playwright`) never reach a visitor.
+- **Third-party code.** Nothing is loaded from another site (#92): the
+  page's policy allows scripts, styles and fonts from the site alone, and
+  the lint refuses an outside address in anything the pages load. Two
+  third-party parts are kept in this repository and served from it:
+  Mermaid's release file (`assets/vendor/`), loaded only when a docs page
+  has a diagram to draw, pinned to a version and copied from the npm
+  registry's tarball after checking its published integrity; and the
+  fonts (`assets/fonts/`). Everything else is this repository's own. The
+  import and CI dependencies (`marked`, `sharp`, `playwright`) never reach
+  a visitor.
 - **The service worker** caches pictures for 36 hours and otherwise asks
   for everything fresh; it never serves a cross-origin response from cache.
 

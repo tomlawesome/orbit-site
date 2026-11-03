@@ -64,10 +64,14 @@ licence does. Nothing here restricts any right you hold under them.
     the copyright holder's own work, published under AGPL-3.0 in its
     own repository; those parts remain available under AGPL-3.0 from
     there.
-  - Fonts (Space Grotesk, Inter, JetBrains Mono) are served by Google
-    Fonts under the SIL Open Font License 1.1, and Mermaid, which draws
-    diagrams in the docs, is loaded from jsDelivr under the MIT licence.
-    Neither is copied into this repository.
+  - The fonts in assets/fonts/ (Space Grotesk, Inter, JetBrains Mono)
+    are licensed under the SIL Open Font License 1.1; each family's
+    licence is beside it (OFL-*.txt).
+  - Mermaid, in assets/vendor/, which draws diagrams in the docs, is
+    licensed under the MIT licence (mermaid-LICENSE.txt beside it). Its
+    file carries other projects' code under their own terms, which
+    README.md lists; among them elkjs, under the Eclipse Public License
+    2.0, whose source is at https://github.com/kieler/elkjs.
   - The import and test tools depend on marked (MIT), sharp (Apache-2.0)
     and playwright (Apache-2.0); none of them is served to a visitor.
   - NASA's imagery is used without any suggestion that NASA endorses

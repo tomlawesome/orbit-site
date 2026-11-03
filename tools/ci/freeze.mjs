@@ -3,31 +3,50 @@
  * (docs/adr/0002-the-door-tests-the-gpu-once-per-visit.md, section 3): the door tests the GPU once, before any WebGL,
  * refuses a software renderer, and then does nothing on the page that freezes it.
  *
- * Chromium, always (long tasks are Chromium's), headed under Xvfb with software GL and the blocklist ignored, so the
- * browser offers a software WebGL2 context instead of none: the machine the bug is on. The site is the real page, `/`,
- * served by tools/ci/serve.mjs (`/`; with `?preview` added while index.html carries data-maintenance, as journey.mjs
- * does, because the notice's door takes no click). Motion is left on. Everything is seen from outside: an init script wraps
- * HTMLCanvasElement.prototype.getContext to record each WebGL call's type and attributes, with the door's and the
- * body's classes at that moment; a PerformanceObserver records long tasks; the console, the requests and
- * localStorage are read as a visitor's browser has them.
+ * Chromium, always (the long tasks it logs are Chromium's), headed under Xvfb with software GL and the blocklist
+ * ignored, so the browser offers a software WebGL2 context instead of none: the machine the bug is on. The site is the
+ * real page, `/`, served by tools/ci/serve.mjs (`/`; with `?preview` added while index.html carries data-maintenance, as
+ * journey.mjs does, because the notice's door takes no click). Motion is left on. Everything is seen from outside: an
+ * init script wraps HTMLCanvasElement.prototype.getContext to record each WebGL call's type and attributes, with the
+ * door's and the body's classes at that moment; another (COUNT) reads the page's chore queue once an animation frame;
+ * a PerformanceObserver logs long tasks; the console, the requests and localStorage are read as a visitor's browser
+ * has them.
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
  *
- * (sh tools/ci/journey-local.sh freeze does exactly that. BROWSER is ignored: this check is Chromium's.)
+ * (sh tools/ci/journey-local.sh --browser chromium freeze does exactly that; without --browser chromium the runner
+ *  skips it, since this check is Chromium's and BROWSER is otherwise ignored.)
  *
  * The run fails loudly, and does not pass vacuously, if the browser's WebGL2 is not a software renderer: its
  * renderer is read first and logged.
  *
  * What it checks (the ADR's numbers):
- *   1-4  software GL, `/`: one webgl2 call, with the caveat, after #door.shown and before body.lit; no long task
- *        over 50 ms in the 10 s after lit (the ADR's bound on the ones before it was dropped by owner decision 10a: they are
- *        logged, and tracked in their own issue); the refusal in one console line, no
- *        console.error, no flight pictures, no #warpgl, nothing kept in localStorage; then a click on the gate flies
- *        on the 2D canvas (showwarp, then bare, within 20 s) with no further webgl2 context
- *   5    ?gpu=force: a webgl2 context without the caveat, #warpgl, and the install world logs `install: ready`
+ *   1-4  software GL, `/`: one webgl2 call, with the caveat, after #door.shown and before body.lit; the work after lit
+ *        stays in chores (below); the refusal in one console line, no console.error, no flight pictures, no #warpgl,
+ *        nothing kept in localStorage; then a click on the gate flies on the 2D canvas (showwarp, then bare, within
+ *        20 s) with no further webgl2 context
+ *
+ *        "Does nothing that freezes it" is counted, not timed (#32, owner decision 12a: count the work, not the time;
+ *        a long-task bound timed the shared runner's GPU process, not the page). The page's promise is chores.js's:
+ *        background work is split into chores, done one at a time, a frame apart, and none until the reveal is done
+ *        (open), but for compiles where they block the page and soft (frame-sized) GPU uploads. On this page the GPU
+ *        is refused, so 1-3 wants: no texture upload after lit (so no soft chore; nothing put on the GPU); no chore but
+ *        a compile or a soft one starting while the queue is closed; and at least one chore after lit, so the count is
+ *        seen to read the page's own queue (it runs exactly one here, the docs chart: a one-a-frame bound could never
+ *        trip on it, so it is checked in 5). The long tasks after lit, and before it, are logged, never judged.
+ *   5    ?gpu=force: a webgl2 context without the caveat, #warpgl, and the install world logs `install: ready`;
+ *        with the readying run through (the queue at rest for 60 frames), non-soft chores start one a frame, or one a
+ *        backstop in a frame the browser let run long (ADR-0004 6d.6): a frame holding two or more must have lasted
+ *        over FRAME_WAIT (50 ms, measured between the page's own frame callbacks) and holds at most
+ *        1 + floor(length / FRAME_WAIT) of them, and the chores line's `backstops` is at least the extra starts counted
+ *        (soft ones may share a frame while its share lasts, a time, so they are not bounded), and none but a compile
+ *        or a soft one before open. A start is known when
+ *        the chore was queued at the last frame and is gone now (queuedSoft says which kind); one queued and started
+ *        within a frame is not judged, since a frame's starts cannot be ordered from outside. At least HARD_SEEN
+ *        non-soft starts must be known, else the bound proved nothing (the constant says why its value)
  *   6    ?door3d without force: no probe runs, and the `level 0` line is there
- *   7    save-data: no webgl2 context until the gate is clicked, then one
+ *   7    save-data: no webgl2 context before the gate is clicked, and none after (ADR-0002 6.9)
  *   12d  the leisure warm-up proves the world (no readPixels before lit, some after, no flight asked for); a flight up
  *        asked first still proves it behind its hold; a descent never waits and makes no timed frames (tests/gate.html,
  *        a page-bent clock to judge the software renderer fit or unfit)
@@ -42,16 +61,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
-/* a port nobody holds: the other live tests and other checkouts on a shared host have their own */
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 let maintenance = false;
 /* the page with its query: while index.html carries data-maintenance the door stands alone and the gate does nothing,
@@ -62,7 +76,7 @@ const at = (params = [], hash = "") => {
 };
 const SOFTWARE = /llvmpipe|softpipe|swiftshader|microsoft basic render/i;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 let failed = false;
 let browser = null;
 
@@ -109,6 +123,58 @@ const RECORD = () => {
   addEventListener("DOMContentLoaded", look);
 };
 
+/* The chores counted a frame at a time (1-3 and 5; #32, owner decision 12a: count the work, not the time). Once the
+   page's own modules have run (DOMContentLoaded: a module script runs before it), the page's chores.js is imported by
+   its address, which gives the page's own module, not a second copy, and its test export choresNow() is read in every
+   animation frame. Nothing in the page is changed or flagged. Each frame with a start records how many began since
+   the last frame (the started counter), whether the queue was open, and which of them are known: a chore that was
+   queued at the last frame and is gone now has started (chores are only ever added at the end, and leave by
+   starting), so it is known, soft or not (queuedSoft); one added and started within the frame is not. Texture uploads
+   are counted too (soft chores are uploads, upload.js). */
+const COUNT = () => {
+  const rec = window.__freeze;
+  rec.chores = { frames: 0, starts: [], error: null, seen: null };
+  /* the page's own frame callbacks, to measure a frame's length (6d.6): a start entry's `len` is the time from the
+     previous callback to the one that saw it */
+  let tickAt = performance.now();
+  rec.uploads = [];
+  for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
+    if (!C) continue;
+    for (const name of ["texImage2D", "texSubImage2D", "texImage3D", "texSubImage3D", "compressedTexImage2D", "compressedTexSubImage2D"]) {
+      const f = C.prototype[name];
+      if (f) C.prototype[name] = function (...args) { rec.uploads.push(performance.now()); return f.apply(this, args); };
+    }
+  }
+  /** the queue as a list of "soft|hard tag" */
+  const items = (q) => q.queued.map((t, i) => `${q.queuedSoft?.[i] ? "soft" : "hard"} ${t}`);
+  addEventListener("DOMContentLoaded", () => {
+    import(new URL("/assets/door/chores.js", location.href).href).then(({ choresNow }) => {
+      let last = choresNow();
+      const tick = () => {
+        const q = choresNow();
+        rec.chores.frames++;
+        const now = performance.now();
+        const len = now - tickAt;
+        tickAt = now;
+        rec.chores.seen = { started: q.started, open: q.open };
+        /* frames in a row with nothing queued or running (the queue at rest: what a wait for it reads) */
+        rec.chores.rest = q.running || q.queued.length ? 0 : (rec.chores.rest || 0) + 1;
+        if (q.started !== last.started) {
+          /* the known starts: what was queued at the last frame and is not now (a multiset difference) */
+          const left = new Map();
+          for (const k of items(last)) left.set(k, (left.get(k) || 0) + 1);
+          for (const k of items(q)) if (left.get(k)) left.set(k, left.get(k) - 1);
+          const known = [...left].flatMap(([k, n]) => Array(n).fill(k));
+          rec.chores.starts.push({ at: now, n: q.started - last.started, open: q.open, known, len });
+        }
+        last = q;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, (e) => { rec.chores.error = String(e?.message || e); });
+  });
+};
+
 /* One page in its own context, with the console, errors and requests logged. */
 const open = async ({ init = [], viewport = { width: 1280, height: 800 } } = {}) => {
   const ctx = await browser.newContext({ viewport, reducedMotion: "no-preference" });
@@ -126,6 +192,36 @@ const waitBody = (page, cls, timeout) => page.waitForFunction((c) => document.bo
 const gateOpen = (page, timeout) => page.waitForFunction(() => { const g = document.querySelector("#gate"); return g && !g.disabled; }, null, { timeout });
 const clickGate = (page) => page.evaluate(() => { const t = performance.now(); document.querySelector("#gate").click(); return t; });
 const webgl2 = (s) => s.gl.filter((c) => c.type === "webgl2");
+/* the chores' counts (COUNT): the known starts that are not soft ("hard") in a frame; frames where a hard one other
+   than a compile started with the queue not yet open */
+/* 5's floor on known non-soft starts. The code queues at least ten on ?gpu=force: the flight's stars, two touches
+   and calibrate (voyage.js), the docs' touch and the galaxy (voyage.js), the docs chart (pads.js), the install's touch
+   and calibrate (install.js), the information's world (planets3d.js); most are chained on another
+   chore's result, so they are queued while that one still runs and wait a frame in the queue, where they are known.
+   15-17 were known in six runs (#32). 8 leaves room for a few queued and started within a frame, and is well over the
+   two the bound needs to be able to trip */
+const HARD_SEEN = 8;
+const hard = (f) => f.known.filter((k) => k.startsWith("hard "));
+const closedHard = (starts) => starts.filter((f) => !f.open && hard(f).some((k) => !/^hard compile(\+|$)/.test(k))).map((f) => `${Math.round(f.at)} ms: ${f.known.join(", ")}`);
+/* 5's bound on non-soft starts in one frame (ADR-0004 6d.6): a window is one frame or one backstop firing, and the
+   backstop (chores.js FRAME_WAIT) fires 50 ms after a share. A frame holding two or more must have lasted longer than
+   that, and holds at most 1 + floor(length / FRAME_WAIT) of them. Returns the frames that break it, as text, and the
+   number of extra starts (beyond the first in each frame) counted */
+const FRAME_WAIT = 50;
+const crowding = (starts) => {
+  let extra = 0;
+  const broken = [];
+  for (const f of starts) {
+    const n = hard(f).length;
+    if (n < 2) continue;
+    extra += n - 1;
+    const allowed = f.len > FRAME_WAIT ? 1 + Math.floor(f.len / FRAME_WAIT) : 1;
+    if (n > allowed) broken.push(`${Math.round(f.at)} ms: frame of ${Math.round(f.len)} ms held ${n} (at most ${allowed}): ${f.known.join(", ")}`);
+  }
+  return { broken, extra };
+};
+/* the most `backstops N` any "chores at ..." console line reports (the figure counts from the start of the page) */
+const backstopsSaid = (log) => Math.max(0, ...log.console.map((c) => /\bchores at\b.*\bbackstops (\d+)/.exec(c.text)).filter(Boolean).map((m) => Number(m[1])));
 const said = (log, re) => log.console.filter((c) => re.test(c.text));
 
 /* A scenario: a name, and a function that states what must be so with want(); a throw is a problem too. want.gpu():
@@ -159,7 +255,7 @@ try {
   maintenance = /<html[^>]*\sdata-maintenance/.test(await (await fetch(SITE)).text());
   if (maintenance) console.log("     (maintenance mode: the pages below are visited with ?preview, past the notice)");
   /* software GL, the blocklist ignored: Chromium then offers a software WebGL2 context rather than none */
-  browser = await playwright.chromium.launch({ headless: false, args: ["--ignore-gpu-blocklist", "--enable-gpu"] });
+  browser = await openBrowser(playwright, "chromium", { own: true, launch: { headless: false, args: ["--ignore-gpu-blocklist", "--enable-gpu"] } });
 
   /* ---- is this machine the one the bug is on? Read it, say it, and refuse to run if not ---- */
   {
@@ -178,8 +274,8 @@ try {
 
   /* ---- 1 to 4: software GL, the real page ---- */
   {
-    const { ctx, page, log } = await open();
-    await scenario("1-3 software GL: one gated context, no long tasks after the light, the refusal said once and nothing else touches WebGL", async (want, info) => {
+    const { ctx, page, log } = await open({ init: [COUNT] });
+    await scenario("1-3 software GL: one gated context, the work after the light in chores, the refusal said once and nothing else touches WebGL", async (want, info) => {
       if (process.env.FREEZE_TRACE) await browser.startTracing(page, { path: process.env.FREEZE_TRACE, categories: ["toplevel", "blink", "cc", "gpu", "v8", "devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.frame", "blink.user_timing", "loading"] });
       await page.goto(at(), { waitUntil: "load" });
       await waitBody(page, "lit", 90000);
@@ -200,16 +296,23 @@ try {
       }
       want(s.gl.length === gl2.length, `no other kind of WebGL context (webgl, experimental-webgl) -- ${short(s.gl.filter((g) => g.type !== "webgl2"))}`);
 
-      /* 2: long tasks */
-      if (s.noLongTasks) throw new Error("this Chromium has no longtask observer");
+      /* 2: the work after the light stays in chores (the header says why each bound) */
       const lit = s.seen.lit;
-      const after = s.long.filter((t) => t.start >= lit && t.start <= lit + 10000);
-      const before = s.long.filter((t) => t.start < lit);
-      info(`long tasks after the light (10 s): ${short(after.map((t) => Math.round(t.dur)))} ms; before it: ${short(before.map((t) => Math.round(t.dur)))} ms`);
-      want(after.length === 0, `no long task over 50 ms in the 10 s after body.lit -- ${after.length} (${short(after.map((t) => Math.round(t.dur)))} ms)`);
-      /* before the light: logged, not asserted. Issue #2 asks for no long task once the door is lit; the start-up
-         painting's own stalls before it are not the GPU's and are tracked in their own issue ("The door's start-up
-         painting stalls the page before it is lit", owner decision 10a), which wants this baseline. */
+      const ch = s.chores;
+      if (ch.error) throw new Error(`the chores could not be counted: ${ch.error}`);
+      const starts = ch.starts.filter((f) => f.at >= lit && f.at <= lit + 10000);
+      const ran = starts.reduce((a, f) => a + f.n, 0);
+      info(`chores in the 10 s after the light: ${ran} started (${short(starts.map((f) => f.known))}); ${ch.frames} frames counted; at the end: ${short(ch.seen)}`);
+      want(ch.seen?.open === true && ran >= 1, `the count sees the page's own queue: it opened and a chore started after the light (else this proves nothing) -- ${short(ch.seen)}, ${ran} started`);
+      const early = closedHard(ch.starts);
+      want(early.length === 0, `no chore but a compile or a soft one starts before the queue is opened (the reveal done) -- ${short(early)}`);
+      const uploads = s.uploads.filter((t) => t >= lit);
+      want(uploads.length === 0, `no texture upload after the light (the GPU is refused: no soft chore, nothing put on the GPU) -- ${uploads.length}`);
+      /* the long tasks: logged, never asserted (they time the runner, #32). Before the light, too: the start-up
+         painting's own stalls are tracked in their own issue (owner decision 10a), which wants this baseline */
+      const after = s.noLongTasks ? [] : s.long.filter((t) => t.start >= lit && t.start <= lit + 10000);
+      const before = s.noLongTasks ? [] : s.long.filter((t) => t.start < lit);
+      info(`long tasks after the light (10 s; not asserted): ${s.noLongTasks ? "no longtask observer" : short(after.map((t) => Math.round(t.dur)))} ms; before it: ${short(before.map((t) => Math.round(t.dur)))} ms`);
       /* (what held each long task after the light: the frames it fell in, #32) */
       for (const t of after) info(`the ${Math.round(t.dur)} ms task at ${Math.round(t.start - lit)} ms after the light fell in: ${JSON.stringify((s.frames || []).filter((f) => f.start <= t.start + t.dur && f.start + f.dur >= t.start))}`);
       info(`BASELINE long tasks before the light (not asserted): ${before.length}, ${short(before.map((t) => Math.round(t.dur)))} ms`);
@@ -228,6 +331,8 @@ try {
       info(`localStorage keys: ${short(keys)}`);
       want(!keys.includes("orbit-flight-fitness"), "no orbit-flight-fitness key in localStorage");
       want(!keys.some((k) => k.startsWith("orbit-probe")), `no "orbit-probe ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-probe")))}`);
+      /* #116 (ADR-0002 6.4, L3): the refused machine keeps no verdict either: a software renderer is never remembered */
+      want(!keys.some((k) => k.startsWith("orbit-fit")), `no "orbit-fit ..." key in localStorage -- ${short(keys.filter((k) => k.startsWith("orbit-fit")))}`);
     });
 
     await scenario("4 software GL: the gate flies on the 2D canvas, with no further WebGL context", async (want, info) => {
@@ -248,8 +353,8 @@ try {
 
   /* ---- 5: ?gpu=force on the same machine ---- */
   {
-    const { ctx, page, log } = await open();
-    await scenario("5 ?gpu=force: a webgl2 context without the caveat, and #warpgl", async (want, info) => {
+    const { ctx, page, log } = await open({ init: [COUNT] });
+    await scenario("5 ?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame", async (want, info) => {
       await page.goto(at(["gpu=force"]), { waitUntil: "load" });
       await waitBody(page, "lit", 90000);
       const s = await state(page);
@@ -269,6 +374,24 @@ try {
       }
       info(`#warpgl: ${how}`);
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
+      /* the readying run through: the queue at rest for 60 frames in a row (a wait, never judged by its length) */
+      await page.waitForFunction(() => window.__freeze.chores.error || (window.__freeze.chores.seen?.open && window.__freeze.chores.rest >= 60), null, { timeout: 180000 }).catch(() => {});
+      const ch = (await state(page)).chores;
+      if (ch.error) throw new Error(`the chores could not be counted: ${ch.error}`);
+      /* (a fresh chores line, so its backstops cover every start counted: the page's own lines may all be earlier) */
+      await page.evaluate(() => import(new URL("/assets/door/chores.js", location.href).href).then(({ noteChores }) => noteChores("freeze check 5")));
+      await page.waitForTimeout(500);
+      const opened = ch.starts.filter((f) => f.open);
+      const hardSeen = opened.reduce((a, f) => a + hard(f).length, 0);
+      info(`chores: ${ch.seen?.started} started over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
+      want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores known to start after the queue opened (else this proves nothing) -- ${hardSeen}`);
+      const { broken, extra } = crowding(ch.starts);
+      const backstops = backstopsSaid(log);
+      info(`frames holding two or more non-soft starts: ${ch.starts.filter((f) => hard(f).length > 1).map((f) => `${Math.round(f.len)} ms x${hard(f).length}`).join(", ") || "none"}; extra starts ${extra}; backstops said ${backstops}`);
+      want(broken.length === 0, `a frame with two or more non-soft starts lasted over ${FRAME_WAIT} ms and holds at most 1 + floor(length / ${FRAME_WAIT}) of them (frames of ${FRAME_WAIT} ms or less hold one) -- ${short(broken)}`);
+      want(backstops >= extra, `the chores line's backstops is at least the extra non-soft starts counted -- backstops ${backstops}, extra starts ${extra}`);
+      const early = closedHard(ch.starts);
+      want(early.length === 0, `no chore but a compile or a soft one starts before the queue is opened (the reveal done) -- ${short(early)}`);
     });
     await ctx.close();
   }
@@ -307,7 +430,7 @@ try {
   {
     const saveData = () => Object.defineProperty(navigator, "connection", { configurable: true, get: () => ({ saveData: true, effectiveType: "4g", addEventListener() {}, removeEventListener() {} }) });
     const { ctx, page, log } = await open({ init: [saveData] });
-    await scenario("7 save-data: no webgl2 context until the gate is clicked, then one", async (want, info) => {
+    await scenario("7 save-data: no webgl2 context before the gate is clicked, and none after (ADR-0002 6.9)", async (want, info) => {
       await page.goto(at(), { waitUntil: "load" });
       want(await page.evaluate(() => navigator.connection?.saveData === true), "the stub reports saveData (otherwise this proves nothing)");
       await waitBody(page, "lit", 90000);
@@ -322,7 +445,7 @@ try {
       await page.waitForTimeout(3000);
       const after = webgl2(await state(page));
       info(`webgl2 calls after the click: ${short(after)}`);
-      want(after.length === 1, `exactly one webgl2 context after the click -- ${after.length}`);
+      want(after.length === 0, `no webgl2 context at all after the click (ADR-0002 6.9) -- ${after.length}`);
       want(log.errors.length === 0, `no console.error or page error -- ${short(log.errors)}`);
     });
     await ctx.close();
@@ -330,7 +453,7 @@ try {
 
   /* ---- 11: journey.later (tests/gate.html) ---- */
   {
-    const { ctx, page, log } = await open();
+    const { ctx, page } = await open();
     await page.goto(`${SITE}tests/gate.html`, { waitUntil: "load" });
     await page.waitForFunction(() => window.gateReady, null, { timeout: 30000 });
     const later = (mode, after, watch) => page.evaluate(([m, a, w]) => window.later(m, a, w), [mode, after, watch]);
@@ -465,7 +588,7 @@ try {
   failed = true;
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 console.log(failed ? "\nfreeze: failed" : "\nfreeze: ok");
 process.exit(failed ? 1 : 0);

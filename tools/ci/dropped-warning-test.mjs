@@ -33,6 +33,7 @@
  * Needs Playwright with Chromium (no network). No other dependency.
  */
 import { createRequire } from "node:module";
+import { openBrowser } from "./live-lib.mjs";
 
 let failed = false;
 const check = (name, ok, detail) => {
@@ -62,7 +63,8 @@ const warning = (inn, out) => { try { return String(droppedBlockWarning(src, inn
 
 let browser;
 try {
-  browser = await playwright.chromium.launch();
+  /* the job's shared Chromium when there is one; else headless, as ever */
+  browser = await openBrowser(playwright, "chromium", { launch: { headless: true } });
 } catch (e) {
   check("chromium launches", false, e.message.split("\n")[0]);
   process.exit(1);

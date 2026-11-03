@@ -37,23 +37,18 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createServer } from "node:net";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "chromium";
-/* a free port, asked of the system, so a second run or another job on the host cannot collide */
-const PORT = await new Promise((ok, no) => {
-  const probe = createServer();
-  probe.on("error", no);
-  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => ok(port)); });
-});
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 const DEADLINE_MS = 8 * 60 * 1000;
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 /* the server is stopped on every way out, the deadline's process.exit and an uncaught error included */
-process.on("exit", () => server.kill());
+process.on("exit", () => server?.kill());
 const results = [];
 let browser = null;
 
@@ -318,7 +313,7 @@ const labelDoorCase = async (id, doorName, query) => {
 /* ── run ───────────────────────────────────────────────────────────────────────────────────────────────── */
 const deadline = setTimeout(() => {
   console.log(`FAIL phone-door-test: not finished within ${DEADLINE_MS / 60000} minutes`);
-  server.kill();
+  server?.kill();
   process.exit(2);
 }, DEADLINE_MS);
 
@@ -329,7 +324,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   /* the three landings run side by side (each in its own context), then the label cases */
   await Promise.all(LANDINGS.map((l) => landingCase(l)));
   await anyTargetCase();
@@ -341,7 +336,7 @@ try {
 } finally {
   clearTimeout(deadline);
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 
 const bad = results.filter((r) => r.problems.length);

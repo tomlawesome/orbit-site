@@ -17,9 +17,10 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 cd "$tmp"
 git init -q
 git add -A
-git -c user.name=t -c user.email=t@t commit -q -m base
+# --no-verify: the host's own commit hooks must not judge the copy's planted fixtures (as #114)
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m base
 
-ids="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp names stray npm-pins"
+ids="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins test-map"
 failed=0
 
 pass() { printf 'ok   %s %s\n' "$1" "$2"; }
@@ -39,19 +40,19 @@ lastline() { tail -n 1 "$tmp/$1.out"; }
 oneline() { tr '\n' '|' <"$tmp/$1.out" | cut -c1-200; }
 
 # L1 no arguments: every section runs
-d="no arguments, clean tree: exit 0, 15 headers, last line 'lint: ok'"
+d="no arguments, clean tree: exit 0, 17 headers, last line 'lint: ok'"
 run_lint all
 n=$(nheaders all)
-if [ "$rc" -eq 0 ] && [ "$n" -eq 15 ] && [ "$(lastline all)" = "lint: ok" ]; then
+if [ "$rc" -eq 0 ] && [ "$n" -eq 17 ] && [ "$(lastline all)" = "lint: ok" ]; then
     pass L1 "$d"
 else
     fail L1 "$d" "exit=$rc headers=$n last='$(lastline all)'"
 fi
 
 # L2 --list prints the ids and runs nothing
-d="--list: exit 0, the 15 ids in file order, no '== ' or 'lint:' line"
+d="--list: exit 0, the 17 ids in file order, no '== ' or 'lint:' line"
 run_lint list --list
-want=$(printf '%s\n' $ids)
+want=$(printf '%s\n' "$ids" | tr ' ' '\n')
 got=$(cat "$tmp/list.out")
 if [ "$rc" -eq 0 ] && [ "$got" = "$want" ] && ! grep -q '^== \|^lint:' "$tmp/list.out"; then
     pass L2 "$d"
@@ -70,7 +71,7 @@ else
 fi
 
 # L4 every id alone prints one header; together they equal the no-argument run
-d="each id alone prints one header; the 15 together equal the no-argument headers"
+d="each id alone prints one header; the 17 together equal the no-argument headers"
 : >"$tmp/each.txt"
 bad=""
 for id in $ids; do
@@ -128,7 +129,7 @@ fi
 d="stray fault: 'stray' fails, 'ci-split' still passes, no arguments fails"
 echo '{}' >package.json
 git add -A -f
-git -c user.name=t -c user.email=t@t commit -q -m "plant stray package.json"
+git -c user.name=t -c user.email=t@t commit -q --no-verify -m "plant stray package.json"
 run_lint f-stray stray
 rs=$rc
 ls_=$(lastline f-stray)

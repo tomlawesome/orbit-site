@@ -9,9 +9,22 @@
 # Runner lanes (ai/agent-infra#3): `light` is 4 CPU / 6 GB, one hour.
 # Nothing here needs Docker or `big`.
 
+# The shared check for personal details (ai/agent-infra#32, #110): one set of
+# rules for every project, kept on the agent host and read by the job from a
+# file the runner host mounts. The include is the only one ci-split allows
+# (ADR-0005). The ref is the commit the tag names, not the tag: a protected
+# tag can be deleted and made again on other code, a commit cannot move.
+# PRIVATE_DETAILS_SHA below names the same commit, so the script the job runs
+# is the pinned one too. Moving to a new tag moves both and the comment together.
+include:
+  - project: ai/agent-infra
+    ref: 7430d171259104c4623040c2360699585d601bf5 # private-details/v4
+    file: scripts/private-details/ci-template.yml
+
 stages:
   - lint
   - live
+  - check
   - maintenance
   - publish
 
@@ -26,27 +39,15 @@ workflow:
     # Tags publish nothing here: Pages serves a branch.
     - if: $CI_COMMIT_TAG
       when: never
-    # A scheduled pipeline is the docs-import lane or the Renovate lane.
-    # `import_docs`, `publish_docs` and `renovate` are the only jobs that opt
-    # in, so a schedule without its variable would make a pipeline with no
-    # jobs; refusing it here says why.
+    # A scheduled pipeline is the docs-import lane, the Renovate lane or the
+    # daily Trivy scan. `import_docs`, `publish_docs`, `renovate` and
+    # `scan:trivy` are the only jobs that opt in, so a schedule without its
+    # variable would make a pipeline with no jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
-    # The nightly import's merge requests (docs/import-*) are started by its project
-    # token's bot, which is not a member of the group and so cannot pull
-    # through the group dependency proxy: they pull the same digest-pinned
-    # images from Docker Hub instead (#13).
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^docs\/import-/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
-    # The import bot also starts a merge request's pipeline when its own merge
-    # moves that request's source branch (a back-merge from main, open during a
-    # nightly): it cannot use the proxy either (#70).
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -55,12 +56,6 @@ workflow:
     # branch's first push would otherwise run twice (orbit #829).
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
       when: never
-    # That merge request merges itself as the same bot, so the push pipeline
-    # main then gets runs as the bot and its merge commit is the bot's: Docker
-    # Hub again (pipeline 2379 failed pulling through the proxy).
-    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/
-      variables:
-        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io
     - if: $CI_COMMIT_BRANCH
 
 .not_scheduled: &not_scheduled
@@ -68,12 +63,19 @@ workflow:
   when: never
 
 variables:
-  # Docker Hub through the group dependency proxy, pinned by digest;
-  # Renovate bumps them (renovate.json, the regex manager).
-  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
-  # Microsoft's own registry, not proxied. Its tag names the playwright
-  # version the `live` job installs; the two must agree.
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+  # The commit of the include above (private-details/v4); see the include.
+  PRIVATE_DETAILS_SHA: 7430d171259104c4623040c2360699585d601bf5
+  # Docker Hub by plain name, pinned by digest. The runner hosts' Docker
+  # daemons mirror Docker Hub through the runner image cache
+  # (ai/agent-infra#14, #65), which needs no login, so every pipeline pulls
+  # the same way, the import bot's included. Renovate bumps the pin
+  # (renovate.json, the regex manager).
+  NODE_IMAGE: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
+  # Microsoft's registry through the runner image cache's MCR route (same as
+  # ai/orbit, #1510): the runner config sets CI_IMAGE_CACHE_MCR (host:port, plain
+  # HTTP, no login); the address is never written in this repository. Its tag
+  # names the playwright version the `live` job installs; the two must agree.
+  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
   PLAYWRIGHT_VERSION: "1.64.0"
 
 # ---------------------------------------------------------------- lint --
@@ -85,7 +87,7 @@ lint:
   variables:
     GIT_DEPTH: 0 # the names guard reads every commit's emails (#56)
     # Node records which lines of the site its tests ran (tools/ci/node-tests.sh);
-    # `live:journey` adds Chromium's and checks them against the floors (#14).
+    # `live:chromium` adds Chromium's and `coverage` checks them against the floors (#14).
     COVERAGE_DIR: coverage
   rules:
     - *not_scheduled
@@ -99,22 +101,61 @@ lint:
     - sh tools/ci/lint-sections-test.sh
     - sh tools/ci/lint-types-test.sh
     - sh tools/ci/lint-parse-test.sh
-    - sh tools/ci/nightly-import-test.sh
     - sh tools/ci/journey-local-test.sh
+    - sh tools/ci/coverage-fetch-test.sh
+    - sh tools/ci/coverage-run-test.sh
     - sh tools/ci/door-timing-lookup-test.sh
     - node tools/ci/no-real-names-test.mjs
     - sh tools/ci/node-tests.sh
     - node tools/ci/coverage-test.mjs
-    - node tools/ci/import-docs-test.mjs
-    - node tools/ci/raw-heading-test.mjs
+    - node tools/ci/test-select-test.mjs
+    - node tools/ci/live-run-test.mjs
+    - node tools/ci/live-lib-test.mjs
     - node tools/ci/glow-banding-test.mjs
 
 # The lint's own test: each case plants one fault in a scratch copy and runs
 # the whole lint, so it takes about 6 minutes alone. Its own job, beside
 # `lint`, so neither runs into the lane's one-hour limit (#62). The gate
-# still needs it: the pipeline fails if it does. `live:journey` does not
-# wait for it.
+# still needs it: the pipeline fails if it does. It runs when the change
+# touches the `tooling` group of tools/ci/test-map.json (or everything is
+# selected), and otherwise passes in seconds; an error in the selection
+# prints no `no`, so the test runs (ADR-0005 section 3a). The live jobs do
+# not wait for it. GIT_DEPTH: 0, as `lint`: the selection reads the change's
+# range, and a shallow clone without its base would run everything.
 lint:test:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/ci/test-select.mjs
+    - '[ "$(node tools/ci/test-select.mjs --group tooling)" = no ] || sh tools/ci/lint-test.sh'
+
+# The import's own tests, the same way, when the change touches the `import`
+# group: the nightly import's scripts against stubs, the import itself, and
+# the raw-heading guard (about 2.5 minutes).
+lint:import:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+    - node tools/ci/test-select.mjs
+    - '[ "$(node tools/ci/test-select.mjs --group import)" = no ] || { sh tools/ci/nightly-import-test.sh && node tools/ci/import-docs-test.mjs && node tools/ci/raw-heading-test.mjs; }'
+
+# Duplication (#121): jscpd 5.4.2, pinned in tools/package.json, over the
+# JavaScript and shell under assets/ and tools/ (.jscpd.json). The threshold
+# sits just above the share duplicated when it was set, so a change that adds
+# copied code fails and one that removes some leaves room. Blocking.
+lint:duplication:
   stage: lint
   image: $NODE_IMAGE
   rules:
@@ -122,67 +163,224 @@ lint:test:
     - when: on_success
   script:
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
-    - sh tools/ci/lint-test.sh
+    - node tools/node_modules/jscpd/run-jscpd.js -c .jscpd.json --no-tips
+
+# Scanners (#120). One job per tool, each run from its official image pinned
+# by digest (never a Marketplace action or setup script), blocking from day
+# one: what they found when they were added is fixed, or listed in the tool's
+# own ignore file with a reason. They read the checkout only; the one network
+# use besides the image pull is Trivy's vulnerability database. `entrypoint:
+# [""]` because the runner starts each job's shell in the container, and these
+# images' entrypoint is the tool.
+#
+# gitleaks: the whole history (GIT_DEPTH 0), secrets redacted in the log.
+# .gitleaksignore holds the accepted fingerprints.
+scan:gitleaks:
+  stage: lint
+  image:
+    name: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: 0
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+    - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
+
+# private-details: the job is defined by the template; the stage and the rules
+# are set here, and it blocks. The scan starts after this commit, the last on
+# dev before the check was adopted (#110), because older messages and authors
+# name the assistant's account, which no path entry can allow.
+private-details:
+  stage: lint
+  needs: []
+  # the template names the image by tag only; pinned here by digest, the same
+  # gitleaks release scan:gitleaks runs, so a repointed tag cannot run with the
+  # checkout, the mounted rules and the job token
+  image:
+    name: $CI_IMAGE_CACHE_GHCR/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+    entrypoint: [""]
+  variables:
+    PRIVATE_DETAILS_SINCE: 37d5d31f0deb512e6b98fbf23074ec955ec91d17
+  rules:
+    - *not_scheduled
+    - when: on_success
+
+# Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
+# across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they
+# have a fix, secrets and licences always. It also runs from the daily schedule (a schedule with TRIVY=true), so a
+# newly published CVE fails that run and not an unrelated merge request.
+# Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
+# database is fetched at run time and kept in GitLab's cache, never committed.
+scan:trivy:
+  stage: lint
+  image:
+    name: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    entrypoint: [""]
+  variables:
+    TRIVY_CACHE_DIR: $CI_PROJECT_DIR/.trivycache
+  cache:
+    key: trivy-db
+    paths:
+      - .trivycache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - when: on_success
+  script:
+    - trivy fs --no-progress --scanners vuln,secret,license --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+
+# zizmor and actionlint: the GitHub workflows the mirror keeps (CodeQL).
+# zizmor runs offline, since an online audit would need a GitHub token.
+scan:zizmor:
+  stage: lint
+  image:
+    name: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - zizmor --no-progress --offline .github/workflows/
+
+scan:actionlint:
+  stage: lint
+  image:
+    name: docker.io/rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+    entrypoint: [""]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - actionlint -no-color
+
+# shellcheck over every `*.sh` in the tree and ruff's security rules (S) over
+# the Python (ruff.toml). Both use the publisher's -alpine image, since the
+# plain ones hold no shell for the runner to start the job in. Accepted
+# shellcheck findings are `# shellcheck disable=SCxxxx # reason` comments at the
+# command (or at the top of a file whose quoting is deliberate throughout).
+scan:shellcheck:
+  stage: lint
+  image:
+    name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*' -print0 | xargs -0 shellcheck
+
+# The flake rule (#106): a flake at three sightings in docs/flakes.md needs an
+# issue and a quarantine, or this fails the pipeline. tools/ci/flake-gate.sh
+# derives the quarantine list from the code; the check itself is agent-infra's
+# shared one, copied as tools/ci/flake-check.sh. Needs only sh, grep, sed and
+# awk, so it borrows the shellcheck job's pinned Alpine image.
+flake-check:
+  stage: lint
+  image:
+    name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - sh tools/ci/flake-gate.sh
+
+scan:ruff:
+  stage: lint
+  image:
+    name: ghcr.io/astral-sh/ruff:0.17.3-alpine@sha256:ee6d979c4e410a67b3057b6918bf8c0a7a36dbe6357e21cefb41d3f46d0b9c46
+  rules:
+    - *not_scheduled
+    - when: on_success
+  script:
+    - ruff check --no-cache .
 
 # ---------------------------------------------------------------- live --
-# The site served as Pages serves it, visited in Firefox: the door, each
-# landing, a docs page, the 404; nothing thrown, nothing missing. This is
-# the gate's live check and is never optional, manual or allowed to fail
-# (new-project skill: live testing is not optional, owner 2026-09-19).
-# Firefox runs headed under Xvfb with Mesa's software GL: headless, it has
-# no WebGL and never draws a world, so Firefox-only GPU bugs passed (#4,
-# #8). WEBGL=required makes a missing WebGL2 a failure, not a skip. The
-# band-upload test then compares banded and whole uploads byte for byte in
-# Chromium and Firefox, and the pin test checks a journey pinned at a moment
-# (`at`) starts there (#23); the dawn test checks that destroy() cancels a
-# first light (#27) and that the Earth's pictures are in before the door reads
-# drawn (#28); the asdawn test checks the goodbye wearing the sign-in's face and
-# households met again on the way down (#25, #26). The freeze check runs
-# Chromium whatever BROWSER says (long tasks are Chromium's): the door tests
-# the GPU once, refuses a software renderer, and then freezes nothing (#2).
-# The last step is the coverage ratchet (#14): the journey, upload, pin,
-# site-browser, phone-door, door-lows, csp, docs-planet, flight-context-loss and
-# freeze checks run again in Chromium, which records which of the site's
-# JavaScript ran, and with the lint job's Node coverage that is checked against
-# tools/ci/coverage-floors.json: a file below its floor fails the job. The
-# Chromium runs themselves are not the gate (Firefox's are): one that fails is
-# reported and its coverage still counted.
-live:journey:
+# The site served as Pages serves it, visited in real browsers: the door,
+# each landing, the docs, the worlds, the 404; nothing thrown, nothing
+# missing. This is the gate's live check and is never optional on
+# promotion, manual or allowed to fail (new-project skill, owner
+# 2026-09-19; ADR-0005: a merge request runs the tests its change touches).
+# One job per browser, side by side, each split into shards
+# (`parallel`): tools/ci/live-run.mjs selects from tools/ci/test-map.json
+# (everything on promotion, with LIVE_ALL=true, or for a door or unmapped
+# change), deals the tests to the shards by their recorded seconds, and
+# runs this shard's one after another against one site server and one
+# browser under one Xvfb, headed with Mesa's software GL (headless Firefox
+# has no WebGL: #4, #8). A test whose `gates` names the browser fails the
+# job. Chromium records which of the site's JavaScript ran (#14) for the
+# `coverage` job. Neither waits for `lint`.
+live:firefox:
   stage: live
   image:
     name: $PLAYWRIGHT_IMAGE
-  needs: [lint]
+  needs: []
+  parallel: 2
   rules:
     - *not_scheduled
     - when: on_success
   variables:
-    BROWSER: firefox
-    HEADED: "1"
-    WEBGL: required
-    LIBGL_ALWAYS_SOFTWARE: "1"
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
   script:
     - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
     - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/journey.mjs
-    - xvfb-run -a -s "-screen 0 1280x720x24" node tools/ci/upload-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/phone-door-test.mjs
-    - node tools/ci/dropped-warning-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/door-lows-test.mjs
-    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-planet-test.mjs
-    - BROWSER=chromium xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/docs-sky-portrait-live-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/flight-context-loss-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/csp-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/dawn-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/asdawn-test.mjs
-    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/freeze.mjs
-    - COVERAGE_DIR=coverage sh tools/ci/coverage-run.sh browser
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs firefox --changed
+
+live:chromium:
+  stage: live
+  image:
+    name: $PLAYWRIGHT_IMAGE
+  needs: []
+  parallel: 3
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
+    COVERAGE_DIR: coverage
+  artifacts:
+    # shots/ holds a failing pixel comparison's pictures (draw-pixels-test: the count, both flights and a diff)
+    when: always
+    paths: [coverage/, shots/]
+    expire_in: 24 hours
+  script:
+    - npm i --no-save --no-package-lock --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
+    - export PLAYWRIGHT_ROOT="$CI_PROJECT_DIR/node_modules/playwright"
+    - xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/live-run.mjs chromium --changed
+
+# --------------------------------------------------------------- check --
+# The coverage ratchet (#14) on the lint job's Node coverage and every
+# Chromium shard's, held to tools/ci/coverage-floors.json (ADR-0005 section
+# 6). The job takes the live jobs' selection itself (same inputs, same
+# answer): a full run holds every file to its floor; a partial run only the
+# changed files. selection.json stays beside the records so --raise can
+# refuse a partial run, and the artifact lasts 7 days so
+# tools/ci/coverage-fetch.sh can take the last three full runs.
+coverage:
+  stage: check
+  image: $NODE_IMAGE
+  needs: [lint, live:chromium]
+  rules:
+    - *not_scheduled
+    - when: on_success
+  variables:
+    GIT_DEPTH: 0 # the selection reads both ends of the change's range
+  artifacts:
+    # kept when it fails too: a new file always fails its first run (no floor yet),
+    # and its floor can only come from these records (#96)
+    when: always
+    paths: [coverage/]
+    expire_in: 7 days
+  script:
+    - node tools/ci/test-select.mjs --json > coverage/selection.json
+    - node tools/ci/coverage.mjs --selection coverage/selection.json coverage
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
 # fetched and set as the site's own pages. What changed goes to `main` as a
-# merge request that merges itself once `lint`, `lint:test` and `live:journey` pass, so
+# merge request that merges itself once the lint and live jobs pass, so
 # nobody pushes to `main` and every import is tested before Pages serves
 # it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
@@ -267,7 +465,7 @@ publish_docs:
 renovate:
   stage: maintenance
   image:
-    name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
+    name: renovate/renovate:44.151.2@sha256:9ea828b38867af0ca5f269e6c5feace9e74e7f035da150bb16f8c5f70bf2e6e8
     pull_policy: if-not-present
   timeout: 1h
   interruptible: false

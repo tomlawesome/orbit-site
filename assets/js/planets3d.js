@@ -24,7 +24,7 @@
  * world, stay until its canvases are live and then give way to them (site.css). The docs' moon is drawn here all
  * along, and html.planets3d still says it is live (the docs' picture goes on that).
  */
-import { chore, fetchOnce, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor, gpu, compiledWithin } from "../door/index.js";
+import { chore, fetchBitmap, note, linked, counted, compilesAside, uploadBanded, liveDoor, lateDoor, gpu, compiledWithin } from "../door/index.js";
 
 /* the quad round a disc: four corners about its centre (device px, from the canvas's foot) */
 const VERT = `#version 300 es
@@ -188,8 +188,7 @@ export function mountPlanets(door) {
     install: new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
     docs: new URL("../door/img/flight/moon.webp", import.meta.url).href,
   };
-  const bitmaps = Object.keys(MAPS).map((key) => fetchOnce(MAPS[key])
-    .then((b) => createImageBitmap(b, { resizeWidth: MAP_W, resizeHeight: MAP_W / 2, resizeQuality: "high", colorSpaceConversion: "none", premultiplyAlpha: "none" }))
+  const bitmaps = Object.keys(MAPS).map((key) => fetchBitmap(MAPS[key], { resizeWidth: MAP_W, resizeHeight: MAP_W / 2, resizeQuality: "high", colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => ({ key, bm })));
   bitmaps.forEach((p) => p.catch(() => {}));
   /* each layer's vertex array, made here, after the reveal (nothing of the GPU's is touched before it but the compile) */

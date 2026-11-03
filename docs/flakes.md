@@ -1,23 +1,30 @@
 # Flakes
 
 A check that failed and passed again on unchanged code. One heading per flake, one line per sighting
-(`date · commit · job · symptom`); the third line files the issue.
-
-## freeze.mjs 1-3: a long task over 50 ms in the 10 s after body.lit ([#32](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/32))
-
-- 2026-10-10 · fe7242a · journey-local.sh freeze, agent host (load average 20-30) · 1 task of 74 ms, passed on the next run
-- 2026-10-10 · fe7242a · journey-local.sh freeze, agent host (load average 20-30) · 1 task of 101 ms, passed on the next run
-- 2026-10-11 · f97a9bb · journey-local.sh freeze ×8, agent host (load average 5-34) · failed 1 of 8, 1 task of 50 ms; the third sighting files #32
-- 2026-10-11 · 7c49676 · journey-local.sh (all six), agent host (load average 10-23) · 1 task of 50 ms; the diff touches only teardown, passed on the next run
-- 2026-10-11 · 4e8dd43 · pipeline 2496 live:journey (CI runner, no GPU) · 1 task of 55 ms; the diff touches only teardown, re-run
-
-## dawn-test, Chromium: "every Earth request had finished before ready" in the held-pictures case ([#73](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/73))
-
-- 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · ready +4039 ms, one request's finish event +4045 ms; "not ready while held" passed; passed on the next run
-- 2026-10-11 · ea9e37d · journey-local.sh dawn, BROWSER=chromium, agent host · same case, failed again on the run after; the test compares the runner-side arrival of Playwright's requestfinished event with ready, and Chromium can deliver that event after the page has used the body (CI runs dawn on Firefox only)
-- 2026-10-20 · 42fbb6e · local Chromium engines pass (fifth audit), agent host · ready +4020 ms, Earth requests finished +4022/4023 ms; the third sighting files #73
-- 2026-10-22 · Fixed by the commit that closes #73: the check now reads the page's own resource timing (each Earth picture's responseEnd) against when the page set ready, so the runner's event delivery no longer matters
+(`date · commit · job · symptom`); the third line files the issue and quarantines the check. `tools/ci/flake-gate.sh` enforces this in CI (#106).
+A fixed flake's heading comes off with the fix; its issue, if any, and git history keep the record.
 
 ## Docker image pull from the dependency proxy: not found
 
 - 2026-10-12 · 0acc271 (and 3 other Renovate heads) · pipelines 2547-2550 lint · node:22-bookworm digest "not found" from the dependency proxy; 2547 passed on retry 2026-10-13
+
+## site-browser B7, Chromium: the install page's second dive is still flat
+
+- 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
+- 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
+
+## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad ([#107](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/107)) — quarantined on Chromium (owner 22a, 2026-11-01): it runs and reports `QUARANTINED FAIL`, but does not fail the job
+
+- 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40862 · the click on the install planet never opened #installpad; cc20922 changes only `coverage-floors.json`, and the same shard passed 3 of 3 on 409c39b (pipeline 3106); retried as job 40991
+- 2026-10-29 · cfedb56 · pipeline 3153, live:chromium 2/3, job 41374 · the same; cfedb56 is the revert of !96, so the site's code is ccd883d's, which this shard passed on pipeline 3149; the second sighting, re-run by this push
+- 2026-10-29 · 2756f3b · pipeline 3158, live:chromium 2/3, job 41442 · the same, on the same tree plus one doc line; the third sighting files #107; re-run by this push
+- 2026-10-31 · e6bdea2 · journey-local.sh journey, Chromium, agent host (load average 5-6) · the same, two runs in a row; the change reaches only the Firefox image-loader route, which this journey does not take in Chromium; passed 2 of 2 on the same code straight after, and once with the change reverted
+- 2026-11-01 · 11cb867 · pipeline 3320, live:chromium 2/3, job 43174 · the same, on a batch that does not touch the door's planets or Back; passed on retry (job 43196); the fifth sighting, quarantined
+
+## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
+
+- 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
+
+## Runner interrupted mid-job (host)
+
+- 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry

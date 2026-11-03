@@ -162,7 +162,7 @@ Tried, October 2026:
 
 ## The Earth's march cheaper, and a ladder: lean first, rich if affordable (8 October 2026)
 
-- Measured on an RTX 3080 (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
+- Measured on the desktop (Firefox, 3840×2160 at ratio 1.5): 33 ms a frame for the door's 3.3-million-pixel band,
   about 10 ms a million pixels: far too heavy for a mid-range GPU.
 - The slab's march now reads one texel a step instead of three. Each clouds map (global, near) gets a field, made
   once per context by a pass right after the map is put on the GPU (assets/door/voyage.js: cloudField; RGBA8 at the map's own
@@ -191,13 +191,13 @@ Tried, October 2026:
 - SwiftShader (software rendering: relative only), 1440×900, deviceScaleFactor 2, band 2880×648: lean 1.1 s a frame
   in one load (then stepped to 1×) and 2.0 s in another; rich (forced) 3.3 s; the committed slab 3.3 s. Other runs
   shared the machine, so the noise is about 2×. SwiftShader also pays for every branch on every step, so it shows
-  little of the fields' saving. Still to be measured on the RTX 3080.
+  little of the fields' saving. Still to be measured on the desktop.
 
 - 8 October 2026, `?door3d` only: the install's and the information's door planets are drawn by their own world (install.js: `doorPlanets`), its whole pipeline twice a frame into a square five radii a side; over 8 ms a frame (the first 30 timed) it draws them at half scale, and the console says which.
 
 ## The dive's click, and the strip small first (8 October 2026)
 
-- Measured on the RTX 3080 (4K at 1.5×): the first second after a click on the install planet drew 60 frames, the
+- Measured on the desktop (4K at 1.5×): the first second after a click on the install planet drew 60 frames, the
   worst 33 ms; on the information planet 58, the worst 67 ms. At the click the world went from the door's square
   (doorPlanets) to the full screen, and `resize` made its HDR target and bloom chain again at 3.3 Mpx in that frame.
 - world.js `resize` now keeps the targets for the last two sizes drawn (keyed by the drawn size; a third lets the one
@@ -402,7 +402,7 @@ Tried, October 2026:
   - **Soft chores** (assets/door/chores.js). `chore(fn, rest, tag, { soft: true })` promises to take under ~5 ms. `openSoft()`
     is called by main.js at `light()`, when the door is lit and the reveal begins. From then until `openChores()`
     (still at `drawn()`), pump() runs only soft chores (and the compiles, where they may run). They run one a frame:
-    the next starts on the next animation frame and `setTimeout(0)`, with no 20 ms rest. Once the queue is open they
+    the next starts on the next animation frame and a yield (`page.yield`, not a timer: #101), with no 20 ms rest. Once the queue is open they
     are ordinary chores, ranked by their tags as before. A journey chosen hurries them as it hurries the rest.
     - *Superseded 2026-10: `openChores()` is no longer left to `drawn()`. `main.js` opens the chores at `light()`
       unless they are held (on Firefox, or with `?open=late`); see "Three to see" below.*
@@ -430,6 +430,33 @@ Tried, October 2026:
     an animation-frame loop from `light()` to `drawn()`, between consecutive frames; 16.7 ms is a whole frame at
     60 Hz. This is the smoothness proof: compare it with `&holdreveal`.
   - The `chores at … ready` line now says `held N ms for the reveal, of which N soft chores (X ms) during the reveal`.
+  - The `chores at …` line says where the idle time goes (#101). After `empty` (which now includes the span still open
+    when the line prints, and starts at the end of the last rest, not the chore's end) it gives `frames N, F ms (longest
+    L ms, S over 50 ms)` (the waits for an animation frame between chores), `timers N, asked A ms, took T ms` (the
+    `setTimeout` waits: the up to 20 ms after a hard chore, a measure's rest; T less A is the browser's clamping or
+    throttling; the hops that ask no rest are not timers, see below), `opening O ms` (an unhurried chore waiting for a journey's opening) and `typing Y ms`
+    (waiting for typing to pause). `resting` is now only what none of these (nor `ran`, `waited`, `held`, `empty`)
+    explain, and should be near 0; `over` counts from the first chore queued, so the waits before the first chore
+    start are inside it. With `?door3d`, `chores, each` gives each entry as `tag waited/ran/frame/timer ms`: the frame
+    and timer waits that followed that chore. The pacing itself is unchanged.
+  - **Yields, not 0 ms timers (#101).** Measured on a phone (Safari): 645 chores took 15.8 s, of which 5.2 s was 644
+    `setTimeout(0)` waits that asked 280 ms in all: the browser stretched each to ~8 ms, so the soft chores' share (8 ms
+    of the frame) was spent before the next chore began. Every hop that asks no rest is now `page.yield(fn)` (assets/door/page.js:
+    a `MessageChannel` message, as a scheduler such as React's does; `setTimeout(fn, 0)` where there is none, or from a
+    host's page adapter without `yield`): the hop before a chore runs, the next soft chore within the share, and, after
+    a frame, the next chore started in the frame's own callback. A timer is set only where a rest is asked: a hard
+    chore's up to 20 ms, a measure's rest. So `timers` is now near the number of hard chores and measures, and `took`
+    within a few ms of `asked`. Nothing else in the rule changed (one frame per share, the reveal's 4 ms share, the
+    holds, `pace("none")`). Tests: tools/ci/chores-yield-test.mjs.
+  - **Order (owner, #101).** `ORDER` ranks `"docs"` before `"flight"` (the compiles first, then install, the docs, the
+    flight, info, as before otherwise), so the docs open first on a slow device.
+  - **Measured after (#101; seen on a real device, a phone (Safari), 30 October 2026, `?preview` in a fresh private tab,
+    fix/aniso-once 653c3d5: dev 41d571c plus the anisotropy fix).** Before, the docs' way in opened ~16 s after the
+    page (645 chores in 15.8 s, above). After: the docs galaxy compiled and ready at ~2.9 s, the install and info ways in
+    ready at 3.4 s, the reveal ends at 5.2 s (longest frame gap 257 ms), the flight's world proved at 6.9 s (every way
+    in, docs included, can be taken by then), and the flight ready at 12.4 s (all eight maps: 467 chores, ran 4145 ms,
+    frames 272, longest 216 ms, 2 over 50 ms). On the phone the flight and install are drawn on the page, so `?preview`
+    and `?preview&draw=page` run the same code, as on Edge. The desktop Firefox run (#85, #93, below) is on dev 792b724.
   - With `?door3d` only, each texture's bands: `upload: lights 4096x2048 in 32 bands, longest 3.1 ms`.
 - The test page has a new test, `upload-bands` (tests/t-upload-bands.js). It puts `clouds-near.webp` on the GPU whole
   and in bands, draws each into a target and compares them byte for byte: level 0, then level 2 once both have their
@@ -458,7 +485,7 @@ Tried, October 2026:
 ## The ladder (8 October 2026)
 
 - Why: the live door (`?door3d`) is beautiful on a fast GPU with a background compiler, and costs a slow machine
-  dearly. On the laptop (Ryzen 4700U) in Firefox, where every compile stalls the page, its programs add about 1.1 s
+  dearly. On the laptop in Firefox, where every compile stalls the page, its programs add about 1.1 s
   to the loading ring: the door 650 ms, the planets 260, and the flight's rich overlay in place of the lean one about
   400 more. After the reveal its uploads, its first frames and its two live loops run beside the orbits for the rest
   of the visit: the Earth 16-18 ms a frame at 20 a second, the world planets 13-17 ms, dropped to half scale. The
@@ -525,13 +552,13 @@ desktop as the check that nothing regressed; every build verified pixel-identica
 CAPABILITIES.md corrected whenever a measurement overturns a belief (as the loops did today).
 
 Targets, laptop, Firefox, first visit: the ring 4 s or under (10 s today); the ways in open at 7 s or under (15 s);
-Edge, the Mac and the phone 3 s; after the reveal no frame over 33 ms anywhere.
+Edge, the Safari laptop and the phone 3 s; after the reveal no frame over 33 ms anywhere.
 
 1. **Rolled loops.** Tried and measured the same day: no gain on the real shaders (above). Taken out.
 2. **Chore waiting** (in). The `chores at … ready` line (assets/door/chores.js: noteChores) measured 1.6 s (Firefox) and 1.3 s
    (Edge) of waiting for an idle moment on the laptop before the flight was ready, the full 120 ms timeout each time.
    Chores now start a frame after the last. The line still prints: the queue's empty time (pictures still coming, or
-   decoding) and its rests are told apart, for the next look.
+   decoding) and its rests are told apart, for the next look (#101: and, further, frames, timers, the journey's opening and typing, so `resting` is only the remainder).
 3. **Uploads on Firefox** (in: "Fill the reveal", above). Each map 25-95 ms on the page thread plus its mipmaps, and the door and the flight upload
    the same maps twice. Count and total first; then upload once where both need a map, mipmaps only where a map is
    minified, the smaller tier on weak machines. Expected 1-2 s, and fewer stutters after the reveal.
@@ -588,12 +615,48 @@ CAPABILITIES.md ("A worker's compile"); what they mean:
   after the last compile. The still door, the orbits and the ring are 2D and the compositor's, and stay on the page.
 - **Edge: no.** A worker's compile stalls the page and the spinner whatever the worker does, while Edge's own page
   compiles, polled, stall nothing; and Edge shares its program cache across contexts, so the page path it has is
-  already the smooth one. Edge, Chrome and Safari keep the page path.
+  already the smooth one.
+- **Safari (a real phone, 22 October 2026): no stall to fix.** A worker has WebGL2 there and compiles each program in
+  about 260-340 ms while the page's longest frame gap stays at 34 ms with 2D and 74 ms with its own WebGL (idle:
+  37 / 41 ms); the animations are smooth. The same source then compiles on the page in 4-14 ms, so a worker's compile
+  warms the page's. And the `stall` test, twice, shows the page's own rich-door compile (550 and 398 ms, in the
+  background) leaving the frame gaps at 29-34 ms before and after, the spinner turning throughout.
+- **What each browser gets (ADR-0004).** Chrome, Edge and Safari keep the page path: Chrome and Edge because a worker's
+  compile would stall them, Safari because it was measured not to stall (and a worker's compile would warm the page's
+  if that ever changed, so no pre-warm is built). Firefox's move of the drawing into a worker is #85, built (below).
 - **The two tries before the answer:** the first test read pixels back in the page's loop, which was itself the
   stall; the second confounded Edge by waiting synchronously on the link result in the worker, which held the GPU
   process. Each is in the test's phases now (2D only, WebGL too, the same source on the page after).
 
-**The build, if funded:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
+**Built (#85, ADR-0004 6a).** On Firefox the flight and the docs galaxy are now drawn in a module worker that owns both
+canvases (`?draw=worker|page`; otherwise the rule in `fitness.js` `drawnAside()`), the page keeping the clock, the beats
+and the 2D door; any failure falls back to the page. Pixel-identical to the page path in Chromium
+(`tools/ci/draw-pixels-test.mjs`). The install and info worlds follow it (#93, below).
+**Measured (#85, ADR-0004 6a.10; seen on a real device, desktop Firefox, 30 October 2026, dev 792b724, from the page's own
+console lines).** `?preview` (worker), first load: the door shown at ~3.7 s, the flight ready at 7.1 s, its world proved at
+10.6 s. `?preview&draw=page`, three loads: the door shown at ~10.6 s, the flight ready at 10.8-13.2 s, proved at
+11.9-14.4 s. `?preview` (worker), a second visit in a normal window: the flight ready at 7.8 s, proved at 8.3 s. The
+owner on the page path: it "works well on firefox, docs and all of them seem to appear quickly".
+
+**Built for the install and info worlds (#93, ADR-0004 6b).** On Firefox the install's and the information's planets
+are drawn in a second module worker (`assets/js/world-worker.js`) that owns the pad's canvas, by the flight's rule
+(`drawnAside()`; `?draw=worker|page` forces one), so the ring waits for their compiles only on a first visit (`ring.js` `ringWaits`) and the
+page's WebGL context is let go once both workers are up. Any failure (the worker missing, not answering, dying) falls
+back to the page world on a fresh canvas.
+**What CI proved:** the two paths draw the same picture, pixel for pixel, in Chromium (`tools/ci/world-pixels-test.mjs`,
+`tests/world.html`: the install's world at k 0.3 and 1, clock fixed at 7, the pixels compared once the canvas's
+`data-drawn` is set, which both paths now set); and, in Firefox under software GL (`tools/ci/world-live-test.mjs`), that
+a dive into the install's and the information's planet lands under both paths with the console lines and the canvas a
+placeholder as expected, and that a worker that answers 404 falls back to the page and the dive still lands.
+**Measured (#93, ADR-0004 6b.10; the same run, desktop Firefox, dev 792b724).** `?preview` (worker), first load: the
+install and info ways in clickable at 8.9 s, ~4.5 s after the door is shown (~3.7 s); the queue's `empty 6742 ms` is the
+wait on the worker's flight compile (4.2 s). `?preview&draw=page`: the ring runs to ~10.6 s and every way in opens within
+~0.2 s of the reveal, at 10.3-12.6 s, so nothing waits once the door is shown. A second visit in a normal window on
+the worker: clickable at 8.2 s, the ring one lap only. The wait on the worker path is #103 (desktop Firefox: planets
+clickable ~7 s after opening). Still open on Firefox: the planets slow to be clickable, and a click that played the 2D
+flight, are #113 (Firefox planets slow to be clickable); Edge's reveal stall is #109 (Edge reveal stalls).
+
+**The build, as it was planned:** the flight (assets/door/voyage.js) and the worlds (world.js) rendered in a worker, the page posting the
 state each frame (time, scroll, pointer, size) and the worker drawing; pictures fetched and decoded in the worker;
 measures taken there; the live door late and in the worker too (the door's own canvas handed over when its journeys
 are ready). Verified pixel-identical against the page path, in Edge, before the switch is made for Firefox only

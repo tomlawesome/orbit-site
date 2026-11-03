@@ -7,8 +7,8 @@
 # script": a handler or script tag in a stored section fails and names it; and
 # the renovate.json section: a look-around in a customManagers matchString
 # fails and names renovate.json (Renovate compiles these with RE2); and the
-# .gitlab-ci.yml section: the docs/import-* merge-request rule must set
-# CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io (issue #13); and section
+# .gitlab-ci.yml section: image variables are plain Docker Hub names pinned by
+# digest and nothing names the Dependency Proxy (ai/agent-infra#65); and section
 # "the shared door is self-contained" (ADR-0001, issue #16): a file in
 # assets/door/ that imports from outside the folder, reads location.search or
 # uses import.meta.url fails and is named, as is a site module that imports a
@@ -53,10 +53,17 @@
 # publish_docs's before_script or after_script (its own, extended or from default:); services: on publish_docs or
 # default:, or a changed publish_docs image; and import_docs expire_in of 999 hours or 2 days (24 hours and
 # 30 minutes pass).
+# And #92 (nothing on the site loads from a third party): the pages' policy naming an outside host for scripts, styles or fonts
+# (cases c9-c14), and an outside address in a page's tags or styles, site.css or a site script (the site_case/site_ok cases,
+# each refusal paired with a local equivalent and with a link to another site, which pass).
+# And section test-map (ADR-0005, #95; cases t0-t16): an unmapped tracked file, a stale pattern, a test named
+# nowhere or twice, a test in all or none, and a map test that is missing, in no real group, without a browser, gating
+# outside its browsers or without seconds each fail and name it; the committed tree and the fixed forms pass.
 #
 #   sh tools/ci/lint-test.sh        run from anywhere inside the repository
 #
 # Works on a scratch copy of the current commit, so the checkout is untouched.
+# shellcheck disable=SC2016 # the single quotes in this file hold JavaScript for node and fault text planted in a scratch copy, where the $ is literal
 set -eu
 
 root=$(git rev-parse --show-toplevel)
@@ -69,6 +76,9 @@ git -C "$root" archive HEAD | tar -x -C "$tmp"
 [ ! -d "$root/tools/node_modules" ] || export NODE_PATH="$root/tools/node_modules"
 cd "$tmp"
 git init -q
+# the scratch repo never leaves $tmp: the host's own commit hooks (the private-details check, set in the global
+# git config) must not judge the made-up addresses the cases plant (#114)
+export GIT_CONFIG_GLOBAL=/dev/null
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
 
@@ -480,62 +490,17 @@ else
   failed=1
 fi
 
-# Cases (g)-(h) judge the .gitlab-ci.yml section "docs-import merge requests
-# pull without the dependency proxy" (issue #13): the workflow rule for source
-# branches docs/import-* sets CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io,
-# and (issue #20) so does the rule for pushes whose commit author is a GitLab
-# project bot (CI_COMMIT_AUTHOR =~ /project_N_bot_/): the import's merge request
-# merges itself as the bot, so main's push pipeline runs as the bot too.
-proxy_line='^[[:space:]]*CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX:[[:space:]]*docker\.io[[:space:]]*$'
-
-# Case (g): the docs/import rule loses its prefix override -> fails, names
-# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
-# a clear line instead of stopping the run.
-if ! grep -q 'docs/import-' .gitlab-ci.yml || ! grep -Eq "$proxy_line" .gitlab-ci.yml; then
-  echo "FAIL removing the docs/import prefix override fails (no docs/import rule to remove: .gitlab-ci.yml has no docs/import- rule setting CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io)"
-  failed=1
-else
-  sed -i -E "/$proxy_line/d" .gitlab-ci.yml
-  commit_all "docs/import rule without the prefix override"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
-    echo "ok   removing the docs/import prefix override fails"
-  else
-    echo "FAIL removing the docs/import prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-
-# Case (g2): the bot-author rule loses its prefix override -> fails, names
-# .gitlab-ci.yml. Before the rule exists there is nothing to remove: FAIL with
-# a clear line instead of stopping the run.
-if ! grep -q 'CI_COMMIT_AUTHOR =~' .gitlab-ci.yml; then
-  echo "FAIL removing the bot-author prefix override fails (no bot-author rule to remove: .gitlab-ci.yml has no CI_COMMIT_AUTHOR =~ rule)"
-  failed=1
-else
-  sed -i '/CI_COMMIT_AUTHOR =~/d' .gitlab-ci.yml
-  commit_all "bot-author rule removed"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "\.gitlab-ci\.yml" "$out"; then
-    echo "ok   removing the bot-author prefix override fails"
-  else
-    echo "FAIL removing the bot-author prefix override fails (exit $rc, want 1 naming .gitlab-ci.yml)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-
-# Cases (g3)-(g6): the rules are judged as blocks, in order (GitLab takes the
-# first workflow rule that matches). Each edit leaves every line of the old
-# checks in the file, so only a block-and-order check catches it. rule_case
-# <label> <named> <js>: <js> edits the string y (the file) and must change it.
-rule_case() {
+# Cases (g)-(h) judge the .gitlab-ci.yml section "job images are plain Docker
+# Hub names pinned by digest, not pulled through the Dependency Proxy"
+# (ai/agent-infra#65): the runner image cache serves Docker Hub by plain name, so
+# a regression to the group Dependency Proxy prefix, a registry host in front of
+# NODE_IMAGE, a missing digest, a direct MCR name for PLAYWRIGHT_IMAGE or any
+# CI_DEPENDENCY_PROXY reference must fail.
+# image_case <label> <named> <js>: <js> edits the string y (the file) and must
+# change it; the lint must exit 1 naming .gitlab-ci.yml and <named>.
+image_case() {
   Y="$(cat .gitlab-ci.yml)" JS="$3" node -e '
     let y = process.env.Y; const before = y;
-    new Function("y", "return y")(y);
     y = new Function("y", process.env.JS + "; return y;")(y);
     if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
     require("fs").writeFileSync(".gitlab-ci.yml", y + "\n");
@@ -551,82 +516,38 @@ rule_case() {
   fi
   git reset -q --hard HEAD~1
 }
-# (g3) the docs/import rule moved below the general merge-request rule
-rule_case "the docs/import rule after the general merge-request rule" "comes after the general merge-request rule" '
-  const m = y.match(/    - if: \$CI_PIPELINE_SOURCE == "merge_request_event" && \$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ \/\^docs\\\/import-\/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n/);
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(m[0], "").replace(g, g + m[0]);'
-# (g4) its override moved to another rule: every old line is still in the file
-rule_case "the docs/import rule's override moved to the general merge-request rule" "docs/import- merge-request rule does not set" '
-  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const d = "=~ /^docs\\/import-/\n";
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(d + o, d).replace(g, g + o);'
-# (g5) the docs/import rule turned off
-rule_case "the docs/import rule with when: never" "docs/import- merge-request rule does not set" '
-  y = y.replace("=~ /^docs\\/import-/\n      variables:", "=~ /^docs\\/import-/\n      when: never\n      variables:");'
-# (g6) the bot-author rule moved below the closing rule
-rule_case "the bot-author rule after the general branch rule" "bot-author rule comes after" '
-  const b = "    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_AUTHOR =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const c = "    - if: $CI_COMMIT_BRANCH\n";
-  y = y.replace(b, "").replace(c, c + b);'
-
-# Cases B1-B4 (issue #70): a merge-request pipeline started by the import's
-# project bot (GITLAB_USER_LOGIN =~ /project_N_bot_/) pulls from Docker Hub too:
-# the bot cannot use the group dependency proxy. The rule comes before the
-# general merge-request rule (GitLab takes the first match) and sets the prefix
-# override. B5 (the committed tree, rule added, passes the whole lint) is case (h).
-bot_mr_if='    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/'
-
-# Case B1: the bot merge-request rule removed -> fails, names .gitlab-ci.yml and
-# the bot. Before the rule exists there is nothing to remove: FAIL with a clear
-# line instead of stopping the run.
-if ! grep -qxF "$bot_mr_if" .gitlab-ci.yml; then
-  echo "FAIL removing the bot merge-request rule fails (no bot merge-request rule to remove: .gitlab-ci.yml has no GITLAB_USER_LOGIN =~ /project_N_bot_/ merge-request rule)"
-  failed=1
-else
-  BOT_IF="$bot_mr_if" node -e '
-    const fs = require("fs");
-    const lines = fs.readFileSync(".gitlab-ci.yml", "utf8").split("\n");
-    const i = lines.indexOf(process.env.BOT_IF);
-    let n = 1;
-    while (i + n < lines.length && /^      /.test(lines[i + n])) n++;
-    lines.splice(i, n);
-    fs.writeFileSync(".gitlab-ci.yml", lines.join("\n"));
-  '
-  commit_all "bot merge-request rule removed"
-  lint_to_out proxy
-  if [ "$rc" -eq 1 ] && grep -q "^   \.gitlab-ci\.yml: .*merge-request pipelines the import bot starts" "$out"; then
-    echo "ok   removing the bot merge-request rule fails"
-  else
-    echo "FAIL removing the bot merge-request rule fails (exit $rc, want 1 naming .gitlab-ci.yml: bot)"
-    sed 's/^/     /' "$out"
-    failed=1
-  fi
-  git reset -q --hard HEAD~1
-fi
-# B2 the rule's override removed
-rule_case "the bot merge-request rule without the prefix override" "the bot merge-request rule does not set" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
-  const o = "      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  y = y.replace(b + o, b);'
-# B3 the rule turned off
-rule_case "the bot merge-request rule with when: never" "the bot merge-request rule does not set" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n";
-  y = y.replace(b + "      variables:", b + "      when: never\n      variables:");'
-# B4 the rule moved below the general merge-request rule
-rule_case "the bot merge-request rule after the general merge-request rule" "the bot merge-request rule comes after the general merge-request rule" '
-  const b = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\" && $GITLAB_USER_LOGIN =~ /project_[0-9]+_bot_/\n      variables:\n        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n";
-  const g = "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n";
-  y = y.replace(b, "").replace(g, g + b);'
+# (g) NODE_IMAGE back on the Dependency Proxy prefix
+image_case "NODE_IMAGE through the Dependency Proxy prefix" "NODE_IMAGE must be a plain Docker Hub name" '
+  y = y.replace("  NODE_IMAGE: node:", "  NODE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/library/node:");'
+# (g2) the Renovate image (or anything else) back on the prefix
+image_case "the Renovate image through the Dependency Proxy prefix" "refers to CI_DEPENDENCY_PROXY" '
+  y = y.replace("name: renovate/renovate:", "name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/renovate/renovate:");'
+# (g3) a login to the proxy in a script
+image_case "a docker login to the Dependency Proxy" "refers to CI_DEPENDENCY_PROXY" '
+  y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - docker login -u $CI_DEPENDENCY_PROXY_USER -p $CI_DEPENDENCY_PROXY_PASSWORD $CI_DEPENDENCY_PROXY_SERVER\n    - sh tools/ci/nightly-publish.sh\n");'
+# (g4) a registry host in front of NODE_IMAGE
+image_case "NODE_IMAGE with a registry host" "NODE_IMAGE must be a plain Docker Hub name" '
+  y = y.replace("  NODE_IMAGE: node:", "  NODE_IMAGE: docker.io/library/node:");'
+# (g5) NODE_IMAGE without its digest
+image_case "NODE_IMAGE without a digest" "NODE_IMAGE must" '
+  y = y.replace(/(  NODE_IMAGE: node:\S+)@sha256:[a-f0-9]{64}/, "$1");'
+# (g6) PLAYWRIGHT_IMAGE without its digest
+image_case "PLAYWRIGHT_IMAGE without a digest" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace(/(  PLAYWRIGHT_IMAGE: \S+)@sha256:[a-f0-9]{64}/, "$1");'
+# (g7) PLAYWRIGHT_IMAGE pulled direct from MCR, past the cache
+image_case "PLAYWRIGHT_IMAGE with a direct mcr.microsoft.com name" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace("  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/", "  PLAYWRIGHT_IMAGE: mcr.microsoft.com/");'
+# (g8) PLAYWRIGHT_IMAGE on the Docker Hub path or another image under the cache
+image_case "PLAYWRIGHT_IMAGE naming another image under the MCR cache" "PLAYWRIGHT_IMAGE must" '
+  y = y.replace("  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/playwright:", "  PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/other:");'
 
 # Case (h): the committed tree as it is -> the lint passes and has a heading
-# for the section, a "==" line naming both "import" and "dependency proxy".
+# for the section, a "==" line naming both "Docker Hub" and "Dependency Proxy".
 lint_to_out
-if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'import' | grep -iq 'dependency proxy'; then
-  echo "ok   the committed .gitlab-ci.yml has the docs-import proxy section and passes"
+if [ "$rc" -eq 0 ] && grep -i '^==' "$out" | grep -i 'docker hub' | grep -iq 'dependency proxy'; then
+  echo "ok   the committed .gitlab-ci.yml has the plain-image section and passes"
 else
-  echo "FAIL the committed .gitlab-ci.yml has the docs-import proxy section and passes (exit $rc, want 0 with a == heading naming import and dependency proxy)"
+  echo "FAIL the committed .gitlab-ci.yml has the plain-image section and passes (exit $rc, want 0 with a == heading naming Docker Hub and Dependency Proxy)"
   sed 's/^/     /' "$out"
   failed=1
 fi
@@ -1153,7 +1074,7 @@ split_case "p64: NODE_IMAGE twice in the global variables" $ci "NODE_IMAGE is de
 split_case "p65: a second global variables block holding NODE_IMAGE" $ci "NODE_IMAGE is defined 2 times in the global variables" '
   y = y + "\nvariables:\n  NODE_IMAGE: evil/node:1\n";'
 split_case "p66: NODE_IMAGE in the variables of a workflow rule" $ci "in workflow > rules > [0-9]+ > variables: sets NODE_IMAGE" '
-  y = y.replace("        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n", "        CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX: docker.io\n        NODE_IMAGE: evil/node:1\n");'
+  y = y.replace("    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n", "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      variables:\n        NODE_IMAGE: evil/node:1\n");'
 split_case "p67: NODE_IMAGE in the variables of publish_docs" $ci "in publish_docs > variables: sets NODE_IMAGE" '
   y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    NODE_IMAGE: evil/node:1\n");'
 split_case "p68: NODE_IMAGE in the variables of a parent of publish_docs" $ci "in .parent > variables: sets NODE_IMAGE" '
@@ -1419,6 +1340,51 @@ yaml_pass_case "p175: GIT_DEPTH: 1 with a trailing comment in publish_docs" '
   y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: 1 # one clone commit\n");'
 yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
   y = y.replace("  script:\n    - sh tools/ci/nightly-publish.sh\n\n# Renovate", "\n# Renovate").replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  script:\n    - sh tools/ci/nightly-publish.sh\n  stage: publish\n");'
+# Cases p177-p207 (#110) judge the top-level include. Exactly one is allowed: a list of one entry whose
+# keys are exactly project: ai/agent-infra, file: scripts/private-details/ci-template.yml and ref: a full
+# 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
+# project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
+# bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
+# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case() {
+  if [ "$2" = pass ]; then
+    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+  else
+    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+  fi
+}
+inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
+inc_case "p181: an include with a branch as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: main\n"
+inc_case "p182: an include with a 7-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456\n"
+inc_case "p183: an include with a 39-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p184: an include with a 41-character sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef012345678\n"
+inc_case "p185: an include with an uppercase sha as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789ABCDEF0123456789ABCDEF01234567\n"
+inc_case "p186: an include with a 40-character ref that is not all hex" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456g\n"
+inc_case "p187: an include with no ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n"
+inc_case "p188: an include entry with an extra inputs key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    inputs:\n      a: b\n"
+inc_case "p189: an include entry with an extra rules key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    rules:\n      - when: always\n"
+inc_case "p190: an include entry with an extra local key" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n    local: other.yml\n"
+inc_case "p191: an include entry with file as a list" refuse "  - project: ai/agent-infra\n    file:\n      - scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p192: the allowed entry twice" refuse "$inc_pass$inc_pass"
+inc_case "p193: the allowed entry and a second project entry" refuse "$inc_pass  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p194: the allowed entry and a local entry" refuse "$inc_pass  - local: other.yml\n"
+inc_case "p195: an empty include list" refuse " []\n"
+inc_case "p196: a bare string include" refuse " other.yml\n"
+inc_case "p197: a bare string include in a list" refuse "  - other.yml\n"
+inc_case "p198: an include that is a mapping, not a list" refuse "  project: ai/agent-infra\n  file: scripts/private-details/ci-template.yml\n  ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p199: a local include" refuse "  - local: other.yml\n"
+inc_case "p200: a remote include" refuse "  - remote: https://example.invalid/ci.yml\n"
+inc_case "p201: a template include" refuse "  - template: Auto-DevOps.gitlab-ci.yml\n"
+inc_case "p202: a component include" refuse "  - component: gitlab.example.invalid/group/proj/comp@1.0\n"
+inc_case "p203: a local include as a mapping" refuse "  local: other.yml\n"
+inc_case "p204: a remote include as a bare string" refuse " https://example.invalid/ci.yml\n"
+inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -1594,14 +1560,15 @@ for (const page of ["index.html", "404.html", "install.html"]) {
   const hs = inline(h).map(hash);
   if (bad && E.NOHASH) hs.shift();
   if (bad && E.STALE) hs.push("'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='");
-  const src = ["'self'", ...hs, "https://cdn.jsdelivr.net"];
+  const src = ["'self'", ...hs];
   if (bad && E.UNSAFE) src.splice(1, 0, `'${E.UNSAFE}'`);
-  const parts = [
+  let parts = [
     "default-src 'self'", "script-src " + src.join(" "),
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'", "font-src 'self'",
     "img-src 'self' data: blob:", "connect-src 'self'", "worker-src 'self'",
     ...(bad && E.NOOBJECT ? [] : ["object-src 'none'"]), ...(bad && E.NOBASE ? [] : ["base-uri 'self'"]), "form-action 'self'",
   ];
+  if (bad && E.OUTSIDE) parts = parts.map((x) => x.startsWith(E.OUTSIDE + " ") ? x + " " + E.OUTSIDE_VAL : x);
   const meta = `  <meta http-equiv="Content-Security-Policy" content="${parts.join("; ")}" />\n`;
   if (bad && E.DROP_LINK) h = h.replace(/[ \t]*<link rel="stylesheet"[^>]*>\n/, "");
   if (bad && E.EDIT_SCRIPT) h = h.replace("catch(e){}", "catch(e){/* edited */}");
@@ -1684,6 +1651,128 @@ csp_fail "a policy with no base-uri 'self'" install.html NOBASE=1
 
 # Case (c7): an inline event handler attribute.
 csp_fail "an inline event handler attribute" install.html HANDLER=1
+
+# Cases (c9)-(c14), #92 (owner, 2026-10-27: nothing on the site loads from a third party): the policy lists 'self' only
+# for scripts, styles and fonts. csp_set's correct pages (c0) are the pair: they carry exactly 'self' (and the hashes)
+# and pass. An outside host, a scheme-only source or a wildcard in any of the three directives fails and names the page.
+csp_fail "script-src naming an outside host" index.html OUTSIDE=script-src OUTSIDE_VAL=https://cdn.example.invalid
+csp_fail "script-src naming a bare outside host" 404.html OUTSIDE=script-src OUTSIDE_VAL=cdn.example.invalid
+csp_fail "style-src naming an outside host" 404.html OUTSIDE=style-src OUTSIDE_VAL=https://fonts.example.invalid
+csp_fail "style-src allowing every https: source" install.html OUTSIDE=style-src OUTSIDE_VAL=https:
+csp_fail "font-src naming an outside host" install.html OUTSIDE=font-src OUTSIDE_VAL=https://fonts.example.invalid
+csp_fail "font-src with a wildcard" index.html OUTSIDE=font-src OUTSIDE_VAL='*'
+
+# Cases for #92 (site loads): the lint refuses an outside address in anything the pages load: a page's own tags, a style in
+# a page, the site's stylesheet and its scripts. Each refusal is paired with the local equivalent, which passes, and
+# with a link to another site, which passes (a link is not a load). The whole lint runs, because the section that holds
+# this rule is the implementation's to name; the committed tree passes it (c8), so a refusal here is the planted line's.
+# site_case <label> <file> <line> <named>: <line> goes before </body> in a page, or at the end of any other file; the
+# lint must exit 1 naming <named>. site_ok <label> <file> <line>: the same line must leave the lint passing.
+plant() {
+  case "$2" in
+    *.html) node -e 'const fs=require("fs");const [f,l]=process.argv.slice(1);const t=fs.readFileSync(f,"utf8");const i=t.lastIndexOf("</body>");if(i<0)process.exit(1);fs.writeFileSync(f,t.slice(0,i)+l+"\n"+t.slice(i))' "$2" "$3" ;;
+    *) printf '%s\n' "$3" >> "$2" ;;
+  esac
+}
+site_case() {
+  plant "$1" "$2" "$3"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -q "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $4)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+site_ok() {
+  plant "$1" "$2" "$3"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+# the pages' tags
+site_case "an outside stylesheet link in index.html" index.html '<link rel="stylesheet" href="https://fonts.example.invalid/css?family=Z" />' "index.html"
+site_case "an outside stylesheet link in 404.html" 404.html '<link rel="stylesheet" href="https://fonts.example.invalid/css?family=Z" />' "404.html"
+site_case "an outside script in install.html" install.html '<script src="https://cdn.example.invalid/x.js"></script>' "install.html"
+site_case "a protocol-relative script in index.html" index.html '<script src="//cdn.example.invalid/x.js"></script>' "index.html"
+site_case "an outside font preload in index.html" index.html '<link rel="preload" as="font" href="https://fonts.example.invalid/z.woff2" crossorigin />' "index.html"
+site_case "an outside preconnect in 404.html" 404.html '<link rel="preconnect" href="https://fonts.example.invalid" />' "404.html"
+site_case "an outside picture in index.html" index.html '<img src="https://img.example.invalid/x.png" alt="" />' "index.html"
+site_case "an outside frame in install.html" install.html '<iframe src="https://frame.example.invalid/"></iframe>' "install.html"
+site_case "an outside @font-face in a style in 404.html" 404.html '<style>@font-face{font-family:Z;src:url(https://fonts.example.invalid/z.woff2) format("woff2")}</style>' "404.html"
+site_case "an outside @import in a style in index.html" index.html '<style>@import url("https://fonts.example.invalid/f.css");</style>' "index.html"
+site_ok "a local stylesheet link in index.html" index.html '<link rel="stylesheet" href="assets/site.css" />'
+site_ok "a local script in 404.html" 404.html '<script src="assets/js/main.js"></script>'
+site_ok "a local @font-face in a style in 404.html" 404.html '<style>@font-face{font-family:Z;src:url(assets/img/mark.svg)}</style>'
+site_ok "a link to another site in index.html" index.html '<a href="https://example.invalid/credit" target="_blank" rel="noopener">credit</a>'
+site_ok "an outside address as text in index.html" index.html '<p>curl -fsSL https://example.invalid/get.sh | sh</p>'
+# the site's stylesheet
+site_case "an outside @import in site.css" assets/site.css '@import url("https://fonts.example.invalid/f.css");' "assets/site.css"
+site_case "an outside @font-face in site.css" assets/site.css '@font-face{font-family:Z;src:url(https://fonts.example.invalid/z.woff2) format("woff2")}' "assets/site.css"
+site_case "a quoted protocol-relative url() in site.css" assets/site.css '.x{background:url("//cdn.example.invalid/x.png")}' "assets/site.css"
+site_ok "a local url() in site.css" assets/site.css '.y{background:url(img/mark.svg)}'
+site_ok "a local @font-face in site.css" assets/site.css '@font-face{font-family:Z;src:url("fonts/z.woff2") format("woff2")}'
+site_ok "a data: url() in site.css" assets/site.css '.z{background:url(data:image/svg+xml,%3Csvg/%3E)}'
+# the site's scripts (a script that loads something names the address as the thing it loads)
+site_case "an outside script made by a site script" assets/js/sky.js 'export const OUT5 = () => { const s = document.createElement("script"); s.src = "https://cdn.example.invalid/m.js"; document.head.appendChild(s); };' "assets/js/sky.js"
+site_case "an outside import() in a site script" assets/js/sky.js 'export const OUT6 = () => import("https://cdn.example.invalid/m.js");' "assets/js/sky.js"
+site_case "an outside fetch in a site script" assets/js/sky.js 'export const OUT7 = () => fetch("https://api.example.invalid/x");' "assets/js/sky.js"
+site_case "a protocol-relative picture in a site script" assets/js/sky.js 'export const OUT8 = () => { new Image().src = "//cdn.example.invalid/p.png"; };' "assets/js/sky.js"
+site_case "an outside stylesheet made by a site script" assets/js/sky.js 'export const OUT9 = () => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://fonts.example.invalid/f.css"; document.head.appendChild(l); };' "assets/js/sky.js"
+site_ok "a local script made by a site script" assets/js/sky.js 'export const IN1 = () => { const s = document.createElement("script"); s.src = "assets/js/data.js"; document.head.appendChild(s); };'
+site_ok "a local fetch in a site script" assets/js/sky.js 'export const IN2 = () => fetch("assets/docs/index.json");'
+site_ok "a link to another site made by a site script" assets/js/sky.js 'export const IN3 = () => { const a = document.createElement("a"); a.href = "https://example.invalid/credit"; return a; };'
+site_ok "the SVG namespace in a site script" assets/js/sky.js 'export const IN4 = "http://www.w3.org/2000/svg";'
+
+# Cases (v1)-(v2), #99 (the vendored diagram script is pinned by its digest): assets/js/pads.js names the vendored
+# mermaid file with an integrity key, and section "loads" must refuse a vendored file that no longer matches it (v1) and a
+# pin that has lost its integrity key (v2). Both exit 1 naming assets/js/pads.js and the word integrity.
+vendor_case() {
+  commit_all "$1"
+  lint_to_out loads
+  if [ "$rc" -eq 1 ] && grep -q 'assets/js/pads\.js.*integrity\|integrity.*assets/js/pads\.js' "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming assets/js/pads.js and integrity)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+node -e 'const fs=require("fs");const f=process.argv[1];const b=fs.readFileSync(f);b[b.length>>1]^=1;fs.writeFileSync(f,b)' assets/vendor/mermaid-12.2.0.min.js
+vendor_case "one changed byte in the vendored mermaid file"
+sed -i '/const MERMAID = /s/, integrity: "[^"]*"//' assets/js/pads.js
+if grep 'const MERMAID = ' assets/js/pads.js | grep -q integrity; then
+  echo "FAIL the mermaid pin without an integrity key (the planted change did not remove integrity)"
+  failed=1
+  git checkout -q -- assets/js/pads.js
+else
+  vendor_case "the mermaid pin without an integrity key"
+fi
+
+# Case (v3), #102: .gitleaksignore names the Mermaid bundle by path, so a bump that leaves it on the old version
+# fails section "loads", naming .gitleaksignore.
+echo 'assets/vendor/mermaid-0.0.1.min.js:generic-api-key:636' >> .gitleaksignore
+commit_all "gitleaksignore on another mermaid version"
+lint_to_out loads
+if [ "$rc" -eq 1 ] && grep -q '^   \.gitleaksignore: names assets/vendor/mermaid-0\.0\.1' "$out"; then
+  echo "ok   a .gitleaksignore entry for another mermaid version fails"
+else
+  echo "FAIL a .gitleaksignore entry for another mermaid version fails (exit $rc, want 1 naming .gitleaksignore)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+git reset -q --hard HEAD~1
 
 # Cases n1-n3: section "no real names, host logins or private addresses" (#56).
 # The private address is built from parts, so this file holds no literal one
@@ -2005,7 +2094,7 @@ attr_hit "a Generated with line naming $c1" "Generated with [$c1 Code](https://e
 attr_hit "a lower-case generated with line naming $c1" "generated with $c1"
 attr_hit "an upper-case GENERATED WITH AI line" "GENERATED WITH AI TOOLS"
 attr_hit "a $c1-Session line" "$c1-Session: https://example.invalid/session/1"
-attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr 'A-Z' 'a-z')-session: abc123"
+attr_hit "a lower-case session line" "$(printf '%s' "$c1" | tr '[:upper:]' '[:lower:]')-session: abc123"
 attr_clean "a Co-authored-by trailer naming a person" "Co-authored-by: Pat Example <pat@example.invalid>"
 attr_clean "a Generated with line that names neither $c1 nor AI" "Generated with care from the template."
 attr_clean "a commit message that only mentions $c1 in prose" "Document how $c1 reads the project file."
@@ -2085,7 +2174,7 @@ login_email() { # login_email LABEL AUTHOR_EMAIL COMMITTER_EMAIL PART NOTPART
 }
 login_email "a banned login as the local part of the author email" "$nl@anyhost.local" t@t author committer
 login_email "a banned login as the local part of the committer email" t@t "$nl@anyhost.local" committer author
-login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr 'a-z' 'A-Z')@Anyhost.Local" t@t author committer
+login_email "a banned login in capitals as the local part of the author email" "$(printf '%s' "$nl" | tr '[:lower:]' '[:upper:]')@Anyhost.Local" t@t author committer
 GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="${nl}xyz@anyhost.local" GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
 names_run "" "$nl_d" ""
 n_clean "a longer login as the local part of the author email is not the banned one"
@@ -2129,8 +2218,8 @@ msg_addr "a narrower private IPv6 range in a commit body" "address probe" "Use t
 ml="Fa""ble Op""us Son""net Hai""ku G""PT Chat""GPT Open""AI Cod""ex Gem""ini Copi""lot"
 for m in $ml; do
   attr_hit "a Co-authored-by trailer naming $m" "Co-authored-by: $m 4 <noreply@example.invalid>"
-  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr 'a-z' 'A-Z') <noreply@example.invalid>"
-  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr 'A-Z' 'a-z') Bot <bot@example.invalid>"
+  attr_hit "a Co-authored-by trailer naming $m in capitals" "CO-AUTHORED-BY: $(printf '%s' "$m" | tr '[:lower:]' '[:upper:]') <noreply@example.invalid>"
+  attr_hit "a lower-case co-authored-by trailer naming $m" "co-authored-by: $(printf '%s' "$m" | tr '[:upper:]' '[:lower:]') Bot <bot@example.invalid>"
 done
 attr_hit "a Co-authored-by trailer with only an open""ai.com address" "Co-authored-by: Helper <helper@open""ai.com>"
 attr_hit "a Co-authored-by trailer with only an OPEN""AI.COM address" "Co-Authored-By: Helper <helper@OPEN""AI.COM>"
@@ -2150,7 +2239,7 @@ trailer_clean "a banned word in the name of a Signed-off-by trailer" "Signed-off
 trailer_clean "a banned word in the name of a lower-case signed-off-by trailer" "signed-off-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Reviewed-by trailer" "Reviewed-by: $nwc Tester <t@t>"
 trailer_clean "a banned word in the name of a Co-authored-by trailer" "Co-authored-by: $nwc Tester <t@example.invalid>"
-trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr 'a-z' 'A-Z') <t@example.invalid>"
+trailer_clean "a banned word in the name of a Co-authored-by trailer, upper-case" "CO-AUTHORED-BY: $(printf '%s' "$nwc" | tr '[:lower:]' '[:upper:]') <t@example.invalid>"
 hist_case "a banned word in the body next to a trailer holding the word in a name" t t "message probe" "The $nw remark.
 
 Signed-off-by: $nwc Tester <t@t>" "message" "author|committer" "$nw_d" "" "" "$nw"
@@ -2159,6 +2248,114 @@ hist_case "a banned login as the local part of a Signed-off-by email" t t "messa
 hist_case "a banned login as the local part of a Co-authored-by email" t t "message probe" "Co-authored-by: Pat Example <$nl@anyhost.local>" "message" "author|committer" "" "$nl_d" "" "$nl"
 hist_case "a banned login as the name in a Reviewed-by trailer" t t "message probe" "Reviewed-by: $nl <t@t>" "message" "author|committer" "" "$nl_d" "" "$nl"
 rm -f "$names_out"
+
+# Cases (t0)-(t16) judge section test-map (ADR-0005 section 2, #95): tools/ci/test-map-check.mjs keeps
+# tools/ci/test-map.json honest. Every tracked file matches a group ("unmapped: <path>" otherwise), every pattern
+# matches a tracked file, every tools/ci/*-test.mjs, *-test.sh, journey.mjs and freeze.mjs is named in exactly one
+# place (the map's tests, node-tests.sh, or a lint job's script in .gitlab-ci.yml), and every map test exists, has
+# groups that exist (never all or none), a browser, gates within its browsers and seconds for each browser. Each
+# refusal is paired with the case it must accept. tm_case <label> ok|fail <named> <shell> <js>: <shell> changes the
+# tree, <js> edits m (the parsed map) and must change it; a refusal must exit 1 with <named> (an extended regular
+# expression) on a line of the section's output; an acceptance must exit 0.
+tm_map=tools/ci/test-map.json
+tm_base=$(git rev-parse HEAD)
+tm_back() { git add -A; git reset -q --hard "$tm_base"; }
+# shellcheck disable=SC2329 # called through eval in tm_case
+tm_node_test() { # tm_node_test NAME: add NAME to node-tests.sh's list
+  sed -i "s/; do\$/ $1; do/" tools/ci/node-tests.sh && grep -q " $1; do\$" tools/ci/node-tests.sh
+}
+tm_case() {
+  if [ ! -f "$tm_map" ]; then echo "FAIL $1 ($tm_map missing)"; failed=1; return; fi
+  eval "$4" || { echo "FAIL $1 (the test change did not apply)"; failed=1; tm_back; return; }
+  if [ -n "$5" ]; then
+    F="$tm_map" JS="$5" node -e '
+      const fs = require("fs");
+      const m = JSON.parse(fs.readFileSync(process.env.F, "utf8")); const before = JSON.stringify(m);
+      new Function("m", process.env.JS)(m);
+      if (JSON.stringify(m) === before) { console.error("the edit changed nothing"); process.exit(3); }
+      fs.writeFileSync(process.env.F, JSON.stringify(m, null, 2) + "\n");
+    ' || { echo "FAIL $1 (the map edit did not apply)"; failed=1; tm_back; return; }
+  fi
+  commit_all "$1"
+  lint_to_out test-map
+  if [ "$2" = ok ]; then
+    if [ "$rc" -eq 0 ]; then
+      echo "ok   $1 passes"
+    else
+      echo "FAIL $1 passes (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+    fi
+  elif [ "$rc" -eq 1 ] && grep -Eq -- "$3" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming $3)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  tm_back
+}
+tm_new='printf "export {};\n" > assets/js/new.js'
+tm_zzz='printf "process.exit(0);\n" > tools/ci/zzz-test.mjs'
+tm_rename='git mv assets/js/law.js assets/js/rules.js'
+tm_swap='const g = Object.values(m.groups).find((a) => a.includes("assets/js/law.js")); g[g.indexOf("assets/js/law.js")] = "assets/js/rules.js";'
+tm_case "(t0) the committed tree: the map is complete" ok "" ":" ""
+tm_case "(t1) a new site module in no group" fail "unmapped.*assets/js/new\.js" "$tm_new" ""
+tm_case "(t2) the same module added to a group" ok "" "$tm_new" 'm.groups.home.push("assets/js/new.js");'
+tm_case "(t3) a pattern that matches no tracked file" fail "assets/js/gone\.js" ":" 'm.groups.home.push("assets/js/gone.js");'
+tm_case "(t4) a file renamed with its old pattern left behind" fail "assets/js/law\.js" "$tm_rename" ""
+tm_case "(t5) the same rename with the pattern renamed too" ok "" "$tm_rename" "$tm_swap"
+tm_case "(t6) a test file (mapped in none) named nowhere" fail "tools/ci/zzz-test\.mjs" "$tm_zzz" 'm.groups.none.push("tools/ci/zzz-test.mjs");'
+tm_case "(t7) the same test named once, in node-tests.sh" ok "" "$tm_zzz && tm_node_test zzz" 'm.groups.none.push("tools/ci/zzz-test.mjs");'
+tm_case "(t8) a test in a lint job's script and in node-tests.sh" fail "tools/ci/coverage-test\.mjs" "tm_node_test coverage" ""
+tm_case "(t9) a map test also in node-tests.sh" fail "tools/ci/csp-test\.mjs" "tm_node_test csp" ""
+tm_case "(t10) a test in all" fail "csp.*all|all.*csp" ":" 'm.tests.csp.groups.push("all");'
+tm_case "(t11) a test in none" fail "csp.*none|none.*csp" ":" 'm.tests.csp.groups.push("none");'
+tm_case "(t12) a map test whose file is not on disk" fail "nosuch-test\.mjs" ":" 'm.tests.csp.file = "tools/ci/nosuch-test.mjs";'
+tm_case "(t13) a map test in a group that does not exist" fail "nosuch" ":" 'm.tests.csp.groups.push("nosuch");'
+tm_case "(t14) a map test with no browser" fail "csp([^-]|$)" ":" 'm.tests.csp.browsers = []; m.tests.csp.gates = []; m.tests.csp.seconds = {};'
+tm_case "(t15) a map test gating in a browser it does not run in" fail "freeze" ":" 'm.tests.freeze.gates = ["chromium", "firefox"];'
+tm_case "(t16) a map test with no seconds for one of its browsers" fail "csp([^-]|$)" ":" 'delete m.tests.csp.seconds.firefox;'
+
+# Cases (p8a)-(p8h) judge the picture-decoding rule of the same section's neighbours (#113, ADR-0004 6e.2, test P8): under
+# assets/door/ and assets/js/, a createImageBitmap( whose first argument is a blob (the spellings createImageBitmap(b,
+# createImageBitmap(b) createImageBitmap(blob and .then(createImageBitmap)) may be written in assets/door/page.js only:
+# every other site picture goes through fetchBitmap, so the route (the image loader on Firefox) is chosen in one place.
+# A planted occurrence elsewhere fails the lint with a line naming the file; a crop from a bitmap (first argument a
+# bitmap) and the same call in page.js pass, and so does the committed tree. The whole lint runs, whichever section holds
+# the rule.
+p8_case() { # p8_case <label> <file> <line> <named>: the line appended to the file must fail the lint, naming <named>
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -ne 0 ] && grep -q -- "$4" "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want non-zero naming $4)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+p8_ok() { # p8_ok <label> <file> <line>: the line appended to the file must leave the whole lint passing
+  printf '%s\n' "$3" >> "$2"
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+p8_case "(p8a) createImageBitmap(b, ...) of a blob in assets/js/world.js" assets/js/world.js 'export const P8A = (/** @type {Blob} */ b) => createImageBitmap(b, { premultiplyAlpha: "none" });' "assets/js/world.js"
+p8_case "(p8b) createImageBitmap(b) of a blob in assets/js/world.js" assets/js/world.js 'export const P8B = (/** @type {Blob} */ b) => createImageBitmap(b);' "assets/js/world.js"
+p8_case "(p8c) createImageBitmap(blob in assets/js/world.js" assets/js/world.js 'export const P8C = (/** @type {Blob} */ blob) => createImageBitmap(blob, {});' "assets/js/world.js"
+p8_case "(p8d) .then(createImageBitmap) in assets/js/world.js" assets/js/world.js 'export const P8D = (/** @type {Promise<Blob>} */ p) => p.then(createImageBitmap);' "assets/js/world.js"
+p8_case "(p8e) createImageBitmap(b, ...) of a blob in a door module other than page.js" assets/door/stars.js 'export const P8E = (/** @type {Blob} */ b) => createImageBitmap(b, {});' "assets/door/stars.js"
+p8_case "(p8f) createImageBitmap(blob) in assets/js/planets3d.js" assets/js/planets3d.js 'export const P8F = (/** @type {Blob} */ blob) => createImageBitmap(blob);' "assets/js/planets3d.js"
+p8_ok "(p8g) a crop from a bitmap in assets/js/world.js" assets/js/world.js 'export const P8G = (/** @type {ImageBitmap} */ bmp) => createImageBitmap(bmp, 0, 0, 64, 64);'
+p8_ok "(p8h) the blob call in assets/door/page.js, where it belongs" assets/door/page.js 'export const P8H = (/** @type {Blob} */ blob) => createImageBitmap(blob, {});'
+lint_to_out
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (p8i) the committed tree passes the whole lint"
+else
+  echo "FAIL (p8i) the committed tree passes the whole lint (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
+fi
 
 rm -f "$cspjs"
 

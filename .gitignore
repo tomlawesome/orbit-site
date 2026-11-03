@@ -4,3 +4,4 @@ node_modules/
 .agents/
 /coverage/
 /import-warnings.txt
+/shots/

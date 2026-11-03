@@ -46,10 +46,12 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
+| `drawWorker` | `() => Worker \| null`: makes a **module** worker running `draw-worker.js`, the flight drawn there where the rule says (below). Absent (the default), no worker is ever made | `() => new Worker("assets/door/draw-worker.js", { type: "module" })` | none yet; when taken up, `() => new Worker(new URL("./draw-worker.js", import.meta.url), { type: "module" })` from its own code |
+| `fonts` | `[{ family, weight, url }]`: the faces the flight's pens write with, loadable from the page's own origin, the very files the page's stylesheet uses (a worker has none of the page's fonts). Required with `drawWorker`: without it the flight stays on the page | JetBrains Mono, 500, `assets/fonts/jetbrains-mono-latin.woff2` | none yet; its own file's URL through Vite, as its pictures |
 
 ### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, held, world, host }`
 
@@ -84,10 +86,13 @@ star fields and sets the glows' origin.
   frame loop stops, its resize and visibility listeners and its observers are
   removed, nothing it was waiting for acts any more (a door destroyed before it
   was shown never becomes the flight's door), and it leaves the sharp strip's
-  queue (so it holds no other context back). A lost context takes it down the
-  same way, and it stays down until a remount. Its textures stay on the
-  context; a remount makes its own. `dawn.live.start()` on a destroyed dawn
-  returns `null`.
+  queue (so it holds no other context back). What it put on the page's context
+  (its textures, framebuffer and vertex array) is deleted, an upload landing
+  after it included; its compiled programs are kept for the next door, and its
+  canvas loses its `live` class. A lost context takes it down the same way, and
+  it stays down until a remount, which is handed a fresh context. (Interface
+  change, 2026-10, #84: its textures used to stay on the context.)
+  `dawn.live.start()` on a destroyed dawn returns `null`.
 - `held`: the pictures decoded ahead of the light (`decode-ahead.js`), a list of `{ ready, held }` as
   `decodeAhead` returns them: the glows' and the Earth's, plus one for each glow the dawn draws itself (with its
   `url`; a resize replaces the old size's). `[]` before `start()`. They are kept until the light's reveal has
@@ -119,36 +124,68 @@ removes the resize listeners.
 
 `canvas` is `#warp`, `name` is `#launchname`, the glyphs are functions
 returning the two lockups' SVGs. Returns `{ fly, ascend, descend, reset,
-destroy, later, reduced, warm, warmDocs, compiled }`.
+destroy, later, reduced, warm, warmDocs, compiled, verdict, aside }`. `journey()` takes no
+context of `canvas`: its 2D context is taken at the first `warm`, `warmDocs`,
+`fly` or `descend` (ADR-0004 6a.4: a canvas with a context can never be handed
+to a worker), and `destroy()` before any of them takes none. `compiled()`
+before any of them resolves at once. A journey may replace the canvas element
+it was given (the worker's fallback, below), so a host keeps no reference to it
+(the site reads `#warp` once, at `journey()`).
 
 - `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
   `ready`, a promise the clock holds for just before the canvas comes up, at
-  most eight seconds. Hooks, each optional, in order: `release` (the surface
+  most `WORLD_FAILED` (30 s, `journey.js`): past that the world has failed, the
+  hold lets go, the flight goes on painted and the engine is told (`abandon()`:
+  `flight world: off: not ready in 30 s`, the world remade by the next `warm()`). Hooks, each optional, in order: `release` (the surface
   flown from may go), `land` (the bare sky is readable), `settled` (the
   instrument has arrived).
-- `descend({ title, subtitle, onto, from, homes, on, at })`: the descent, `onto`
+- `descend({ title, subtitle, onto, from, homes, ready, on, at })`: the descent, `onto`
   `"dusk"` or `"dawn"`, `from` the profile flown up (mirrored on the way
   down). `homes`: the other households met again on the way down,
   `mirrored(homeProps(homes))` added to the end of the props, whatever the
   base; with `from`, only if the climb did not carry them (both would pass
   them twice). Left out, the descent is exactly as before. Hooks:
-  `released`, `surface` (the dusk or the dawn comes up), `farewell`. A
-  descent never waits for the flight's world: at its warp it draws the world
-  if the verdict on it is in and fit, and otherwise flies painted (a descent
-  made before the host's leisure warm-up has proved the world is painted).
+  `released`, `surface` (the dusk or the dawn comes up), `farewell`. `ready`
+  (ADR-0002 6.8), as `fly` has it: the clock holds at the descent's first beat,
+  before the surface flown from withdraws (so it stays as it is while it
+  waits), `holding` set meanwhile, with the same `WORLD_FAILED` backstop; not
+  under reduced motion nor when pinned. A host passes `ready: journey.warm()`.
+  At its warp it draws the world if the verdict on it is in and fit, and
+  otherwise flies painted (a refused or failed world, or a descent given no
+  `ready`).
+- On the worker path a profile is posted by name (`engine.js`: `wireProfile`):
+  one given to `fly` must carry `UP`'s or `DOWN`'s curves (`speed`, `atm`,
+  `duskMix`; everything else is data), and any other throws
+  `ProfileCurveError`. The site's flights are all `UP`'s curves with data.
 - `on` given to `journey()` holds the defaults: `release`, `land`,
   `settled`, `released`, `dusk` (the descent's surface), `farewell`.
-- `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: and the galaxy;
-  `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
+- `warm({ prove = true })`: the flight's world made ready; `warmDocs({ prove = true })`: the docs' galaxy, ready on its
+  own (#101): `warmDocs({ prove: false })` resolves once the world is made, the galaxy compiled or given up and its stars
+  on the GPU, which may be before `warm({ prove: false })` does, the flight's maps still landing; `warmDocs()` proves the
+  world on that alone (one galaxy test frame, and the fitness test shared with `warm()`'s proof: one verdict a visit), so
+  a trip to the docs may begin while the maps are still landing, drawn with those that have; a host that wants the maps
+  too waits on `warm()` as well. `compiled()`: its shaders compiled. `reset()`: everything off. Where the page may not use the GPU (the gate,
   below) there is no world: nothing of it is made or fetched and these resolve once the Earth's picture is in.
   `prove: false` is the speculative ask (the door's, while it waits): the world's programs made and its pictures
   put on the GPU (as chores, so as the host opens them), and no frame drawn, no pixel read back. The default
-  proves it: the host asks it at leisure once the door is lit (`later`), so the verdict is in before anyone flies, and
+  proves it: the host asks it at leisure once the door is lit (`later`) where a pass is remembered (`rememberedFit()`,
+  below), and at once behind the load where none is, so the verdict is in before anyone flies, and
   a flight up asked first holds on it (`ready`); it draws the
-  warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, nothing remembered. The
+  warm-up frames, and runs the fitness test (median frame against `FIT_MS`), each visit, a remembered verdict never
+  deciding what is drawn. Under save-data (`navigator.connection.saveData`) there is no world: nothing is made or
+  fetched, the GPU is not asked, and `verdict()` is in at once (`refused`, `flight world: off: save-data`). The
   world is drawn only once proved; a world too slow (or a context lost) is let go and the flight draws on its
-  own canvas, as it always could.
+  own canvas, as it always could. A world lost after it was made is replaced by the next `warm()`. No picture is
+  waited for longer than `PICTURE_WAIT` (20 s, `chores.js`): a download that never finishes is given up and asked
+  again by the next ask, and an Earth's picture that has not come by then settles `warm()` without proving the
+  world, which the next `warm()` does once the picture is in.
+- `verdict()` → `Promise<{ fit, ms, how }>` (ADR-0002 6.3): what a way in onto the flight waits for, with its
+  proper version's load (the site's gate: `Promise.all([warm({ prove: false }), verdict()])`). In at the first of: a
+  remembered pass read at the first `warm` (`how: "remembered"`), this visit's judgement (`"tested"`, or `"skipped"`
+  under `fit: "skip"`), the GPU refused or save-data (`"refused"`, at once), the world not made, lost or abandoned before
+  any judgement (`"failed"`). Never on a remembered unfit, and never "not yet". Renewed when a lost or abandoned world
+  is remade.
 - `later(fn, { after = 4000 })` → `stop()`: `fn` at leisure, `after` ms from now and once the page's painted
   animations have finished; never called if `stop()` is, or if a `fly()` or `descend()` begins first (both drop
   every pending `later`: a compile on the page's own thread, started mid-flight, would be a pause in the middle
@@ -175,15 +212,16 @@ leisure warm-up. Like any `fly()` or `descend()`, a pinned one drops every
 pending `later`; a host that pins and still wants the warm-up asks for it
 again.
 
-A `fly()` whose `ready` never settles holds the clock at most eight
-seconds; a `descend()`, `reset()` or later `fly()` lets the hold go at once.
+A `fly()` or `descend()` whose `ready` never settles holds the clock at most
+`WORLD_FAILED` (30 s), and that is a failure (above); a `descend()`, `reset()`
+or later `fly()` lets a flight's hold go at once.
 
 The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
 `showwarp`, `launching`, `bare`, `instrument`, `withdrawing`, `dispersing`,
 `showdusk`, `farewell`, `holding`. The host's surfaces style themselves on
 them.
-`dawn()` and `dusk()` also set `loading` and `lit` (first light, below), and the
-host sets `ready-flight` (below).
+`dawn()` also sets `loading` and `lit` (its `light()`, first light, below);
+`dusk()` sets neither. The site's host sets `ready-flight` (below).
 
 ### Markup (`markup.js`)
 
@@ -232,6 +270,10 @@ Loaded before the host's own sheet. Its header lists what it asks of the
 host (`--star-far`, `--star-near`, `--display`, `--mono`, `html.rich`) and
 the keyframes it defines that a host may use (`driftf`, `driftn`,
 `spinback`). Every `url()` in it stays inside the folder.
+Its fixed text sizes are in `rem` (orbit-site #79), so they follow the host's
+root font size: a host that scales its root for a reader's text size scales
+the door's text with it. At the default 16px root they are the old pixel sizes.
+Sizes tied to the surface (`--R`) stay as they are.
 
 `.release` (the tag under the name, above): positioned from the name's measure
 (`--R` where the surface sets it), coloured and sized by the sheet, and shown
@@ -240,8 +282,9 @@ nothing of it. `#dusk.asdawn` hides it on a phone with the name.
 
 The host's own body class: `ready-flight`. The gate is hidden until
 `body.lit.ready-flight` (`door.css`), so the host adds `ready-flight` to the
-body once the flight is ready to begin (the site: `openNow` in
-`assets/js/main.js`). Without it the gate never shows.
+body once the flight is ready to begin (the site: `openWays` in
+`assets/js/main.js`). Only the site's host needs it: Orbit shows its gate on
+`body.lit` (its own `flight.css`).
 
 ### What the folder touches in the host page
 
@@ -276,8 +319,13 @@ Found by reading what the folder loads (`fetch`, `Image`, `createObjectURL`,
   style object (`style.setProperty`, `style.width`), which a policy does not
   block, and the markup has no `style=""` attribute. A host that keeps
   `'unsafe-inline'` for its own styles loses nothing.
-- No `worker-src` beyond `'self'` (it starts no worker), no `font-src` (it
-  loads no font), no frames, no `object-src`.
+- `worker-src 'self'` where the host passes `drawWorker` (the folder makes no
+  worker itself, and never from a `blob:`), and `font-src 'self'` for the font
+  the host names in `fonts`. The worker runs under the page's policy where the
+  browser carries it into a dedicated worker (Firefox) and under none where it
+  does not (Chromium, where the site sends no headers), so it needs nothing the
+  page does not allow: the same-origin pictures (`connect-src`) and the font.
+  No frames, no `object-src`.
 
 ### The GPU gate (`fitness.js`, ADR-0002)
 
@@ -297,21 +345,105 @@ machine that is software on purpose, the site's own live check); `level` never g
 is refused or absent (nothing will compile), `false` under the `mainthread` flag.
 `probe()`: only with the `door3d` flag and an accepted GPU, on the gate's context (its bindings and viewport put back, not lost); else
 nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
+`drawnAside()` (not exported: the journey asks it at its first need, after the gate): whether the flight is drawn
+in a worker, below.
 `FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
 (in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the
-verdict: `flight world: on (frame N ms)`, or `off: frame N ms`. No verdict is stored.
+verdict: `flight world: on (frame N ms)`, or `off: frame N ms`.
+
+The verdict is kept a week (ADR-0002 6.4): localStorage key `<storagePrefix>-fit <renderer> <w>x<h>@<dpr>` (the
+gate's renderer, the screen and the device pixel ratio), value `{ t, fit, ms }`, valid while
+`t <= Date.now() && Date.now() - t < WEEK`; written at every measured judgement, either way; neither read nor written
+under `fit: "skip"` or save-data. `rememberedFit()` → `{ fit, ms, t } | null`: the kept verdict, read once a page (on
+the page, never in a worker), after the gate; the console says `flight world: remembered on (frame N ms, D d ago)` or
+`remembered off (frame N ms), tested again`. Only a pass opens a way in ahead of this visit's test; the host decides
+by it whether the proof is at leisure or at once. `WEEK` (exported, and the probe's too: `capability.js`).
+
+### The flight in a worker (ADR-0004 6a; Firefox)
+
+Where the host gives `drawWorker` and `fonts`, the journey may draw the flight
+in that worker: both canvases are handed over (`transferControlToOffscreen`),
+`#warpgl` is made and placed beneath `#warp` by the page, and the engine and its
+world run in the worker as they do on the page, the page keeping the clock, the
+beats, the hooks and the body classes (`remote-flight.js` on the page,
+`draw-worker.js` in the worker). Decided once a page at the journey's first need
+(`fitness.js`: `drawnAside()`): `draw: "page"` keeps the page; `draw: "worker"`
+takes the worker wherever `drawWorker` and `fonts` are given; otherwise all of:
+the gate accepted the page and compiles on the page's own thread (`parallel`
+false), no `navigator.userAgentData` (Chromium keeps the page), the gate not
+forced (`gpu: "force"`: every live test keeps the page), a `Worker`, an
+`OffscreenCanvas` and a canvas that can be handed over, not under save-data.
+On the worker path the gate's context stays on the page, idle, and the world's
+is made in the worker: two contexts, one of them holding nothing. The worker
+posts its judgement (`verdict { fit, ms, skipped, how }`), which the page keeps
+and resolves `verdict()` on; the page reads the kept verdict itself, and
+`abandon` is posted to the worker. A fallback to the page hands `verdict()` to
+the page's engine.
+
+The console says which, once, when the host gave a worker: `orbit · flight:
+drawn in a worker` or `orbit · flight: drawn on the page: <why>`. Every other
+line the flight prints is printed on the page as it would be there.
+
+`journey.aside()` → `Promise<boolean>`: true once the worker has said it is up,
+false once the flight is on the page (the page path, at the journey's first
+need; a fallback before the worker was up; `destroy()`). It settles at the
+first need. A host that draws its own worlds in a worker of its own reads it
+before letting the page's context go: a worker that fell back before it was up
+drew on the page, with that context.
+
+Any failure (the worker's `error`, its `up` not ok, a `dead`, and under the
+automatic rule no `up` within 5000 ms; under `draw: "worker"` there is no
+limit) falls back to the page: `#warp` is replaced by a fresh canvas with the
+same attributes, `#warpgl` removed, the worker terminated, the pending warm-ups
+asked again of a page engine, and a flight under way picked up where it was.
+The console says `orbit · flight: drawn on the page: <why>`.
+
+### Where the pictures are decoded (ADR-0004 6e; Firefox)
+
+Firefox decodes a blob's picture on the page's thread, whichever thread asked, and stalls it for the decode's length.
+So where the family tell says Firefox (`fitness.js`: `decodeAside()`: the gate accepted the page, `parallel` false, no
+`navigator.userAgentData`; `gpu: "force"` does not change it) the pictures are decoded by the browser's image loader:
+an `<img>` on a `blob:` URL, `decode()` awaited, the bitmap wrapped from it. `decode: "img"` takes that route anywhere,
+`decode: "blob"` keeps `createImageBitmap(blob, options)` (the control). The console says `orbit · pictures: decoded by
+the image loader` once, when taken. On that route only the resize options (`resizeWidth`, `resizeHeight`,
+`resizeQuality`) reach the wrap: `colorSpaceConversion` and `premultiplyAlpha` are dropped, as either makes Firefox
+decode again on the page's thread. A decode or wrap that fails is made the old way. The flight's and the install's
+workers ask the page for it (`hello.decode`, `"page"` or `"here"`; the `decode` and `decoded` messages) and receive the
+bitmap transferred. Nothing a host does changes with this beyond the exports below.
 
 ### Also exported from `index.js`
 
 For a host's own worlds and skies, so their work takes its turn with the
-door's: the chores (`chore`, `fetchOnce`, `linked`, `counted`, `note`,
+door's: the chores (`chore`, `fetchOnce`, `fetchBitmap(url, options)` (a picture fetched once and decoded by the route
+above, in place of `createImageBitmap` of the blob), `linked`, `counted`, `note`,
 `noteChores`, `quiet`, `openChores`, `openCompiles`, `openSoft`, `softRan`,
-`hurryChores`, `programs`, `compilesAside`, `holdReveal`, and the wait limit for
+`hurryChores`, `programs`, `compilesAside`, `holdReveal`, `moving`, and the wait limit for
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
-`isSoftware`, `FIT_MS`, below), the capability probe
+`isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
+(`drawnAside()`, for a host that puts its own drawing beside it), whether the pictures are decoded by the image loader
+(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+For a host's own worker, which must answer for the page and run its queue
+unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
+answers replaced by the worker's), `pace("none")` (`chores.js`: the rests
+and the one-band-a-frame uploads dropped) and `askPage(post)` (`chores.js`: the worker's `decode(blob, options)`
+for `setPage`, which asks the page and falls back to decoding here, and `heard(message)` for the page's `decoded`).
+All of them are optional: a host that uses none of them has the door as before.
+`page.decode(blob, options)` (`page.js`) is an additive change to the page interface (#113), and `picture`'s `loaded`
+is called once the picture's `decode()` has settled rather than at `load`. A host's own page adapter given to `setPage`
+need not have `decode`: `setPage` only replaces what it names.
+`page.yield(fn)` (`page.js`) is an additive change to that page interface (#101):
+the next task with no clamp (a `MessageChannel` message, else `setTimeout(fn, 0)`),
+which the chore queue hops on during the door's reveal instead of 0 ms timers. A host's own
+page adapter given to `setPage` need not have it: `setPage` only replaces what
+it names, and where a page without `yield` is in use `chores.js` falls back to
+`setTimeout(fn, 0)`, as before.
+The page's chore queue runs its share inside the animation frame's callback, before the paint, with a 50 ms
+timer behind it for a page whose frames are slow or absent (#101); `moving()` (`chores.js`) → `release()` says
+something moves on the page's thread (the flight's own loop does, on the page path), so the share is the smaller
+one until released. A host with its own loop on the page's thread may call it; one that never does has the door as before.
 `docsRest({ width, height })` → `{ distance }`: how far from the galaxy's core
 the docs' flight comes to rest on a screen of that size (CSS px), in the
 galaxy's own units (its disc's radius is about 1). The flight reads the
@@ -346,6 +478,9 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
 | `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
+| `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2); in the worker, `draw-worker.js` answers for it (`setPage`) |
+| `remote-flight.js` | The flight drawn in a worker, as the page sees it: the engine's surface, the messages, the fallback |
+| `draw-worker.js` | The worker's entry (the host's `drawWorker` runs it): the handshake, the engine on the handed-over canvases |
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |
 | `markup.js`, `door.css` | The markup and the stylesheet |

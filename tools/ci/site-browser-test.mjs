@@ -31,8 +31,8 @@
  *   B9  a docs page with a heading titled "Mermaid" (so id="mermaid", which the browser also exposes as the page-wide
  *       name `mermaid`) before its diagram still draws the diagram as an <svg> within 30 s, and does not fall back to the
  *       diagram's source shown as code (pre.code[data-lang="mermaid"]); the heading is on the page and is the element
- *       with that id. Control: the same page without that heading draws the <svg> (the library loads from
- *       cdn.jsdelivr.net, so this case needs the network).
+ *       with that id. Control: the same page without that heading draws the <svg> (the library is the site's own
+ *       copy, assets/vendor/, #92).
  *
  *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
  *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/site-browser-test.mjs
@@ -45,14 +45,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const BROWSER = process.env.BROWSER || "firefox";
-const PORT = 8796;
-const SITE = `http://127.0.0.1:${PORT}/`;
+/* the gate's one server when SITE is given (tools/ci/live-run.mjs), else our own on a free port */
+const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
+const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 const results = [];
 let browser = null;
 
@@ -420,12 +421,12 @@ const docsFaultCase = async () => {
 };
 
 /* ── B9: a docs diagram beside a heading titled "Mermaid" ──────────────────────────────────────────────────── */
-/* the committed architecture page, cut to its first diagram; `withHeading` puts a section whose heading is titled
+/* the committed overview page, cut to its first diagram; `withHeading` puts a section whose heading is titled
    "Mermaid" (id="mermaid") before the diagram */
 const mermaidPage = (withHeading) => {
-  const page = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "architecture.json"), "utf8"));
+  const page = JSON.parse(readFileSync(join(here, "..", "..", "assets", "docs", "overview.json"), "utf8"));
   const diagram = page.sections.find((s) => /data-mermaid/.test(s.html));
-  if (!diagram) throw new Error("assets/docs/architecture.json holds no figure[data-mermaid] to serve");
+  if (!diagram) throw new Error("assets/docs/overview.json holds no figure[data-mermaid] to serve");
   const sections = [page.sections[0]];
   if (withHeading) sections.push({ id: "mermaid", title: "Mermaid", html: '<h2 id="mermaid">Mermaid</h2>\n<p>Diagrams on this page are drawn with the Mermaid library.</p>', summary: "", text: "Mermaid Diagrams on this page are drawn with the Mermaid library.", subs: [] });
   sections.push(diagram);
@@ -437,8 +438,8 @@ const mermaidCase = async () => {
     const visit = async (withHeading) => {
       const page = await open(mctx);
       const body = JSON.stringify(mermaidPage(withHeading));
-      await page.route("**/assets/docs/architecture.json", (route) => route.fulfill({ status: 200, contentType: "application/json", body }));
-      await page.goto(`${SITE}?preview#docs/architecture`, { waitUntil: "load" });
+      await page.route("**/assets/docs/overview.json", (route) => route.fulfill({ status: 200, contentType: "application/json", body }));
+      await page.goto(`${SITE}?preview#docs/overview`, { waitUntil: "load" });
       await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
       await page.locator("#docspad figure[data-mermaid]").first().waitFor({ state: "attached", timeout: 30000 });
       /* settled: the figure holds an svg, or the source is shown as code, or 30 s have gone */
@@ -470,7 +471,7 @@ const mermaidCase = async () => {
       /* control: the same page without that heading draws the diagram */
       const plain = await visit(false);
       want(plain.figures > 0 && plain.svgs > 0 && plain.codeShown === 0,
-        `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged (does the run reach cdn.jsdelivr.net?)`);
+        `control: the page without a "Mermaid" heading did not draw its diagram as an svg (${plain.figures} figure(s), ${plain.svgs} svg(s), ${plain.codeShown} mermaid source block(s) shown), so the case cannot be judged`);
       const clash = await visit(true);
       want(clash.headingInPad && clash.headingShown && clash.headingTag === "H2" && clash.headingText === "Mermaid",
         `control: the "Mermaid" heading was not shown as the element with id "mermaid" (in the pad ${clash.headingInPad}, shown ${clash.headingShown}, ${clash.headingTag} ${JSON.stringify(clash.headingText)})`);
@@ -616,12 +617,21 @@ const retryCase = async () => {
         /* the retry: the line is good now, and the visitor presses Install again */
         failing = false;
         const hitsBefore = hits, logBefore = page.log.length;
+        /* frames are counted in the page from just before the click: the shot advances by at most 50 ms a frame, so
+           it takes a number of frames, not a number of seconds, however slowly the machine draws */
+        await page.evaluate(() => { window.__frames = 0; const tick = () => { window.__frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
         await planet.evaluate((el) => el.click());
         await page.locator("#installpad").waitFor({ state: "visible", timeout: 60000 });
-        /* M1a: the page forms (the 6 s wait and about 5 s of shot, with margin; the 15 s let-go never adds 'formed') */
-        const formed = await until(() => page.evaluate(() => document.querySelector("#installpad").classList.contains("formed")), (v) => v, 30000, 100);
+        /* M1a: the page forms (the shot needs about 45 to 134 frames, by frame length, after the world's bake, which
+           install.js races against a 6 s WAIT: up to 360 frames more at 60 a second, so the budget is 600 frames; the
+           300 s wall-clock backstop only keeps a stalled page from hanging; the 15 s let-go never adds 'formed') */
+        const FRAME_BUDGET = 600;
+        const progress = () => page.evaluate(() => ({ formed: document.querySelector("#installpad").classList.contains("formed"), frames: window.__frames }));
+        const formedAt = await until(progress, (v) => v.formed || v.frames > FRAME_BUDGET, 300000, 100);
+        const formed = formedAt.formed;
         const after = await classes();
-        want(formed, `the second dive never added 'formed' to #installpad within 30 s (flat ${after.flat}, lit ${after.lit}): the words, back and home stay hidden over a pad nothing draws`);
+        want.note(`'formed' ${formed ? "arrived" : "did not arrive"} after ${formedAt.frames} frames`);
+        want(formed, `the second dive never added 'formed' to #installpad within ${FRAME_BUDGET} frames (${formedAt.frames} passed; flat ${after.flat}, lit ${after.lit}): the words, back and home stay hidden over a pad nothing draws`);
         /* M1b: the world is lit and the poster is not kept over it */
         const end = await classes();
         want(end.lit && !end.flat, `after the second dive #installpad should be lit and not flat, but lit is ${end.lit} and flat is ${end.flat}`);
@@ -641,7 +651,7 @@ try {
       try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
     })();
   });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
+  browser = await openBrowser(playwright, BROWSER);
   /* motion left on: the walk and its flights are what is under test */
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
   /* B2 and B3 use pages of their own and are started once B1 has had the machine to itself; the walk's cases wait
@@ -656,7 +666,7 @@ try {
   results.push({ id: "setup", problems: [e.message] });
 } finally {
   await browser?.close().catch(() => {});
-  server.kill();
+  server?.kill();
 }
 
 const bad = results.filter((r) => r.problems.length);

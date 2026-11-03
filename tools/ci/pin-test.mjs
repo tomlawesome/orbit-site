@@ -1,123 +1,109 @@
 /*
- * Live test for #23 ("a host can pin the journey at a moment"), written from the issue's specification alone.
+ * Test for #23 ("a host can pin the journey at a moment"), as a Node test on a virtual clock (ADR-0005 section 5),
+ * written from the issue's specification and the browser test it replaces.
  *
  * journey.fly(profile, { at }) and journey.descend({ at }) take `at`, milliseconds into the journey, and start there:
- * the beats before `at` count as already passed. tests/pin.html makes a door and a journey through
- * assets/door/index.js alone, starts one and reports when each hook fired and each body class first showed
- * (assets/door/timeline.js has the beats). Unpinned, the ascent lands (hook `land`, class `bare`) 4800 ms in and the
- * descent's farewell comes 5350 ms in; pinned past them, they must arrive at once, with a control showing that,
- * without `at`, they have not arrived by 2.5 s. Timing margins are wide: a shared runner is slow, and the gap
- * between "at once" and "unpinned" is over a second on either side of the limits used here.
+ * the beats before `at` count as already passed. Unpinned, the ascent lands (hook `land`, body class `bare`) 4800 ms
+ * in and the descent's farewell (hook `farewell`, class `farewell`) comes 5350 ms in, the dusk (hook `surface`, class
+ * `showdusk`) before it. Pinned past them, they arrive at once; pinned before them, they are not skipped. The controls
+ * show the unpinned journey has not got there by 2.5 s, and does get there later.
  *
- *   PLAYWRIGHT_ROOT=<playwright package dir> HEADED=1 LIBGL_ALWAYS_SOFTWARE=1 \
- *     xvfb-run -a -s "-screen 0 1280x800x24" node tools/ci/pin-test.mjs
+ *   node tools/ci/pin-test.mjs
  *
- * (sh tools/ci/journey-local.sh pin does exactly that.) BROWSER=chromium for a second engine; HEADED=1 as the other
- * live tests: Firefox has no WebGL headless here.
+ * No dependencies and no browser. Each scenario runs in a fresh Node process (this file again, as `--child`) against
+ * the stub page in door-stub.mjs; the door and the journey are made through assets/door/index.js alone, as a host
+ * makes them. Every wait is on the virtual clock (installClock), so nothing depends on how fast the machine runs:
+ * times below are the page's own milliseconds from the call.
  */
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
+import { INDEX, installPage, installClock, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
 
-const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
-const BROWSER = process.env.BROWSER || "firefox";
-const PORT = 8794;
-const SITE = `http://127.0.0.1:${PORT}/`;
-const here = dirname(fileURLToPath(import.meta.url));
+/* how soon "at once" is, on the page's clock: far below the 1800 ms a pin at 3000 leaves before the landing */
+const SOON = 1000;
+const CONTROL = 2500;          /* an unpinned journey watched this long has not landed (4800) or said farewell (5350) */
+const LONG = 7000;             /* ... and watched this long it has */
 
-/* how long a pinned journey may take to show what is already past, and how long an unpinned one is watched for what
-   must not be there yet (a control); the unpinned effects come at 4.8 s and 5.35 s */
-const SOON = 3500;
-const CONTROL = 2500;
+const SCENARIOS = {
+  "fly-5000": ["fly", 5000, SOON],
+  "fly-none": ["fly", undefined, LONG],
+  "fly-3000": ["fly", 3000, SOON],
+  "descend-5400": ["descend", 5400, SOON],
+  "descend-none": ["descend", undefined, LONG],
+  "descend-3700": ["descend", 3700, SOON],
+};
 
-const server = spawn(process.execPath, [join(here, "serve.mjs"), String(PORT)], { stdio: ["ignore", "ignore", "inherit"] });
-let failed = false;
-let browser = null;
-try {
-  await new Promise((ok, no) => {
-    const t0 = Date.now();
-    (async function poll() {
-      try { await fetch(SITE); ok(); } catch { Date.now() - t0 > 10000 ? no(new Error("server did not start")) : setTimeout(poll, 100); }
-    })();
-  });
-  browser = await playwright[BROWSER].launch(process.env.HEADED === "1" ? { headless: false } : {});
-  /* motion left on: reduced motion plays another, shorter set of beats */
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: "no-preference" });
-
-  /* each scenario on a fresh page, so no journey inherits another's state */
-  const run = async (mode, at, watch) => {
-    const page = await ctx.newPage();
-    const problems = [];
-    page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
-    try {
-      await page.goto(`${SITE}tests/pin.html`, { waitUntil: "load" });
-      await page.waitForFunction(() => window.pinReady, null, { timeout: 30000 });
-      const r = await page.evaluate(([m, a, w]) => window.pin(m, a ?? undefined, w), [mode, at ?? null, watch]);
-      return { r, problems };
-    } finally { await page.close(); }
-  };
-
-  const scenarios = [
-    /* name, mode, at, watch, what must be so: [what, test(result)] pairs */
-    ["fly pinned at 5000 (past the landing)", "fly", 5000, SOON, [
-      ["the release hook has fired (a beat before the pin)", (r) => r.hooks.release !== undefined],
-      ["the land hook has fired", (r) => r.hooks.land !== undefined && r.hooks.land < SOON],
-      ["the body has class bare", (r) => r.classes.bare !== undefined && r.classes.bare < SOON && r.now.includes("bare")],
-      /* the land beat takes the flight's canvas off as it bares the page, so a pin past it shows no showwarp */
-      ["the flight's canvas is off again (no class showwarp)", (r) => !r.now.includes("showwarp")],
-    ]],
-    ["fly unpinned (control)", "fly", undefined, CONTROL, [
-      ["the land hook has not fired", (r) => r.hooks.land === undefined],
-      ["the body has not got class bare", (r) => r.classes.bare === undefined && !r.now.includes("bare")],
-    ]],
-    ["fly pinned at 3000 (before the landing)", "fly", 3000, 1000, [
-      ["the release hook has fired", (r) => r.hooks.release !== undefined],
-      ["the land hook has not fired: the landing is not skipped", (r) => r.hooks.land === undefined],
-      ["the body has not got class bare", (r) => !r.now.includes("bare")],
-    ]],
-    ["descend pinned at 5400 (past the farewell)", "descend", 5400, SOON, [
-      ["the released hook has fired (a beat before the pin)", (r) => r.hooks.released !== undefined],
-      ["the surface hook has fired (the dusk came up)", (r) => r.hooks.surface !== undefined],
-      ["the farewell hook has fired", (r) => r.hooks.farewell !== undefined && r.hooks.farewell < SOON],
-      ["the body has class farewell", (r) => r.classes.farewell !== undefined && r.classes.farewell < SOON && r.now.includes("farewell")],
-      ["the body has class showdusk", (r) => r.now.includes("showdusk")],
-    ]],
-    ["descend unpinned (control)", "descend", undefined, CONTROL, [
-      ["the farewell hook has not fired", (r) => r.hooks.farewell === undefined],
-      ["the body has not got class farewell", (r) => r.classes.farewell === undefined && !r.now.includes("farewell")],
-      ["the surface hook has not fired", (r) => r.hooks.surface === undefined],
-    ]],
-    ["descend pinned at 3700 (past the dusk, before the farewell)", "descend", 3700, 1000, [
-      ["the surface hook has fired", (r) => r.hooks.surface !== undefined],
-      ["the body has class showdusk", (r) => r.now.includes("showdusk")],
-      ["the farewell hook has not fired: it is still to come", (r) => r.hooks.farewell === undefined],
-    ]],
-  ];
-
-  for (const [name, mode, at, watch, wants] of scenarios) {
-    let got = null;
-    const problems = [];
-    try {
-      got = await run(mode, at, watch);
-      problems.push(...got.problems);
-    } catch (e) { problems.push(`${e.message.split("\n")[0]}`); }
-    const r = got?.r;
-    if (r) {
-      if (r.error) problems.push(`the call threw: ${r.error}`);
-      if (r.reduced) problems.push("the journey is in reduced motion, so these beats are not the ones under test");
-      for (const [what, test] of wants) if (!test(r)) problems.push(`want: ${what} -- it is not so`);
-    }
-    console.log(`${problems.length ? "FAIL" : "ok  "} ${name}`);
-    if (r) console.log(`       hooks ${JSON.stringify(r.hooks)}; classes first seen ${JSON.stringify(r.classes)}; at the end ${JSON.stringify(r.now)} (ms from the call)`);
-    for (const p of problems) console.log(`       problem: ${p}`);
-    if (problems.length) failed = true;
-  }
-} catch (e) {
-  console.log(`FAIL pin test: ${e.message.split("\n")[0]}`);
-  failed = true;
-} finally {
-  await browser?.close().catch(() => {});
-  server.kill();
+/* the child: one journey, started; when each hook fired and each body class first showed, in ms from the call */
+async function pin(mode, at, watch) {
+  const page = installPage();
+  const clock = installClock();
+  const door = await import(INDEX);
+  const d = door.createDoor({ flags: {} });
+  door.openChores();
+  const journey = d.journey({ ...page.journeyOptions(), on: { dusk() {}, farewell() {} } });
+  const t0 = clock.now();
+  const hooks = {};
+  const names = mode === "fly" ? ["release", "land", "settled"] : ["released", "surface", "farewell"];
+  const on = Object.fromEntries(names.map((n) => [n, () => { hooks[n] ??= clock.now() - t0; }]));
+  const given = typeof at === "number" ? { at } : {};
+  const logFrom = page.bodyLog.length;
+  let error = null;
+  try {
+    if (mode === "fly") journey.fly(door.UP, { ...given, title: "Test", subtitle: "pin", on });
+    else journey.descend({ ...given, title: "Test", subtitle: "pin", onto: "dusk", from: door.UP, on });
+  } catch (e) { error = String(e && e.message || e); }
+  /* the classes present at CONTROL, then at the end */
+  await clock.advance(Math.min(watch, CONTROL));
+  const atControl = [...page.bodyClasses];
+  if (watch > CONTROL) await clock.advance(watch - CONTROL);
+  const classes = {};
+  for (const e of page.bodyLog.slice(logFrom)) if (e.op === "add") classes[e.name] ??= e.at - t0;
+  const reduced = typeof journey.reduced === "function" ? journey.reduced() : journey.reduced;
+  return { mode, at: at ?? null, hooks, classes, atControl, now: [...page.bodyClasses], reduced, error };
 }
-process.exit(failed ? 1 : 0);
+
+if (process.argv[2] === "--child") {
+  await childMain(Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, () => pin(...v)])));
+}
+
+const before = (t, ms) => t !== undefined && t < ms;
+const run = (name) => {
+  const r = runCase(import.meta.url, name, 60000);
+  const base = !r.error && !r.reduced;
+  const seen = `hooks ${JSON.stringify(r.hooks)}; classes first seen ${JSON.stringify(r.classes)}; at the end ${JSON.stringify(r.now)}${r.reduced ? "; in reduced motion" : ""}${errOf(r)}`;
+  return { r, base, seen };
+};
+
+{
+  const { r, base, seen } = run("fly-5000");
+  check("P1 fly pinned at 5000 (past the landing): the release hook has fired (a beat before the pin)", base && r.hooks.release !== undefined, seen);
+  check("P1 ... the land hook fires at once", base && before(r.hooks.land, SOON), `${seen} (want land before ${SOON} ms)`);
+  check("P1 ... the body has class bare at once, and keeps it", base && before(r.classes.bare, SOON) && r.now.includes("bare"), seen);
+  check("P1 ... the flight's canvas is off again (no class showwarp)", base && !r.now.includes("showwarp"), seen);
+}
+{
+  const { r, base, seen } = run("fly-none");
+  check("P2 fly unpinned (control): by 2.5 s the land hook has not fired and the body is not bare", base && !before(r.hooks.land, CONTROL + 1) && !(r.atControl || []).includes("bare") && !before(r.classes.bare, CONTROL + 1), seen);
+  check("P2 ... and it does land, later (4800 ms in)", base && r.hooks.land !== undefined && r.hooks.land > CONTROL && r.hooks.land < LONG && r.classes.bare > CONTROL, seen);
+}
+{
+  const { r, base, seen } = run("fly-3000");
+  check("P3 fly pinned at 3000 (before the landing): the release hook has fired", base && before(r.hooks.release, SOON), seen);
+  check("P3 ... the landing is not skipped: no land hook at once", base && !before(r.hooks.land, SOON), seen);
+}
+{
+  const { r, base, seen } = run("descend-5400");
+  check("P4 descend pinned at 5400 (past the farewell): the released hook has fired (a beat before the pin)", base && r.hooks.released !== undefined, seen);
+  check("P4 ... the surface hook has fired (the dusk came up)", base && before(r.hooks.surface, SOON), seen);
+  check("P4 ... the farewell hook fires at once", base && before(r.hooks.farewell, SOON), `${seen} (want farewell before ${SOON} ms)`);
+  check("P4 ... the body has class farewell at once, and showdusk", base && before(r.classes.farewell, SOON) && r.now.includes("farewell") && r.now.includes("showdusk"), seen);
+}
+{
+  const { r, base, seen } = run("descend-none");
+  check("P5 descend unpinned (control): by 2.5 s no farewell hook, no farewell class, no surface hook", base && !before(r.hooks.farewell, CONTROL + 1) && !before(r.hooks.surface, CONTROL + 1) && !(r.atControl || []).includes("farewell"), seen);
+  check("P5 ... and the farewell does come, later (5350 ms in)", base && r.hooks.farewell !== undefined && r.hooks.farewell > CONTROL && r.hooks.farewell < LONG, seen);
+}
+{
+  const { r, base, seen } = run("descend-3700");
+  check("P6 descend pinned at 3700 (past the dusk, before the farewell): the surface hook has fired and the body has showdusk", base && before(r.hooks.surface, SOON) && before(r.classes.showdusk, SOON), seen);
+  check("P6 ... the farewell is still to come: no farewell hook at once", base && !before(r.hooks.farewell, SOON), seen);
+}
+finish();

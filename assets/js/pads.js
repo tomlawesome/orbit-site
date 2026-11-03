@@ -6,9 +6,12 @@
  */
 import { reduced, seededRng } from "./sky.js";
 import { chore } from "../door/index.js";
+import { createPlaces } from "./places.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
+/* the docs' own entries sit above the landing's, carrying its count of Back presses to the door (places.js) */
+const places = createPlaces();
 
 export const SECTIONS = {
   install: { title: "Orbit", subtitle: "the install" },
@@ -26,13 +29,19 @@ export const SECTIONS = {
    A constellation's name filters the list. */
 const R = "https://github.com/tomlawesome/orbit";
 const DOCS_DIR = "assets/docs/";
-/* the docs' diagrams: mermaid from jsDelivr, the file the npm package carries (cdnjs lags majors behind), pinned and
-   checked against its hash, so a changed file is refused, not run (#3). Renovate bumps the version (renovate.json);
-   the hash it cannot, so a bump fails the journey's diagram step until the hash is set to the new file's:
-   curl -s <src> | openssl dgst -sha384 -binary | base64 */
-const MERMAID = { src: "https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.min.js", integrity: "sha384-EbBpjO7rlR6eqZEcG7GaPpyk9H9WrMyPWX4d3KvPYltgt8Z8l0z6R56B1qP40pR4" };
+/* the docs' diagrams: Mermaid's own release file (dist/mermaid.min.js of the npm package), kept on the site (#92:
+   nothing on the site loads from a third party). This path is the version's one pin: Renovate bumps it (renovate.json),
+   and the bump fails the diagram checks until the named file is added and the old one removed. The integrity beside it
+   is the file's sha384: the browser refuses a file that does not match it, and the lint checks it against the file, so
+   a changed file under the same name fails both. To add a version, check the tarball against the registry's integrity,
+   copy the file out (credits: README.md) and set the integrity to the last command's output:
+   v=X.Y.Z; curl -sO https://registry.npmjs.org/mermaid/-/mermaid-$v.tgz
+   [ "sha512-$(openssl dgst -sha512 -binary mermaid-$v.tgz | base64 -w0)" = "$(npm view mermaid@$v dist.integrity)" ]
+   tar -xzOf mermaid-$v.tgz package/dist/mermaid.min.js > assets/vendor/mermaid-$v.min.js
+   echo "sha384-$(openssl dgst -sha384 -binary assets/vendor/mermaid-$v.min.js | base64 -w0)" */
+const MERMAID = { src: "assets/vendor/mermaid-12.2.0.min.js", integrity: "sha384-8xUhuLNMjW/cI2Dacg3DR4WliYznvIg0LVG1stctThKD/YVrJFI9TNCFxft5NYgp" };
 /* start here: the sections worth a first click, when the import has them */
-const KEYS = ["#docs/readme/quick-start", "#docs/readme/run-with-docker", "#docs/readme/configuration", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
+const KEYS = ["#docs/overview/the-screens", "#docs/installing/install", "#docs/operating/back-up-and-restore", "#docs/sign-in", "#docs/security/report-a-vulnerability-privately"];
 const SEED = 20260929;
 /* a constellation: a gentle walk of N stars inside its box — each step turns
    a little, turns back at the box's edge, and never lands on a star already
@@ -366,7 +375,7 @@ export function createDocs(pad) {
     reader.classList.remove("in"); void reader.offsetWidth; reader.classList.add("in");
     pageChart(slug, doc); otherCharts(slug);   /* once shown, so the margin's names can be measured */
     remember(hrefOf(slug, doc.sections.some((s) => s.id === anchor) ? anchor : "top"));
-    if (push) { try { history.pushState({ docs: slug, anchor }, "", hrefOf(slug, anchor || "top")); } catch { /* fine */ } }
+    if (push) places.stack({ docs: slug, anchor }, hrefOf(slug, anchor || "top"));
     const target = anchor && reader.querySelector(`#${CSS.escape(anchor)}`);
     scroll.scrollTop = 0;
     if (target) requestAnimationFrame(() => { const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - 96; scroll.scrollTop = Math.max(0, y); });
@@ -377,7 +386,7 @@ export function createDocs(pad) {
     reader.hidden = true; index.hidden = false; pad.classList.remove("reading");
     tocWatch?.disconnect(); tocWatch = null;
     scroll.scrollTop = indexScroll; indexScroll = 0;
-    if (push) { try { history.pushState(null, "", "#docs"); } catch { /* fine */ } }
+    if (push) places.stack({}, "#docs");
   }
   /* the page's own constellation: its sections as a line of stars down the
      margin, in reading order, the one being read lit */

@@ -182,6 +182,10 @@ function render(md, src, bySourcePath, pics) {
     else cur.tokens.push(t);
   }
   if (cur.heading || cur.tokens.length) groups.push(cur);
+  /* a skip entry that matches no heading is warned of, so an upstream rename cannot quietly bring the section back (#124) */
+  for (const name of src.skip || []) {
+    if (!groups.some((g) => g.heading && g.heading.text.trim() === name)) say("skip-unmatched", `skip heading "${name}" is not a second-level heading of the file`);
+  }
   /* sections the site leaves out (the README's picture tour shows an older Orbit) */
   const sections = groups.filter((g) => !(g.heading && (src.skip || []).includes(g.heading.text.trim()))).map((g) => {
     const before = headings.length;
