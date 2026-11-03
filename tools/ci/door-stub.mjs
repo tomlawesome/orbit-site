@@ -240,6 +240,8 @@ export function installClock() {
     now: () => now,
     yields: () => yielded,
     yieldDelay(ms) { delay = Math.max(0, Number(ms) || 0); },
+    /* move virtual time on by ms without running any timer: a frozen tab (iOS Safari suspends a background tab's JS) */
+    jump(ms) { now += Math.max(0, Number(ms) || 0); },
     /* run virtual time forward by ms, or until until() is true (checked after every timer) */
     async advance(ms, until = () => false) {
       const end = now + ms;
