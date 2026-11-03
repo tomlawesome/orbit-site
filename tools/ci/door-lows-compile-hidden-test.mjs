@@ -20,6 +20,10 @@
  *   R4 stop / lost           stop() or a lost context -> false at the next poll (control)
  *   R5 listeners             any listener added is removed once the promise settles (control)
  *   R6 finished-while-frozen the compile finished while hidden -> true once shown (control)
+ *   R7 timers-running       poll every 1000 ms; hidden at +10 ms, 4.5 s jump, shown, page then stays visible, never completes
+ *                           -> still pending 4 s after the show (the long hide-then-show span inside a poll gap counts 0)
+ *   R8 worker-path          no `document`; the page is setPage({ hidden, onVisible }) as draw-worker.js does; as R1 -> true,
+ *                           and the onVisible stop function is called once the promise settles
  *
  *   node tools/ci/door-lows-compile-hidden-test.mjs
  *
@@ -40,6 +44,8 @@ const CASES = {
   "visible-slow-late": () => frozenCase({ noHide: true, completeAfter: null, probeAt: 5300 }),
   "stop": () => frozenCase({ noHide: true, completeAfter: null, probeAt: 300, stopAt: 100 }),
   "lost": () => frozenCase({ noHide: true, completeAfter: null, probeAt: 300, loseAt: 100 }),
+  "timers-running": () => timersRunningCase(),
+  "worker-path": () => workerPathCase(),
   "listeners": () => frozenCase({ completeAfter: 3000, listeners: true }),
 };
 
@@ -74,6 +80,63 @@ async function frozenCase({ completeAfter, probeAt = 6000, noHide = false, compl
   const at = result;
   await clock.advance(1000);
   return { result, at, listenersLeft: count() - before };
+}
+
+/* R7: timers keep running; hide at +10 ms, 4.5 s pass, shown inside one poll gap (every = 1000), then visible and never
+   complete. Read 4 s after the show. */
+async function timersRunningCase() {
+  const page = installPage();
+  const clock = installClock();
+  const COMPLETION = 0x91b1;
+  page.glBase.getProgramParameter = (p, pname) => (pname === COMPLETION ? false : true);
+  page.glBase.getShaderParameter = page.glBase.getProgramParameter;
+  const door = await import(INDEX);
+  door.createDoor({ typingWait: 0, flags: {} });
+  let result = "pending";
+  door.compiledWithin(page.gl, { COMPLETION_STATUS_KHR: COMPLETION }, [{ shaders: [] }], 1000, () => false).then((v) => { result = v; }, (e) => { result = { rejected: String(e) }; });
+  await clock.advance(10);
+  page.setHidden(true);
+  clock.jump(4500);
+  page.setHidden(false);
+  await clock.advance(4000);
+  const at = result;
+  return { at };
+}
+
+/* R8: the worker's route: no document; the page answers through setPage({ hidden, onVisible }). */
+async function workerPathCase() {
+  const page = installPage();
+  const clock = installClock();
+  const COMPLETION = 0x91b1;
+  let done = false;
+  page.glBase.getProgramParameter = (p, pname) => (pname === COMPLETION ? done : true);
+  page.glBase.getShaderParameter = page.glBase.getProgramParameter;
+  const door = await import(INDEX);
+  door.createDoor({ typingWait: 0, flags: {} });
+  const { page: pg, setPage } = await import("../../assets/door/page.js");
+  const orig = { hidden: pg.hidden, onVisible: pg.onVisible };
+  const savedDoc = globalThis.document;
+  let h = false, stops = 0;
+  const shown = new Set();
+  setPage({ hidden: () => h, onVisible: (fn) => { shown.add(fn); return () => { stops++; shown.delete(fn); }; } });
+  delete globalThis.document;
+  let result = "pending", stopsAtSettle = null;
+  try {
+    door.compiledWithin(page.gl, { COMPLETION_STATUS_KHR: COMPLETION }, [{ shaders: [] }], 50, () => false)
+      .then((v) => { result = v; stopsAtSettle = stops; }, (e) => { result = { rejected: String(e) }; });
+    await clock.advance(100);
+    h = true;
+    clock.jump(60000);                           /* frozen: no timer runs */
+    h = false;
+    for (const fn of [...shown]) fn();
+    await clock.advance(3000);
+    done = true;
+    await clock.advance(1500);
+  } finally {
+    setPage(orig);
+    if (savedDoc !== undefined) globalThis.document = savedDoc;
+  }
+  return { result, stops };
 }
 
 async function waitCase({ hiddenMs, visibleMs, complete }) {
@@ -128,6 +191,10 @@ if (process.argv[2] === "--child") await childMain(CASES);
   check("R4b control: a lost context -> false at the next poll", !r4b.error && r4b.at === false, `at 300 ms: ${JSON.stringify(r4b.at)}${errOf(r4b)}`);
   const r5 = runCase(import.meta.url, "listeners");
   check("R5 control: no listener left behind once the promise settles", !r5.error && r5.listenersLeft === 0, `${r5.listenersLeft} left${errOf(r5)}`);
+  const r7 = runCase(import.meta.url, "timers-running");
+  check("R7: timers running, hide at +10 ms, 4.5 s, shown inside a 1000 ms poll gap: still pending 4 s after the show", !r7.error && r7.at === "pending", `at 4 s after the show: ${JSON.stringify(r7.at)}${errOf(r7)}`);
+  const r8 = runCase(import.meta.url, "worker-path");
+  check("R8: worker path (no document; setPage hidden/onVisible), as R1 -> true, and the onVisible stop called once", !r8.error && r8.result === true && r8.stops === 1, `resolved ${JSON.stringify(r8.result)}; stop called ${r8.stops} time(s)${errOf(r8)}`);
   const r6 = runCase(import.meta.url, "frozen-done-while-hidden");
   check("R6 control: the compile finished while hidden -> true once shown", !r6.error && r6.result === true, `resolved ${JSON.stringify(r6.result)}${errOf(r6)}`);
 }
