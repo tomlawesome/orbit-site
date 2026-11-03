@@ -60,6 +60,7 @@ export const page = {
   hidden: () => typeof document !== "undefined" && !!document.hidden,
   /** fn each time the tab is shown again; returns the stop @param {() => void} fn @returns {() => void} */
   onVisible(fn) {
+    if (typeof document === "undefined") return () => {};   /* (off a page, with no host's own: never shown again) */
     const on = () => { if (!document.hidden) fn(); };
     document.addEventListener("visibilitychange", on);
     return () => document.removeEventListener("visibilitychange", on);
