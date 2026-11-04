@@ -68,7 +68,7 @@ function walk(n, [cx, cy, w, h], rnd) {
    two sides, clear of the heading, the search and the list between them;
    otherwise a loose grid across the chart, each cell nudged so no two sit in
    a row */
-const WIDE_SLOTS = [[205, 150, 250, 120], [1395, 175, 250, 120], [245, 360, 260, 125], [1360, 385, 260, 125], [190, 575, 250, 120], [1415, 600, 250, 120], [250, 790, 260, 110], [1350, 805, 260, 110], [800, 860, 240, 60]];
+const WIDE_SLOTS = [[220, 110, 240, 70], [300, 256, 240, 70], [230, 432, 300, 130], [220, 613, 250, 80], [240, 774, 270, 90], [1380, 110, 250, 80], [1360, 265, 270, 90], [1370, 435, 300, 110], [1360, 625, 320, 130], [1380, 800, 260, 80]];
 function boxes(n, W, H, mode, rnd) {
   if (mode === "wide" && n <= WIDE_SLOTS.length) return WIDE_SLOTS.slice(0, n).map(([cx, cy, w, h]) => [cx + (rnd() - 0.5) * 40, cy + (rnd() - 0.5) * 30, w, h]);
   const cols = mode === "narrow" ? 2 : Math.min(4, Math.ceil(n / 2)), rows = Math.ceil(n / cols);

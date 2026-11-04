@@ -4,7 +4,7 @@
   {"slug":"using","name":"Using Orbit","c":"#e879f9","repo":"tomlawesome/orbit","path":"docs/using-orbit.md"},
   {"slug":"installing","name":"Installing","c":"#a78bfa","repo":"tomlawesome/orbit","path":"docs/installing.md"},
   {"slug":"operating","name":"Running Orbit","c":"#f59e8b","repo":"tomlawesome/orbit","path":"docs/operating.md"},
-  {"slug":"upgrades","name":"Upgrades and backups","c":"#5eead4","repo":"tomlawesome/orbit","path":"docs/upgrades-and-backups.md"},
+  {"slug":"upgrades","name":"Upgrades and backups","c":"#bef264","repo":"tomlawesome/orbit","path":"docs/upgrades-and-backups.md"},
   {"slug":"launcher","name":"The launcher","c":"#4ade80","repo":"tomlawesome/orbit-launcher","path":"README.md","title":"The launcher"},
   {"slug":"sign-in","name":"Sign-in","c":"#8fb8ff","repo":"tomlawesome/orbit","path":"docs/authentication.md"},
   {"slug":"administration","name":"Administration","c":"#f0b429","repo":"tomlawesome/orbit","path":"docs/administrator-operations.md"},
