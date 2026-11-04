@@ -62,12 +62,14 @@ cd "$(dirname "$0")/../.."
 # Where this runs: nothing else is accepted, whatever the environment says.
 EXPECT_HOST=gitlab.tomlawson.io
 EXPECT_PATH=ai/orbit-site
-# What the import writes: a page per source and an index, about 330 KB in nine
-# files, and its pictures, at most 16 a source of 1 MiB each and 6 MiB in all
-# (MAX_PICTURE_BYTES_TOTAL in tools/import-docs-lib.mjs; docs-shape.mjs holds
-# the artifact's img/ to that sum). Well above that, but nowhere near "a disk". Entries: 3 folders, 8 pages, the index, 128
-# pictures and the warnings file (#82).
-MAX_ENTRIES=141
+# What the import writes: a page per source and an index, about 220 KB in
+# eleven files for ten sources, and its pictures, at most 16 a source of 1 MiB
+# each and 6 MiB in all (MAX_PICTURE_BYTES_TOTAL in tools/import-docs-lib.mjs;
+# docs-shape.mjs holds the artifact's img/ to that sum). Well above that, but
+# nowhere near "a disk". Entries, counted from HEAD's tools/docs-sources.json
+# so the cap follows the sources (#130): 3 folders, a page per source, the
+# index, 16 pictures per source and the warnings file (#82) -- 175 for ten.
+MAX_PICTURES_PER_SOURCE=16
 MAX_PICTURE_BYTES=1048576
 MAX_FILE_BYTES=2097152
 MAX_TOTAL_BYTES=8388608
@@ -269,18 +271,20 @@ download() { # download <job id> <file>
 # program, from the bytes, to names it chose.
 unpack() {
   env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
-    python3 -I - "$1" "$2" "$3" "$MAX_ENTRIES" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" "$MAX_PICTURE_BYTES" <<'PY'
+    python3 -I - "$1" "$2" "$3" "$MAX_PICTURES_PER_SOURCE" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" "$MAX_PICTURE_BYTES" <<'PY'
 import json, os, re, stat, sys, zipfile
 
 zpath, out, srcs = sys.argv[1], sys.argv[2], sys.argv[3]
-max_entries, max_file, max_total, max_picture = int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
+per_source, max_file, max_total, max_picture = int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]), int(sys.argv[7])
 picture = re.compile(r"assets/docs/img/[0-9a-f]{16}\.(png|jpg|webp|gif)\Z")
 
 def refuse(msg):
     print("refusing the artifact: " + msg)
     sys.exit(1)
 
-allowed = {"assets/docs/index.json", "import-warnings.txt"} | {"assets/docs/%s.json" % s["slug"] for s in json.load(open(srcs))}
+sources = json.load(open(srcs))
+allowed = {"assets/docs/index.json", "import-warnings.txt"} | {"assets/docs/%s.json" % s["slug"] for s in sources}
+max_entries = 3 + len(sources) + 1 + per_source * len(sources) + 1
 try:
     z = zipfile.ZipFile(zpath)
     infos = z.infolist()
