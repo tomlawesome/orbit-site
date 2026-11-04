@@ -262,7 +262,7 @@ const seconds = (v) => {
   return total;
 };
 
-const RULE = `$CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"`;
+const RULE = `$CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"`;
 const job = (n) => (isObj(doc[n]) ? doc[n] : null);
 const imp = job("import_docs"), pub = job("publish_docs");
 if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
@@ -271,7 +271,7 @@ for (const [name, j] of [["import_docs", imp], ["publish_docs", pub]]) {
   if (j === null) continue;
   const rules = Array.isArray(j.rules) ? j.rules : j.rules === undefined ? [] : [j.rules];
   const one = rules.length === 1 && isObj(rules[0]) && Object.keys(rules[0]).length === 1 && rules[0].if === RULE;
-  if (!one) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on main (if: ${RULE}), found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
+  if (!one) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on dev (if: ${RULE}), found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
 }
 if (imp !== null) {
   if ("environment" in imp) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
