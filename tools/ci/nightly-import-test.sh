@@ -486,7 +486,10 @@ route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
-    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
+    # #129: the older import merge requests are those into dev; asked for any other target, GitLab has none
+    echo "GET $path" >> "$STATE/mr-query.log"
+    case $path in *target_branch=dev*) mrdev=1 ;; *) mrdev= ;; esac
+    if [ -n "$OLDMR" ] && [ -n "$mrdev" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
     # #91: the lookup of the branch's opened merge request; in mroplost the first create was made and its answer lost
     case $path in *source_branch=*) if [ "$SCENARIO" = mroplost ]; then
       sb=$(printf '%s' "$path" | sed -n 's/.*source_branch=\([^&]*\).*/\1/p; ' | sed 's,%2F,/,')
@@ -527,12 +530,13 @@ case "$method $route" in
   "GET ") code=200; body='{"path_with_namespace":"ai/orbit-site"}'
     [ "$SCENARIO" != wrongproject ] || body='{"path_with_namespace":"someone/else"}' ;;
   "GET /pipelines/77/jobs") code=200
-    job='{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}'
+    job='{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}'
     case $SCENARIO in
-      nojob) body='[{"id":556,"name":"publish_docs","status":"running","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[]}]' ;;
-      failedjob) body='[{"id":555,"name":"import_docs","status":"failed","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
-      wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
-      wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      mainjob) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      nojob) body='[{"id":556,"name":"publish_docs","status":"running","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[]}]' ;;
+      failedjob) body='[{"id":555,"name":"import_docs","status":"failed","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       twojobs) body="[$job,$job]" ;;
       *) body="[$job]" ;;
     esac ;;
@@ -722,7 +726,7 @@ run_push() { # run_push <outfile> <scenario>
   rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
     "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
-  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
+  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"; : > "$aux/mr-query.log"
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
   rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
@@ -732,7 +736,7 @@ run_push() { # run_push <outfile> <scenario>
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
     FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$headsha" ZIP="$aux/artifact.zip" \
-    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
+    CI_COMMIT_BRANCH=dev CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
@@ -764,7 +768,7 @@ pin_run() {
       FAKE="$fake" FAKE_JOB="$fakejob" \
       ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
-      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
+      CI_COMMIT_BRANCH=dev CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
 }
 # The job runs with GIT_STRATEGY=clone (the CI file sets it, #60 round 4), and the script
 # refuses to run without it. So every run here has it, as the runner gives it; pin_strategy
@@ -787,7 +791,8 @@ pinned "on the real script's host (the test's is not it)" "$aux/pristine" "CI_SE
 pinned "with another API address" "$tmp" "CI_API_V4_URL is not" CI_API_V4_URL=https://evil.invalid/api/v4
 pinned "in another project" "$tmp" "CI_PROJECT_PATH is not" CI_PROJECT_PATH=evil/x
 pinned "with a project id that is not a number" "$tmp" "CI_PROJECT_ID is not a number" "CI_PROJECT_ID=1/../2"
-pinned "off main" "$tmp" "CI_COMMIT_BRANCH is not main" CI_COMMIT_BRANCH=dev
+pinned "off dev (on main, #129)" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=main
+pinned "on a feature branch" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=feature/x
 pinned "from a pipeline that is not a schedule" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=push
 for v in LD_LIBRARY_PATH=/nonexistent NODE_OPTIONS=--version GIT_EXEC_PATH=/x GIT_SSH_COMMAND=x PYTHONPATH=/x SSL_CERT_FILE=/x OPENSSL_CONF=/x BASH_ENV=/x; do
   pinned "with ${v%%=*} set" "$tmp" "refusing to run: ${v%%=*} is set" "$v"
@@ -942,6 +947,13 @@ check "job 2: it stopped retrying once GitLab accepted (saw $merge_puts attempts
 rc=0; [ "$(grep -c '^POST /merge_requests' "$aux/api.log")" -eq 1 ] || rc=1
 check "job 2: a merge request that opens on the first try is opened with exactly one POST" "$rc"
 check_merge_calls "run 7"
+# #129: the import runs on dev and everything it opens or lists is about dev
+rc=0; grep -q '^POST /merge_requests|.*target_branch=dev' "$aux/api.log" && ! grep -q 'target_branch=main' "$aux/api.log" || rc=1
+check "job 2: the merge request is opened with target_branch=dev (#129)" "$rc"
+rc=0; grep -q '^GET .*/merge_requests?.*target_branch=dev' "$aux/mr-query.log" && ! grep -q 'target_branch=main' "$aux/mr-query.log" || rc=1
+check "job 2: the older import merge requests are listed with target_branch=dev (#129)" "$rc"
+rc=0; grep -q '^== compare with dev' "$out" && ! grep -q 'compare with main' "$out" || rc=1
+check "job 2: it compares with dev, not main (#129)" "$rc"
 rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip" 2>/dev/null || true); [ "$changed" = "$appendfile" ] || rc=1
 check "job 2: the commit changes only the page that changed" "$rc"
 [ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
@@ -1297,6 +1309,7 @@ refused badid "a section id with a quote" "sections\[1\].id"
 refused extrakey "a section with an extra key" "sections\[0\] does not have exactly"
 refused tampered "a changed tracked file in the checkout" "tracked files differ from HEAD"
 refused wrongproject "an answer that names another project" "not ai/orbit-site"
+refused mainjob "an import job whose ref is main, not dev (#129)" "successful import_docs jobs"
 refused nojob "a pipeline with no successful import job" "successful import_docs jobs"
 refused failedjob "an import job that failed" "successful import_docs jobs"
 refused wrongsha "an import job at another commit" "successful import_docs jobs"
