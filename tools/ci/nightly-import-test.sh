@@ -486,9 +486,10 @@ route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
-    # #129: the older import merge requests are those into dev; asked for any other target, GitLab has none
+    # #129: the older import merge requests are those into dev; asked for another target, GitLab has none,
+    # asked with no target (the stale-branch listing), it lists them
     echo "GET $path" >> "$STATE/mr-query.log"
-    case $path in *target_branch=dev*) mrdev=1 ;; *) mrdev= ;; esac
+    case $path in *target_branch=dev*) mrdev=1 ;; *target_branch=*) mrdev= ;; *) mrdev=1 ;; esac
     if [ -n "$OLDMR" ] && [ -n "$mrdev" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
     # #91: the lookup of the branch's opened merge request; in mroplost the first create was made and its answer lost
     case $path in *source_branch=*) if [ "$SCENARIO" = mroplost ]; then
