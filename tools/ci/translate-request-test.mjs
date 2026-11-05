@@ -8,17 +8,22 @@
  *   T5  request parameters: model claude-opus-5-5, max_tokens 4 x estimated English tokens (chars / 3.5) + 1,024 and
  *       at most 16,000, output_config.effort high, a strict JSON schema, fallbacks "default" and its beta header,
  *       anthropic-version 2023-06-01, no temperature, no thinking
+ *   T31 custom_id: every request's is "r" + its zero-padded index in the run's request list (r0000, r0001, ...),
+ *       unique, within ^[a-zA-Z0-9_-]{1,64}$ (the fake answers 400 to any other, so a run that breaks it fails)
  *   T17 --dry-run with no key prints the estimate (tokens, dollars) and the plan, makes no request, exits 0, and
  *       writes nothing (also with a key present)
  *   T18 an estimate above the cap exits 3 with nothing sent and nothing written; at the cap the run goes on. The
  *       boundary is found by the dry run's own exit code (0 or 3), so the test needs no copy of the estimate
  *   T23 --api-base is honoured; the key goes only as the x-api-key header: never in a URL, a body, the output or the
  *       report, and never as an argument (--api-key is refused)
+ *   T18g-k the default cap is 3,000,000 when neither --max-tokens nor TRANSLATE_MAX_TOKENS is set: an estimate of
+ *       about 2.5M proceeds, about 3.1M exits 3 with nothing sent (amendment 1, item 4)
  *
  *   node tools/ci/translate-request-test.mjs
  */
 import { readFileSync } from "node:fs";
 import { startFake, FAKE_KEY } from "./fake-claude.mjs";
+import { CUSTOM_ID } from "./fake-claude.mjs";
 import { T, mkFixture, runTool, argsFor, snapshot } from "./translate-fixture.mjs";
 
 const run = (fx, fake, ...more) => runTool(fx, argsFor(fx, fake, ...more));
@@ -50,8 +55,9 @@ await T.attempt("T4/T5", async () => {
     all("T5d the schema is {items:[{id,text}]} for a chunk, {title,html,subs} for a section", (p, q) => { const pr = p.output_config.format.schema.properties || {}; return q.customId.startsWith("site/") ? !!pr.items : ["title", "html", "subs"].every((k) => pr[k]); });
     all("T5e no temperature and no thinking", (p) => !("temperature" in p) && !("thinking" in p));
     const post = fake.requests.find((r) => r.method === "POST" && r.path === "/v1/messages/batches");
-    all("T5f fallbacks is \"default\" (in the request's params, or on the batch body)", (p) => p.fallbacks === "default" || (post && post.json && post.json.fallbacks === "default"));
-    T.check("T5g headers: anthropic-version 2023-06-01 and the server-side-fallback beta", !!post && post.headers["anthropic-version"] === "2023-06-01" && String(post.headers["anthropic-beta"] || "").includes("server-side-fallback-2026-07-01"), JSON.stringify(post && { v: post.headers["anthropic-version"], b: post.headers["anthropic-beta"] }));
+    all("T5f no fallbacks field in any request's params", (p) => !("fallbacks" in p));
+    T.check("T5f2 no fallbacks field on the batch body", !!post && post.json && !("fallbacks" in post.json), JSON.stringify(post && post.json && Object.keys(post.json)));
+    T.check("T5g headers: anthropic-version 2023-06-01 and no anthropic-beta server-side-fallback header, on any call", !!post && post.headers["anthropic-version"] === "2023-06-01" && fake.requests.every((r) => !/server-side-fallback/.test(String(r.headers["anthropic-beta"] || ""))), JSON.stringify(post && { v: post.headers["anthropic-version"], b: post.headers["anthropic-beta"] }));
     all("T5h max_tokens is an integer from 1,024 to 16,000", (p) => Number.isInteger(p.max_tokens) && p.max_tokens >= 1024 && p.max_tokens <= 16000);
     /* the formula: 4 x (chars / 3.5) + 1,024; the item's chars lie between its html (or text) and its whole JSON */
     const within = sent.filter((q) => q.item).every((q) => {
@@ -103,6 +109,50 @@ await T.attempt("T18", async () => {
     r = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--max-tokens", String(cap)), { env: { TRANSLATE_MAX_TOKENS: "1000" } });
     T.exit("T18e at the cap the run goes on (--max-tokens wins over the variable): exit 0", r, 0);
     T.check("T18f requests were made and the files written at the cap", fake.posts > 0 && fx.exists("assets/i18n/de.json"), `${fake.posts} posts`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T18g", async () => {
+  /* a fixture of n big sections (90,000 chars each, under the 100,000 limit); the estimate is read from the dry run's
+     own exit codes against explicit caps, never copied */
+  const big = (i) => ({ id: `big${i}`, title: `Big ${i}`, subs: [], html: `<h2 id="big${i}"><a class="anchor" href="#docs/guide/big${i}" aria-label="Link to this heading">#</a>Big ${i}</h2>\n` + "<p>A long line of plain words about the household and its reminders.</p>\n".repeat(1250) });
+  const fx = mkFixture(), fake = await startFake();
+  try {
+    const dry = async (cap, env = {}) => (await runTool(fx, argsFor(fx, fake, "--dry-run", "--langs", "de", ...(cap ? ["--max-tokens", String(cap)] : [])), { env })).code;
+    const estimate = async () => { let lo = 1, hi = 20000000; while (lo < hi) { const m = Math.floor((lo + hi) / 2); if ((await dry(m)) === 0) hi = m; else lo = m + 1; } return lo; };
+    let n = 0;
+    const grow = (k) => { for (let i = 0; i < k; i++) fx.addSection("guide", big(n++)); };
+    grow(10); const e10 = await estimate();
+    const per = e10 / 10; /* the base of the small sections is negligible next to it; the bounds below check the result */
+    if (!(per > 10000)) return T.check("T18g a big section has an estimate", false, `estimate ${e10} for 10`);
+    grow(Math.max(0, Math.round(2500000 / per) - 10));
+    const e25 = await estimate();
+    T.check("T18g the fixture's estimate is about 2.5M tokens (2.4M to 2.6M)", e25 > 2400000 && e25 < 2600000, `estimate ${e25}`);
+    T.check("T18h with no --max-tokens and no TRANSLATE_MAX_TOKENS an estimate of about 2.5M proceeds (dry run exit 0)", (await dry(0)) === 0, "default cap above 2.5M");
+    grow(Math.round(600000 / per));
+    const e31 = await estimate();
+    T.check("T18i the fixture's estimate is about 3.1M tokens (3.05M to 3.2M)", e31 > 3050000 && e31 < 3200000, `estimate ${e31}`);
+    T.check("T18j about 3.1M with the default cap: dry run exits 3", (await dry(0)) === 3, "default cap below 3.1M");
+    const before = snapshot(fx.dir);
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T18k a real run at about 3.1M with the default cap: exit 3", r, 3);
+    T.check("T18l nothing was sent and nothing written", !r.notBuilt && fake.requests.length === 0 && snapshot(fx.dir) === before, `${fake.requests.length} requests`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T31", async () => {
+  const fx = mkFixture(), fake = await startFake();
+  try {
+    const r = await run(fx, fake, "--langs", "de,ja");
+    T.exit("T31a a run for de and ja exits 0 (the fake refuses any custom_id off the pattern with 400)", r, 0);
+    const posts = fake.requests.filter((q) => q.method === "POST" && q.path === "/v1/messages/batches");
+    const first = posts[0] && posts[0].json && posts[0].json.requests || [];
+    const ids = first.map((q) => q.custom_id);
+    T.check("T31b every custom_id matches ^[a-zA-Z0-9_-]{1,64}$", ids.length > 2 && ids.every((i) => CUSTOM_ID.test(i)), `${ids.length} ids, first ${ids[0]}`);
+    const pad = String(ids.length - 1).length;
+    T.check("T31c each is r + its zero-padded index (r0000, r0001, ...) in the order sent", ids.length > 2 && ids.every((id, n) => id === "r" + String(n).padStart(Math.max(4, pad), "0")), ids.slice(0, 3).join(","));
+    T.check("T31d no id repeats within a batch", new Set(ids).size === ids.length, `${new Set(ids).size} distinct of ${ids.length}`);
+    T.check("T31e the request list is sorted: ids follow the run's order, de requests before ja (ordered by language)", fake.sent.length > 2 && fake.sent.findIndex((q) => q.lang === "ja") > fake.sent.map((q) => q.lang).lastIndexOf("de"), "languages in order");
   } finally { await fake.close(); fx.cleanup(); }
 });
 

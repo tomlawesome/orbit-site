@@ -11,8 +11,13 @@
  *   T15 an errored, an expired and a refused result are kept English and reported, exit 0, the rest written
  *   T16 output shape: pages and index pass docs-i18n-shape and docs-markup; text and summary are derived per 2.3
  *       (summary cut at 170 with an ellipsis); page, section and source keys are exactly the spec's; no img/ folder
- *   T19 exit 4: a batch that never ends within --timeout-minutes is cancelled (POST .../cancel) and nothing is
- *       written; HTTP 401 and 403, no key (when not a dry run) and a network failure after 3 tries are exit 4 too
+ *   T19 a batch that never ends within --timeout-minutes: exit 5 (pending), the batch id printed, NO cancel call,
+ *       nothing written; the default of --timeout-minutes is 50. Exit 4: HTTP 401 and 403, no key (when not a dry
+ *       run), a network failure after 3 tries, a batch that ends errored, expired or canceled
+ *   T32 results are mapped back by custom_id, never by position: shuffled results map correctly; an unknown or a
+ *       repeated custom_id in the results is exit 4 with nothing written
+ *   T33 resume: TRANSLATE_BATCH_ID=<id> or --resume <id> submits nothing (no POST /batches), polls that batch and
+ *       writes the result; a rebuilt request list that does not match the batch's ids is exit 4, nothing written
  *   T20 exit 2: English docs off shape, off the markup allow-list, or a section over 100,000 characters, before any request
  *   T21 exit 1: an unknown language, an unknown flag, a bad value, a malformed glossary or languages.json
  *
@@ -21,9 +26,10 @@
  *   node tools/ci/translate-flow-test.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { startFake } from "./fake-claude.mjs";
-import { T, mkFixture, runTool, argsFor, snapshot, reportNames, hash16, sectionHash, textOf, summaryOf } from "./translate-fixture.mjs";
+import { T, REPO, swap, translateHtml, mkFixture, runTool, argsFor, snapshot, reportNames, hash16, sectionHash, textOf, summaryOf } from "./translate-fixture.mjs";
 
 const RULE_A = /skeleton|\btags?\b|\(a\)/i, RULE_K = /holes?|placeholder|\{|\btags?\b|\(k\)/i;
 const TOP = "docs/readme/top", dropStrong = (a) => { a.html = a.html.replace("<strong>", "").replace("</strong>", ""); return a; };
@@ -126,23 +132,88 @@ await T.attempt("T19", async () => {
   };
   { const fx = mkFixture(), fake = await startFake({ never: true });
     try {
-      await same("T19a a batch that never ends", fake, fx, ["--langs", "de", "--timeout-minutes", "0.02"], 4);
-      T.check("T19b the batch is cancelled (POST .../cancel seen)", fake.cancels.length === 1 && fake.cancels[0].path.includes(fake.batches[0] ? fake.batches[0].id : "?"), `${fake.cancels.length} cancels`);
+      const r = await same("T19a a batch that never ends within --timeout-minutes", fake, fx, ["--langs", "de", "--timeout-minutes", "0.02"], 5);
+      const id = fake.batches[0] && fake.batches[0].id;
+      T.check("T19b the batch id is printed", !!id && (r.out + r.err).includes(id), `id ${id}; ${(r.out + r.err).trim().split("\n").slice(-2).join(" | ").slice(0, 160)}`);
+      T.check("T19c the batch is NOT cancelled (no POST .../cancel)", fake.cancels.length === 0 && !!id, `${fake.cancels.length} cancels`);
+      T.check("T19d no report claims success: no assets/i18n/de.json, no docs-i18n/de", !fx.exists("assets/i18n/de.json") && !fx.exists("assets/docs-i18n/de"), "nothing written");
     } finally { await fake.close(); fx.cleanup(); } }
+  { /* the default timeout is 50 minutes: read from the tool's text, since a test cannot wait that long */
+    const src = readFileSync(join(REPO, "tools/ci/translate.mjs"), "utf8");
+    T.check("T19e --timeout-minutes defaults to 50", /timeout-minutes[^\n]*\b50\b|\b50\b[^\n]*timeout/i.test(src) && !/timeout-minutes[^\n]*\b170\b/.test(src), "50, not 170"); }
   for (const status of [401, 403]) {
     const fx = mkFixture(), fake = await startFake({ status });
-    try { await same(`T19c HTTP ${status}`, fake, fx, ["--langs", "de"], 4); } finally { await fake.close(); fx.cleanup(); }
+    try { await same(`T19f HTTP ${status}`, fake, fx, ["--langs", "de"], 4); } finally { await fake.close(); fx.cleanup(); }
   }
   { const fx = mkFixture(), fake = await startFake();
     try {
-      const r = await same("T19d no key, not a dry run", fake, fx, ["--langs", "de"], 4, { key: null });
-      T.check("T19e and no request was made", !r.notBuilt && r.code === 4 && fake.requests.length === 0, `${fake.requests.length} requests`);
+      const r = await same("T19g no key, not a dry run", fake, fx, ["--langs", "de"], 4, { key: null });
+      T.check("T19h and no request was made", !r.notBuilt && r.code === 4 && fake.requests.length === 0, `${fake.requests.length} requests`);
     } finally { await fake.close(); fx.cleanup(); } }
   { const fx = mkFixture(), fake = await startFake({ drop: 10 });
     try {
-      await same("T19f a network failure", fake, fx, ["--langs", "de"], 4, { timeout: 120000 });
-      T.check("T19g it was tried 3 times in all", fake.posts === 3, `${fake.posts} tries`);
+      await same("T19i a network failure", fake, fx, ["--langs", "de"], 4, { timeout: 120000 });
+      T.check("T19j it was tried 3 times in all", fake.posts === 3, `${fake.posts} tries`);
     } finally { await fake.close(); fx.cleanup(); } }
+  for (const endAs of ["errored", "expired", "canceled"]) {
+    const fx = mkFixture(), fake = await startFake({ endAs });
+    try { await same(`T19k a batch that ends ${endAs}`, fake, fx, ["--langs", "de"], 4); } finally { await fake.close(); fx.cleanup(); }
+  }
+});
+
+await T.attempt("T32", async () => {
+  { const fx = mkFixture(), fake = await startFake({ corrupt: "shuffle" });
+    try {
+      const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+      T.exit("T32a results returned in reverse order: exit 0", r, 0);
+      const readme = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null;
+      const top = readme && readme.sections.find((x) => x.id === "top"), en = fx.pages.readme.sections.find((x) => x.id === "top");
+      T.check("T32b every item holds its own translation (matched by custom_id, not position)", !!top && top.html === translateHtml(en.html) && (readme.source.kept || []).length === 0, top ? "readme/top differs from its translation" : "no page written");
+      const de = fx.exists("assets/i18n/de.json") ? fx.read("assets/i18n/de.json") : {};
+      T.check("T32c the catalogue keys hold their own translations", Object.entries(fx.en).every(([k, v]) => de[k] === swap(v)), "catalogue");
+    } finally { await fake.close(); fx.cleanup(); } }
+  for (const corrupt of ["unknown", "duplicate"]) {
+    const fx = mkFixture(), fake = await startFake({ corrupt });
+    try {
+      const before = snapshot(fx.dir);
+      const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+      T.exit(`T32d an ${corrupt} custom_id in the results: exit 4`, r, 4);
+      T.check(`T32e ${corrupt}: nothing written`, !r.notBuilt && snapshot(fx.dir) === before, "the checkout's data changed");
+    } finally { await fake.close(); fx.cleanup(); }
+  }
+});
+
+await T.attempt("T33", async () => {
+  for (const how of ["env", "flag"]) {
+    const fx = mkFixture(), fake = await startFake({ never: true });
+    try {
+      const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+      T.exit(`T33a (${how}) the first run is pending: exit 5`, r1, 5);
+      const id = fake.batches[0] && fake.batches[0].id;
+      if (!id) { T.check(`T33a (${how}) a batch was submitted`, false, "none"); continue; }
+      fake.never = false;
+      const posts = fake.posts, before = snapshot(fx.dir);
+      const r = how === "env" ? await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } }) : await runTool(fx, argsFor(fx, fake, "--langs", "de", "--resume", id));
+      T.exit(`T33b (${how}) the resume run finishes: exit 0`, r, 0);
+      T.check(`T33c (${how}) it submitted nothing (no POST /v1/messages/batches)`, fake.posts === posts && fake.batches.length === 1, `${fake.posts - posts} new posts`);
+      T.check(`T33d (${how}) it polled that batch`, fake.requests.some((q) => q.method === "GET" && q.path.startsWith(`/v1/messages/batches/${id}`)), "GET seen");
+      T.check(`T33e (${how}) the result is written`, !r.notBuilt && snapshot(fx.dir) !== before && fx.exists("assets/i18n/de.json") && fx.exists("assets/docs-i18n/de/readme.json") && fx.read("assets/docs-i18n/de/readme.json").sections.find((x) => x.id === "top").html.includes("é"), "de written");
+      T.check(`T33f (${how}) and still no cancel`, fake.cancels.length === 0, `${fake.cancels.length} cancels`);
+    } finally { await fake.close(); fx.cleanup(); }
+  }
+  { /* the input is not the batch's commit: a section added after the batch was made */
+    const fx = mkFixture(), fake = await startFake({ never: true });
+    try {
+      await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+      const id = fake.batches[0] && fake.batches[0].id;
+      fx.addSection("guide", { id: "later", title: "Later", subs: [], html: '<h2 id="later"><a class="anchor" href="#docs/guide/later" aria-label="Link to this heading">#</a>Later</h2>\n<p>Added after the batch was made.</p>\n' });
+      fake.never = false;
+      const posts = fake.posts, before = snapshot(fx.dir);
+      const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } });
+      T.exit("T33g a rebuilt request list that does not match the batch's ids: exit 4", r, 4);
+      T.check("T33h nothing submitted, nothing written", !r.notBuilt && fake.posts === posts && snapshot(fx.dir) === before, `${fake.posts - posts} new posts`);
+    } finally { await fake.close(); fx.cleanup(); }
+  }
 });
 
 await T.attempt("T20", async () => {

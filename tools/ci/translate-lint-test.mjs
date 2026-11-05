@@ -16,6 +16,8 @@
  *       or a changed image are each refused and named; the shipped .gitlab-ci.yml passes and holds translate_docs
  *       and publish_translations
  *
+ *   translate_docs also has timeout: 1h (T27c)
+ *
  *   node tools/ci/translate-lint-test.mjs
  */
 import { spawnSync } from "node:child_process";
@@ -132,6 +134,8 @@ await T.attempt("T27", async () => {
     const split = (d) => { const r = spawnSync(process.execPath, ["tools/ci/ci-split.mjs"], { cwd: d, encoding: "utf8", env: { ...process.env, NODE_PATH } }); return { status: r.status, text: `${r.stdout}${r.stderr}` }; };
     const ctl = split(base);
     T.check("T27b the shipped file passes ci-split", ctl.status === 0, `exit ${ctl.status}: ${tail(ctl.text)}`);
+    const block = (ci.match(/^translate_docs:\n(?:[ \t].*\n|\n)*/m) || [""])[0];
+    T.check("T27c translate_docs has timeout: 1h (the one-hour runner lane; amendment 1)", /^[ \t]+timeout:\s*1h\s*$/m.test(block) && !/timeout:\s*3h/.test(block), (block.match(/timeout:[^\n]*/) || ["no timeout line"])[0]);
     /* a line put under a job's own line: the job's own key order does not matter to YAML */
     const after = (text, job, line) => { const re = new RegExp(`^${job}:[^\\n]*\\n`, "m"); if (!re.test(text)) throw new Error(`no job ${job} in .gitlab-ci.yml to change`); return text.replace(re, (m) => `${m}${line}\n`); };
     const refused = (name, fn, want) => {
