@@ -28,10 +28,19 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## site-browser B3, Firefox: "a docs page that arrives after the visitor left the docs stays closed": the docs' Back click times out
 
 - 2026-11-05 · df30deb · pipeline 3661 live:firefox 1/2 job 46832 · control: the reader had not opened 1.5 s after the held page was released, then locator.click on `#docspad .back.dawn` timed out at 30 s; the change touched only the lint's names check and lint-test fixtures, and B3 passed on the same code in pipeline 3677
+- 2026-11-05 · df931d9 + #133 build · journey-local.sh asdawn site-browser, Firefox, agent host · the same Back click timed out at 30 s; the change touches only the door's media queries; site-browser passed on the rerun of the unchanged tree
 
 ## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
 
 - 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
+
+## live PW1b, Firefox: page.goto times out
+
+- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47071 · page.goto timeout (also seen on !115); the retry passed PW1b (job 47094)
+
+## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
+
+- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
 
 ## Runner interrupted mid-job (host)
 
