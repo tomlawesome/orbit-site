@@ -16,7 +16,7 @@
 # outside the folder, and an index.html whose door differs from markup.js; and
 # section "the docs import is split" (issue #18): import_docs holding the token
 # or an environment, publish_docs losing its environment, taking npm, or its
-# artifact, or either job running anywhere but the schedule on main; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
+# artifact, or either job running anywhere but the schedule on dev; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
 # sw.js must be orbit-media- plus the first 12 hex characters of a SHA-256 over the
 # tracked picture files outside assets/docs/ (a change to a picture without a new
 # name fails and names sw.js and the expected name; a change only under
@@ -637,7 +637,7 @@ fi
 # Cases (s1)-(s11) judge the section "the docs import is split" (issue #18):
 # import_docs runs other people's code and holds no token; publish_docs holds it
 # in the docs-import environment, runs no npm, and takes the artifact. Both run
-# from the schedule on main alone. split_case <label> <file> <named> <js>: <js>
+# from the schedule on dev alone. split_case <label> <file> <named> <js>: <js>
 # edits the string y (the file's text) and must change it; the lint must fail
 # naming <file> with <named>. <named> is an extended regular expression and the
 # whole of it, alternatives included, must sit on a line after "<file>: ", so a
