@@ -25,6 +25,14 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 
 - 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
 
+## site-browser B3, Firefox: "a docs page that arrives after the visitor left the docs stays closed": the docs' Back click times out
+
+- 2026-11-05 · df30deb · pipeline 3661 live:firefox 1/2 job 46832 · control: the reader had not opened 1.5 s after the held page was released, then locator.click on `#docspad .back.dawn` timed out at 30 s; the change touched only the lint's names check and lint-test fixtures, and B3 passed on the same code in pipeline 3677
+
+## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
+
+- 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
+
 ## Runner interrupted mid-job (host)
 
 - 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
