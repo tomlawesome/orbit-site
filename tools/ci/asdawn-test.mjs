@@ -197,8 +197,8 @@ function phoneControl(s, m) {
   s.want("(control) the farewell's bottom is where it is today", near(m.fw?.b, PHONE_TODAY.fwBottom, 1), `bottom ${f(m.fw?.b)} (today ${PHONE_TODAY.fwBottom})`);
 }
 
-/* #25, owner 3c: the door's sign-in (#door) and goodbye (#dusk) use their phone layout when the window is under 600px
-   wide OR under 480px tall ((max-width: 599.98px), (max-height: 479.98px)). The signs of each layout, whatever the
+/* #25, owner 3c: the door's sign-in (#door) and goodbye (#dusk) use their phone layout when the window is under 840px
+   wide OR under 480px tall ((max-width: 839.98px), (max-height: 479.98px)). The signs of each layout, whatever the
    window's size (measured at 390x844 and 1280x800, and not at the sizes below, where --R is the same in both):
      dawn and asDawn dusk, phone: the .loginchrome's bottom padding is 4% of the window's height; desktop 8%;
      asDawn dusk, phone: .name is hidden, the said stands on the ring's centre, the sub 26px under the ring, the gate
