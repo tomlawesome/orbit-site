@@ -1,8 +1,8 @@
 #!/bin/sh
 # The nightly docs import, second half: take the pages the `import_docs` job
-# made (tools/ci/nightly-import.sh) and, if they differ from `main`, publish
-# them as a merge request into main that merges itself once its pipeline
-# passes (owner decision 13a, 2026-10-09). Nobody pushes to main: this pushes
+# made (tools/ci/nightly-import.sh) and, if they differ from `dev`, publish
+# them as a merge request into dev that merges itself once its pipeline
+# passes (owner decision 10a, which replaced 13a). Nobody pushes to dev: this pushes
 # its own branch, opens the merge request, and asks GitLab to merge it when the
 # lint and the live journey are green, so every import is tested before Pages
 # serves it. A run with nothing new opens nothing, but still closes the older
@@ -14,9 +14,10 @@
 # (#82); nothing in that step can fail the job.
 #
 # Privilege separation (#18): this is the only code that holds
-# ORBIT_SITE_IMPORT_TOKEN, a project access token, role Maintainer (to merge
-# into main), scopes api and write_repository, a Masked + Protected CI/CD
-# variable scoped to the `docs-import` environment, which only this job joins.
+# ORBIT_SITE_IMPORT_TOKEN, a service account's personal access token, role
+# Developer on orbit-site (to merge into dev) and Reporter on ai/agent-infra (to
+# read the shared private-details check), scopes api and write_repository, a
+# Masked + Protected CI/CD variable scoped to the `docs-import` environment, which only this job joins.
 # It runs no third-party code: no npm, and node and python only for the
 # image's own JSON and zip handling. The import job ran such code, so nothing
 # from it is trusted:
@@ -44,7 +45,7 @@
 #     clone in .gitlab-ci.yml, checked here too), must be what git has, with
 #     only the git config the runner writes (check_git).
 # The merge request's own pipeline (lint, with its markup check, and the
-# live journey) then judges the content before it reaches main. Pushes read the
+# live journey) then judges the content before it reaches dev. Pushes read the
 # token from a mode-600 credential file and API calls from a header file, so it
 # is never in a URL, an argument list or the log; both files exist only for the
 # moment they are used. Every git command runs with no hooks, no fsmonitor, no
@@ -104,7 +105,7 @@ done
 
 : "${CI_API_V4_URL:?}" "${CI_PROJECT_ID:?}" "${CI_SERVER_HOST:?}" "${CI_PROJECT_PATH:?}" "${CI_PIPELINE_ID:?}"
 : "${CI_JOB_TOKEN:?}"
-: "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on main, the variable protected and scoped to the docs-import environment?}"
+: "${ORBIT_SITE_IMPORT_TOKEN:?ORBIT_SITE_IMPORT_TOKEN is not set -- is the schedule on dev, the variable protected and scoped to the docs-import environment?}"
 DRY_RUN=${DRY_RUN:-}
 pin() { echo "refusing to run: $1"; exit 1; }
 # A fresh clone (#60): the CI file sets GIT_STRATEGY: clone, and this checks it
@@ -117,7 +118,7 @@ pin() { echo "refusing to run: $1"; exit 1; }
 case $CI_PROJECT_ID in ''|*[!0-9]*) pin "CI_PROJECT_ID is not a number" ;; esac
 case $CI_PIPELINE_ID in ''|*[!0-9]*) pin "CI_PIPELINE_ID is not a number" ;; esac
 if [ -z "$DRY_RUN" ]; then
-  [ "${CI_COMMIT_BRANCH:-}" = main ] || pin "CI_COMMIT_BRANCH is not main"
+  [ "${CI_COMMIT_BRANCH:-}" = dev ] || pin "CI_COMMIT_BRANCH is not dev"
   [ "${CI_PIPELINE_SOURCE:-}" = schedule ] || pin "CI_PIPELINE_SOURCE is not schedule"
 fi
 
@@ -246,11 +247,11 @@ check_tree() {
 # Which job is this pipeline's import, and is its archive the pipeline's: GitLab
 # says, to the import token. The project is checked first (the id came from the
 # environment), then the one successful import_docs job of this pipeline, on
-# main, at the commit this job is checked out at, with an archive.
+# dev, at the commit this job is checked out at, with an archive.
 import_job() {
   proj=$(apij 'console.log(j.path_with_namespace)' GET "") || refuse "could not read the project from GitLab"
   [ "$proj" = "$EXPECT_PATH" ] || refuse "project $CI_PROJECT_ID is $proj, not $EXPECT_PATH"
-  apij 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "main" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
+  apij 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "dev" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
     if (ok.length !== 1 || !Number.isInteger(ok[0].id)) { console.log("refusing the artifact: found " + ok.length + " successful import_docs jobs with an archive in this pipeline at this commit, want 1"); process.exit(1); }
     console.log(ok[0].id)' GET "/pipelines/$CI_PIPELINE_ID/jobs?per_page=100"
 }
@@ -473,7 +474,7 @@ update_warnings_issue() {
 # named like an import's is ever matched, so a fork's is never touched (#12).
 older_mrs() {
   apij 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)' \
-    GET "/merge_requests?state=opened&target_branch=main&per_page=100"
+    GET "/merge_requests?state=opened&target_branch=dev&per_page=100"
 }
 # Close every older import merge request but !$1 and delete its branch (closing
 # leaves the branch behind, #12); $2 says what replaces them. Under DRY_RUN
@@ -563,7 +564,7 @@ main() {
   echo "== import branches left by an earlier run"
   clean_stale_branches || echo "   (could not check; the next run will)"
 
-  echo "== compare with main"
+  echo "== compare with dev"
   base=$(cgit rev-parse HEAD)
   # The index is built afresh: the base commit's tree, its pictures taken out,
   # plus the checked pages and pictures as blobs, nothing else, and not through
@@ -599,7 +600,7 @@ main() {
   branch="docs/import-$stamp"
 
   if [ -n "$DRY_RUN" ]; then
-    echo "DRY_RUN: would push $branch, open a merge request into main, then close:"
+    echo "DRY_RUN: would push $branch, open a merge request into dev, then close:"
     close_older "" "$branch" || true
     echo "== the warnings issue"
     ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
@@ -658,7 +659,7 @@ main() {
     hdr_on
     code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$mrans" -w '%{http_code}' \
       -X POST -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests" \
-      --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=main" \
+      --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=dev" \
       --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
       --data-urlencode "remove_source_branch=true" \
       --data-urlencode "description@$mrdesc" \
