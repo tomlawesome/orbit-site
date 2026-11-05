@@ -52,9 +52,11 @@ workflow:
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
-    # Pushes start a pipeline on the long-lived branches only; a working
-    # branch's first push would otherwise run twice (orbit #829).
-    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
+    # Pushes start a pipeline on main and hotfix branches only; a working
+    # branch's first push would otherwise run twice (orbit #829). A push to
+    # `dev` starts none either: the merge request that landed it merged on a
+    # green pipeline, so that pipeline is the one run (ai/agent-infra#113).
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "main" && $CI_COMMIT_BRANCH !~ /^hotfix\//
       when: never
     - if: $CI_COMMIT_BRANCH
 
