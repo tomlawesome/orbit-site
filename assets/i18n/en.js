@@ -236,5 +236,7 @@ export default {
  "item-chimney-sweep": "Chimney sweep",
  "item-laptop-warranty": "Laptop warranty",
  "dusk-said": "You are signed out.",
- "dusk-sub": "the sky keeps turning · your systems keep their orbits"
+ "dusk-sub": "the sky keeps turning · your systems keep their orbits",
+ "language-now": "EN, language: English",
+ "language-code": "EN"
 };

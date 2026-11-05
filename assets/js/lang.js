@@ -65,15 +65,48 @@ export function pick({ stored = null, languages = [], built = BUILT } = {}) {
 /* the same page in a language: the root for English, its folder otherwise, with this address's query and hash */
 export const hrefIn = (lang, rest = "") => `${ROOT}${lang === "en" ? "" : `${lang}/`}${rest}`;
 
-/* the switch and the notice's English link (any a[data-lang]): the choice stored, then the same page in that language;
-   the notice's hide button hides every notice for the rest of the session (never for good: owner, 2026-11-05) */
+/* the language menu and the notice's English link (any a[data-lang]). Each link is a real link, kept pointing at this
+   same address (query, such as ?preview, and hash) in its language, so it can be opened in a new tab or copied; a plain
+   click stores the choice, then goes there. The menu is a disclosure (WAI-ARIA APG): its button opens and closes the
+   list; Escape, a click outside it or focus leaving it closes it. The notice's hide button hides every notice for the
+   rest of the session (never for good: owner, 2026-11-05) */
 const HIDDEN = "orbit-ai-notice";
 export function wireLanguages(root = document) {
   const notices = () => root.querySelectorAll(".ai-notice");
   let hidden = false; try { hidden = sessionStorage.getItem(HIDDEN) === "hidden"; } catch { /* shown */ }
   if (hidden) notices().forEach((n) => { n.hidden = true; });
+  const links = () => root.querySelectorAll("a[data-lang]");
+  const aim = () => links().forEach((a) => { a.href = hrefIn(a.dataset.lang, location.search + location.hash); });
+  aim();
+  addEventListener("hashchange", aim);
+  const menus = [...root.querySelectorAll(".langs")];
+  const toggleOf = (m) => m.querySelector("button[aria-expanded]");
+  const open = (m, on) => {
+    const b = toggleOf(m);
+    if (!b) return;
+    if (on) aim();
+    b.setAttribute("aria-expanded", on ? "true" : "false");
+  };
+  const shut = (except) => menus.forEach((m) => { if (m !== except && toggleOf(m)?.getAttribute("aria-expanded") === "true") open(m, false); });
+  menus.forEach((m) => {
+    m.dataset.ready = "";
+    m.addEventListener("focusout", (e) => { if (!m.contains(/** @type {Node | null} */ (e.relatedTarget))) open(m, false); });
+  });
+  /* outside: before any handler of the page's can stop the click */
+  root.addEventListener("pointerdown", (e) => shut(/** @type {Element} */ (e.target).closest?.(".langs")), true);
+  root.addEventListener("keydown", (e) => {
+    if (/** @type {KeyboardEvent} */ (e).key !== "Escape") return;
+    const m = menus.find((x) => toggleOf(x)?.getAttribute("aria-expanded") === "true");
+    if (!m) return;
+    open(m, false);
+    if (m.contains(document.activeElement)) toggleOf(m)?.focus();
+  });
   root.addEventListener("click", (e) => {
     const el = /** @type {Element} */ (e.target);
+    const menu = el.closest?.(".langs");
+    shut(menu);
+    const t = el.closest?.(".langs button[aria-expanded]");
+    if (t && menu) { open(menu, t.getAttribute("aria-expanded") !== "true"); return; }
     const hide = el.closest?.(".ai-notice .hide");
     if (hide) {
       try { sessionStorage.setItem(HIDDEN, "hidden"); } catch { /* this page only */ }

@@ -69,6 +69,11 @@
   <noscript><p class="corner" data-i18n="noscript">Die Website von Orbit braucht JavaScript, um ihren Himmel zu zeichnen. Die Installationsschritte stehen auf GitHub: <a href="https://github.com/tomlawesome/orbit">github.com/tomlawesome/orbit</a></p></noscript>
   <div class="sky" id="sky" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
+  <!-- the language menu (#125): one control in one place on the door, the sky and every pad (top left, under the back
+       link), a disclosure (WAI-ARIA APG): a button showing the page's language code, and a real link per language,
+       which assets/js/lang.js keeps pointing at this same address (query and hash) in that language. Until it runs
+       (or with scripts off) the links show as they are -->
+  <nav class="langs" aria-label="Sprache" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="DE, Sprache: Deutsch" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">DE</span></button><ul id="langs-list"><li><a data-lang="en" href="../" hreflang="en" lang="en">EN · English</a></li><li><a data-lang="de" href="./" hreflang="de" lang="de" aria-current="page">DE · Deutsch</a></li></ul></nav>
 
   <!-- ═══ THE DOOR: the sign-in's dawn ═══════════════════════════════ -->
   <!-- the shared door's markup (assets/door/markup.js), written between the door markers by `node tools/door-markup.mjs`
@@ -138,7 +143,6 @@
     </div>
     <!-- slot:foot -->
     <p class="ai-notice"><span data-i18n="ai-notice">Diese Seite wurde von einer KI aus dem Englischen übersetzt. Manche Formulierungen klingen deshalb vielleicht seltsam.</span> <a data-lang="en" href="../" hreflang="en" lang="en" data-i18n="ai-notice-english">Auf Englisch lesen</a><button type="button" class="hide" aria-label="Hinweis vorerst ausblenden" data-i18n-attr="aria-label:ai-notice-hide">×</button></p>
-    <p class="doorfoot by langs"><span class="langs" role="group" aria-label="Sprache" data-i18n-attr="aria-label:language"><a data-lang="en" href="../" hreflang="en" lang="en">English</a><span class="sep" aria-hidden="true">·</span><a data-lang="de" href="./" hreflang="de" lang="de" aria-current="page">Deutsch</a></span></p>
     <p class="doorfoot by" data-i18n="foot-door">Ein Projekt von <a href="https://tomlawson.io">tomlawson.io</a> · Erde: <a data-i18n-attr="title:black-marble-city-lights-blue" href="https://earthobservatory.nasa.gov/features/NightLights" title="Lichter der Städte aus Black Marble, Land und Wolken aus Blue Marble: NASA Earth Observatory" target="_blank" rel="noopener">NASA</a></p>
     <!-- /slot:foot -->
   </div>
@@ -368,7 +372,6 @@
     <div class="vignette" aria-hidden="true"></div>
     <button data-i18n="the-dawn" class="corner back dawn" type="button">— zum Sonnenaufgang</button>
     <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — die Startseite"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <span class="langs" role="group" aria-label="Sprache" data-i18n-attr="aria-label:language"><a data-lang="en" href="../" hreflang="en" lang="en">English</a><span class="sep" aria-hidden="true">·</span><a data-lang="de" href="./" hreflang="de" lang="de" aria-current="page">Deutsch</a></span>
     <p class="ai-notice"><span data-i18n="ai-notice">Diese Seite wurde von einer KI aus dem Englischen übersetzt. Manche Formulierungen klingen deshalb vielleicht seltsam.</span> <a data-lang="en" href="../" hreflang="en" lang="en" data-i18n="ai-notice-english">Auf Englisch lesen</a><button type="button" class="hide" aria-label="Hinweis vorerst ausblenden" data-i18n-attr="aria-label:ai-notice-hide">×</button></p>
     <!-- the install: into orbit. The purple planet is a world; the camera goes to it, and the one line waits in the dark above it -->
     <div class="poster" aria-hidden="true"></div>
@@ -389,7 +392,6 @@
     <div class="vignette" aria-hidden="true"></div>
     <button data-i18n="the-dawn" class="corner back dawn" type="button">— zum Sonnenaufgang</button>
     <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — die Startseite"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <span class="langs" role="group" aria-label="Sprache" data-i18n-attr="aria-label:language"><a data-lang="en" href="../" hreflang="en" lang="en">English</a><span class="sep" aria-hidden="true">·</span><a data-lang="de" href="./" hreflang="de" lang="de" aria-current="page">Deutsch</a></span>
     <p class="ai-notice"><span data-i18n="ai-notice">Diese Seite wurde von einer KI aus dem Englischen übersetzt. Manche Formulierungen klingen deshalb vielleicht seltsam.</span> <a data-lang="en" href="../" hreflang="en" lang="en" data-i18n="ai-notice-english">Auf Englisch lesen</a><button type="button" class="hide" aria-label="Hinweis vorerst ausblenden" data-i18n-attr="aria-label:ai-notice-hide">×</button></p>
     <div class="topfade" aria-hidden="true"></div>
     <div class="scroll">
@@ -429,7 +431,6 @@
     <div class="vignette" aria-hidden="true"></div>
     <button data-i18n="the-dawn" class="corner back dawn" type="button">— zum Sonnenaufgang</button>
     <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — die Startseite"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
-    <span class="langs" role="group" aria-label="Sprache" data-i18n-attr="aria-label:language"><a data-lang="en" href="../" hreflang="en" lang="en">English</a><span class="sep" aria-hidden="true">·</span><a data-lang="de" href="./" hreflang="de" lang="de" aria-current="page">Deutsch</a></span>
     <p class="ai-notice"><span data-i18n="ai-notice">Diese Seite wurde von einer KI aus dem Englischen übersetzt. Manche Formulierungen klingen deshalb vielleicht seltsam.</span> <a data-lang="en" href="../" hreflang="en" lang="en" data-i18n="ai-notice-english">Auf Englisch lesen</a><button type="button" class="hide" aria-label="Hinweis vorerst ausblenden" data-i18n-attr="aria-label:ai-notice-hide">×</button></p>
     <div class="topfade" aria-hidden="true"></div>
     <div class="scroll">
