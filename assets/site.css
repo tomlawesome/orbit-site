@@ -141,6 +141,52 @@ body.lit .doorfoot{opacity:1}
 .doorfoot a:hover{color:#d8b45a}
 .doorfoot .sep{margin:0 10px;color:#4a5468}
 
+/* THE LANGUAGES (#125): one menu in one place on every page and pad, top left under the back link, in the corner's
+   voice (the button) and the palette's (the list); on a translated page the AI notice, a pill in the panel's colours on
+   the same top line, says plainly the words came from a machine (hideable for the session, never for good) */
+.langs{position:fixed;top:52px;left:24px;z-index:8;font:10.5px var(--mono)}
+.langs button{font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-quiet);background:none;border:0;
+  padding:4px 0;cursor:pointer;text-shadow:0 0 2px var(--bg),0 0 5px var(--bg),0 0 11px var(--bg)}
+.langs button::after{content:"\25BE" / "";margin-left:6px;opacity:.6;letter-spacing:0}
+.langs button:hover,.langs button[aria-expanded="true"]{color:var(--accent-text)}
+.langs button:focus-visible{outline:1px solid var(--accent);outline-offset:3px;border-radius:2px}
+.langs ul{list-style:none;margin:0;padding:6px;position:absolute;top:calc(100% + 6px);left:0;min-width:150px;width:max-content;box-sizing:border-box;
+  background:var(--panel-raised);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:12px}
+.langs a{display:block;font:12.5px var(--mono);color:var(--ink-mid);text-decoration:none;padding:8px 10px;border-radius:8px;white-space:nowrap}
+.langs a:hover,.langs a:focus-visible{background:var(--panel);color:var(--ink)}
+.langs a[aria-current]{color:var(--ink)}
+/* until lang.js runs (or with scripts off) the links stand as they are; then the button opens and closes them */
+.langs:not([data-ready]) button{display:none}
+.langs:not([data-ready]) ul{position:static}
+.langs[data-ready] button[aria-expanded="false"]+ul{display:none}
+/* the chrome's states: in with the door's light, out while a flight lands or leaves, in with the instrument */
+/* the door (assets/door/door.css) stands at 36, above the sky's chrome: there the menu stands just above it, below the warp (38) */
+body.at-door .langs{z-index:37;transition:opacity 1.2s ease 1.5s}
+body.at-door:not(.lit) .langs,body.launching .langs,body.departing .langs,body.bare .langs,body.showdusk .langs{opacity:0;pointer-events:none}
+body.instrument .langs{animation:chromein 1.3s ease .45s both}
+body.withdrawing .langs{animation:chromeout .45s ease both}
+@media (max-width:599.98px){.langs{left:16px}.langs ul{max-width:calc(100vw - 32px)}}
+.ai-notice{position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:7;box-sizing:border-box;width:max-content;
+  max-width:min(560px,calc(100% - 208px));
+  display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding:7px 8px 7px 14px;text-align:center;
+  font:11px/1.5 var(--mono);color:var(--ink-mid);background:var(--panel-raised);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:18px}
+@media (max-width:599.98px){
+  .ai-notice{max-width:calc(100% - 32px)}
+  .pad .ai-notice{top:auto;bottom:16px}
+  #door .ai-notice{top:auto;bottom:52px}
+  /* the install pad's credit and foot hold its last 60px: the notice stands above them */
+  #installpad .ai-notice{bottom:68px}
+}
+.ai-notice a{color:var(--accent-text);text-decoration:none;white-space:nowrap}
+.ai-notice a:hover{text-decoration:underline}
+.ai-notice .hide{font:13px/1 var(--mono);color:var(--ink-faint);background:none;border:0;padding:2px 6px;cursor:pointer}
+.ai-notice .hide:hover{color:var(--ink)}
+body.bare .pad .ai-notice{opacity:0;pointer-events:none}
+body.instrument .pad .ai-notice{animation:chromein 1.3s ease .45s both}
+body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
+@media (prefers-reduced-motion:reduce){body.instrument .langs,body.withdrawing .langs,body.instrument .pad .ai-notice{animation:none!important}}
+
 
 /* ══ THE SKY: home ══════════════════════════════════════════════════════ */
 #home{position:relative;z-index:2;opacity:0;transition:opacity 1.2s ease}
@@ -587,7 +633,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .search input::-webkit-search-cancel-button{-webkit-appearance:none}
 .pad.docs .search kbd{font:10.5px var(--mono);color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
 .pad.docs .keys{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 34px}
-.pad.docs .keys::before{content:"start here";font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-right:4px}
+.pad.docs .keys::before{content:attr(aria-label);font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-right:4px}
 .pad.docs .key{font:12px var(--mono);color:var(--ink-mid);border:1px solid var(--line);border-radius:99px;padding:6px 13px;text-decoration:none;background:var(--panel)}
 .pad.docs .key:hover{border-color:var(--accent);color:var(--accent-text)}
 .pad.docs .results section{margin:0 0 30px}

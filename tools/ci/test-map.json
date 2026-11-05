@@ -21,6 +21,9 @@
       "404.html",
       "assets/site.css",
       "assets/js/main.js",
+      "assets/js/lang.js",
+      "assets/i18n/**",
+      "de/**",
       "assets/js/ring.js",
       "assets/js/places.js",
       "assets/js/tilt.js",
@@ -87,6 +90,8 @@
       "tools/ci/no-real-names.mjs",
       "tools/ci/door-pow-lint.mjs",
       "tools/door-markup.mjs",
+      "tools/pages.mjs",
+      "tools/ci/i18n-check.mjs",
       "tools/ci/test-map-check.mjs",
       "tools/ci/node-tests.sh",
       "tools/ci/journey-local.sh",
@@ -192,6 +197,13 @@
       "browsers": ["chromium"],
       "gates": ["chromium"],
       "seconds": { "chromium": 457 }
+    },
+    "i18n-journey": {
+      "file": "tools/ci/i18n-journey.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 30, "chromium": 25 }
     },
     "door-lows": {
       "file": "tools/ci/door-lows-test.mjs",
