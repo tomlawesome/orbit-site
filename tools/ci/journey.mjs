@@ -543,17 +543,22 @@ const landings = async (prefix) => {
   });
   /* Back pressed in mid-flight is honoured: the door's planet is clicked and
      Back follows on the next frame, before the flight can land. */
-  await quarantined("#107", ["chromium"], `Back mid-flight returns to the door${prefix ? " (preview)" : ""}`, async () => {
+  await step(`Back mid-flight returns to the door${prefix ? " (preview)" : ""}`, async () => {
     await inOwnContext({}, async (p) => {
       await p.goto(SITE + prefix, { waitUntil: "load" });
       await p.locator("#door .planet[data-section=install].ready").waitFor({ state: "attached", timeout: 60000 });
-      await p.evaluate(() => {
+      /* the click took effect, read in the click's own task: the site shows the pad and steps the history to #install
+         at the click itself (main.js: goToWorld, places.step), and Back is pressed only once it has. Never a poll
+         afterwards: with no world drawn (headless Chromium) the dive and the shot back each resolve at once, so the
+         pad opens and closes again within some 40 ms, before any poll looks (#107) */
+      const opened = await p.evaluate(() => {
         document.querySelector("#door .planet[data-section=install]").click();
-        requestAnimationFrame(() => history.back());
+        const pad = document.querySelector("#installpad"), r = pad.getBoundingClientRect();
+        const seen = { pad: !pad.hidden && r.width > 0 && r.height > 0, hash: location.hash };
+        if (seen.pad && seen.hash === "#install") requestAnimationFrame(() => history.back());
+        return seen;
       });
-      /* the click took effect: the pad opened (it shows at the click itself) */
-      try { await p.locator("#installpad").waitFor({ state: "visible", timeout: 2000 }); }
-      catch { throw new Error("the click on the install planet never opened #installpad, so Back mid-flight was not tested"); }
+      if (!opened.pad || opened.hash !== "#install") throw new Error(`the click on the install planet did not open #installpad (shown ${opened.pad}, location.hash ${JSON.stringify(opened.hash)}), so Back mid-flight was not tested`);
       /* then Back is honoured: the pad closes and the door is shown. A flight
          that ignored Back keeps the pad open (or lands on it), so this
          times out and reports what it saw. Headless Chromium without WebGL takes

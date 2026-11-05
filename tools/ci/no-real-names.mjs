@@ -365,6 +365,28 @@ export function aiAttribution(message) {
     || /^\s*claude-session\s*:/iu.test(line));
 }
 
+/*
+ * Known bot identities (owner answer 18b, #132): the display name of the owner's GitLab bot account and the sha256 of
+ * its lower-cased commit email. A banned-login name is accepted only when the name AND that email digest match the
+ * same entry; the email is kept only as a digest. NO_REAL_NAMES_EXTRA_BOT_IDENTITIES ("<name>:<digest>,...") adds
+ * entries, for tests.
+ */
+export const BOT_IDENTITIES = [
+  { name: "codex", digest: "2b6c7fa315d4fc72c14bfdd2ac17799a6e4b14cff5d47950f0cf3bfd6e7de4c4" },
+];
+const botIdentities = () => [
+  ...BOT_IDENTITIES,
+  ...(process.env.NO_REAL_NAMES_EXTRA_BOT_IDENTITIES || "").split(",").map((e) => e.trim()).filter(Boolean).map((e) => {
+    const i = e.lastIndexOf(":");
+    return { name: e.slice(0, i).trim().toLowerCase(), digest: e.slice(i + 1).trim().toLowerCase() };
+  }),
+];
+const isBotIdentity = (name, email) => {
+  const n = name.trim().toLowerCase();
+  const d = sha(String(email).toLowerCase());
+  return botIdentities().some((b) => b.name === n && b.digest === d);
+};
+
 /**
  * The categories under which an author or committer NAME (or EMAIL) is banned:
  * a login (the bare login as the whole name, or a home directory) or an email,
@@ -373,7 +395,7 @@ export function aiAttribution(message) {
  */
 function personFindings(name, email) {
   const found = findings(name, { addresses: false }).map((f) => f.category).filter((c) => c !== "word");
-  if (bannedLogin(name.trim().toLowerCase())) found.push("login");
+  if (bannedLogin(name.trim().toLowerCase()) && !isBotIdentity(name, email)) found.push("login");
   if (bannedEmail(email)) found.push("email");
   // git's automatic identity is <login>@<host> (#60 r3 item 5)
   const at = email.lastIndexOf("@");

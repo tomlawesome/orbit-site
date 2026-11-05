@@ -14,6 +14,10 @@ import { createInstall } from "./install.js";
 import { createLock } from "./lock.js";
 import { offPage, ringWaits } from "./ring.js";
 import { createPlaces, plan } from "./places.js";
+import { site, tr, wireLanguages } from "./lang.js";
+
+/* the languages (lang.js): the switch and the AI notice, live before anything else */
+wireLanguages(document);
 
 /* the shared door (assets/door/index.js), with what differs here: where its pictures are, and the debug switches read
    from the address (the folder itself never reads the address) */
@@ -35,11 +39,12 @@ FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
    browser's image loader is Firefox's by the rule, ADR-0004 6e.1; blob is today's route, the A/B control) */
 FLAGS.decode = location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null;
 const door = createDoor({
-  image: (p) => `assets/door/img/${p}`, flags: FLAGS,
+  image: (p) => site(`assets/door/img/${p}`), flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
-     it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way */
-  drawWorker: () => new Worker("assets/door/draw-worker.js", { type: "module" }),
-  fonts: [{ family: "JetBrains Mono", weight: 500, url: "assets/fonts/jetbrains-mono-latin.woff2" }],
+     it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way.
+     (Every path from the site's root, so a language's folder finds the same files: lang.js) */
+  drawWorker: () => new Worker(site("assets/door/draw-worker.js"), { type: "module" }),
+  fonts: [{ family: "JetBrains Mono", weight: 500, url: site("assets/fonts/jetbrains-mono-latin.woff2") }],
 });
 /* (the GPU is asked once, by showDoor below, before anything else needs it: assets/door/fitness.js. The capability probe,
    and with it the level, is the live door's alone: only under ?door3d, when the GPU was accepted, on that one context) */
@@ -498,7 +503,7 @@ function backToDawn() {
   }
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   /* (held at its first beat until the flight's world is proved: ADR-0002 6.8) */
-  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
+  journey.descend({ title: SECTIONS[current].title, subtitle: tr("flight-back-dawn"), onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); places.settle(); readyDoor(); },
   } });
@@ -523,7 +528,7 @@ function launchNow(ready, token) {
     name: o.name,
     bodies: o.items.filter((it) => it.status === "active").map((it) => { const p = law.dialPlacement(law.daysBetween(new Date(new Date().setHours(0, 0, 0, 0)), it.dueDate)); const r = 22 + Math.min(1, Math.max(0, (p.radius - 40) / 140)) * 58; return [Math.cos(p.angle) * r, Math.sin(p.angle) * r, SEC[o.sections.find((sc) => sc.id === it.section)?.accent] || "#8fb8ff", 3.2]; }),
   }));
-  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", ready, on: {
+  journey.fly(demoFlight(others), { title: h.name, subtitle: tr("flight-welcome-back"), ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; if (!after) places.keep("#home"); },
     settled() { done(token); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
@@ -557,7 +562,7 @@ function homeToDawn() {
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   hurryChores("flight");
-  journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", ready: journey.warm(), on: {
+  journey.descend({ title: home.household().name, subtitle: tr("flight-back-dawn"), onto: "dawn", ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
       done(token);
@@ -598,11 +603,11 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
   const was = el.textContent;
   el.addEventListener("click", () => {
     navigator.clipboard?.writeText(el.dataset.copy).then(() => {
-      el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = "copied";
+      el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = tr("copy-done");
       setTimeout(() => { delete el.dataset.done; if (el.tagName !== "CODE") el.textContent = was; }, 1600);
     }).catch(() => {
       /* a refused write says so, rather than failing silently */
-      if (el.tagName !== "CODE") { el.textContent = "not copied"; setTimeout(() => { el.textContent = was; }, 1600); }
+      if (el.tagName !== "CODE") { el.textContent = tr("copy-failed"); setTimeout(() => { el.textContent = was; }, 1600); }
     });
   });
 });
@@ -615,5 +620,5 @@ if (wantsPad) arrivePad(wantsPad); else if (arrived || wantsDrawer) arrive(); el
 if (current !== "door") journey.later(readyDoor, { after: 4000 });
 /* the site's own cache (sw.js): pictures kept a day, the code always fresh */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => { /* fine without it */ }); });
+  addEventListener("load", () => { navigator.serviceWorker.register(site("sw.js")).catch(() => { /* fine without it */ }); });
 }
