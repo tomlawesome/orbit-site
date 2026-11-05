@@ -17,6 +17,14 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 
 - 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
 
+## journey L1, L2 #116, Chromium: "the gate waits for the world and the flight, then flies; nothing is stored under fit=skip" (preview): the gate's click times out
+
+- 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs · locator.click: Timeout 30000ms exceeded; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
+
+## journey L6 #116, Chromium: "the docs' Back is closed until the flight is ready, then opens" (preview): the descent never shows the dawn
+
+- 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
+
 ## Runner interrupted mid-job (host)
 
 - 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
