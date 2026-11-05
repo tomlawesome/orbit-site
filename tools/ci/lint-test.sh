@@ -2182,6 +2182,50 @@ names_run "" "$nl_d" ""
 n_clean "a longer login as the local part of the author email is not the banned one"
 n_back
 
+# Cases for #132 (written from its spec note, before the fix): a listed bot identity (display name + sha256 of its email) is
+# not reported when a banned-login name comes with that identity's own email, and only then. The list is injected for tests
+# as NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="<name>:<sha256 of the lower-cased email>[,<name>:<digest>...]" (assumed hook).
+# Invented values only; the "banned login" is the probe login planted by digest, as in the cases above.
+nl2="zyx""loginr"; nl2_d=$(sha "$nl2")
+bot_email="bot.probe""@example.invalid"; bot_d=$(sha "$bot_email")
+bot_other="other.probe""@example.invalid"
+bot_run() { # bot_run LOGIN_DIGESTS: the bot list holds the probe login with bot_email's digest
+  rc=0
+  NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$1" NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="$nl:$bot_d" sh tools/ci/lint.sh names > "$out" 2>&1 || rc=$?
+  awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+}
+bot_commit() { # bot_commit NAME EMAIL: author and committer both
+  GIT_AUTHOR_NAME="$1" GIT_COMMITTER_NAME="$1" GIT_AUTHOR_EMAIL="$2" GIT_COMMITTER_EMAIL="$2" git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "bot probe"
+  sid=$(git rev-parse --short HEAD)
+}
+
+# Bot case 1: the listed name with its own email passes.
+bot_commit "$nl" "$bot_email"
+bot_run "$nl_d"
+n_clean "a listed name with its email passes"
+n_back
+
+# Bot case 2: the listed name with another email is reported as a login.
+bot_commit "$nl" "$bot_other"
+bot_run "$nl_d"
+n_hist "the listed name with another email fails as a login, naming $sid and author" "$sid" "author \\(login" "" "$nl" "$bot_other"
+n_back
+
+# Bot case 3: another banned-login name with the listed email is reported.
+bot_commit "$nl2" "$bot_email"
+bot_run "$nl_d,$nl2_d"
+n_hist "another banned-login name with the listed email fails, naming $sid and author" "$sid" "author \\(login" "" "$nl2"
+n_back
+
+# Bot case 4: a listed email whose local part is a banned login is still reported.
+bot_login_email="$nl@example.invalid"
+bot_commit "$nl" "$bot_login_email"
+rc=0
+NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$nl_d" NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="$nl:$(sha "$bot_login_email")" sh tools/ci/lint.sh names > "$out" 2>&1 || rc=$?
+awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+n_hist "a listed email whose local part is a banned login still fails, naming $sid and author" "$sid" "author \\(login" "" "$nl"
+n_back
+
 # Item 6: private addresses in a commit message are refused, in the subject, the body and a trailer. Documentation ranges
 # stay allowed.
 msg_addr() { # msg_addr LABEL SUBJECT BODY HIDDEN
