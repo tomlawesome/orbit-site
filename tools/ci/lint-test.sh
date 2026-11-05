@@ -1393,7 +1393,7 @@ inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-templat
 inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
 inc_case "p209: private-details and catchup-check only" pass "$inc_pass$inc_two"
-inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v1\n"
+inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
 inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
 inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p213: catchup-check twice" refuse "$inc_pass$inc_two$inc_two"
@@ -1402,7 +1402,7 @@ inc_case "p215: another file in ai/agent-infra beside the allowed three" refuse 
 inc_case "p216: a snippet entry beside a local entry" refuse "$inc_pass$inc_two  - local: other.yml\n"
 # the !reference lines point at the snippets' hidden keys, which live in the included files
 split_case "p217: a !reference to .catchup-check with no catchup-check include" $ci "catchup-check" '
-  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # catchup-check\/v1\n    file: scripts\/catchup-check\/ci-template.yml/, "");'
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # catchup-check\/v2\n    file: scripts\/catchup-check\/ci-template.yml/, "");'
 split_case "p218: a !reference to .batch-intake with no batch-intake include" $ci "batch-intake" '
   y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # batch-intake\/v1\n    file: scripts\/batch-intake\/ci-template.yml/, "");'
 split_case "p219: a !reference to a key the snippet does not define" $ci "catchup-check" '
