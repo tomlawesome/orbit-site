@@ -11,6 +11,11 @@ paths = [
 ]
 
 [[allowlists]]
+description = "the same disclosure line, verbatim in English, on the German copy of the install page (#125): the exception lets it move with the page but never be reworded or removed, so it is never translated (no catalogue key)"
+targetRules = ["ai-attribution"]
+paths = ['''^de/index\.html$''']
+
+[[allowlists]]
 description = "tool names: the assistant's settings folder, and the no-real-names lint's own pattern list"
 targetRules = ["ai-attribution"]
 paths = [

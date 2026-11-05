@@ -7,6 +7,7 @@
 import { reduced, seededRng } from "./sky.js";
 import { chore } from "../door/index.js";
 import { createPlaces } from "./places.js";
+import { LANG, site, tr } from "./lang.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
@@ -14,9 +15,9 @@ const $ = (s, r = document) => r.querySelector(s);
 const places = createPlaces();
 
 export const SECTIONS = {
-  install: { title: "Orbit", subtitle: "the install" },
-  docs: { title: "Orbit", subtitle: "the docs" },
-  info: { title: "Orbit", subtitle: "about" },
+  install: { title: "Orbit", subtitle: tr("flight-install") },
+  docs: { title: "Orbit", subtitle: tr("flight-docs") },
+  info: { title: "Orbit", subtitle: tr("flight-info") },
 };
 
 /* THE DOCS: the repositories' own markdown, imported by tools/import-docs.mjs
@@ -28,7 +29,8 @@ export const SECTIONS = {
    click it to read; type and the stars that answer light while the rest dim.
    A constellation's name filters the list. */
 const R = "https://github.com/tomlawesome/orbit";
-const DOCS_DIR = "assets/docs/";
+/* (from the site's root, so a language's folder reads the same files: lang.js) */
+const DOCS_DIR = site("assets/docs/");
 /* the docs' diagrams: Mermaid's own release file (dist/mermaid.min.js of the npm package), kept on the site (#92:
    nothing on the site loads from a third party). This path is the version's one pin: Renovate bumps it (renovate.json),
    and the bump fails the diagram checks until the named file is added and the old one removed. The integrity beside it
@@ -116,9 +118,14 @@ const nebula = (gi, c, pts) => {
 export const GAP = 7;
 const trim = (q, p, a = GAP, b = GAP) => { const dx = p[0] - q[0], dy = p[1] - q[1], l = Math.hypot(dx, dy) || 1; return [q[0] + (dx / l) * a, q[1] + (dy / l) * a, p[0] - (dx / l) * b, p[1] - (dy / l) * b, Math.max(0, l - a - b)]; };
 const hrefOf = (slug, id) => (id === "top" ? `#docs/${slug}` : `#docs/${slug}/${id}`);
-const when = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
+/* dates in the page's language; the English page in the reader's own way of writing them */
+const LOCALE = LANG === "en" ? undefined : LANG;
+const when = (iso) => { try { return new Date(iso).toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; } };
 
 const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const UPPED = (html) => (site("") ? html.replace(/(\ssrc=")assets\//g, `$1${site("assets/")}`) : html);
+/* a catalogue's words as HTML: the words escaped, then each {name} filled with the markup given for it */
+const said = (key, parts = {}) => esc(tr(key)).replace(/\{(\w+)\}/g, (m, n) => (Object.hasOwn(parts, n) ? parts[n] : m));
 /* the text as HTML with each match of the query's words wrapped in <mark>: found in the raw text, every piece escaped,
    so an entity in a title ("R&D") is never cut open or shown twice-escaped */
 export function highlight(text, query) {
@@ -199,12 +206,12 @@ export function createDocs(pad) {
         for (const s of d.sections) ENTRIES.push({ g: d.name, slug: d.slug, id: s.id, t: s.title, s: s.summary, k: `${s.text} ${s.subs.map((x) => x.title).join(" ")}`, href: hrefOf(d.slug, s.id), key: KEYS.includes(hrefOf(d.slug, s.id)) });
       }
       keys.innerHTML = KEYS.map((h) => ENTRIES.find((e) => e.href === h)).filter(Boolean).map((e) => `<a class="key" href="${e.href}" style="--c:${GROUPS[e.g].c}">${esc(e.t)}</a>`).join("");
-      if (stamp) stamp.textContent = generated ? `charted from the repositories · ${when(generated)}` : "";
+      if (stamp) stamp.textContent = generated ? tr("docs-stamp", { date: when(generated) }) : "";
       drawChart(); render();
     }, 60, "docs").catch(drawFault), () => {
       /* a failed fetch is not remembered: the next look tries again */
       loading = null;
-      results.innerHTML = `<section class="none"><h4>nothing here yet</h4><p>The docs have not been imported. They are on <a href="${R}" target="_blank" rel="noopener">the repository</a>.</p></section>`; });
+      results.innerHTML = `<section class="none"><h4>${said("docs-missing-title")}</h4><p>${said("docs-missing", { link: `<a href="${R}" target="_blank" rel="noopener">${said("docs-missing-link")}</a>` })}</p></section>`; });
     return loading;
   }
 
@@ -299,13 +306,15 @@ export function createDocs(pad) {
     let list = ENTRIES.filter((e) => !group || e.g === group);
     if (words.length) list = list.filter((e) => matches(e, words)).sort((a, b) => score(b, words) - score(a, words));
     if (!list.length) {
-      results.innerHTML = `<section class="none"><h4>nothing yet</h4><p>Nothing ${group ? `in ${esc(group)}` : "in the docs"} mentions that. Try another word${group ? `, <button type="button" class="linkish" data-clear>look everywhere</button>` : ""}, or <a href="${R}/issues" target="_blank" rel="noopener">ask on the repository</a>.</p></section>`;
+      const ask = `<a href="${R}/issues" target="_blank" rel="noopener">${said("docs-ask")}</a>`;
+      results.innerHTML = `<section class="none"><h4>${said("docs-none-title")}</h4><p>${group ? said("docs-none-in", { group: esc(group), everywhere: `<button type="button" class="linkish" data-clear>${said("docs-look-everywhere")}</button>`, ask }) : said("docs-none", { ask })}</p></section>`;
       results.querySelector("[data-clear]")?.addEventListener("click", () => { group = null; render(); });
       return;
     }
     if (words.length || group) {
-      const label = words.length ? `${list.length} ${list.length === 1 ? "answer" : "answers"}${group ? ` in ${esc(group)}` : ""}` : `${esc(group)} · ${list.length}`;
-      results.innerHTML = `<section><h4 style="--c:${group ? GROUPS[group]?.c : ""}"><i></i>${label}${group ? ` <button type="button" class="linkish" data-clear>everywhere</button>` : ""}</h4>${list.map((e, i) => entry(e, raw, i)).join("")}</section>`;
+      const answers = esc(tr(list.length === 1 ? "docs-answer" : "docs-answers", { n: list.length }));
+      const label = words.length ? (group ? esc(tr("docs-answers-in", { answers: tr(list.length === 1 ? "docs-answer" : "docs-answers", { n: list.length }), group })) : answers) : `${esc(group)} · ${list.length}`;
+      results.innerHTML = `<section><h4 style="--c:${group ? GROUPS[group]?.c : ""}"><i></i>${label}${group ? ` <button type="button" class="linkish" data-clear>${said("docs-everywhere")}</button>` : ""}</h4>${list.map((e, i) => entry(e, raw, i)).join("")}</section>`;
       results.querySelector("[data-clear]")?.addEventListener("click", () => { group = null; render(); });
     } else {
       let i = 0;
@@ -366,10 +375,11 @@ export function createDocs(pad) {
     reader.style.setProperty("--c", d.c);
     $(".readhead .from .src", reader).textContent = d.name;
     $(".readhead h1", reader).textContent = doc.title;
-    $(".readhead .source", reader).innerHTML = `set from <a href="https://github.com/${esc(doc.repo)}/blob/main/${esc(doc.path)}" target="_blank" rel="noopener">${esc(doc.repo)} · ${esc(doc.path)}</a>${generated ? ` · imported ${esc(when(generated))}` : ""}`;
+    $(".readhead .source", reader).innerHTML = said("docs-set-from", { source: `<a href="https://github.com/${esc(doc.repo)}/blob/main/${esc(doc.path)}" target="_blank" rel="noopener">${esc(doc.repo)} · ${esc(doc.path)}</a>` }) + (generated ? ` · ${esc(tr("docs-imported", { date: when(generated) }))}` : "");
     $(".onpage", reader).hidden = doc.sections.filter((s) => s.id !== "top").length < 2;
-    $(".body", reader).innerHTML = doc.sections.map((s) => `<section class="sec" data-id="${esc(s.id)}">${s.html}</section>`).join("");
-    $(".readnav", reader).innerHTML = `${prev ? `<a class="prev" href="#docs/${prev.slug}" style="--c:${prev.c}"><b>before</b>${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a class="next" href="#docs/${next.slug}" style="--c:${next.c}"><b>next</b>${esc(next.title)}</a>` : "<span></span>"}`;
+    /* (a picture the import wrote is named from the site's root: from a language's folder it is one up, lang.js) */
+    $(".body", reader).innerHTML = doc.sections.map((s) => `<section class="sec" data-id="${esc(s.id)}">${UPPED(s.html)}</section>`).join("");
+    $(".readnav", reader).innerHTML = `${prev ? `<a class="prev" href="#docs/${prev.slug}" style="--c:${prev.c}"><b>${said("docs-before")}</b>${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a class="next" href="#docs/${next.slug}" style="--c:${next.c}"><b>${said("docs-next")}</b>${esc(next.title)}</a>` : "<span></span>"}`;
     if (indexScroll === 0 && reader.hidden) indexScroll = scroll.scrollTop;
     reader.hidden = false; index.hidden = true; pad.classList.add("reading");
     reader.classList.remove("in"); void reader.offsetWidth; reader.classList.add("in");
@@ -434,7 +444,7 @@ export function createDocs(pad) {
   /** @type {any} */
   let lib = null;
   const mermaid = createScriptLoader(() => new Promise((resolve, reject) => {
-    const s = document.createElement("script"); s.src = MERMAID.src; s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
+    const s = document.createElement("script"); s.src = site(MERMAID.src); s.integrity = MERMAID.integrity; s.crossOrigin = "anonymous"; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error("mermaid did not load")); }; document.head.appendChild(s);
   }).then(() => {
     const dark = document.documentElement.dataset.theme !== "day";
     lib = window.mermaid;
@@ -509,12 +519,12 @@ export function createInfo(pad, world = null) {
      and swings back out to its next date */
   const svg = pad.querySelector(".yearring svg"), rings = svg.querySelector(".rings"), bodiesG = svg.querySelector(".bodies"), today = svg.querySelector(".date");
   const R = (days) => 46 + Math.min(1, days / 365) * 128;
-  for (const [d, label] of [[30, "a month"], [91, "three months"], [182, "six months"], [365, "a year"]]) {
+  for (const [d, label] of [[30, tr("ring-month")], [91, tr("ring-3-months")], [182, tr("ring-6-months")], [365, tr("ring-year")]]) {
     el("circle", { cx: 200, cy: 200, r: R(d), class: d === 365 ? "month" : "" }, rings);
     el("text", { x: 200 + R(d) * Math.cos(-0.95) + 4, y: 200 + R(d) * Math.sin(-0.95) - 3 }, rings).textContent = label;
   }
-  const ITEMS = [["Boiler service", 365, 40, "#f0b429", 30], ["Car MOT", 365, 128, "#8fb8ff", 112], ["Home insurance", 365, 205, "#a78bfa", 196],
-    ["Broadband", 540, 300, "#4ade80", 282], ["Smoke alarms", 182, 16, "#f87171", 330], ["Chimney sweep", 365, 262, "#f0b429", 158], ["Laptop warranty", 730, 340, "#8fb8ff", 244]]
+  const ITEMS = [[tr("boiler-service"), 365, 40, "#f0b429", 30], [tr("car-mot"), 365, 128, "#8fb8ff", 112], [tr("home-insurance"), 365, 205, "#a78bfa", 196],
+    [tr("item-broadband"), 540, 300, "#4ade80", 282], [tr("item-smoke-alarms"), 182, 16, "#f87171", 330], [tr("item-chimney-sweep"), 365, 262, "#f0b429", 158], [tr("item-laptop-warranty"), 730, 340, "#8fb8ff", 244]]
     .map(([name, period, days, c, deg]) => {
       const g = el("g", {}, bodiesG);
       const halo = el("circle", { r: 11, fill: c, opacity: 0.18 }, g), dot = el("circle", { r: 4.6, fill: c }, g);
@@ -527,7 +537,7 @@ export function createInfo(pad, world = null) {
     const dt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
     if (!seen.has("orbit") || dt === 0) return;
     const step = dt * 30; elapsed += step;
-    today.textContent = new Date(day0 + elapsed * 864e5).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    today.textContent = new Date(day0 + elapsed * 864e5).toLocaleDateString(LOCALE ?? "en-GB", { day: "numeric", month: "short", year: "numeric" });
     for (const b of ITEMS) {
       b.days -= step; b.a += dt * 0.07;
       if (b.days <= 0) { b.days += b.period; b.flash = 1; }

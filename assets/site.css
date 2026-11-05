@@ -141,6 +141,30 @@ body.lit .doorfoot{opacity:1}
 .doorfoot a:hover{color:#d8b45a}
 .doorfoot .sep{margin:0 10px;color:#4a5468}
 
+/* THE LANGUAGES (#125): the switch, quiet as the foot it sits above, and on a translated page the AI notice, a pill
+   in the panel's colours that says plainly the words came from a machine (hideable for the session, never for good) */
+.doorfoot.by.langs{bottom:42px}
+.langs a{text-decoration:none}
+.langs a[aria-current]{color:var(--ink);pointer-events:none}
+.pad .langs{position:absolute;top:52px;right:24px;z-index:5;font:10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.pad .langs a{color:var(--ink-mid)}
+.pad .langs a:hover,.doorfoot.langs a:not([aria-current]):hover{color:var(--accent-text)}
+.pad .langs .sep{margin:0 8px;color:var(--ink-faint)}
+.ai-notice{position:absolute;left:50%;transform:translateX(-50%);z-index:5;box-sizing:border-box;width:max-content;max-width:min(560px,calc(100% - 32px));
+  display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding:7px 8px 7px 14px;text-align:center;
+  font:11px/1.5 var(--mono);color:var(--ink-mid);background:var(--panel-raised);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  border:1px solid var(--line);border-radius:18px}
+#door .ai-notice{top:22px;z-index:3}
+.pad .ai-notice{bottom:18px}
+.ai-notice a{color:var(--accent-text);text-decoration:none;white-space:nowrap}
+.ai-notice a:hover{text-decoration:underline}
+.ai-notice .hide{font:13px/1 var(--mono);color:var(--ink-faint);background:none;border:0;padding:2px 6px;cursor:pointer}
+.ai-notice .hide:hover{color:var(--ink)}
+body.bare .pad .langs,body.bare .pad .ai-notice{opacity:0;pointer-events:none}
+body.instrument .pad .langs,body.instrument .pad .ai-notice{animation:chromein 1.3s ease .45s both}
+body.withdrawing .pad .langs,body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
+@media (prefers-reduced-motion:reduce){body.instrument .pad .langs,body.instrument .pad .ai-notice{animation:none!important}}
+
 
 /* ══ THE SKY: home ══════════════════════════════════════════════════════ */
 #home{position:relative;z-index:2;opacity:0;transition:opacity 1.2s ease}
@@ -587,7 +611,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .search input::-webkit-search-cancel-button{-webkit-appearance:none}
 .pad.docs .search kbd{font:10.5px var(--mono);color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
 .pad.docs .keys{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 34px}
-.pad.docs .keys::before{content:"start here";font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-right:4px}
+.pad.docs .keys::before{content:attr(aria-label);font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-right:4px}
 .pad.docs .key{font:12px var(--mono);color:var(--ink-mid);border:1px solid var(--line);border-radius:99px;padding:6px 13px;text-decoration:none;background:var(--panel)}
 .pad.docs .key:hover{border-color:var(--accent);color:var(--accent-text)}
 .pad.docs .results section{margin:0 0 30px}
