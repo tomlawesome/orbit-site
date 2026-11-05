@@ -193,6 +193,13 @@
       "gates": ["chromium"],
       "seconds": { "chromium": 457 }
     },
+    "i18n-journey": {
+      "file": "tools/ci/i18n-journey.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 30, "chromium": 25 }
+    },
     "door-lows": {
       "file": "tools/ci/door-lows-test.mjs",
       "groups": ["page"],
