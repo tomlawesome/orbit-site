@@ -40,8 +40,8 @@
 # Pictures (#72): the import copies each upstream picture into assets/docs/img/,
 # so the archive may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of
 # at most 1 MiB, each a real picture of its extension and used by a page, and nothing else under
-# it (pic and the pic* scenarios below); the entry limit allows 8 pages, the index and 128
-# pictures (pics128 accepted, pictoomany refused); and the merge request's assets/docs/img/ is
+# it (pic and the pic* scenarios below); the entry limit follows the number N of sources in
+# tools/docs-sources.json: N pages, the index and 16*N pictures (picsmax accepted, pictoomany refused); and the merge request's assets/docs/img/ is
 # exactly the archive's: a picture the import no longer writes is deleted (picgone, picswap).
 #
 # Warnings (#82): the import job also hands on import-warnings.txt (one warning per line,
@@ -191,10 +191,11 @@ imgdir = True
 if sc in ('pic', 'picnodir'): addpic(png(1), 'png'); imgdir = sc == 'pic'
 if sc == 'picall': addpic(png(2), 'png'); addpic(jpg(3), 'jpg'); addpic(gif(4), 'gif'); addpic(webp(5), 'webp')
 if sc == 'pic1mib': addpic(pad(b'\x89PNG\r\n\x1a\n', MIB), 'png')
-if sc == 'pics128':   # 128 in all, with the commit's own
-    for i in range(128 - len(head)): addpic(png(1000 + i), 'png')
+NSRC = len(json.load(open('tools/docs-sources.json')))   # N pages; the limit is 16*N pictures in all
+if sc == 'picsmax':   # 16*N in all, with the commit's own
+    for i in range(16 * NSRC - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'pictoomany':
-    for i in range(129 - len(head)): addpic(png(1000 + i), 'png')
+    for i in range(16 * NSRC + 1 - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'picswap': addpic(png(91), 'png'); addpic(png(92), 'png')
 # the same as `pic`, with one thing wrong each
 if sc == 'picsvg': addpic(b'<svg xmlns="http://www.w3.org/2000/svg"/>', 'svg', used=False)
@@ -1299,7 +1300,7 @@ refused badname "a name with capitals" "is not a file the import writes"
 refused unknown "a page for a source that is not listed" "is not a file the import writes"
 refused dup "the same name twice" "in the archive twice"
 refused missing "an archive without one of the pages" "missing:"
-refused pictoomany "too many entries (8 pages, the index and 129 pictures; the old limit was 64 and a test of it is gone, see pics128)" "more than"
+refused pictoomany "too many entries (N pages, the index and 16*N+1 pictures; the old limit was 64 and a test of it is gone, see picsmax)" "more than"
 refused toolarge "a file over the size cap" "is larger than"
 refused toomuch "too many bytes in all" "bytes in all"
 refused notzip "a file that is not a zip" "not a zip archive"
@@ -1321,7 +1322,7 @@ refused twojobs "two import jobs" "successful import_docs jobs"
 # may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of at most 1 MiB,
 # each a real picture of its extension and used by a page, and nothing else under it. Every
 # refusal below is paired with an accepted archive that differs in the thing refused (pic,
-# picnodir, picall, pic1mib, pics128), and each accepted archive's pictures must reach the
+# picnodir, picall, pic1mib, picsmax), and each accepted archive's pictures must reach the
 # merge request exactly (check_pics).
 check_pics() { # check_pics <label>: the pushed commit's assets/docs/img/ is exactly the archive's, each file named by its bytes
   want=$(cat "$aux/artifact.zip.imgs")
@@ -1351,8 +1352,9 @@ accepted pic "an archive with one PNG picture that a page uses" 1
 accepted picnodir "the same archive without a directory entry for img/" 1
 accepted picall "a PNG, a JPEG, a GIF and a WebP picture, each named by its bytes" 4
 accepted pic1mib "a picture of exactly 1 MiB" 1
-accepted pics128 "128 pictures in all (the most the entry limit allows with 8 pages and the index)" $((128 - nhead))
-refused pictoomany "129 pictures (more entries than 8 pages, the index and 128 pictures)" "more than"
+nsrc=$(python3 -c "import json;print(len(json.load(open('tools/docs-sources.json'))))")
+accepted picsmax "$((16 * nsrc)) pictures in all (the most the entry limit allows with $nsrc pages and the index)" $((16 * nsrc - nhead))
+refused pictoomany "$((16 * nsrc + 1)) pictures (more entries than $nsrc pages, the index and $((16 * nsrc)) pictures)" "more than"
 refused picsvg "an SVG in img/" "picsvg\|\.svg\|is not a file the import writes"
 refused picupper "a picture whose name has upper-case hex" "is not a file the import writes"
 refused picjpeg "a picture with the extension .jpeg" "is not a file the import writes"

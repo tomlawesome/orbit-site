@@ -820,15 +820,18 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
 // The real list (#124): the pages of the site, in reading order.
 {
   const list = JSON.parse(readFileSync("tools/docs-sources.json", "utf8"));
-  const want = ["readme", "overview", "installing", "operating", "launcher", "sign-in", "administration", "security"];
+  const want = ["readme", "overview", "using", "installing", "operating", "upgrades", "launcher", "sign-in", "administration", "security"];
   const slugs = list.map((s2) => s2.slug);
   check("K4 tools/docs-sources.json has exactly these slugs in this order: " + want.join(", "), JSON.stringify(slugs) === JSON.stringify(want), `gave ${JSON.stringify(slugs)}`);
   const bad = list.filter((s2) => !["slug", "name", "c", "repo", "path"].every((f) => typeof s2[f] === "string" && s2[f] !== ""));
   check("K4 every entry has slug, name, c, repo and path (non-empty strings)", list.length > 0 && bad.length === 0, `entries missing a field: ${JSON.stringify(bad.map((s2) => s2.slug))}`);
   const out = list.filter((s2) => ["docs/releasing.md", "docs/supply-chain.md", "docs/architecture.md"].includes(s2.path));
   check("K4 no path is docs/releasing.md, docs/supply-chain.md or docs/architecture.md", out.length === 0, `still listed: ${JSON.stringify(out.map((s2) => s2.path))}`);
-  const badSkip = list.filter((s2) => "skip" in s2 && !(Array.isArray(s2.skip) && s2.skip.length > 0 && s2.skip.every((x) => typeof x === "string" && x.trim() !== "")));
-  check("K4 every skip present is a non-empty list of strings", badSkip.length === 0, `bad skip in ${JSON.stringify(badSkip.map((s2) => s2.slug))}`);
+  const skipped = list.filter((s2) => "skip" in s2);
+  check("K4 no entry has a skip key", skipped.length === 0, `skip in ${JSON.stringify(skipped.map((s2) => s2.slug))}`);
+  const colours = list.map((s2) => s2.c);
+  check("K4 every colour is #rrggbb", colours.every((c) => /^#[0-9a-fA-F]{6}$/.test(c)), `colours ${JSON.stringify(colours)}`);
+  check("K4 all ten colours are distinct", list.length === 10 && new Set(colours.map((c) => c.toLowerCase())).size === 10, `${new Set(colours.map((c) => c.toLowerCase())).size} distinct of ${list.length}`);
 }
 
 process.exit(failed ? 1 : 0);
