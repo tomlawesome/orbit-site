@@ -26,6 +26,7 @@ Move orbit-site's development to `gitlab.tomlawson.io/ai/orbit-site`, following 
 
 ## Progress
 
+- 2026-11-04, decisions 9 and 10a (#129): the import token gets no Maintainer role (owner: "I'm not giving an import task a maintainer key"). The import now runs on a `dev` schedule and merges itself into `dev` as the `orbit-site-import` service account (Developer on orbit-site, Reporter on ai/agent-infra to read the shared private-details check); imported docs go live at the next promotion. Supersedes 13a's target (`main`) and its Maintainer project access token.
 - 2026-10-10: the scheduled import merged itself into `main` for the first time (!25, after #13 and #15); orbit's `AGENTS.md` describes the site as part of the project, on GitLab (orbit !1053). CodeQL runs on the mirror.
 - 2026-10-09: !4 (nightly import MR, licence fixes, closes #1) merged; !5 promoted `dev` to `main` and the mirror carried it to GitHub in seconds. Owner accepted the licence (decision (c), 16).
 - 2026-10-09: !1 (CI, scaffolding) and !3 (GitHub main's last import, back-merged) merged into `dev`. GitHub's `import-docs.yml` disabled by the owner. Owner settings done: default branch `dev`, `dev` and `main` protected, pipelines must succeed, merge commits, 60-minute timeout, push mirror added (first push refused by GitHub: deploy key to check).

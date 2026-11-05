@@ -379,10 +379,10 @@ coverage:
 
 # --------------------------------------------------------- maintenance --
 # The docs, imported: every night the markdown in Orbit's repositories is
-# fetched and set as the site's own pages. What changed goes to `main` as a
+# fetched and set as the site's own pages. What changed goes to `dev` as a
 # merge request that merges itself once the lint and live jobs pass, so
-# nobody pushes to `main` and every import is tested before Pages serves
-# it (owner decisions 1b and 13a, docs/plans/gitlab-migration.md).
+# nobody pushes to `dev` and every import is tested before Pages serves
+# it (owner decisions 1b and 10a, docs/plans/gitlab-migration.md).
 # Replaces GitHub's import-docs.yml, which pushed straight to `main`.
 #
 #
@@ -394,16 +394,17 @@ coverage:
 # untrusted, checks it, and is the only job in the `docs-import` environment
 # (the lint refuses any other).
 #
-# ORBIT_SITE_IMPORT_TOKEN is a project access token (role Maintainer, scopes
-# api and write_repository, Masked + Protected) the owner created, with its
+# ORBIT_SITE_IMPORT_TOKEN is a service account's personal access token (role
+# Developer, which can merge into `dev`; scopes api and write_repository,
+# Masked + Protected) the owner created, with its
 # environment scope set to `docs-import`, which only `publish_docs` joins.
-# Nothing here sets it. The schedule runs on `main` with IMPORT_DOCS=true.
+# Nothing here sets it. The schedule runs on `dev` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
   image: $NODE_IMAGE
   interruptible: false
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
   variables:
     GIT_DEPTH: 1
   script:
@@ -419,8 +420,9 @@ import_docs:
 # its environment scope is `docs-import`, so only a job that names that
 # environment gets it, and its Protect flag limits it to pipelines on protected
 # branches. A job joins the environment by a change to this file merged into
-# `main` or `dev`, which only a Maintainer can do, and a Maintainer can already
-# merge into `main`; the lint refuses any job but `publish_docs` that names
+# `dev`, which a Developer (the import's service account included) can do by
+# merge request, and into `main` only by a promotion the owner approves; the
+# lint refuses any job but `publish_docs` that names
 # `docs-import`, so such a change is also visible in review. `action` is left
 # at its default, `start`: the scope does not need it (any action matches the
 # name), it only records each run as a deployment, a record of when the token
@@ -450,7 +452,7 @@ publish_docs:
     name: docs-import
     deployment_tier: other
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
   variables:
     GIT_DEPTH: 1
     GIT_STRATEGY: clone
