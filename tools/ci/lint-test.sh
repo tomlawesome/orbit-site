@@ -1691,6 +1691,8 @@ site_case() {
 }
 site_ok() {
   plant "$1" "$2" "$3"
+  # de/index.html is written from index.html (#125): regenerate it, or the freshness check fails the case for its own reason
+  if [ "$2" = index.html ]; then node tools/pages.mjs > /dev/null; fi
   commit_all "$1"
   lint_to_out
   if [ "$rc" -eq 0 ]; then
