@@ -742,9 +742,7 @@ warn_split_case() {
 # (w1) the committed file hands on exactly the two
 rc=0
 node -e '
-  const yaml = require("js-yaml");
-  const ref = new yaml.Type("!reference", { kind: "sequence", construct: (d) => d });
-  const y = yaml.load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.DEFAULT_SCHEMA.extend([ref]) });
+  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8").replace(/!reference /g, ""));
   const p = JSON.stringify(y.import_docs.artifacts.paths);
   if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
 ' > "$out" 2>&1 || rc=$?
