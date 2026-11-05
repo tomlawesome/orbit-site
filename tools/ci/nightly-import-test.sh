@@ -520,7 +520,7 @@ case "$method $route" in
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
     okmerge=; case $SCENARIO in mropen400once|mropenconnonce|mroplost) okmerge=1; n=2 ;; esac
-    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*) okmerge=1 ;; esac
+    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*|tr-*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
@@ -540,6 +540,7 @@ case "$method $route" in
       wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       twojobs) body="[$job,$job]" ;;
+      tr-*) body='[{"id":555,"name":"translate_docs","status":"success","ref":"'$CI_COMMIT_BRANCH'","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       *) body="[$job]" ;;
     esac ;;
   "GET /jobs/555/artifacts") code=200; body= ;;
@@ -1585,6 +1586,119 @@ check "W9 warn-reopen: a closed issue with warnings is reopened (state_event=reo
 warn_ok warn-closednone "an archive with no warnings when the bot's issue is closed"
 rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && ! grep -q 'state_event' "$aux/issues.log" && [ -f "$body" ] && grep -qx 'none' "$body" || rc=1
 check "W9 warn-closednone: a closed issue with no warnings gets the body none and is left closed" "$rc"
+
+
+# ---------------------------------------------------------------- translations (#125 stage 2) --
+# `sh tools/ci/nightly-publish.sh translations` (job publish_translations) takes the artifact of translate_docs the
+# way the docs mode takes import_docs's (spec 5): only the entries assets/docs-i18n/<lang>/<slug|index>.json,
+# assets/i18n/<lang>.json, tools/i18n/state/<lang>.json and translate-report.json (never en.json, never assets/docs/);
+# branch i18n/translate-<stamp>; target $CI_COMMIT_BRANCH, one of dev, batch-a, batch-b (never main); auto-merge only
+# when the target is dev; the warnings issue is not touched. The docs mode stays dev-only and schedule-only.
+# TR1-TR10, one scenario each; mktr.py makes the archive: every page and key kept in English (so its shape is good
+# whatever the translation), with the entry the scenario plants.
+cat > "$aux/mktr.py" <<'PY'
+import hashlib, json, os, sys, zipfile
+out, sc = sys.argv[1:3]
+REG = 0o100644
+def h16(s): return hashlib.sha256(s.encode('utf-8')).hexdigest()[:16]
+def dump(o): return json.dumps(o, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+srcs = json.load(open('tools/docs-sources.json'))
+idx = json.load(open('assets/docs/index.json'))
+en = json.load(open('assets/i18n/en.json'))
+files = {}
+entries = []
+for s in srcs:
+    p = json.load(open('assets/docs/%s.json' % s['slug']))
+    p['source'] = {'generated': idx['generated'], 'sections': {x['id']: h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)) for x in p['sections']}, 'kept': [x['id'] for x in p['sections']]}
+    files['assets/docs-i18n/de/%s.json' % s['slug']] = dump(p)
+    q = {k: v for k, v in p.items()}
+    q['sections'] = [{k: v for k, v in x.items() if k != 'html'} for x in p['sections']]
+    entries.append(q)
+files['assets/docs-i18n/de/index.json'] = dump({'generated': idx['generated'], 'sources': entries})
+files['assets/i18n/de.json'] = dump(en)
+files['tools/i18n/state/de.json'] = dump({'catalogue': {k: h16(v) for k, v in en.items()}, 'kept': list(en.keys())})
+files['translate-report.json'] = dump({'summary': 'de: 0 translated, 0 unchanged, %d kept' % len(en), 'languages': {'de': {'translated': 0, 'unchanged': 0, 'kept': len(en)}}})
+extra = {
+    'tr-en': ('assets/i18n/en.json', dump(en)),
+    'tr-docs': ('assets/docs/x.json', b'{}'),
+    'tr-other': ('tools/ci/serve.mjs', b'x'),
+    'tr-html': ('assets/docs-i18n/de/x.html', b'<p>x</p>'),
+    'tr-deep': ('assets/docs-i18n/de/sub/x.json', b'{}'),
+}
+def zi(name, mode):
+    z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
+with zipfile.ZipFile(out, 'w') as z:
+    for d in ('assets/', 'assets/docs-i18n/', 'assets/docs-i18n/de/', 'assets/i18n/', 'tools/', 'tools/i18n/', 'tools/i18n/state/'):
+        z.writestr(zi(d, 0o040755), b'')
+    for n, data in files.items(): z.writestr(zi(n, REG), data)
+    if sc in extra: z.writestr(zi(extra[sc][0], REG), extra[sc][1])
+PY
+run_tr() { # run_tr <outfile> <scenario> <branch> <pipeline source>
+  outfile=$1
+  reset_tree
+  for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/i18n/translate-*'); do "$realgit" branch -q -D "$b"; done
+  rm -rf scratch-tmp; mkdir scratch-tmp
+  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
+    "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran "$aux"/tok.log "$aux"/issue-body "$aux"/issues.log
+  : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
+  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"; : > "$aux/mr-query.log"; : > "$aux/tok.log"; : > "$aux/issues.log"
+  "$realpython" -W ignore "$aux/mktr.py" "$aux/artifact.zip" "$2"
+  rc=0
+  env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
+    FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
+    CI_COMMIT_BRANCH="$3" CI_PIPELINE_SOURCE="$4" GIT_STRATEGY=clone \
+    PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
+    REAL_GIT="$realgit" REAL_NODE="$realnode" \
+    TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR= STALE= DRY_RUN= \
+    sh tools/ci/nightly-publish.sh translations > "$outfile" 2>&1 || rc=$?
+  trbranch=$("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/i18n/translate-*' | head -n 1)
+}
+tr_merge_puts() { grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true; }
+tr_issue_calls() { grep -c -e '^POST /issues' -e '^PUT /issues' "$aux/api.log" || true; }
+# good: the merge request opens into the branch the pipeline is on
+for pair in dev:schedule batch-a:web batch-b:web dev:web; do
+  b=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$b" "$src"
+  rcz=$rc
+  rc=0; [ "$rcz" -eq 0 ] && [ -n "$trbranch" ] && grep -q "^POST /merge_requests|.*source_branch=i18n/translate-" "$aux/api.log" || rc=1
+  check "TR1 translations on $b ($src): exit 0, branch i18n/translate-<stamp> made, merge request opened from it (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+  rc=0; grep -q "^POST /merge_requests|.*target_branch=$b|" "$aux/api.log" || grep -q "^POST /merge_requests|.*target_branch=$b\$" "$aux/api.log" || rc=1
+  check "TR2 translations on $b: the merge request's target_branch is $b" "$rc"
+  rc=0; grep '^POST /merge_requests' "$aux/api.log" | grep -q 'title=Translations ' || rc=1
+  check "TR3 translations on $b: the merge request is titled \"Translations <date>\"" "$rc"
+  rc=0; [ "$(tr_issue_calls)" -eq 0 ] || rc=1
+  check "TR4 translations on $b: the warnings issue is not touched" "$rc"
+  if [ "$b" = dev ]; then
+    rc=0; [ "$(tr_merge_puts)" -ge 1 ] && [ "$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)" -eq 0 ] || rc=1
+    check "TR5 translations on dev ($src): set to merge itself (auto_merge=true)" "$rc"
+  else
+    rc=0; [ "$(tr_merge_puts)" -eq 0 ] || rc=1
+    check "TR5 translations on $b: left open for review, no auto-merge" "$rc"
+  fi
+done
+# the branch the artifact came from must be one of the three: nothing is sent to GitLab before refusing
+for pair in main:web main:schedule feature/x:web release/1:web; do
+  b=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$b" "$src"
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -qi 'branch' "$out" && [ ! -s "$aux/api.log" ] && [ -z "$trbranch" ] || rc=1
+  check "TR6 translations on $b ($src) is refused naming the branch, before any call to GitLab and with no branch made (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+# entries outside the list are refused and named; nothing is pushed
+for pair in tr-en:en.json tr-docs:assets/docs/x.json tr-other:tools/ci/serve.mjs tr-html:x.html tr-deep:sub/x.json; do
+  sc=${pair%%:*}; named=${pair#*:}
+  run_tr "$out" "$sc" dev schedule
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -q -F "$named" "$out" && [ -z "$trbranch" ] && ! grep -q 'push' "$aux/shim.log" || rc=1
+  check "TR7 $sc: an archive with $named is refused, naming it, and nothing is pushed (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+# the docs mode is as it was: dev only, schedule only
+pinned "in docs mode on batch-b" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=batch-b
+pinned "in docs mode from a web pipeline" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=web
 
 reset_tree
 rm -f "$out"

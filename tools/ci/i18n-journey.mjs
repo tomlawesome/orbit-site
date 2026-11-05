@@ -10,6 +10,8 @@
  *   J5  the root with locale de-DE and stored "en" stays at the root
  *   J6  de/ with an English browser never redirects (one navigation only)
  *   J7  the root shows no AI notice
+ *   J9  a translated docs page older than the English shows the stale banner, with a link to the English
+ *   J10 the de/ reader reads assets/docs-i18n/de/, falls back to English per section and per page, and the root never asks for it
  *
  * Contract the page is held to (the builder's): <html lang>, data-i18n keys, localStorage "orbit-lang", the notice
  * an element with class .ai-notice holding an <a hreflang="en"> to the English page, and the switch links
@@ -23,6 +25,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
@@ -170,6 +173,65 @@ try {
     await docsOpen(page);
     const shown = await page.locator(".ai-notice:visible").count();
     check("J7 the root shows no AI notice", shown === 0, `${shown} visible`);
+  });
+
+  /* J9, J10 (#125 stage 2): fake German docs served by route, so no built translation is needed in the tree. The
+     page "readme" is translated except its second section (hash does not match the English: shown in English with the
+     untranslated line); every other page has no German file (404: falls back to the English page). */
+  const h16 = (x) => createHash("sha256").update(x, "utf8").digest("hex").slice(0, 16);
+  const eIndex = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8"));
+  const eReadme = JSON.parse(readFileSync(join(ROOT, "assets/docs/readme.json"), "utf8"));
+  const fakeDocs = async (page, generated) => {
+    const asked = [];
+    const first = eReadme.sections[0], second = eReadme.sections[1];
+    const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
+      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second ? [second.id] : [] } };
+    const dIndex = { generated, sources: eIndex.sources.filter((x) => x.slug === "readme").map((x) => ({ ...x, title: "Orbit (de)" })) };
+    await page.route("**/assets/docs-i18n/**", (route) => {
+      const u = new URL(route.request().url()); asked.push(u.pathname);
+      const f = u.pathname.split("/").pop();
+      if (f === "index.json") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dIndex) });
+      if (f === "readme.json") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dPage) });
+      return route.fulfill({ status: 404, body: "" });
+    });
+    return { asked, first };
+  };
+  await run("J9", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    const fake = await fakeDocs(page, "2000-01-01T00:00:00Z");
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const link = await banner.first().locator("a[hreflang='en']").count();
+    check("J9a an older translation shows the stale banner (.docs-stale) with a link to the English (hreflang en)", link >= 1, `${link} link(s), asked ${JSON.stringify(fake.asked)}`);
+  });
+  await run("J9b", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction(() => /Orbit auf Deutsch/.test(document.getElementById("docspad").textContent), null, { timeout: 8000 });
+    const n = await page.locator("#docspad .docs-stale:visible").count();
+    check("J9b a translation as new as the English shows no stale banner", n === 0, `${n} visible`);
+  });
+  await run("J10", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    const fake = await fakeDocs(page, eIndex.generated);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction(() => /Orbit auf Deutsch/.test(document.getElementById("docspad").textContent), null, { timeout: 8000 });
+    check("J10a the de/ reader asks for assets/docs-i18n/de/", fake.asked.some((u) => u.endsWith("/assets/docs-i18n/de/readme.json") || u.endsWith("/assets/docs-i18n/de/index.json")), JSON.stringify(fake.asked));
+    const un = await page.locator("#docspad .untranslated").count();
+    check("J10b a section whose hash no longer matches shows in English with the untranslated line (#docspad .untranslated)", un >= 1, `${un} line(s)`);
+    const gone = eIndex.sources.find((x) => x.slug !== "readme");
+    await page.goto(`${SITE}de/${Q}#docs/${gone.slug}`, { waitUntil: "load" });
+    await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), gone.sections[0].title, { timeout: 8000 });
+    check("J10c a page with no German file falls back to the English page", true, `${gone.slug} read in English`);
+  });
+  await run("J10d", { context: { locale: "en-US" } }, async (page) => {
+    const fake = await fakeDocs(page, eIndex.generated);
+    await page.goto(`${SITE}${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), eReadme.sections[0].title, { timeout: 8000 });
+    check("J10d the root (English) never asks for assets/docs-i18n/", fake.asked.length === 0, JSON.stringify(fake.asked));
   });
 } catch (e) {
   check("harness", false, String(e && e.stack || e));

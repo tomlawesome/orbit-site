@@ -130,7 +130,7 @@
       "tools/ci/*-test.sh",
       "tools/ci/door-stub.mjs",
       "tools/ci/ready-ways-bed.mjs",
-      "tools/ci/fake-voyage*.mjs",
+      "tools/ci/fake-voyage*.mjs", "tools/ci/fake-claude*.mjs", "tools/ci/translate-fixture.mjs",
       "tools/ci/world-spy*.mjs"
     ]
   },
