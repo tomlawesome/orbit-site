@@ -742,7 +742,9 @@ warn_split_case() {
 # (w1) the committed file hands on exactly the two
 rc=0
 node -e '
-  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"));
+  const yaml = require("js-yaml");
+  const ref = new yaml.Type("!reference", { kind: "sequence", construct: (d) => d });
+  const y = yaml.load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.DEFAULT_SCHEMA.extend([ref]) });
   const p = JSON.stringify(y.import_docs.artifacts.paths);
   if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
 ' > "$out" 2>&1 || rc=$?
@@ -1358,7 +1360,9 @@ inc_case() {
     split_case "$1" $ci "include" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$3"'");'
   fi
 }
-inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p177: the allowed includes (ai/agent-infra, private-details, catchup-check and batch-intake, full shas) pass" pass "$inc_pass$inc_two$inc_three"
 inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
@@ -1389,10 +1393,8 @@ inc_case "p204: a remote include as a bare string" refuse " https://example.inva
 inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
-inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
-inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
-inc_case "p209: private-details and catchup-check only" pass "$inc_pass$inc_two"
+inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two"
 inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
 inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
 inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
