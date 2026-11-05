@@ -1352,10 +1352,18 @@ yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
 # and the job_rule / workflow_rules !reference to them resolves (p208-p222).
 inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case() {
+  # a refuse case keeps the two pinned snippet entries behind the planted fault (a list of entries
+  # that carry none of their own), so the !reference lines still resolve and the case fails only
+  # for its own fault, named by the include message (or $4); bare strings and mappings cannot
+  # take list entries and fail on the shape alone
+  e="$3"
+  case "$e" in
+    "  - "*) case "$e" in *catchup-check/ci-template*|*batch-intake/ci-template*) ;; *) e="$e$inc_two$inc_three" ;; esac ;;
+  esac
   if [ "$2" = pass ]; then
-    yaml_pass_case "$1" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$3"'");'
+    yaml_pass_case "$1" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   else
-    split_case "$1" $ci "include" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$3"'");'
+    split_case "$1" $ci "${4:-top-level include that is not the one allowed}" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   fi
 }
 inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
@@ -1392,7 +1400,7 @@ inc_case "p205: an include from a project with a similar name and the right file
 inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
 inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
-inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two"
+inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two" "the include of scripts/batch-intake/ci-template.yml is not there"
 inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
 inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
 inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
