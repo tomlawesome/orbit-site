@@ -10,7 +10,8 @@
  * The choice: a visitor's click on the switch, or on the AI notice's English link, is stored ("orbit-lang") and wins
  * over the browser's languages from then on. With nothing stored, the root sends a visitor once to the first of the
  * browser's languages the site is built in (index.html's inline auto-lang script: pick, below, is the same rule); a
- * language's own address never redirects, so a shared link shows what its sender saw.
+ * language's own address never redirects, so a shared link shows what its sender saw. Nor does the root send back a
+ * visitor who came from one of the site's own pages: a link followed there was a choice, even where nothing can be stored.
  */
 import EN from "../i18n/en.js";
 

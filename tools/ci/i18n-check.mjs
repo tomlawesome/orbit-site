@@ -8,7 +8,8 @@
  *   - the owner's disclosure line (p.made) has no key: it is never translated
  *   - each page (the root and each language's) names the same hreflang set: en, every language built, x-default
  *   - the languages the site is built in agree: the catalogues, lang.js's BUILT and the root's auto-lang script
- *   - that inline script sends a visitor where lang.js's pick() says, for a table of stored choices and browsers
+ *   - that inline script sends a visitor where lang.js's pick() says, for a table of stored choices and browsers, and
+ *     never sends back one who came from one of the site's own pages
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -85,18 +86,22 @@ else {
   for (const stored of [null, "en", ...langs, "fr", "unreadable"]) {
     for (const browser of [[], ["en-GB"], ["de-DE"], ["de-AT", "en"], ["fr", "de"], ["fr", "en", "de"], ["ja"], ["EN-us", "de"], ["DE"]]) cases.push({ stored, browser });
   }
-  for (const { stored, browser } of cases) {
+  /* where the visitor came from: nowhere, another site, or one of this site's pages (then it never redirects) */
+  const HERE = "https://example.test/site/";
+  const froms = { "": true, "https://elsewhere.test/a": true, [`${HERE}de/`]: false, [HERE]: false, "https://example.test/other/": true };
+  for (const [referrer, follows] of Object.entries(froms)) for (const { stored, browser } of cases) {
     let went = null;
     const ctx = {
       localStorage: { getItem: () => { if (stored === "unreadable") throw new Error("blocked"); return stored; } },
       navigator: { languages: browser, language: browser[0] },
-      location: { search: "?q", hash: "#h", replace: (u) => { went = u; } },
+      document: { referrer },
+      location: { href: `${HERE}?q#h`, search: "?q", hash: "#h", replace: (u) => { went = u; } },
       String,
     };
     vm.runInNewContext(auto[1], ctx);
-    const p = pick({ stored: stored === "unreadable" ? null : stored, languages: browser });
+    const p = follows ? pick({ stored: stored === "unreadable" ? null : stored, languages: browser }) : null;
     const expect = p ? `${p}/?q#h` : null;
-    if (went !== expect) bad(`index.html: the auto-lang script, stored ${stored}, browser [${browser}], goes to ${went}; pick() says ${expect}`);
+    if (went !== expect) bad(`index.html: the auto-lang script, from ${referrer || "nowhere"}, stored ${stored}, browser [${browser}], goes to ${went}; want ${expect}`);
   }
 }
 
