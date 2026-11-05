@@ -8,6 +8,7 @@ import { reduced, seededRng } from "./sky.js";
 import { chore } from "../door/index.js";
 import { createPlaces } from "./places.js";
 import { LANG, site, tr } from "./lang.js";
+import { hash16, sectionText } from "./hash.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const $ = (s, r = document) => r.querySelector(s);
@@ -29,8 +30,16 @@ export const SECTIONS = {
    click it to read; type and the stars that answer light while the rest dim.
    A constellation's name filters the list. */
 const R = "https://github.com/tomlawesome/orbit";
-/* (from the site's root, so a language's folder reads the same files: lang.js) */
-const DOCS_DIR = site("assets/docs/");
+/* (from the site's root, so a language's folder reads the same files: lang.js). On a language's page the docs are
+   its translation (#125 stage 2), assets/docs-i18n/<lang>/, written by the translation job; a file the translation
+   does not have yet (404) is read in English, and the docs-untranslated line says so (page-level: a translated page
+   is never patched section by section). */
+const EN_DOCS = site("assets/docs/");
+const DOCS_DIR = LANG === "en" ? EN_DOCS : site(`assets/docs-i18n/${LANG}/`);
+const getJson = (url) => fetch(url).then((r) => { if (!r.ok) throw Object.assign(new Error(`${url}: ${r.status}`), { status: r.status }); return r.json(); });
+/* the translation's file f, else (it answered 404) the English one: { data, english } */
+const docsFile = (f) => (DOCS_DIR === EN_DOCS ? getJson(EN_DOCS + f).then((data) => ({ data, english: false }))
+  : getJson(DOCS_DIR + f).then((data) => ({ data, english: false }), (e) => { if (e.status !== 404) throw e; return getJson(EN_DOCS + f).then((data) => ({ data, english: true })); }));
 /* the docs' diagrams: Mermaid's own release file (dist/mermaid.min.js of the npm package), kept on the site (#92:
    nothing on the site loads from a third party). This path is the version's one pin: Renovate bumps it (renovate.json),
    and the bump fails the diagram checks until the named file is added and the old one removed. The integrity beside it
@@ -179,6 +188,9 @@ export function cleanSources(sources) {
 export function createDocs(pad) {
   const input = $(".search input", pad), keys = $(".keys", pad), results = $(".results", pad), chart = $(".skymap .chart", pad), stamp = $(".stamp", pad);
   const index = $(".index", pad), reader = $(".reader", pad), scroll = $(".scroll", pad);
+  /* the docs-untranslated lines (the index's and the reader's): on a language's page, shown while what they stand over
+     is in English; the root has them hidden for good */
+  const untranslated = (where, english) => { if (LANG !== "en") { const p = $(".untranslated", where); if (p) p.hidden = !english; } };
   const norm = (x) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const matches = (e, words) => { const hay = norm(`${e.t} ${e.s} ${e.k}`); return words.every((w) => hay.includes(w)); };
   const score = (e, words) => { const t = norm(e.t), s = norm(e.s); return words.reduce((n, w) => n + (t.includes(w) ? 4 : s.includes(w) ? 2 : 1), 0); };
@@ -199,7 +211,8 @@ export function createDocs(pad) {
     if (loading) return loading;
     /* fetched at once; read into the chart and the list as a chore (chores.js), not all at once with the rest */
     /* a failed fetch and a fault in drawing are told apart: only the first means the docs are not there (#52) */
-    loading = fetch(DOCS_DIR + "index.json").then((r) => { if (!r.ok) throw new Error(`index.json: ${r.status}`); return r.json(); }).then((data) => chore(() => {
+    loading = docsFile("index.json").then(({ data, english }) => chore(() => {
+      untranslated(index, english);
       DOCS = cleanSources(data && data.sources); generated = typeof (data && data.generated) === "string" ? data.generated : ""; GROUPS = {}; ENTRIES = [];
       for (const d of DOCS) {
         GROUPS[d.name] = { c: d.c, slug: d.slug };
@@ -363,13 +376,44 @@ export function createDocs(pad) {
   /* ── the reader: a source, set as a page ── */
   const pages = new Map();
   let indexScroll = 0, tocWatch = null;
-  const fetchPage = (slug) => pages.get(slug) || fetch(`${DOCS_DIR}${slug}.json`).then((r) => { if (!r.ok) throw new Error(slug); return r.json(); }).then((d) => { pages.set(slug, d); return d; });
+  /* a page as { data, english }; a failed fetch is not remembered */
+  const fetchPage = (slug) => pages.get(slug) || docsFile(`${slug}.json`).then((d) => { pages.set(slug, d); return d; });
+  /* the English page, for the stale check */
+  const englishPages = new Map();
+  const englishPage = (slug) => englishPages.get(slug) || getJson(`${EN_DOCS}${slug}.json`).then((d) => { englishPages.set(slug, d); return d; });
+  /* A translated page made from English that has changed since (a section's hash16 differs from the one the job
+     recorded, the sections are not the same set) or with sections the job left in English (source.kept) says so in
+     one line at its top, with the English page's link (#125 spec 3). Not dismissible; a page whose English cannot be
+     read, or a browser without crypto.subtle, shows none. */
+  async function stale(slug, doc) {
+    const src = doc && doc.source;
+    if (!src || typeof src !== "object" || !src.sections || typeof src.sections !== "object") return false;
+    if (Array.isArray(src.kept) && src.kept.length) return true;
+    const en = await englishPage(slug), secs = Array.isArray(en && en.sections) ? en.sections : [];
+    const ids = Object.keys(src.sections);
+    if (ids.length !== secs.length || secs.some((x) => !Object.hasOwn(src.sections, x.id))) return true;
+    for (const x of secs) if ((await hash16(sectionText(x))) !== src.sections[x.id]) return true;
+    return false;
+  }
+  function staleBanner(slug, doc) {
+    $(".docs-stale", reader)?.remove();
+    stale(slug, doc).then((yes) => {
+      if (!yes || reader.hidden || reader.dataset.slug !== slug || $(".docs-stale", reader)) return;
+      const p = document.createElement("p");
+      p.className = "docs-stale";
+      const g = typeof doc.source.generated === "string" ? when(doc.source.generated) : "";
+      p.innerHTML = `<span>${esc(tr("docs-stale", { date: g }))}</span> <a data-lang="en" href="${esc(site(""))}#docs/${esc(slug)}" hreflang="en" lang="en">${esc(tr("ai-notice-english"))}</a>`;
+      reader.prepend(p);
+    }).catch(() => { /* no English to compare with, or no crypto.subtle: no banner */ });
+  }
   async function open(slug, anchor, push = true) {
     /* a page that arrives after the visitor has left the docs (the pad hidden, or the address no longer a docs one) is
        dropped: it must not reopen the reader or push a history entry */
     const here = () => !pad.hidden && location.hash.startsWith("#docs");
-    let doc; try { doc = await fetchPage(slug); } catch { if (here()) close(push); return; }
+    let doc, inEnglish; try { ({ data: doc, english: inEnglish } = await fetchPage(slug)); } catch { if (here()) close(push); return; }
     if (!here()) return;
+    reader.dataset.slug = slug;
+    untranslated(reader, inEnglish);
     const d = DOCS.find((x) => x.slug === slug) || doc, at = DOCS.findIndex((x) => x.slug === slug);
     const prev = at > 0 ? DOCS[at - 1] : null, next = at > -1 && at < DOCS.length - 1 ? DOCS[at + 1] : null;
     reader.style.setProperty("--c", d.c);
@@ -390,6 +434,7 @@ export function createDocs(pad) {
     scroll.scrollTop = 0;
     if (target) requestAnimationFrame(() => { const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - 96; scroll.scrollTop = Math.max(0, y); });
     watchToc(); drawDiagrams();
+    if (inEnglish || LANG === "en") $(".docs-stale", reader)?.remove(); else staleBanner(slug, doc);
   }
   function close(push = true) {
     if (reader.hidden) return;

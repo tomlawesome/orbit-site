@@ -182,6 +182,13 @@ body.withdrawing .langs{animation:chromeout .45s ease both}
 .ai-notice a:hover{text-decoration:underline}
 .ai-notice .hide{font:13px/1 var(--mono);color:var(--ink-faint);background:none;border:0;padding:2px 6px;cursor:pointer}
 .ai-notice .hide:hover{color:var(--ink)}
+/* a translated docs page whose English has changed since (#125, pads.js): the notice's look, a line of its own at the
+   top of the reader, in its flow, not dismissible */
+.docs-stale{box-sizing:border-box;width:max-content;max-width:min(560px,100%);margin:0 auto 18px;
+  display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding:7px 14px;text-align:center;
+  font:11px/1.5 var(--mono);color:var(--ink-mid);background:var(--panel-raised);border:1px solid var(--line);border-radius:18px}
+.docs-stale a{color:var(--accent-text);text-decoration:none;white-space:nowrap}
+.docs-stale a:hover{text-decoration:underline}
 body.bare .pad .ai-notice{opacity:0;pointer-events:none}
 body.instrument .pad .ai-notice{animation:chromein 1.3s ease .45s both}
 body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}

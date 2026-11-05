@@ -177,15 +177,19 @@ try {
 
   /* J9, J10 (#125 stage 2): fake German docs served by route, so no built translation is needed in the tree. The
      page "readme" is translated except its second section (hash does not match the English: shown in English with the
-     untranslated line); every other page has no German file (404: falls back to the English page). */
+     untranslated line); every other page has no German file (404: falls back to the English page). With fresh, every
+     section's hash matches the English and none is kept: spec 3 shows the stale banner when "any [hash] differs from
+     source.sections, or source.kept is non-empty", so only such a page can show none (J9b). The German page is known
+     to be shown by its title in the reader's heading: the reader sets a page's title and its sections' html, never the
+     first ("top") section's title, so the fake's "Orbit auf Deutsch" is in no element. */
   const h16 = (x) => createHash("sha256").update(x, "utf8").digest("hex").slice(0, 16);
   const eIndex = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8"));
   const eReadme = JSON.parse(readFileSync(join(ROOT, "assets/docs/readme.json"), "utf8"));
-  const fakeDocs = async (page, generated) => {
+  const fakeDocs = async (page, generated, fresh = false) => {
     const asked = [];
     const first = eReadme.sections[0], second = eReadme.sections[1];
     const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
-      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second ? [second.id] : [] } };
+      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second && !fresh ? [second.id] : [] } };
     const dIndex = { generated, sources: eIndex.sources.filter((x) => x.slug === "readme").map((x) => ({ ...x, title: "Orbit (de)" })) };
     await page.route("**/assets/docs-i18n/**", (route) => {
       const u = new URL(route.request().url()); asked.push(u.pathname);
@@ -206,10 +210,10 @@ try {
     check("J9a an older translation shows the stale banner (.docs-stale) with a link to the English (hreflang en)", link >= 1, `${link} link(s), asked ${JSON.stringify(fake.asked)}`);
   });
   await run("J9b", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
-    await fakeDocs(page, eIndex.generated);
+    await fakeDocs(page, eIndex.generated, true);
     await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
     await docsOpen(page);
-    await page.waitForFunction(() => /Orbit auf Deutsch/.test(document.getElementById("docspad").textContent), null, { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
     const n = await page.locator("#docspad .docs-stale:visible").count();
     check("J9b a translation as new as the English shows no stale banner", n === 0, `${n} visible`);
   });
@@ -217,7 +221,7 @@ try {
     const fake = await fakeDocs(page, eIndex.generated);
     await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
     await docsOpen(page);
-    await page.waitForFunction(() => /Orbit auf Deutsch/.test(document.getElementById("docspad").textContent), null, { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
     check("J10a the de/ reader asks for assets/docs-i18n/de/", fake.asked.some((u) => u.endsWith("/assets/docs-i18n/de/readme.json") || u.endsWith("/assets/docs-i18n/de/index.json")), JSON.stringify(fake.asked));
     const un = await page.locator("#docspad .untranslated").count();
     check("J10b a section whose hash no longer matches shows in English with the untranslated line (#docspad .untranslated)", un >= 1, `${un} line(s)`);

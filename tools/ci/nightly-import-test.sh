@@ -1656,35 +1656,35 @@ run_tr() { # run_tr <outfile> <scenario> <branch> <pipeline source>
 }
 tr_merge_puts() { grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true; }
 tr_issue_calls() { grep -c -e '^POST /issues' -e '^PUT /issues' "$aux/api.log" || true; }
-# good: the merge request opens into the branch the pipeline is on
+# good: the merge request opens into the branch the pipeline is on (tb, not b: reset_tree and run_tr loop over b)
 for pair in dev:schedule batch-a:web batch-b:web dev:web; do
-  b=${pair%%:*}; src=${pair##*:}
-  run_tr "$out" tr-ok "$b" "$src"
+  tb=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$tb" "$src"
   rcz=$rc
   rc=0; [ "$rcz" -eq 0 ] && [ -n "$trbranch" ] && grep -q "^POST /merge_requests|.*source_branch=i18n/translate-" "$aux/api.log" || rc=1
-  check "TR1 translations on $b ($src): exit 0, branch i18n/translate-<stamp> made, merge request opened from it (exit $rcz)" "$rc"
+  check "TR1 translations on $tb ($src): exit 0, branch i18n/translate-<stamp> made, merge request opened from it (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-  rc=0; grep -q "^POST /merge_requests|.*target_branch=$b|" "$aux/api.log" || grep -q "^POST /merge_requests|.*target_branch=$b\$" "$aux/api.log" || rc=1
-  check "TR2 translations on $b: the merge request's target_branch is $b" "$rc"
+  rc=0; grep -q "^POST /merge_requests|.*target_branch=$tb|" "$aux/api.log" || grep -q "^POST /merge_requests|.*target_branch=$tb\$" "$aux/api.log" || rc=1
+  check "TR2 translations on $tb: the merge request's target_branch is $tb" "$rc"
   rc=0; grep '^POST /merge_requests' "$aux/api.log" | grep -q 'title=Translations ' || rc=1
-  check "TR3 translations on $b: the merge request is titled \"Translations <date>\"" "$rc"
+  check "TR3 translations on $tb: the merge request is titled \"Translations <date>\"" "$rc"
   rc=0; [ "$(tr_issue_calls)" -eq 0 ] || rc=1
-  check "TR4 translations on $b: the warnings issue is not touched" "$rc"
-  if [ "$b" = dev ]; then
+  check "TR4 translations on $tb: the warnings issue is not touched" "$rc"
+  if [ "$tb" = dev ]; then
     rc=0; [ "$(tr_merge_puts)" -ge 1 ] && [ "$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)" -eq 0 ] || rc=1
     check "TR5 translations on dev ($src): set to merge itself (auto_merge=true)" "$rc"
   else
     rc=0; [ "$(tr_merge_puts)" -eq 0 ] || rc=1
-    check "TR5 translations on $b: left open for review, no auto-merge" "$rc"
+    check "TR5 translations on $tb: left open for review, no auto-merge" "$rc"
   fi
 done
 # the branch the artifact came from must be one of the three: nothing is sent to GitLab before refusing
 for pair in main:web main:schedule feature/x:web release/1:web; do
-  b=${pair%%:*}; src=${pair##*:}
-  run_tr "$out" tr-ok "$b" "$src"
+  tb=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$tb" "$src"
   rcz=$rc
   rc=0; [ "$rcz" -ne 0 ] && grep -qi 'branch' "$out" && [ ! -s "$aux/api.log" ] && [ -z "$trbranch" ] || rc=1
-  check "TR6 translations on $b ($src) is refused naming the branch, before any call to GitLab and with no branch made (exit $rcz)" "$rc"
+  check "TR6 translations on $tb ($src) is refused naming the branch, before any call to GitLab and with no branch made (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 done
 # entries outside the list are refused and named; nothing is pushed
