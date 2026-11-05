@@ -328,11 +328,14 @@ try {
     await phone.close();
   }
 
-  /* ---- owner 3c: phone layout under 600px wide OR under 480px tall, desktop otherwise ---- */
+  /* ---- owner 3c: phone layout under 840px wide (#133; 600 before) OR under 480px tall, desktop otherwise ---- */
   {
     const SIZES = [
       [580, 800, true, "narrow, tall"], [844, 390, true, "wide, short"], [599, 800, true, "just under 600 wide"], [800, 479, true, "just under 480 tall"],
-      [1280, 560, false, "wide, not short"], [1280, 800, false, "desktop"], [600, 800, false, "600 wide"], [800, 480, false, "480 tall"],
+      [1280, 560, false, "wide, not short"], [1280, 800, false, "desktop"], [840, 800, false, "840 wide"], [840, 480, false, "840 wide, 480 tall"],
+      /* #133: the width switch is 840, not 600 */
+      [820, 900, true, "under 840 wide (#133)"], [700, 900, true, "700 wide (#133)"], [600, 800, true, "600 wide (#133)"], [800, 480, true, "800 wide, 480 tall (#133)"],
+      [860, 900, false, "over 840 wide (#133)"], [1000, 470, true, "wide, under 480 tall (#133)"],
     ];
     for (const [width, height, phone, why] of SIZES) {
       const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });

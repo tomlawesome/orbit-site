@@ -644,6 +644,20 @@ const retryCase = async () => {
   } finally { await rctx.close(); }
 };
 
+/* ── B10 (#133): the door's phone switch moved to 840, the site's own pages keep theirs at 600 ─────────────── */
+const sitePageCase = async () => {
+  const pctx = await browser.newContext({ viewport: { width: 700, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await runCase("B10", "700x900: a site page (the home's walk bar) still has its desktop layout", async (want) => {
+      const page = await open(pctx);
+      await enterHome(page);
+      const name = await page.evaluate(() => { const el = document.querySelector("#transport .name"); const cs = el && getComputedStyle(el); return cs ? { display: cs.display, w: el.getBoundingClientRect().width } : null; });
+      want(name && name.display !== "none" && name.w > 0, `the walk bar's name is shown at 700 wide (the site's switch is 600): ${JSON.stringify(name)}`);
+      await page.close();
+    });
+  } finally { await pctx.close().catch(() => {}); }
+};
+
 try {
   await new Promise((ok, no) => {
     const t0 = Date.now();
@@ -660,6 +674,7 @@ try {
   const background = () => { others.push(docsCase(), docsFaultCase(), mermaidCase(), lostContextCase().then(retryCase)); };
   await homeCases(ctx, background);
   await cameraCase(ctx);
+  await sitePageCase();
   await Promise.all(others);
 } catch (e) {
   console.log(`FAIL site browser test: ${e.message.split("\n")[0]}`);
