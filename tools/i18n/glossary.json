@@ -1,0 +1,10 @@
+[
+  {"term": "Orbit", "keep": true, "note": "the product's name"},
+  {"term": "launcher", "note": "Orbit's front page that starts each door", "to": {"de": "Launcher", "fr": "lanceur", "es": "lanzador", "pt": "lançador", "id": "peluncur", "zh-Hans": "启动器", "ja": "ランチャー", "ar": "المشغّل"}},
+  {"term": "door", "note": "one of Orbit's apps, a room of the household (Chores, Bills and so on)", "to": {"de": "Tür", "fr": "porte", "es": "puerta", "pt": "porta", "id": "pintu", "zh-Hans": "门", "ja": "ドア", "ar": "باب"}},
+  {"term": "household", "note": "the people who share one Orbit", "to": {"de": "Haushalt", "fr": "foyer", "es": "hogar", "pt": "casa", "id": "rumah tangga", "zh-Hans": "家庭", "ja": "世帯", "ar": "الأسرة"}},
+  {"term": "sky", "note": "the home screen, where items are drawn as bodies in the sky", "to": {"de": "Himmel", "fr": "ciel", "es": "cielo", "pt": "céu", "id": "langit", "zh-Hans": "天空", "ja": "空", "ar": "السماء"}},
+  {"term": "item", "note": "one thing a door keeps track of (a chore, a bill)", "to": {"de": "Eintrag", "fr": "élément", "es": "elemento", "pt": "item", "id": "item", "zh-Hans": "条目", "ja": "項目", "ar": "عنصر"}},
+  {"term": "inbox", "note": "where new items wait to be sorted", "to": {"de": "Eingang", "fr": "boîte de réception", "es": "bandeja de entrada", "pt": "caixa de entrada", "id": "kotak masuk", "zh-Hans": "收件箱", "ja": "受信箱", "ar": "صندوق الوارد"}},
+  {"term": "pad", "note": "a panel of the website (the docs pad, the install pad)", "to": {"de": "Pad", "fr": "panneau", "es": "panel", "pt": "painel", "id": "panel", "zh-Hans": "面板", "ja": "パッド", "ar": "اللوحة"}}
+]
