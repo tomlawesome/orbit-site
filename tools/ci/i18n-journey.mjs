@@ -38,6 +38,16 @@ const inDe = (u) => new URL(u).pathname.endsWith("/de/") || new URL(u).pathname.
 const stored = (page) => page.evaluate(() => { try { return localStorage.getItem("orbit-lang"); } catch { return "unreadable"; } });
 let Q = ""; /* "" when the site is open, "?preview" past the maintenance door, as journey.mjs does; it must survive every move */
 const keeps = (u) => new URL(u).search === Q;
+/* the switch is a dropdown: a button (aria-expanded) showing the current code, a list of links, one per built language */
+const MENU = ".langs";
+const toggle = (page) => page.locator(`${MENU} button[aria-expanded]:visible`).first();
+const expanded = (page) => toggle(page).getAttribute("aria-expanded");
+const openMenu = async (page) => {
+  const b = toggle(page);
+  await b.waitFor({ state: "visible" });
+  if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
+  await page.waitForFunction(() => [...document.querySelectorAll(".langs button[aria-expanded]")].some((e) => e.offsetParent && e.getAttribute("aria-expanded") === "true"));
+};
 const docsOpen = (page) => page.waitForFunction(() => { const p = document.getElementById("docspad"); return !!p && !p.hidden; });
 
 let browser = null;
@@ -96,15 +106,38 @@ try {
   await run("J3", { context: { locale: "en-US" } }, async (page) => {
     await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
-    await page.locator("[data-lang='de']:visible").first().click();
+    await openMenu(page);
+    await page.locator(`${MENU} a[data-lang='de']:visible`).first().click();
     await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await page.waitForFunction(() => { try { return localStorage.getItem("orbit-lang") === "de"; } catch { return false; } });
     check("J3a switch to Deutsch: de/, hash and query kept, choice stored", inDe(page.url()) && keeps(page.url()) && (await stored(page)) === "de" && (await page.evaluate(() => document.documentElement.lang)) === "de", page.url());
     await docsOpen(page);
-    await page.locator("[data-lang='en']:visible").first().click();
+    await openMenu(page);
+    await page.locator(`${MENU} a[data-lang='en']:visible`).first().click();
     await page.waitForURL((u) => !inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await page.waitForFunction(() => { try { return localStorage.getItem("orbit-lang") === "en"; } catch { return false; } });
     check("J3b switch back to English: root, hash and query kept, choice stored", !inDe(page.url()) && keeps(page.url()) && (await stored(page)) === "en", page.url());
+  });
+
+  await run("J8", { context: { locale: "en-US" } }, async (page) => {
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
+    await docsOpen(page);
+    const code = async () => ((await toggle(page).innerText()).trim().toUpperCase());
+    check("J8a the button shows EN at the root, closed", (await code()) === "EN" && (await expanded(page)) === "false", `${await code()} / ${await expanded(page)}`);
+    await openMenu(page);
+    const links = await page.locator(`${MENU} a[data-lang]:visible`).evaluateAll((as) => as.map((a) => ({ d: a.dataset.lang, h: a.getAttribute("hreflang"), l: a.getAttribute("lang"), href: a.getAttribute("href"), t: a.textContent.trim() })));
+    const ok = ["en", "de"].every((c) => links.some((x) => x.d === c && x.h === c && x.l === c && x.href)) && links.some((x) => /^DE\s*·\s*Deutsch$/.test(x.t)) && links.some((x) => /^EN\s*·\s*English$/.test(x.t));
+    check("J8b opening shows one link per language, with hreflang, lang, href and text like \"DE · Deutsch\"", ok, JSON.stringify(links));
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => [...document.querySelectorAll(".langs button[aria-expanded]")].every((e) => e.getAttribute("aria-expanded") === "false"));
+    check("J8c Escape closes the menu", (await expanded(page)) === "false", await expanded(page));
+    await openMenu(page);
+    await page.mouse.click(2, 790);
+    await page.waitForFunction(() => [...document.querySelectorAll(".langs button[aria-expanded]")].every((e) => e.getAttribute("aria-expanded") === "false"));
+    check("J8d an outside click closes the menu", (await expanded(page)) === "false", await expanded(page));
+    await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
+    await docsOpen(page);
+    check("J8e the button shows DE on de/", (await code()) === "DE", await code());
   });
 
   await run("J4", { context: { locale: "de-DE" } }, async (page) => {
