@@ -1,7 +1,7 @@
 {
   "path": ["assets", "tools"],
   "format": ["javascript", "bash"],
-  "ignore": ["**/node_modules/**", "assets/vendor/**", "assets/docs/**"],
+  "ignore": ["**/node_modules/**", "assets/vendor/**", "assets/docs/**", "assets/docs-i18n/**"],
   "gitignore": true,
   "reporters": ["console"],
   "silent": false,

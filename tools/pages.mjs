@@ -23,7 +23,7 @@
  *   node tools/pages.mjs --check    exits 1 if any differs from what it would write
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { doorBlocks } from "./door-markup.mjs";
@@ -123,8 +123,10 @@ export function build(indexHtml, catalogue, lang) {
 /* assets/i18n/en.js: the English catalogue as a module */
 export const englishModule = (en) => `/* written by tools/pages.mjs from assets/i18n/en.json: edit that, then run it (the lint checks this is fresh) */\nexport default ${JSON.stringify(en, null, 1)};\n`;
 
-/* the languages built: every catalogue but English's */
-export const languages = () => readdirSync(join(ROOT, "assets/i18n")).filter((f) => /^[a-z-]+\.json$/.test(f) && f !== "en.json").map((f) => f.slice(0, -5)).sort();
+/* the languages built: those of tools/i18n/languages.json with built: true (#125 stage 2). A language the
+   translation job has made but not yet built has its catalogue and its docs, and no page of its own */
+export const allLanguages = () => JSON.parse(readFileSync(join(ROOT, "tools/i18n/languages.json"), "utf8"));
+export const languages = () => Object.entries(allLanguages()).filter(([, l]) => l && l.built === true).map(([k]) => k).sort();
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const check = process.argv.includes("--check");

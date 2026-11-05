@@ -141,11 +141,13 @@ while (ev < events.length) {
   ev++;
 }
 const imageVars = []; // [name, path, line] for every key naming a variable the image reads
-// The value nodes of GIT_DEPTH and GIT_STRATEGY written under publish_docs > variables
+// The value nodes of GIT_DEPTH and GIT_STRATEGY written under each publishing job's variables
 // (#60 round 5): js-yaml reads 1.0, 1e0, 0o1, 0x1 and +1 all as 1, GitLab's reader
 // (Psych) does not, so they are judged on how they are written, not on the value read.
 const GIT_RAW = ["GIT_DEPTH", "GIT_STRATEGY"];
-const gitRaw = { GIT_DEPTH: [], GIT_STRATEGY: [] };
+// the jobs in the docs-import environment, which holds the publish token (#125 adds the second)
+const PUBLISHERS = ["publish_docs", "publish_translations"];
+const gitRaw = Object.fromEntries(PUBLISHERS.map((j) => [j, { GIT_DEPTH: [], GIT_STRATEGY: [] }]));
 const at_ = (path, e) => `line ${lineAt(startOf(e))}${path.length ? `, in ${path.join(" > ")}` : ""}`;
 const walk = (n, path) => {
   const e = n.e;
@@ -170,7 +172,7 @@ const walk = (n, path) => {
       else name = t;
     }
     if (name !== null && IMAGE_VARS.has(name)) imageVars.push([name, path, lineAt(ke.valueStart)]);
-    if (GIT_RAW.includes(name) && path.length === 2 && path[0] === "publish_docs" && path[1] === "variables") gitRaw[name].push(v.e);
+    if (GIT_RAW.includes(name) && path.length === 2 && PUBLISHERS.includes(path[0]) && path[1] === "variables") gitRaw[path[0]][name].push(v.e);
     walk(v, [...path, name ?? "?"]);
   }
 };
@@ -263,15 +265,23 @@ const seconds = (v) => {
 };
 
 const RULE = `$CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"`;
+// the translation (#125) runs on the import's schedule, or when the owner starts a
+// pipeline by hand with TRANSLATE=true on dev or a batch branch: those two rules, exactly
+const TRANSLATE_RULES = [RULE, `$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/`];
 const job = (n) => (isObj(doc[n]) ? doc[n] : null);
-const imp = job("import_docs"), pub = job("publish_docs");
-if (imp === null) bad(".gitlab-ci.yml: there is no import_docs job");
-if (pub === null) bad(".gitlab-ci.yml: there is no publish_docs job");
+const imp = job("import_docs"), pub = job("publish_docs"), trn = job("translate_docs"), ptr = job("publish_translations");
+for (const [name, j] of [["import_docs", imp], ["publish_docs", pub], ["translate_docs", trn], ["publish_translations", ptr]]) if (j === null) bad(`.gitlab-ci.yml: there is no ${name} job`);
 for (const [name, j] of [["import_docs", imp], ["publish_docs", pub]]) {
   if (j === null) continue;
   const rules = Array.isArray(j.rules) ? j.rules : j.rules === undefined ? [] : [j.rules];
   const one = rules.length === 1 && isObj(rules[0]) && Object.keys(rules[0]).length === 1 && rules[0].if === RULE;
   if (!one) bad(`.gitlab-ci.yml: ${name} rules must be the one schedule-only rule on dev (if: ${RULE}), found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
+}
+for (const [name, j] of [["translate_docs", trn], ["publish_translations", ptr]]) {
+  if (j === null) continue;
+  const rules = Array.isArray(j.rules) ? j.rules : j.rules === undefined ? [] : [j.rules];
+  const two = rules.length === TRANSLATE_RULES.length && rules.every((r, i) => isObj(r) && Object.keys(r).length === 1 && r.if === TRANSLATE_RULES[i]);
+  if (!two) bad(`.gitlab-ci.yml: ${name} rules must be exactly the two translation rules (if: ${TRANSLATE_RULES.join(" ; if: ")}), found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
 }
 if (imp !== null) {
   if ("environment" in imp) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
@@ -290,12 +300,12 @@ if (imp !== null) {
 // value, merge keys resolved: `environment: e`, `environment: { name: e }` or any
 // other string that is exactly e is refused; e inside a longer string
 // (renovate.json, a renovate/ branch) is not a name and passes.
-const envs = { "docs-import": "publish_docs", "renovate": "renovate" };
+const envs = { "docs-import": PUBLISHERS, "renovate": ["renovate"], "translate": ["translate_docs"] };
 const named = new Set(); // `${k}\n${e}` already refused for naming e
 const varied = new Set(); // k already refused for a variable in an environment name
 for (const [k, v] of Object.entries(doc)) {
   for (const [e, j] of Object.entries(envs)) {
-    if (k !== j && strings(v).some((s) => s.trim() === e)) { named.add(`${k}\n${e}`); bad(`.gitlab-ci.yml: ${k} names the ${e} environment; only ${j} may, since the tokens there are scoped to it`); }
+    if (!j.includes(k) && strings(v).some((s) => s.trim() === e)) { named.add(`${k}\n${e}`); bad(`.gitlab-ci.yml: ${k} names the ${e} environment; only ${j.join(" and ")} may, since the tokens there are scoped to it`); }
   }
   // a variable in an environment name ($A, ${A} or %A%, which GitLab also
   // expands) could resolve to a scoped one
@@ -391,7 +401,7 @@ for (const k of Object.keys(doc)) {
   const n = envName(x.environment);
   if (typeof n !== "string") continue;
   for (const [e, j] of Object.entries(envs)) {
-    if (k !== j && n.trim() === e && !named.has(`${k}\n${e}`)) bad(`.gitlab-ci.yml: ${k} inherits the ${e} environment from ${source(k, e)}; only ${j} may, since the tokens there are scoped to it`);
+    if (!j.includes(k) && n.trim() === e && !named.has(`${k}\n${e}`)) bad(`.gitlab-ci.yml: ${k} inherits the ${e} environment from ${source(k, e)}; only ${j.join(" and ")} may, since the tokens there are scoped to it`);
   }
   if (/[$%]/.test(n) && !varied.has(k)) bad(`.gitlab-ci.yml: ${k} inherits environment ${n}, which holds a variable; it could resolve to ${Object.keys(envs).join(" or ")}, so environment names are written out`);
 }
@@ -418,77 +428,78 @@ for (const k of Object.keys(doc)) {
 
 const ren = job("renovate");
 if (ren !== null && envName(ren.environment) !== "renovate") bad(".gitlab-ci.yml: renovate has no environment named renovate, where the Renovate tokens are scoped");
-if (pub !== null) {
-  if (envName(pub.environment) !== "docs-import") bad(".gitlab-ci.yml: publish_docs has no environment named docs-import, where the token is scoped");
-  if (!(isObj(pub.variables) && pub.variables.GIT_STRATEGY === "clone")) bad(".gitlab-ci.yml: publish_docs needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder");
-  if (!lines(pub.script).some((l) => /nightly-publish\.sh/.test(l))) bad(".gitlab-ci.yml: publish_docs does not run tools/ci/nightly-publish.sh");
+// the job holding the publish token (docs-import), judged as written and as GitLab
+// runs it: publish_docs takes the import, publish_translations the translation (#125)
+const publishJob = (name, pub, need, PUBLISH_LINE) => {
+  if (envName(pub.environment) !== "docs-import") bad(`.gitlab-ci.yml: ${name} has no environment named docs-import, where the token is scoped`);
+  if (!(isObj(pub.variables) && pub.variables.GIT_STRATEGY === "clone")) bad(`.gitlab-ci.yml: ${name} needs GIT_STRATEGY: clone, a fresh checkout and not a reused build folder`);
+  if (!lines(pub.script).some((l) => /nightly-publish\.sh/.test(l))) bad(`.gitlab-ci.yml: ${name} does not run tools/ci/nightly-publish.sh`);
   // what runs beside the token is judged on the job as GitLab runs it: extends
   // and !reference resolved, and default:'s hooks where the job sets none
-  const ex = isObj(expand("publish_docs")) ? expand("publish_docs") : {};
+  const ex = isObj(expand(name)) ? expand(name) : {};
   const def = isObj(doc.default) && isObj(expand("default")) ? expand("default") : {};
   // needs is one entry, import_docs without its artifacts: another entry would
   // bring that job's artifacts (artifacts defaults to true), dotenv reports included
   const needs = ex.needs;
-  const one = Array.isArray(needs) && needs.length === 1 && isObj(needs[0]) && Object.keys(needs[0]).length === 2 && needs[0].job === "import_docs" && needs[0].artifacts === false;
-  if (!one) bad(`.gitlab-ci.yml: publish_docs needs must take import_docs without its artifacts (artifacts: false) and nothing else, exactly one entry { job: import_docs, artifacts: false }, found: ${JSON.stringify(needs ?? null)}; artifacts from any job could carry a dotenv report that sets this job's variables`);
+  const one = Array.isArray(needs) && needs.length === 1 && isObj(needs[0]) && Object.keys(needs[0]).length === 2 && needs[0].job === need && needs[0].artifacts === false;
+  if (!one) bad(`.gitlab-ci.yml: ${name} needs must take ${need} without its artifacts (artifacts: false) and nothing else, exactly one entry { job: ${need}, artifacts: false }, found: ${JSON.stringify(needs ?? null)}; artifacts from any job could carry a dotenv report that sets this job's variables`);
   // hooks run shell commands, and a cache is files other jobs (which run npm)
   // can write, both beside the token: neither on publish_docs, on anything it
   // extends (at any depth), nor under default:, which every job takes
   const ancestors = (k, out = []) => { for (const p of parentsOf.get(k) || []) if (!out.includes(p)) { out.push(p); ancestors(p, out); } return out; };
   const has = (key, ...vs) => vs.some((v) => isObj(v) && Object.hasOwn(v, key));
   for (const [key, what, why] of [["hooks", "hooks", "a hook runs shell commands beside the token"], ["cache", "a cache", "a cache holds files other jobs, which run npm, can write"]]) {
-    const from = ancestors("publish_docs").filter((p) => has(key, doc[p], expand(p)));
+    const from = ancestors(name).filter((p) => has(key, doc[p], expand(p)));
     // its own, or by !reference, where no parent gives it
-    if (has(key, pub) || (has(key, ex) && from.length === 0)) bad(`.gitlab-ci.yml: publish_docs has ${what}; ${why}`);
-    for (const p of from) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has ${what}; ${why}`);
-    if (has(key, doc.default, expand("default"))) bad(`.gitlab-ci.yml: default has ${what}, which publish_docs takes; ${why}`);
+    if (has(key, pub) || (has(key, ex) && from.length === 0)) bad(`.gitlab-ci.yml: ${name} has ${what}; ${why}`);
+    for (const p of from) bad(`.gitlab-ci.yml: ${name} extends ${p}, which has ${what}; ${why}`);
+    if (has(key, doc.default, expand("default"))) bad(`.gitlab-ci.yml: default has ${what}, which ${name} takes; ${why}`);
   }
   // dependencies, whatever its value, would be a second say in which artifacts
   // publish_docs takes beside needs: none, its own or through extends (#60)
   const depWhy = "whatever its value, it is a second say in which jobs' artifacts (dotenv reports included) reach the job holding the token; needs alone decides that";
-  const depFrom = ancestors("publish_docs").filter((p) => has("dependencies", doc[p], expand(p)));
-  if (has("dependencies", pub) || (has("dependencies", ex) && depFrom.length === 0)) bad(`.gitlab-ci.yml: publish_docs has dependencies; ${depWhy}`);
-  for (const p of depFrom) bad(`.gitlab-ci.yml: publish_docs extends ${p}, which has dependencies; ${depWhy}`);
+  const depFrom = ancestors(name).filter((p) => has("dependencies", doc[p], expand(p)));
+  if (has("dependencies", pub) || (has("dependencies", ex) && depFrom.length === 0)) bad(`.gitlab-ci.yml: ${name} has dependencies; ${depWhy}`);
+  for (const p of depFrom) bad(`.gitlab-ci.yml: ${name} extends ${p}, which has dependencies; ${depWhy}`);
   const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
   for (const h of ["script", "before_script", "after_script"]) {
     const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
     if (from === null || !lines(from ? def[h] : ex[h]).some(pm)) continue;
-    if (h === "script" && !from) bad(".gitlab-ci.yml: publish_docs runs npm or another package manager; it holds the token and runs no third-party code");
-    else bad(`.gitlab-ci.yml: publish_docs runs npm or another package manager ${from ? `in the ${h} it takes from default` : `in its ${h}`}; it holds the token and runs no third-party code`);
+    if (h === "script" && !from) bad(`.gitlab-ci.yml: ${name} runs npm or another package manager; it holds the token and runs no third-party code`);
+    else bad(`.gitlab-ci.yml: ${name} runs npm or another package manager ${from ? `in the ${h} it takes from default` : `in its ${h}`}; it holds the token and runs no third-party code`);
   }
   // the image runs beside the token, so publish_docs names its own, and it is
   // PUBLISH_IMAGE; NODE_IMAGE itself is pinned to a digest by lint.sh
-  if (pub.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: publish_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
-  if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: publish_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token");
-  if (Object.hasOwn(ex, "services")) bad(".gitlab-ci.yml: publish_docs has services; a service container runs beside the token");
+  if (pub.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: ${name} must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
+  if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(`.gitlab-ci.yml: ${name} sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token`);
+  if (Object.hasOwn(ex, "services")) bad(`.gitlab-ci.yml: ${name} has services; a service container runs beside the token`);
   // What runs beside the token is exactly what is written (#60 round 4): the
   // job's shape is allowlisted, judged as GitLab runs it (extends and
   // !reference resolved, default:'s hooks where the job sets none), rather than
   // the commands in it denylisted.
   // No parallel, in any form: a matrix can override the job's variables, GIT_STRATEGY included.
-  if (Object.hasOwn(ex, "parallel")) bad(`.gitlab-ci.yml: publish_docs has parallel (${JSON.stringify(ex.parallel)}); a parallel matrix can override the job's variables, GIT_STRATEGY included, so the job holding the token runs once, as written`);
+  if (Object.hasOwn(ex, "parallel")) bad(`.gitlab-ci.yml: ${name} has parallel (${JSON.stringify(ex.parallel)}); a parallel matrix can override the job's variables, GIT_STRATEGY included, so the job holding the token runs once, as written`);
   // No rule sets variables: a rule's variables override the job's own.
   const rulesOf = Array.isArray(ex.rules) ? ex.rules.flat(Infinity) : ex.rules === undefined ? [] : [ex.rules];
-  if (rulesOf.some((r) => isObj(r) && Object.hasOwn(r, "variables"))) bad(".gitlab-ci.yml: publish_docs has rules that set variables; a rule's variables override the job's own, GIT_STRATEGY included, so no rule of the job holding the token sets any");
+  if (rulesOf.some((r) => isObj(r) && Object.hasOwn(r, "variables"))) bad(`.gitlab-ci.yml: ${name} has rules that set variables; a rule's variables override the job's own, GIT_STRATEGY included, so no rule of the job holding the token sets any`);
   // The script is the one line that runs the publish script, nothing beside it.
-  const PUBLISH_LINE = "sh tools/ci/nightly-publish.sh";
   const script = lines(ex.script);
-  if (!(script.length === 1 && script[0] === PUBLISH_LINE)) bad(`.gitlab-ci.yml: publish_docs script must be exactly one line, ${PUBLISH_LINE}, found: ${JSON.stringify(ex.script ?? null)}; nothing else runs beside the token`);
+  if (!(script.length === 1 && script[0] === PUBLISH_LINE)) bad(`.gitlab-ci.yml: ${name} script must be exactly one line, ${PUBLISH_LINE}, found: ${JSON.stringify(ex.script ?? null)}; nothing else runs beside the token`);
   // No before_script or after_script: the job's own (extends and !reference
   // included), or default:'s where the job sets none. An empty list is none.
   const empty = (v) => v === undefined || v === null || (Array.isArray(v) && v.flat(Infinity).length === 0);
   for (const h of ["before_script", "after_script"]) {
     const own = Object.hasOwn(ex, h) && ex[h] !== null;
     const v = own ? ex[h] : def[h];
-    if (!empty(v)) bad(`.gitlab-ci.yml: publish_docs ${own ? "has" : "takes"} ${h === "after_script" ? "an" : "a"} ${h}${own ? "" : " from default"} (${JSON.stringify(v)}); nothing runs beside the token but ${PUBLISH_LINE}`);
+    if (!empty(v)) bad(`.gitlab-ci.yml: ${name} ${own ? "has" : "takes"} ${h === "after_script" ? "an" : "a"} ${h}${own ? "" : " from default"} (${JSON.stringify(v)}); nothing runs beside the token but ${PUBLISH_LINE}`);
   }
   // Its own variables are exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, as
   // written (GIT_DEPTH a number, not "1"), and so are they with what it extends.
   const VARS = { GIT_DEPTH: 1, GIT_STRATEGY: "clone" };
   const exact = (v) => isObj(v) && Object.keys(v).length === Object.keys(VARS).length && Object.entries(VARS).every(([k, x]) => Object.hasOwn(v, k) && v[k] === x);
   const varsWhy = "a variable on the job holding the token can change what the runner or its programs do";
-  if (!exact(pub.variables)) bad(`.gitlab-ci.yml: publish_docs variables must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(pub.variables ?? null)}; ${varsWhy}`);
-  else if (!exact(ex.variables)) bad(`.gitlab-ci.yml: publish_docs variables, with what it extends, must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(ex.variables ?? null)}; ${varsWhy}`);
+  if (!exact(pub.variables)) bad(`.gitlab-ci.yml: ${name} variables must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(pub.variables ?? null)}; ${varsWhy}`);
+  else if (!exact(ex.variables)) bad(`.gitlab-ci.yml: ${name} variables, with what it extends, must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(ex.variables ?? null)}; ${varsWhy}`);
   // ...and as written (#60 round 5): GIT_DEPTH the plain scalar 1 (not 1.0, 1e0,
   // 0o1, 0x1 or +1, which GitLab's reader can take as a float or a string), and
   // GIT_STRATEGY the plain or quoted text clone. Each is written out under
@@ -499,22 +510,70 @@ if (pub !== null) {
     GIT_STRATEGY: ["the plain or quoted text clone", (e) => e.type === E.SCALAR && [STYLE.PLAIN, STYLE.SINGLE_QUOTED, STYLE.DOUBLE_QUOTED].includes(e.style) && yaml.getScalarValue(src, e) === "clone"],
   };
   for (const [v, [want, ok]] of Object.entries(RAW)) {
-    if (gitRaw[v].length === 0) bad(`.gitlab-ci.yml: publish_docs ${v} is not written out as ${want} in the job itself; GitLab's reader can read a value brought in another way differently from this check's`);
-    for (const e of gitRaw[v].filter((x) => !ok(x))) {
+    if (gitRaw[name][v].length === 0) bad(`.gitlab-ci.yml: ${name} ${v} is not written out as ${want} in the job itself; GitLab's reader can read a value brought in another way differently from this check's`);
+    for (const e of gitRaw[name][v].filter((x) => !ok(x))) {
       const quoted = e.style === STYLE.SINGLE_QUOTED || e.style === STYLE.DOUBLE_QUOTED;
       const shown = e.type !== E.SCALAR ? "as an alias, a list or a mapping" : quoted ? src.slice(e.valueStart - 1, e.valueEnd + 1) : e.style === STYLE.PLAIN ? src.slice(e.valueStart, e.valueEnd) : "as a block scalar";
-      bad(`.gitlab-ci.yml: line ${lineAt(startOf(e))}: publish_docs ${v} is written ${shown}; write it as ${want}, since GitLab's reader can read another spelling as a float or a string where this check's reads ${v === "GIT_DEPTH" ? "1" : "clone"}`);
+      bad(`.gitlab-ci.yml: line ${lineAt(startOf(e))}: ${name} ${v} is written ${shown}; write it as ${want}, since GitLab's reader can read another spelling as a float or a string where this check's reads ${v === "GIT_DEPTH" ? "1" : "clone"}`);
     }
   }
   // Its own keys are an allowlist (#60 round 5): anything else (tags, retry,
   // id_tokens, extends, a keyword GitLab adds later) is refused, naming only the
   // key found. extends is refused too: the job is written out in full.
   const OWN = new Set(["stage", "image", "interruptible", "needs", "environment", "rules", "variables", "script"]);
-  for (const k of Object.keys(pub)) if (!OWN.has(k)) bad(`.gitlab-ci.yml: publish_docs has ${k}, a key the job holding the token does not take; that job is written out in full and holds nothing else`);
+  for (const k of Object.keys(pub)) if (!OWN.has(k)) bad(`.gitlab-ci.yml: ${name} has ${k}, a key the job holding the token does not take; that job is written out in full and holds nothing else`);
   // stage exactly publish, interruptible exactly false (a boolean), its own: a
   // missing interruptible takes default:'s, which is true
-  if (pub.stage !== "publish") bad(`.gitlab-ci.yml: publish_docs stage must be publish, its own, found: ${Object.hasOwn(pub, "stage") ? JSON.stringify(pub.stage) : "none"}`);
-  if (pub.interruptible !== false) bad(`.gitlab-ci.yml: publish_docs interruptible must be false (a boolean), its own, found: ${Object.hasOwn(pub, "interruptible") ? JSON.stringify(pub.interruptible) : "none"}; a newer pipeline must not cancel the job holding the token midway`);
+  if (pub.stage !== "publish") bad(`.gitlab-ci.yml: ${name} stage must be publish, its own, found: ${Object.hasOwn(pub, "stage") ? JSON.stringify(pub.stage) : "none"}`);
+  if (pub.interruptible !== false) bad(`.gitlab-ci.yml: ${name} interruptible must be false (a boolean), its own, found: ${Object.hasOwn(pub, "interruptible") ? JSON.stringify(pub.interruptible) : "none"}; a newer pipeline must not cancel the job holding the token midway`);
+};
+if (pub !== null) publishJob("publish_docs", pub, "import_docs", "sh tools/ci/nightly-publish.sh");
+if (ptr !== null) publishJob("publish_translations", ptr, "translate_docs", "sh tools/ci/nightly-publish.sh translations");
+
+// translate_docs holds the Anthropic API key (scoped to the translate environment, which
+// only it may name, above): it takes no other job's artifacts, runs no package
+// manager and so no third-party code, and runs on the pinned image (#125 spec §4).
+if (trn !== null) {
+  const ex = isObj(expand("translate_docs")) ? expand("translate_docs") : {};
+  const def = isObj(doc.default) && isObj(expand("default")) ? expand("default") : {};
+  if (envName(trn.environment) !== "translate") bad(".gitlab-ci.yml: translate_docs has no environment named translate, where the key is scoped");
+  // a key written twice is judged by the last, which GitLab may not take: none on this job
+  for (const [k] of trn[SHADOW] || []) bad(`.gitlab-ci.yml: translate_docs has ${k} written twice; the job holding the key is written once, as judged`);
+  const needs = ex.needs === undefined ? [] : Array.isArray(ex.needs) ? ex.needs : [ex.needs];
+  if (needs.some((n) => !(isObj(n) && n.artifacts === false))) bad(`.gitlab-ci.yml: translate_docs needs takes another job's artifacts (found: ${JSON.stringify(ex.needs)}); a dotenv report in them would set variables of the job holding the key, so each need says artifacts: false`);
+  if (Object.hasOwn(ex, "dependencies")) bad(".gitlab-ci.yml: translate_docs has dependencies; another job's artifacts do not reach the job holding the key");
+  const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
+  for (const h of ["script", "before_script", "after_script"]) {
+    const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
+    if (from !== null && lines(from ? def[h] : ex[h]).some(pm)) bad(`.gitlab-ci.yml: translate_docs runs npm or another package manager in ${from ? `the ${h} it takes from default` : `its ${h}`}; it holds the key and runs no third-party code`);
+  }
+  for (const [key, why] of [["hooks", "a hook runs shell commands beside the key"], ["cache", "a cache holds files other jobs, which run npm, can write"], ["services", "a service container runs beside the key"]]) {
+    if (Object.hasOwn(ex, key) || Object.hasOwn(def, key)) bad(`.gitlab-ci.yml: translate_docs has ${key}${Object.hasOwn(ex, key) ? "" : " from default"}; ${why}`);
+  }
+  if (trn.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: translate_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(trn, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the key`);
+  if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: translate_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the key");
+  const script = lines(ex.script);
+  if (!(script.length === 1 && script[0] === "sh tools/ci/nightly-translate.sh")) bad(`.gitlab-ci.yml: translate_docs script must be exactly one line, sh tools/ci/nightly-translate.sh, found: ${JSON.stringify(ex.script ?? null)}`);
+}
+
+// The key's name appears only in the job that holds it, the script it runs and
+// the tool that reads it (#125 spec §4): any other file naming it may be reading it.
+{
+  const KEY = ["ANTHROPIC", "API", "KEY"].join("_");
+  const ALLOWED = new Set(["tools/ci/translate.mjs", "tools/ci/nightly-translate.sh", ".gitlab-ci.yml"]);
+  const MAX = 64; // directories deep, and 20 MB a file: past either, refused, not skipped
+  const scan = (rel, depth) => {
+    if (depth > MAX) { bad(`${rel}: nested more than ${MAX} folders deep; the ${KEY} scan cannot judge it`); return; }
+    for (const d of fs.readdirSync(at(rel || "."), { withFileTypes: true })) {
+      const f = rel ? `${rel}/${d.name}` : d.name;
+      if (d.isDirectory()) { if (d.name !== ".git" && d.name !== "node_modules") scan(f, depth + 1); continue; }
+      if (!d.isFile() || ALLOWED.has(f)) continue;
+      const size = fs.statSync(at(f)).size;
+      if (size > 20e6) { bad(`${f}: larger than 20 MB; the ${KEY} scan cannot judge it`); continue; }
+      if (fs.readFileSync(at(f)).includes(KEY)) bad(`${f}: names ${KEY}; only ${[...ALLOWED].join(", ")} may, so no other file reads the key`);
+    }
+  };
+  scan("", 0);
 }
 if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 

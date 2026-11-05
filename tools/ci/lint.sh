@@ -37,7 +37,7 @@ node --experimental-vm-modules --no-warnings -e '
     console.log(`   ${f} does not parse: ${why.name}: ${why.message}`);
     process.exitCode = 1;
   }
-' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
+' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/i18n/*.mjs tools/ci/*.mjs || fail=1
 fi
 
 if on refs; then
@@ -133,6 +133,14 @@ echo "== the imported docs have the shape the import writes"
 # what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
 # (the publish job holds the artifact to the same check, #18)
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+# each translated folder (#125 stage 2): the same shape, its source record, the
+# English pictures; and how far it lags the English (one import is reported,
+# two or more fail: tools/ci/docs-i18n-shape.mjs says why)
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-i18n-shape.mjs "${d%/}" tools/docs-sources.json assets/docs || fail=1
+done
+node tools/ci/docs-i18n-shape.mjs --lag || fail=1
 fi
 
 if on docs-markup; then
@@ -146,6 +154,11 @@ echo "== the imported docs carry no script: only the markup the import writes"
 # allow-list, which is what the import writes (audit 5, S1). Anything else is
 # refused outright, however harmless it looks: the import never writes it.
 node tools/ci/docs-markup.mjs assets/docs || fail=1
+# the translated docs (#125 stage 2) are held to the same allow-list
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-markup.mjs "${d%/}" || fail=1
+done
 fi
 
 if on milkyway; then
@@ -399,13 +412,16 @@ if on stray; then
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)
-for f in node_modules package.json package-lock.json .agents import-warnings.txt; do
+for f in node_modules package.json package-lock.json .agents import-warnings.txt translate-report.json; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 # the import's warnings file (#82) is written at the root of every import's
 # checkout: ignored, so it is never committed by hand
 grep -qx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore \
   || { echo "   .gitignore must list /import-warnings.txt"; fail=1; }
+# and the translation job's report (#125 stage 2): an artifact, never committed
+grep -qx -e 'translate-report.json' -e '/translate-report.json' .gitignore \
+  || { echo "   .gitignore must list /translate-report.json"; fail=1; }
 fi
 
 if on npm-pins; then

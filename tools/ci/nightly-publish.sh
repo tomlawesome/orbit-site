@@ -53,11 +53,37 @@
 #
 #   DRY_RUN=1 sh tools/ci/nightly-publish.sh   check the artifact and report
 #
+# With the argument `translations` (job publish_translations, #125 stage 2) it
+# does the same for the artifact of `translate_docs`, the job that holds the
+# Anthropic key and translates the committed English: only the entries
+# assets/docs-i18n/<lang>/<slug|index>.json, assets/i18n/<lang>.json and
+# tools/i18n/state/<lang>.json, for a language of HEAD's tools/i18n/languages.json
+# (never en), and translate-report.json, required, at the root, which never
+# reaches the commit. Each language comes whole or not at all. The pages are
+# held to docs-i18n-shape and docs-markup, the catalogues to i18n-check's rules,
+# and each built language's page (<lang>/index.html) is written again by the
+# checkout's own tools/pages.mjs from its new catalogue. The branch is
+# i18n/translate-<stamp>, the merge request goes into the branch the pipeline
+# is on (dev, batch-a or batch-b; never main) titled "Translations <date>", its
+# description the report's summary in a fence, and it merges itself only into
+# dev: into a batch branch it stays open for review. The warnings issue is the
+# import's and is not touched.
+#
 # DRY_RUN needs the same variables (it is meant for a job's environment). It
 # reads the artifact and the GitLab API, builds the commit in a scratch copy of
 # HEAD, and writes nothing to the checkout, its git objects or GitLab.
 set -eu
 cd "$(dirname "$0")/../.."
+
+MODE=${1:-docs}
+case $MODE in
+  docs) JOB=import_docs; PREFIX=docs/import- ;;
+  translations) JOB=translate_docs; PREFIX=i18n/translate- ;;
+  *) echo "refusing to run: unknown mode $MODE (docs or translations)"; exit 1 ;;
+esac
+# the branch prefix as a JavaScript pattern and in a URL
+PREFIX_RE=$(printf '%s' "$PREFIX" | sed 's|/|\\/|g')
+PREFIX_URL=$(printf '%s' "$PREFIX" | sed 's|/|%2F|g')
 
 # Where this runs: nothing else is accepted, whatever the environment says.
 EXPECT_HOST=gitlab.tomlawson.io
@@ -119,10 +145,22 @@ pin() { echo "refusing to run: $1"; exit 1; }
 [ "$CI_PROJECT_PATH" = "$EXPECT_PATH" ] || pin "CI_PROJECT_PATH is not $EXPECT_PATH"
 case $CI_PROJECT_ID in ''|*[!0-9]*) pin "CI_PROJECT_ID is not a number" ;; esac
 case $CI_PIPELINE_ID in ''|*[!0-9]*) pin "CI_PIPELINE_ID is not a number" ;; esac
-if [ -z "$DRY_RUN" ]; then
+if [ "$MODE" = translations ]; then
+  # the translation publishes into the branch it was made from, never main, and
+  # always says which: TARGET is where its merge request goes
+  case ${CI_COMMIT_BRANCH:-} in dev|batch-a|batch-b) ;; *) pin "CI_COMMIT_BRANCH is not dev, batch-a or batch-b: the translation publishes only into one of those branches" ;; esac
+  if [ -z "$DRY_RUN" ]; then
+    case ${CI_PIPELINE_SOURCE:-} in schedule|web) ;; *) pin "CI_PIPELINE_SOURCE is not schedule or web" ;; esac
+  fi
+  TARGET=$CI_COMMIT_BRANCH
+elif [ -z "$DRY_RUN" ]; then
   [ "${CI_COMMIT_BRANCH:-}" = dev ] || pin "CI_COMMIT_BRANCH is not dev"
   [ "${CI_PIPELINE_SOURCE:-}" = schedule ] || pin "CI_PIPELINE_SOURCE is not schedule"
+  TARGET=dev
+else
+  TARGET=dev
 fi
+REF=dev; [ "$MODE" = docs ] || REF=$TARGET
 
 umask 077
 scratch=$(mktemp -d); trap 'rm -rf "$scratch"' EXIT
@@ -246,15 +284,16 @@ check_tree() {
   fi
 }
 
-# Which job is this pipeline's import, and is its archive the pipeline's: GitLab
-# says, to the import token. The project is checked first (the id came from the
-# environment), then the one successful import_docs job of this pipeline, on
-# dev, at the commit this job is checked out at, with an archive.
+# Which job is this pipeline's import (or translation), and is its archive the
+# pipeline's: GitLab says, to the import token. The project is checked first
+# (the id came from the environment), then the one successful $JOB job of this
+# pipeline, on $REF (dev, or for a translation the pinned branch), at the commit
+# this job is checked out at, with an archive.
 import_job() {
   proj=$(apij 'console.log(j.path_with_namespace)' GET "") || refuse "could not read the project from GitLab"
   [ "$proj" = "$EXPECT_PATH" ] || refuse "project $CI_PROJECT_ID is $proj, not $EXPECT_PATH"
-  apij 'const ok = j.filter((x) => x.name === "import_docs" && x.status === "success" && x.ref === "dev" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
-    if (ok.length !== 1 || !Number.isInteger(ok[0].id)) { console.log("refusing the artifact: found " + ok.length + " successful import_docs jobs with an archive in this pipeline at this commit, want 1"); process.exit(1); }
+  apij 'const ok = j.filter((x) => x.name === "'"$JOB"'" && x.status === "success" && x.ref === "'"$REF"'" && x.pipeline && String(x.pipeline.id) === "'"$CI_PIPELINE_ID"'" && x.pipeline.sha === "'"$1"'" && Array.isArray(x.artifacts) && x.artifacts.some((a) => a.file_type === "archive"));
+    if (ok.length !== 1 || !Number.isInteger(ok[0].id)) { console.log("refusing the artifact: found " + ok.length + " successful '"$JOB"' jobs with an archive in this pipeline at this commit, want 1"); process.exit(1); }
     console.log(ok[0].id)' GET "/pipelines/$CI_PIPELINE_ID/jobs?per_page=100"
 }
 
@@ -331,6 +370,123 @@ try:
 except Exception:
     refuse("the archive is damaged")
 print("   %d files, %d bytes: from the archive's listing, no other entry" % (len(files), total))
+PY
+}
+
+# unpack_tr <zip> <out dir> <sources file> <languages file>: the translation's
+# archive (#125 stage 2), judged as unpack judges the import's: every entry from
+# the archive's own listing before anything is written, then written by this
+# program from the bytes. Allowed: for each language of HEAD's languages.json
+# (never en), assets/docs-i18n/<lang>/<slug>.json for each source and index.json,
+# assets/i18n/<lang>.json and tools/i18n/state/<lang>.json; and
+# translate-report.json, required. A language present comes whole. The
+# languages present are printed last, one line, for the checks that follow.
+unpack_tr() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+    python3 -I - "$1" "$2" "$3" "$4" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" <<'PY'
+import json, os, re, stat, sys, zipfile
+
+zpath, out, srcs, langs_file = sys.argv[1:5]
+max_file, max_total = int(sys.argv[5]), int(sys.argv[6])
+
+def refuse(msg):
+    print("refusing the artifact: " + msg)
+    sys.exit(1)
+
+sources = json.load(open(srcs, encoding="utf-8"))
+langs = [l for l in json.load(open(langs_file, encoding="utf-8")) if l != "en" and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", l)]
+need = {}
+for l in langs:
+    need[l] = {"assets/docs-i18n/%s/index.json" % l, "assets/i18n/%s.json" % l, "tools/i18n/state/%s.json" % l} \
+        | {"assets/docs-i18n/%s/%s.json" % (l, s["slug"]) for s in sources}
+owner = {f: l for l, fs in need.items() for f in fs}
+dirs = {"assets/", "assets/docs-i18n/", "assets/i18n/", "tools/", "tools/i18n/", "tools/i18n/state/"} | {"assets/docs-i18n/%s/" % l for l in langs}
+max_entries = len(dirs) + sum(len(v) for v in need.values()) + 1
+try:
+    z = zipfile.ZipFile(zpath)
+    infos = z.infolist()
+except Exception:
+    refuse("not a zip archive")
+if len(infos) > max_entries:
+    refuse("%d entries, more than %d" % (len(infos), max_entries))
+files, seen, total = [], set(), 0
+for i in infos:
+    mode = (i.external_attr >> 16) & 0xFFFF
+    printable = i.filename.encode("ascii", "replace").decode()[:80]
+    if i.filename in dirs:
+        if mode and not stat.S_ISDIR(mode):
+            refuse("%s is not a directory" % printable)
+        continue
+    if i.filename not in owner and i.filename != "translate-report.json":
+        refuse("%s is not a file the translation writes (only assets/docs-i18n/<lang>/<slug|index>.json, assets/i18n/<lang>.json and tools/i18n/state/<lang>.json for a language of tools/i18n/languages.json but en, and translate-report.json)" % printable)
+    if mode and not stat.S_ISREG(mode):
+        refuse("%s is not a regular file (a link or a device)" % printable)
+    if i.filename in seen:
+        refuse("%s is in the archive twice" % printable)
+    if i.flag_bits & 0x1:
+        refuse("%s is encrypted" % printable)
+    if i.file_size > max_file:
+        refuse("%s is larger than %d bytes" % (printable, max_file))
+    seen.add(i.filename)
+    total += i.file_size
+    files.append(i)
+if total > max_total:
+    refuse("%d bytes in all, more than %d" % (total, max_total))
+if "translate-report.json" not in seen:
+    refuse("missing: translate-report.json")
+present = [l for l in langs if need[l] & seen]
+for l in present:
+    if not need[l] <= seen:
+        refuse("%s is not whole; missing: %s" % (l, ", ".join(sorted(need[l] - seen))))
+if not present:
+    refuse("it holds no language")
+for d in sorted(dirs):
+    os.makedirs(os.path.join(out, d), exist_ok=True)
+try:
+    for i in files:
+        with z.open(i) as f:
+            data = f.read(max_file + 1)
+        if len(data) != i.file_size:
+            refuse("%s is not the size the archive says" % i.filename)
+        fd = os.open(os.path.join(out, i.filename), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as g:
+            g.write(data)
+except Exception:
+    refuse("the archive is damaged")
+print("   %d files, %d bytes: from the archive's listing, no other entry" % (len(files), total))
+print(" ".join(present))
+PY
+}
+
+# report_body <translate-report.json> <out>: the merge request's description: a
+# fixed first paragraph, then the report's summary (a string of lines, per
+# language its counts and each item kept in English with its rule, then the
+# tokens and dollars) in one four-backtick fence. The rules can quote the model's
+# answer, so every backtick becomes ', controls and bidi characters are dropped,
+# and the summary is cut to 200 lines of 300 characters; inside the fence GitLab
+# renders no mention, reference or quick action.
+report_body() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+    python3 -I - "$1" "$2" <<'PY'
+import json, re, sys
+
+rpath, out = sys.argv[1:3]
+bad = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
+try:
+    with open(rpath, "rb") as f:
+        rep = json.loads(f.read(2097153).decode("utf-8"))
+    summary = rep["summary"]
+    assert isinstance(summary, str)
+except Exception:
+    print("refusing the artifact: translate-report.json has no summary (a string)")
+    sys.exit(1)
+lines = [bad.sub("", l).replace("`", "'")[:300] for l in summary.split("\n")]
+more = len(lines) - 200
+lines = lines[:200] + (["... and %d more lines (the job's report has them)" % more] if more > 0 else [])
+body = ["The translation of the committed English (tools/ci/translate.mjs translates, tools/ci/nightly-publish.sh "
+        "translations publishes). Its summary, as the job wrote it:", "", "````"] + lines + ["````"]
+with open(out, "w", encoding="utf-8", newline="\n") as f:
+    f.write("\n".join(body) + "\n")
 PY
 }
 
@@ -473,12 +629,20 @@ update_warnings_issue() {
   fi
 }
 
+# The warnings issue is the import's: a translation leaves it alone.
+warnings_issue() {
+  [ "$MODE" = docs ] || return 0
+  echo "== the warnings issue"
+  ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
+}
+
 # Older import merge requests still open, as "iid branch" lines. Only a merge
 # request whose source and target are both this project and whose branch is
 # named like an import's is ever matched, so a fork's is never touched (#12).
+# (A translation's are its own, i18n/translate-*, into the same target.)
 older_mrs() {
-  apij 'for (const m of j) if (m.source_project_id === m.target_project_id && /^docs\/import-[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)' \
-    GET "/merge_requests?state=opened&target_branch=dev&per_page=100"
+  apij 'for (const m of j) if (m.source_project_id === m.target_project_id && /^'"$PREFIX_RE"'[0-9-]+$/.test(m.source_branch)) console.log(m.iid, m.source_branch)' \
+    GET "/merge_requests?state=opened&target_branch=$TARGET&per_page=100"
 }
 # Close every older import merge request but !$1 and delete its branch (closing
 # leaves the branch behind, #12); $2 says what replaces them. Under DRY_RUN
@@ -510,8 +674,8 @@ clean_stale_branches() {
   open=$(apij 'console.log(j.length); for (const m of j) if (m.source_project_id === m.target_project_id) console.log(m.source_branch)' \
     GET "/merge_requests?state=opened&per_page=100") || return 1
   [ "$(printf '%s\n' "$open" | head -n 1)" -lt 100 ] || { echo "   (100 open merge requests: too many to tell which branches are unused; none deleted)"; return 0; }
-  found=$(apij 'for (const b of j) if (/^docs\/import-[0-9-]+$/.test(b.name)) { const t = Date.parse(b.commit && b.commit.committed_date); console.log(b.name, t < Date.now() - 3600e3 ? "old" : "young") }' \
-    GET "/repository/branches?search=%5Edocs%2Fimport-&per_page=100") || return 1
+  found=$(apij 'for (const b of j) if (/^'"$PREFIX_RE"'[0-9-]+$/.test(b.name)) { const t = Date.parse(b.commit && b.commit.committed_date); console.log(b.name, t < Date.now() - 3600e3 ? "old" : "young") }' \
+    GET "/repository/branches?search=%5E$PREFIX_URL&per_page=100") || return 1
   printf '%s\n' "$found" | while read -r b age; do
     [ -n "$b" ] || continue
     if printf '%s\n' "$open" | grep -qx -e "$b"; then continue; fi
@@ -521,19 +685,9 @@ clean_stale_branches() {
     delete_branch "$b" || echo "   (could not delete $b)"
   done
 }
-# The whole flow is one function, called on the last line: the shell has read
-# the entire file before anything is done with the artifact.
-main() {
-  echo "== the checkout"
-  check_git
-  check_tree
-  headsha=$(cgit rev-parse HEAD)
-
-  echo "== the artifact"
-  jobid=$(import_job "$headsha") || { printf '%s\n' "$jobid"; exit 1; }
-  art=$scratch/art
-  download "$jobid" "$scratch/artifact.zip"
-  cgit cat-file blob HEAD:tools/docs-sources.json > "$scratch/sources.json"
+# The import's artifact: unpacked, held to the shape and the markup the import
+# writes, and its warnings to their format.
+check_import() {
   unpack "$scratch/artifact.zip" "$art" "$scratch/sources.json" || exit 1
   if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
       node tools/ci/docs-shape.mjs "$art/assets/docs" "$scratch/sources.json"); then
@@ -551,6 +705,58 @@ main() {
     exit 1
   fi
   check_warnings "$art/import-warnings.txt" "$scratch/sources.json" || exit 1
+}
+
+# The translation's artifact (#125 stage 2): unpacked, each language's pages
+# held to docs-i18n-shape against the checkout's English and to docs-markup, and
+# the catalogues and their state to i18n-check's rules (en.json and
+# languages.json from the checkout). LANGS is the languages it holds.
+check_translations() {
+  cgit cat-file blob HEAD:tools/i18n/languages.json > "$scratch/languages.json"
+  got=$(unpack_tr "$scratch/artifact.zip" "$art" "$scratch/sources.json" "$scratch/languages.json") || { printf '%s\n' "$got"; exit 1; }
+  printf '%s\n' "$got" | sed '$d'
+  LANGS=$(printf '%s\n' "$got" | tail -n 1)
+  for l in $LANGS; do
+    if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+        node tools/ci/docs-i18n-shape.mjs "$art/assets/docs-i18n/$l" "$scratch/sources.json" assets/docs); then
+      echo "refusing the artifact: assets/docs-i18n/$l is not the shape the translation writes:"
+      printf '%s\n' "$shape"
+      exit 1
+    fi
+    if ! script=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
+        node tools/ci/docs-markup.mjs "$art/assets/docs-i18n/$l"); then
+      echo "refusing the artifact: assets/docs-i18n/$l must carry no script, only the markup the import writes:"
+      printf '%s\n' "$script"
+      exit 1
+    fi
+  done
+  if ! cats=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN node tools/ci/i18n-check.mjs --catalogues "$art"); then
+    echo "refusing the artifact: its catalogues break i18n-check's rules:"
+    printf '%s\n' "$cats"
+    exit 1
+  fi
+  printf '%s\n' "$cats"
+  report_body "$art/translate-report.json" "$scratch/mr-description" || exit 1
+}
+
+# The whole flow is one function, called on the last line: the shell has read
+# the entire file before anything is done with the artifact.
+main() {
+  echo "== the checkout"
+  check_git
+  check_tree
+  headsha=$(cgit rev-parse HEAD)
+
+  echo "== the artifact"
+  jobid=$(import_job "$headsha") || { printf '%s\n' "$jobid"; exit 1; }
+  art=$scratch/art
+  download "$jobid" "$scratch/artifact.zip"
+  cgit cat-file blob HEAD:tools/docs-sources.json > "$scratch/sources.json"
+  if [ "$MODE" = translations ]; then
+    check_translations
+  else
+    check_import
+  fi
 
   if [ -n "$DRY_RUN" ]; then
     # the commit is built in a scratch repository whose base is HEAD; the
@@ -565,10 +771,10 @@ main() {
     cd "$top"
   fi
 
-  echo "== import branches left by an earlier run"
+  echo "== $PREFIX* branches left by an earlier run"
   clean_stale_branches || echo "   (could not check; the next run will)"
 
-  echo "== compare with dev"
+  echo "== compare with $TARGET"
   base=$(cgit rev-parse HEAD)
   # The index is built afresh: the base commit's tree, its pictures taken out,
   # plus the checked pages and pictures as blobs, nothing else, and not through
@@ -576,13 +782,52 @@ main() {
   # archive's. A path outside assets/docs in the result stops the job.
   export GIT_INDEX_FILE="$scratch/index"
   cgit read-tree "$base"
-  cgit rm -r -q --cached --ignore-unmatch -- assets/docs/img
-  for f in "$art"/assets/docs/*.json "$art"/assets/docs/img/*; do
-    [ -f "$f" ] || continue   # an empty img/ leaves its pattern unexpanded
-    blob=$(cgit hash-object -w --no-filters -- "$f")
-    cgit update-index --add --cacheinfo "100644,$blob,${f#"$art"/}"
-  done
-  outside=$(cgit diff --cached --name-only "$base" | grep -v -e '^assets/docs/' || true)
+  if [ "$MODE" = translations ]; then
+    # Each language held: its docs folder replaced whole (a page the English no
+    # longer has goes), its catalogue and state, and, for a built language, its
+    # page written again by the base commit's tools/pages.mjs from the new
+    # catalogue (in a scratch copy of the base: the checkout is only read).
+    mkdir "$scratch/pages"
+    cgit archive "$base" | tar -x -C "$scratch/pages"
+    for l in $LANGS; do
+      cgit rm -r -q --cached --ignore-unmatch -- "assets/docs-i18n/$l"
+      cp "$art/assets/i18n/$l.json" "$scratch/pages/assets/i18n/$l.json"
+      for f in "$art/assets/docs-i18n/$l"/*.json "$art/assets/i18n/$l.json" "$art/tools/i18n/state/$l.json"; do
+        blob=$(cgit hash-object -w --no-filters -- "$f")
+        cgit update-index --add --cacheinfo "100644,$blob,${f#"$art"/}"
+      done
+    done
+    if ! made=$(cd "$scratch/pages" && env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN node tools/pages.mjs); then
+      echo "refusing the artifact: tools/pages.mjs could not write the pages from its catalogues:"
+      printf '%s\n' "$made"
+      exit 1
+    fi
+    for l in $LANGS; do
+      [ -f "$scratch/pages/$l/index.html" ] || continue   # a language not built has no page
+      blob=$(cgit hash-object -w --no-filters -- "$scratch/pages/$l/index.html")
+      cgit update-index --add --cacheinfo "100644,$blob,$l/index.html"
+    done
+    # what a translation may change, for a language it holds: its docs, its
+    # catalogue (never en.json or en.js), its state and its built page
+    outside=$(cgit diff --cached --name-only "$base" | while IFS= read -r f; do
+      ok=
+      for l in $LANGS; do
+        case $f in
+          "assets/docs-i18n/$l/"*.json) case ${f#"assets/docs-i18n/$l/"} in */*) ;; *) ok=1 ;; esac ;;
+          "assets/i18n/$l.json"|"tools/i18n/state/$l.json"|"$l/index.html") ok=1 ;;
+        esac
+      done
+      [ -n "$ok" ] || printf '%s\n' "$f"
+    done)
+  else
+    cgit rm -r -q --cached --ignore-unmatch -- assets/docs/img
+    for f in "$art"/assets/docs/*.json "$art"/assets/docs/img/*; do
+      [ -f "$f" ] || continue   # an empty img/ leaves its pattern unexpanded
+      blob=$(cgit hash-object -w --no-filters -- "$f")
+      cgit update-index --add --cacheinfo "100644,$blob,${f#"$art"/}"
+    done
+    outside=$(cgit diff --cached --name-only "$base" | grep -v -e '^assets/docs/' || true)
+  fi
   if [ -n "$outside" ]; then
     echo "the artifact changed paths it may not write; stopping before anything is committed or pushed:"
     printf '%s\n' "$outside" | head -n 10 | sed 's/^/   /'
@@ -592,30 +837,33 @@ main() {
     echo "nothing new"
     # An import merge request still open carries what upstream has since
     # reverted, and would merge itself: close it and its branch (#21).
-    echo "== older import merge requests"
+    echo "== older $PREFIX* merge requests"
     close_older "" "nothing new upstream" || exit 1
-    echo "== the warnings issue"
-    ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
+    warnings_issue
     exit 0
   fi
   cgit diff --cached --no-ext-diff --no-textconv --stat "$base" | tail -1
 
   stamp=$(date -u +%Y%m%d-%H%M)
-  branch="docs/import-$stamp"
+  branch="$PREFIX$stamp"
 
   if [ -n "$DRY_RUN" ]; then
-    echo "DRY_RUN: would push $branch, open a merge request into dev, then close:"
+    echo "DRY_RUN: would push $branch, open a merge request into $TARGET, then close:"
     close_older "" "$branch" || true
-    echo "== the warnings issue"
-    ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
+    warnings_issue
     exit 0
   fi
 
   echo "== push $branch"
   tree=$(cgit write-tree)
   unset GIT_INDEX_FILE
-  commit=$(cgit -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
-    commit-tree -p "$base" -m "Docs: imported from the repositories" "$tree")
+  if [ "$MODE" = translations ]; then
+    commit=$(cgit -c user.name="orbit-site translate" -c user.email="translate@orbit-site.invalid" \
+      commit-tree -p "$base" -m "Translations: from the committed English" "$tree")
+  else
+    commit=$(cgit -c user.name="orbit-site import" -c user.email="import@orbit-site.invalid" \
+      commit-tree -p "$base" -m "Docs: imported from the repositories" "$tree")
+  fi
   cgit update-ref "refs/heads/$branch" "$commit"
   # Pushed from a fresh repository, not the runner's checkout: the runner's own
   # git setup there sends the job token, which may read this project and never
@@ -648,13 +896,19 @@ main() {
   mrans="$scratch/mr-answer"
   # the description goes from a file, as the warnings issue's body does
   mrdesc="$scratch/mr-description"
-  printf '%s\n' "The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass." > "$mrdesc"
+  if [ "$MODE" = translations ]; then
+    # written by check_translations from the report's summary
+    title="Translations $(date -u +%Y-%m-%d)"
+  else
+    printf '%s\n' "The nightly import (tools/ci/nightly-import.sh imports, tools/ci/nightly-publish.sh publishes). It merges itself once the lint and the live journey pass." > "$mrdesc"
+    title="Docs: imported from the repositories ($stamp)"
+  fi
   mrtries=5
   for i in $(seq 1 "$mrtries"); do
     rm -f "$mrans" "$mrans.err"
     if [ "$i" -gt 1 ]; then
       found=$(apij "const m = j.find((m) => m.source_branch === '$branch'); console.log(m ? m.iid : '')" \
-        GET "/merge_requests?state=opened&source_branch=docs%2Fimport-$stamp&per_page=100" --connect-timeout 10 --max-time 30) || found=
+        GET "/merge_requests?state=opened&source_branch=$PREFIX_URL$stamp&per_page=100" --connect-timeout 10 --max-time 30) || found=
       case $found in ''|*[!0-9]*) ;; *)
         echo "   try $((i - 1)) had opened it: !$found is already open for $branch"
         printf '{"iid":%s}\n' "$found" > "$mrans"; code=200; break ;;
@@ -663,8 +917,8 @@ main() {
     hdr_on
     code=$(curl -q -sS --connect-timeout 10 --max-time 30 -o "$mrans" -w '%{http_code}' \
       -X POST -H @"$hdr" "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests" \
-      --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=dev" \
-      --data-urlencode "title=Docs: imported from the repositories ($stamp)" \
+      --data-urlencode "source_branch=$branch" --data-urlencode "target_branch=$TARGET" \
+      --data-urlencode "title=$title" \
       --data-urlencode "remove_source_branch=true" \
       --data-urlencode "description@$mrdesc" \
       2>"$mrans.err") || code=000
@@ -687,7 +941,7 @@ main() {
   # Only now, with the new merge request open, are the older ones closed: a push
   # or an open that failed leaves them standing. A failure here does not stop the
   # new one from being set to merge.
-  echo "== older import merge requests"
+  echo "== older $PREFIX* merge requests"
   close_older "$iid" "!$iid" || echo "   (the older ones stay open; the next run closes them)"
 
   # Auto-merge can only be set once the merge request's pipeline exists. GitLab
@@ -695,6 +949,12 @@ main() {
   # and tested, never anything newer (#15). Each answer is kept, so a refusal
   # says why: its status and body, never the request, so the token stays out
   # of the log.
+  # A translation into a batch branch stays open for review (#125: the first
+  # run deserves a look, and the token may not merge into a protected batch).
+  if [ "$TARGET" != dev ]; then
+    echo "   left open for review: it targets $TARGET, and only a merge request into dev merges itself"
+    exit 0
+  fi
   sha=$commit
   resp="$scratch/merge-answer"
   tries=30
@@ -708,8 +968,7 @@ main() {
     hdr_off
     case $code in 2??)
       echo "   set to merge when the pipeline passes"
-      echo "== the warnings issue"
-      ( update_warnings_issue ) || echo "   (could not update the warnings issue; the next run will)"
+      warnings_issue
       exit 0 ;;
     esac
     [ "$i" -eq "$tries" ] || sleep 10

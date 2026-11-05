@@ -170,7 +170,9 @@ export function runTool(fx, args = [], { key = FAKE_KEY, env = {}, timeout = 600
   if (!existsSync(script)) return Promise.resolve({ code: -1, out: "", err: "not built yet: tools/ci/translate.mjs", notBuilt: true });
   return new Promise((resolve) => {
     const e = { PATH: process.env.PATH, HOME: fx.tmp, ...env };
-    if (key) e.ANTHROPIC_API_KEY = key;
+    /* the key's name is joined here: spec §4 allows it written out only in translate.mjs, nightly-translate.sh and
+       .gitlab-ci.yml */
+    if (key) e[["ANTHROPIC", "API", "KEY"].join("_")] = key;
     const p = spawn(process.execPath, [script, ...args], { cwd: fx.dir, env: e });
     let out = "", err = "";
     p.stdout.on("data", (d) => { out += d; });

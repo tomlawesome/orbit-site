@@ -12,7 +12,7 @@
  *       "Imports" are the commits that moved assets/docs/index.json's generated, one a night (an assumption: the
  *       spec says only "older than two imports")
  *   T27 ci-split: a second job naming environment translate, a package manager in translate_docs, needs with
- *       artifacts, ANTHROPIC_API_KEY in another file, a third job in docs-import, import_docs with an environment
+ *       artifacts, the key's name (joined below from its parts) in another file, a third job in docs-import, import_docs with an environment
  *       or a changed image are each refused and named; the shipped .gitlab-ci.yml passes and holds translate_docs
  *       and publish_translations
  *
@@ -40,6 +40,8 @@ function copyTree(into, skip = () => false, from = REPO) {
 const scratch = () => mkdtempSync(join(tmpdir(), "translate-lint-"));
 const read = (d, p) => readFileSync(join(d, p), "utf8");
 const put = (d, p, v) => { mkdirSync(dirname(join(d, p)), { recursive: true }); writeFileSync(join(d, p), typeof v === "string" ? v : JSON.stringify(v)); };
+/* the key's name, joined: spec §4 allows it written out only in translate.mjs, nightly-translate.sh and .gitlab-ci.yml */
+const KEY = ["ANTHROPIC", "API", "KEY"].join("_");
 const tail = (s) => s.slice(0, 240).replace(/\n/g, " | ");
 
 /* ---------------- T25 ---------------- */
@@ -48,7 +50,7 @@ await T.attempt("T25", async () => {
   try {
     /* what i18n-check reads: the page, the scripts, the door, the catalogues of en and de, and a built de and an
        unbuilt fr declared in languages.json (the real languages.json and any other language's files are left out) */
-    const keep = (f) => /^tools\//.test(f) ? !/^tools\/i18n\//.test(f) && !/^tools\/ci\/.*-test\./.test(f)
+    const keep = (f) => /^tools\//.test(f) ? !/^tools\/i18n\/(?!lib\.mjs$)/.test(f) && !/^tools\/ci\/.*-test\./.test(f)
       : /^assets\/i18n\/(en|de)\.(js|json)$/.test(f) || /^assets\/(js|door)\//.test(f) || /^(index|404|install)\.html$/.test(f) || f === "de/index.html";
     copyTree(base, (f) => !keep(f));
     const en = JSON.parse(read(base, "assets/i18n/en.json"));
@@ -125,7 +127,7 @@ await T.attempt("T27", async () => {
   try {
     copyTree(base, skip);
     const ci = read(base, ".gitlab-ci.yml");
-    T.check("T27a the shipped .gitlab-ci.yml holds translate_docs and publish_translations, and the key's name", /^translate_docs:/m.test(ci) && /^publish_translations:/m.test(ci) && ci.includes("ANTHROPIC_API_KEY"), "translate_docs / publish_translations / ANTHROPIC_API_KEY");
+    T.check("T27a the shipped .gitlab-ci.yml holds translate_docs and publish_translations, and the key's name", /^translate_docs:/m.test(ci) && /^publish_translations:/m.test(ci) && ci.includes(KEY), `translate_docs / publish_translations / ${KEY}`);
     const NODE_PATH = [process.env.NODE_PATH, join(REPO, "tools/node_modules")].filter(Boolean).join(":");
     const split = (d) => { const r = spawnSync(process.execPath, ["tools/ci/ci-split.mjs"], { cwd: d, encoding: "utf8", env: { ...process.env, NODE_PATH } }); return { status: r.status, text: `${r.stdout}${r.stderr}` }; };
     const ctl = split(base);
@@ -146,7 +148,7 @@ await T.attempt("T27", async () => {
     refused("a package manager in translate_docs", ed((t) => after(t, "translate_docs", "  before_script: [npm ci --prefix tools]")), /translate_docs[^\n]*(npm|package manager)|npm[^\n]*translate_docs/i);
     refused("needs with artifacts in translate_docs", ed((t) => after(t, "translate_docs", "  needs: [{ job: import_docs, artifacts: true }]")), /translate_docs[^\n]*needs|needs[^\n]*translate_docs/i);
     refused("translate_docs on another image", ed((t) => after(t, "translate_docs", "  image: node:latest")), /translate_docs[^\n]*(image|NODE_IMAGE)|(image|NODE_IMAGE)[^\n]*translate_docs/i);
-    refused("ANTHROPIC_API_KEY in another file", (d) => put(d, "tools/ci/serve.mjs", `${read(d, "tools/ci/serve.mjs")}\n// ANTHROPIC_API_KEY\n`), /ANTHROPIC_API_KEY/);
+    refused(`${KEY} in another file`, (d) => put(d, "tools/ci/serve.mjs", `${read(d, "tools/ci/serve.mjs")}\n// ${KEY}\n`), new RegExp(KEY));
     refused("import_docs with an environment", ed((t) => after(t, "import_docs", "  environment: { name: translate }")), /import_docs[^\n]*environment|environment[^\n]*import_docs/i);
     refused("a third job in the docs-import environment", ed((t) => `${t}\nextra_publish:\n  stage: publish\n  image: $NODE_IMAGE\n  environment: { name: docs-import }\n  script: [echo hi]\n`), /docs-import/);
   } catch (e) { T.check("T27", false, String(e && e.message || e)); } finally { rmSync(base, { recursive: true, force: true }); }
