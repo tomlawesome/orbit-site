@@ -36,6 +36,8 @@ let failed = false;
 const check = (name, ok, detail) => { console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${detail}`); if (!ok) failed = true; };
 const inDe = (u) => new URL(u).pathname.endsWith("/de/") || new URL(u).pathname.endsWith("/de/index.html");
 const stored = (page) => page.evaluate(() => { try { return localStorage.getItem("orbit-lang"); } catch { return "unreadable"; } });
+let Q = ""; /* "" when the site is open, "?preview" past the maintenance door, as journey.mjs does; it must survive every move */
+const keeps = (u) => new URL(u).search === Q;
 const docsOpen = (page) => page.waitForFunction(() => { const p = document.getElementById("docspad"); return !!p && !p.hidden; });
 
 let browser = null;
@@ -55,11 +57,17 @@ const run = async (name, opts, fn) => {
 
 try {
   browser = await openBrowser(playwright, BROWSER);
+  {
+    const probe = await browser.newPage();
+    await probe.goto(SITE, { waitUntil: "load" });
+    if (await probe.evaluate(() => document.documentElement.hasAttribute("data-maintenance"))) Q = "?preview";
+    await probe.close();
+  }
   /* the catalogues are read at the start: a sample key whose German differs, with plain text, found on the page */
   const en = JSON.parse(readFileSync(join(ROOT, "assets/i18n/en.json"), "utf8"));
   const de = JSON.parse(readFileSync(join(ROOT, "assets/i18n/de.json"), "utf8"));
   await run("J1", { context: { locale: "en-US" } }, async (page) => {
-    await page.goto(`${SITE}de/#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     const lang = await page.evaluate(() => document.documentElement.lang);
     const keys = await page.evaluate(() => [...document.querySelectorAll("[data-i18n]")].map((e) => [e.dataset.i18n, e.textContent.trim()]));
@@ -69,63 +77,63 @@ try {
   });
 
   await run("J2", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
-    await page.goto(`${SITE}de/`, { waitUntil: "load" });
+    await page.goto(`${SITE}de/${Q}`, { waitUntil: "load" });
     const door = page.locator("#door .ai-notice");
     await door.first().waitFor({ state: "visible" });
     const text = (await door.first().innerText()).trim();
     check("J2a the notice shows on the de/ door, in German", text.length > 0 && text !== en["ai-notice"], JSON.stringify(text.slice(0, 60)));
-    await page.goto(`${SITE}de/#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     const pad = page.locator("#docspad .ai-notice");
     await pad.first().waitFor({ state: "visible" });
     check("J2b the notice shows on the docs pad", await pad.first().isVisible(), "visible");
     await pad.first().locator("a[hreflang='en']").click();
-    await page.waitForURL((u) => !inDe(u.href) && u.hash === "#docs");
+    await page.waitForURL((u) => !inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await docsOpen(page);
-    check("J2c the notice's English link opens the English page, hash kept, and stays there", !inDe(page.url()) && page.url().endsWith("#docs") && (await page.evaluate(() => document.documentElement.lang)).startsWith("en"), page.url());
+    check("J2c the notice's English link opens the English page, hash and query kept, and stays there", !inDe(page.url()) && keeps(page.url()) && page.url().endsWith(Q + "#docs") && (await page.evaluate(() => document.documentElement.lang)).startsWith("en"), page.url());
   });
 
   await run("J3", { context: { locale: "en-US" } }, async (page) => {
-    await page.goto(`${SITE}#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     await page.locator("[data-lang='de']:visible").first().click();
-    await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs");
+    await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await page.waitForFunction(() => { try { return localStorage.getItem("orbit-lang") === "de"; } catch { return false; } });
-    check("J3a switch to Deutsch: de/, hash kept, choice stored", inDe(page.url()) && (await stored(page)) === "de" && (await page.evaluate(() => document.documentElement.lang)) === "de", page.url());
+    check("J3a switch to Deutsch: de/, hash and query kept, choice stored", inDe(page.url()) && keeps(page.url()) && (await stored(page)) === "de" && (await page.evaluate(() => document.documentElement.lang)) === "de", page.url());
     await docsOpen(page);
     await page.locator("[data-lang='en']:visible").first().click();
-    await page.waitForURL((u) => !inDe(u.href) && u.hash === "#docs");
+    await page.waitForURL((u) => !inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await page.waitForFunction(() => { try { return localStorage.getItem("orbit-lang") === "en"; } catch { return false; } });
-    check("J3b switch back to English: root, hash kept, choice stored", !inDe(page.url()) && (await stored(page)) === "en", page.url());
+    check("J3b switch back to English: root, hash and query kept, choice stored", !inDe(page.url()) && keeps(page.url()) && (await stored(page)) === "en", page.url());
   });
 
   await run("J4", { context: { locale: "de-DE" } }, async (page) => {
-    await page.goto(`${SITE}#docs`, { waitUntil: "load" });
-    await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs");
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
+    await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs" && keeps(u.href));
     await docsOpen(page);
-    check("J4 root with de-DE and no stored choice lands on de/ with the hash", inDe(page.url()) && page.url().endsWith("#docs"), page.url());
+    check("J4 root with de-DE and no stored choice lands on de/ with hash and query", inDe(page.url()) && keeps(page.url()) && page.url().endsWith(Q + "#docs"), page.url());
   });
 
   await run("J5", { context: { locale: "de-DE" }, stored: "en" }, async (page) => {
-    await page.goto(`${SITE}#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     await page.evaluate(() => document.fonts.ready);
-    check("J5 stored en keeps a German browser at the root", !inDe(page.url()) && page.url().endsWith("#docs"), page.url());
+    check("J5 stored en keeps a German browser at the root", !inDe(page.url()) && page.url().endsWith(Q + "#docs"), page.url());
   });
 
   await run("J6", { context: { locale: "en-US" } }, async (page) => {
     const navs = [];
     page.on("framenavigated", (f) => { if (f === page.mainFrame()) navs.push(f.url()); });
-    await page.goto(`${SITE}de/#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     await page.evaluate(() => document.fonts.ready);
     check("J6 de/ with an English browser never redirects", inDe(page.url()) && navs.every(inDe), JSON.stringify(navs));
   });
 
   await run("J7", { context: { locale: "en-US" } }, async (page) => {
-    await page.goto(`${SITE}`, { waitUntil: "load" });
+    await page.goto(`${SITE}${Q}`, { waitUntil: "load" });
     await page.locator("#door").waitFor({ state: "visible" });
-    await page.goto(`${SITE}#docs`, { waitUntil: "load" });
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     const shown = await page.locator(".ai-notice:visible").count();
     check("J7 the root shows no AI notice", shown === 0, `${shown} visible`);
