@@ -510,14 +510,18 @@ renovate:
 # tool). GitLab CE cannot stop a change merged into dev from adding a job to that
 # environment; the lint, review and the key's own spend limit in the Console are
 # what stand behind it. The job prints the dry-run estimate before it spends, and
-# stops (exit 3) when the estimate is over TRANSLATE_MAX_TOKENS (2,000,000 when
-# unset). Its artifact goes to publish_translations, which treats it as
-# untrusted: en.json and en.js are never in it.
+# stops (exit 3) when the estimate is over TRANSLATE_MAX_TOKENS (3,000,000 when
+# unset). It fits the one-hour runner lane: a batch not ended after 50 minutes
+# is left running and the job fails with exit 5, printing the batch id; a
+# pipeline started by hand with TRANSLATE=true and TRANSLATE_BATCH_ID=<that id>
+# on the same commit submits nothing, waits for that batch and finishes the run
+# (#125 spec amendment 1). Its artifact goes to publish_translations, which
+# treats it as untrusted: en.json and en.js are never in it.
 translate_docs:
   stage: maintenance
   image: $NODE_IMAGE
   interruptible: false
-  timeout: 3h
+  timeout: 1h
   environment:
     name: translate
     deployment_tier: other

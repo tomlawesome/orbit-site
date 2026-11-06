@@ -3,9 +3,12 @@
 # branch this runs on with tools/ci/translate.mjs, first as a dry run, whose
 # estimate (items, tokens, rough dollars) is logged before anything is spent,
 # then for real. Each exit code is passed through: 0 done, 2 bad input, 3 the
-# estimate is over the cap (TRANSLATE_MAX_TOKENS, 2,000,000 when unset), 4 the
-# API failed (translate.mjs has the detail); on any of them nothing is written,
-# so the job hands on no artifact and publish_translations does not run.
+# estimate is over the cap (TRANSLATE_MAX_TOKENS, 3,000,000 when unset), 4 the
+# API failed (translate.mjs has the detail), 5 the batch has not ended within
+# 50 minutes (left running, its id printed: a pipeline with TRANSLATE=true and
+# TRANSLATE_BATCH_ID=<id> on the same commit resumes it); on any of them
+# nothing is written, so the job hands on no artifact and publish_translations
+# does not run.
 #
 # This job holds ANTHROPIC_API_KEY (Masked + Protected, environment scope
 # `translate`). translate.mjs reads it from its environment and sends it only as

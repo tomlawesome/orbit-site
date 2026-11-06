@@ -4,7 +4,8 @@
  * changed since the stored hash of the English each translation was made from.
  *
  *   node tools/ci/translate.mjs [--langs de,fr] [--only site|docs] [--dry-run] [--max-tokens N]
- *        [--out DIR] [--report FILE] [--poll-seconds 60] [--timeout-minutes 170] [--api-base URL]
+ *        [--out DIR] [--report FILE] [--poll-seconds 60] [--timeout-minutes 50] [--api-base URL]
+ *        [--resume BATCH_ID]   (or TRANSLATE_BATCH_ID=BATCH_ID in the environment)
  *
  * Patterns: a content-hash incremental build (each translated item carries hash16 of its English; only a changed
  * hash is sent again); schema-constrained output with post-validation (structured JSON out, the mechanical checks of
@@ -20,9 +21,17 @@
  * assets/docs-i18n/<lang>/<slug>.json and index.json (spec 1); and the report (default translate-report.json).
  * A file whose content would not change is not rewritten.
  *
+ * Requests go out as one Message Batch with custom_ids r0000, r0001, ... (the index in the run's request list, which
+ * is in language order and then plan order); results are mapped back by custom_id, never by position. Submit, then
+ * poll with a resumable job id (spec amendment 1): a batch not ended within --timeout-minutes is left running, its id
+ * printed, exit 5; a later run of the same commit with --resume <id> or TRANSLATE_BATCH_ID=<id> submits nothing for
+ * that batch, rebuilds the request list, checks it matches the batch (count and ids) and finishes from its results.
+ *
  * Exit codes: 0 done (items kept in English are in the report); 1 usage or configuration; 2 the English is off its
- * shape; 3 the estimate is above the cap, nothing sent; 4 the API (no key, 401/403, a batch that did not end in
- * time, which is cancelled first, a network failure after 3 tries). On 1 to 4 no output file is touched.
+ * shape; 3 the estimate is above the cap, nothing sent; 4 the API (no key, 401/403, a network failure after 3 tries,
+ * a batch that ended errored, expired or canceled, a results file with an unknown or repeated custom_id, a resumed
+ * batch that does not match the rebuilt request list); 5 pending (the batch has not ended: resume it with its id).
+ * On 1 to 5 no output file is touched.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -36,7 +45,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 export const MODEL = "claude-opus-5-5";
 /* batch prices per million tokens (Opus 5.5, Message Batches: half the standard rate) */
 export const PRICES = { input: 2, output: 10, cacheRead: 0.2 };
-export const DEFAULT_CAP = 2_000_000;
+export const DEFAULT_CAP = 3_000_000;
 const CHUNK = 60, MAX_HTML = 100_000, MAX_OUT = 16_000;
 const RATIO = { latin: [0.5, 2.5], arabic: [0.5, 2.5], cjk: [0.2, 1.5] };
 /* the shortest English catalogue value whose length ratio is judged: "Go" for "Los geht's" is a fine translation */
@@ -58,9 +67,9 @@ const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const fmt = (n) => Math.round(n).toLocaleString("en-GB");
 
 /* ---------------------------------------------------------------- arguments -- */
-const FLAGS = new Set(["--langs", "--only", "--dry-run", "--max-tokens", "--out", "--report", "--poll-seconds", "--timeout-minutes", "--api-base"]);
+const FLAGS = new Set(["--langs", "--only", "--dry-run", "--max-tokens", "--out", "--report", "--poll-seconds", "--timeout-minutes", "--api-base", "--resume"]);
 export function parseArgs(argv, env = process.env) {
-  const o = { langs: null, only: null, dryRun: false, maxTokens: null, out: null, report: null, pollSeconds: 60, timeoutMinutes: 170, apiBase: "https://api.anthropic.com" };
+  const o = { langs: null, only: null, dryRun: false, maxTokens: null, out: null, report: null, pollSeconds: 60, timeoutMinutes: 50, resume: null, apiBase: "https://api.anthropic.com" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!FLAGS.has(a)) throw new Exit(1, `unknown argument ${JSON.stringify(a).slice(0, 40)} (the key is read from the environment only)`);
@@ -75,8 +84,11 @@ export function parseArgs(argv, env = process.env) {
     else if (a === "--report") o.report = resolve(v);
     else if (a === "--poll-seconds") o.pollSeconds = num(0);
     else if (a === "--timeout-minutes") o.timeoutMinutes = num(0);
+    else if (a === "--resume") o.resume = v;
     else if (a === "--api-base") { let u; try { u = new URL(v); } catch { throw new Exit(1, `--api-base ${JSON.stringify(v)} is not a URL`); } if (!/^https?:$/.test(u.protocol)) throw new Exit(1, "--api-base is not http(s)"); o.apiBase = u.origin; }
   }
+  if (o.resume === null && env.TRANSLATE_BATCH_ID) o.resume = env.TRANSLATE_BATCH_ID;
+  if (o.resume !== null && !/^[\w-]{1,128}$/.test(o.resume)) throw new Exit(1, "the batch id to resume (--resume or TRANSLATE_BATCH_ID) is not a batch id");
   if (o.maxTokens === null) {
     const e = env.TRANSLATE_MAX_TOKENS;
     if (e !== undefined && e !== "") { if (!/^\d+$/.test(e) || Number(e) < 1) throw new Exit(1, "TRANSLATE_MAX_TOKENS is not a whole number of tokens"); o.maxTokens = Number(e); }
@@ -179,16 +191,17 @@ const userText = (lang, L, item, broke) => [
 ].join("\n\n");
 export const maxTokensFor = (chars) => Math.min(MAX_OUT, Math.ceil((4 * chars) / 3.5) + 1024);
 
-function request(item, system, broke) {
+/* the wire id of the n-th request of a batch of `count` (the API allows only [a-zA-Z0-9_-]{1,64}) */
+export const wireId = (n, count) => `r${String(n).padStart(Math.max(4, String(Math.max(0, count - 1)).length), "0")}`;
+function request(item, system, broke, custom_id) {
   return {
-    custom_id: item.customId,
+    custom_id,
     params: {
       model: MODEL,
       max_tokens: maxTokensFor(item.chars),
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userText(item.lang, item.L, item, broke) }],
       output_config: { effort: "high", format: { type: "json_schema", schema: item.kind === "section" ? SECTION_SCHEMA : CHUNK_SCHEMA } },
-      fallbacks: "default",
     },
   };
 }
@@ -377,36 +390,48 @@ function api(o) {
   const base = `${o.apiBase}/v1/messages/batches`;
   return {
     async create(requests) {
-      const j = await (await call("POST", base, { requests }, { "anthropic-beta": "server-side-fallback-2026-07-01" })).json();
+      const j = await (await call("POST", base, { requests })).json();
       if (!j || typeof j.id !== "string" || !/^[\w-]+$/.test(j.id)) throw new Exit(4, "the API's answer to the batch has no id");
       return j.id;
     },
     get: async (id) => (await call("GET", `${base}/${id}`)).json(),
-    cancel: async (id) => { await (await call("POST", `${base}/${id}/cancel`)).text(); },
     results: async (url) => (await call("GET", url)).text(),
   };
 }
 
-/* one batch, sent, waited for and read: custom_id -> result */
-async function runBatch(o, client, requests, deadline, log) {
-  const id = await client.create(requests);
-  log(`batch ${id}: ${requests.length} requests`);
+/*
+ * one batch, sent (or, resuming, found), waited for and read: a Map of the index in `requests` -> result. Results are
+ * mapped back by custom_id; an unknown or repeated one is exit 4. A batch not ended by the deadline is left running
+ * (no cancel): exit 5 with its id. Resuming, the batch must hold exactly these requests' ids.
+ */
+async function runBatch(o, client, requests, deadline, log, resumeId) {
+  const index = new Map(requests.map((r, n) => [r.custom_id, n]));
+  const id = resumeId || await client.create(requests);
+  log(resumeId ? `resuming batch ${id}: ${requests.length} requests expected, nothing submitted` : `batch ${id}: ${requests.length} requests`);
   for (;;) {
     const b = await client.get(id);
     if (b && b.processing_status === "ended") {
+      const c = isObj(b.request_counts) ? b.request_counts : {}, n = (k) => (Number.isFinite(c[k]) ? c[k] : 0);
+      const total = ["processing", "succeeded", "errored", "canceled", "expired"].reduce((t, k) => t + n(k), 0);
+      if (resumeId && total !== requests.length) throw new Exit(4, `batch ${id} holds ${total} requests but this commit's sources make ${requests.length}: it is not this run's batch; nothing written`);
+      if (requests.length && (n("succeeded") === 0 || n("canceled") > 0 || n("expired") > 0)) throw new Exit(4, `batch ${id} ended without its results (succeeded ${n("succeeded")}, errored ${n("errored")}, canceled ${n("canceled")}, expired ${n("expired")}); nothing written`);
       if (typeof b.results_url !== "string") throw new Exit(4, `batch ${id} ended with no results_url`);
       const out = new Map();
       for (const line of (await client.results(b.results_url)).split("\n")) {
         if (!line.trim()) continue;
         let r; try { r = JSON.parse(line); } catch { throw new Exit(4, `batch ${id}: a results line is not JSON`); }
-        if (isObj(r) && typeof r.custom_id === "string") out.set(r.custom_id, r.result);
+        if (!isObj(r) || typeof r.custom_id !== "string") throw new Exit(4, `batch ${id}: a results line has no custom_id`);
+        const k = index.get(r.custom_id);
+        if (k === undefined) throw new Exit(4, `batch ${id}: the results hold a custom_id this run never sent (${JSON.stringify(r.custom_id.slice(0, 70))})${resumeId ? ": it is not this run's batch" : ""}; nothing written`);
+        if (out.has(k)) throw new Exit(4, `batch ${id}: the results hold custom_id ${r.custom_id} twice; nothing written`);
+        out.set(k, r.result);
       }
+      if (resumeId && out.size !== requests.length) throw new Exit(4, `batch ${id} returned ${out.size} results for ${requests.length} requests: it is not this run's batch; nothing written`);
       return out;
     }
     if (Date.now() >= deadline) {
-      log(`batch ${id} has not ended within --timeout-minutes; cancelling it`);
-      await client.cancel(id);
-      throw new Exit(4, `batch ${id} did not end within ${o.timeoutMinutes} minutes; cancelled, nothing written`);
+      throw new Exit(5, `batch ${id} has not ended within ${o.timeoutMinutes} minutes; it is left running (not cancelled) and nothing is written. ` +
+        `Resume it from the same commit with TRANSLATE_BATCH_ID=${id} (or --resume ${id}).`);
     }
     await sleep(Math.min(o.pollSeconds, Math.max(0.01, (deadline - Date.now()) / 1000)));
   }
@@ -461,11 +486,12 @@ export async function run(opts) {
       const client = api(o), deadline = Date.now() + o.timeoutMinutes * 60_000;
       let todo = items.map((it) => ({ it, broke: null }));
       for (let round = 1; round <= 2 && todo.length; round++) {
-        const results = await runBatch(o, client, todo.map(({ it, broke }) => request(round === 1 || it.kind !== "chunk" ? it : { ...it, payload: { items: it.payload.items.filter((x) => broke.keys.includes(x.id)) } }, system, broke && broke.rules)), deadline, log);
+        const requests = todo.map(({ it, broke }, n) => request(round === 1 || it.kind !== "chunk" ? it : { ...it, payload: { items: it.payload.items.filter((x) => broke.keys.includes(x.id)) } }, system, broke && broke.rules, wireId(n, todo.length)));
+        const results = await runBatch(o, client, requests, deadline, log, round === 1 ? o.resume : null);
         batches++;
         const again = [];
-        for (const { it, broke } of todo) {
-          const r = resultText(results.get(it.customId));
+        for (const [n, { it, broke }] of todo.entries()) {
+          const r = resultText(results.get(n));
           add(r.usage);
           const prev = outcome.get(it.customId);
           if (r.fail) {
