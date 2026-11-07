@@ -742,7 +742,7 @@ warn_split_case() {
 # (w1) the committed file hands on exactly the two
 rc=0
 node -e '
-  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"));
+  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8").replace(/!reference /g, ""));
   const p = JSON.stringify(y.import_docs.artifacts.paths);
   if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
 ' > "$out" 2>&1 || rc=$?
@@ -1347,16 +1347,28 @@ yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
 # 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
 # project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
 # bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
-# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+# <entries> is the text after "include:" with \n for newlines, replacing the file's own include; <how> is pass or refuse.
+# The two snippet entries (catchup-check, batch-intake; ai/agent-infra#114) are allowed beside it, each once,
+# and the job_rule / workflow_rules !reference to them resolves (p208-p222).
 inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case() {
+  # a refuse case keeps the two pinned snippet entries behind the planted fault (a list of entries
+  # that carry none of their own), so the !reference lines still resolve and the case fails only
+  # for its own fault, named by the include message (or $4); bare strings and mappings cannot
+  # take list entries and fail on the shape alone
+  e="$3"
+  case "$e" in
+    "  - "*) case "$e" in *catchup-check/ci-template*|*batch-intake/ci-template*) ;; *) e="$e$inc_two$inc_three" ;; esac ;;
+  esac
   if [ "$2" = pass ]; then
-    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+    yaml_pass_case "$1" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   else
-    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+    split_case "$1" $ci "${4:-top-level include that is not the one allowed}" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   fi
 }
-inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p177: the allowed includes (ai/agent-infra, private-details, catchup-check and batch-intake, full shas) pass" pass "$inc_pass$inc_two$inc_three"
 inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
@@ -1387,6 +1399,24 @@ inc_case "p204: a remote include as a bare string" refuse " https://example.inva
 inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
+inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
+inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two" "the include of scripts/batch-intake/ci-template.yml is not there"
+inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
+inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p213: catchup-check twice" refuse "$inc_pass$inc_two$inc_two"
+inc_case "p214: a snippet entry with an extra rules key" refuse "$inc_pass$inc_two    rules:\n      - when: always\n"
+inc_case "p215: another file in ai/agent-infra beside the allowed three" refuse "$inc_pass$inc_two$inc_three  - project: ai/agent-infra\n    file: scripts/backmerge-skip/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p216: a snippet entry beside a local entry" refuse "$inc_pass$inc_two  - local: other.yml\n"
+# the !reference lines point at the snippets' hidden keys, which live in the included files
+split_case "p217: a !reference to .catchup-check with no catchup-check include" $ci "catchup-check" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # catchup-check\/v2\n    file: scripts\/catchup-check\/ci-template.yml/, "");'
+split_case "p218: a !reference to .batch-intake with no batch-intake include" $ci "batch-intake" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # batch-intake\/v1\n    file: scripts\/batch-intake\/ci-template.yml/, "");'
+split_case "p219: a !reference to a key the snippet does not define" $ci "catchup-check" '
+  y = y.replace("[.catchup-check, job_rule]", "[.catchup-check, environment]");'
+split_case "p220: a !reference to an unknown hidden key" $ci "not in the file" '
+  y = y.replace("[.batch-intake, job_rule]", "[.other-snippet, job_rule]");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.

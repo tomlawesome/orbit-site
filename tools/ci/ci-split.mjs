@@ -319,6 +319,13 @@ const merge = (a, b) => {
   for (const [k, x] of Object.entries(b)) out[k] = Object.hasOwn(a, k) ? merge(a[k], x) : x;
   return out;
 };
+// The shared snippets a pinned include may bring in besides private-details (ai/agent-infra#114); each
+// adds hidden keys and, for catchup-check, one job that sets no environment and holds no token.
+const SNIPPETS = { ".catchup-check": "scripts/catchup-check/ci-template.yml", ".batch-intake": "scripts/batch-intake/ci-template.yml" };
+const PRIVATE_DETAILS = "scripts/private-details/ci-template.yml";
+const includeOk = (e) => isObj(e) && Object.keys(e).sort().join() === "file,project,ref" && e.project === "ai/agent-infra"
+  && typeof e.ref === "string" && /^[0-9a-f]{40}$/.test(e.ref) && (e.file === PRIVATE_DETAILS || Object.values(SNIPPETS).includes(e.file));
+const snippetFiles = new Set((Array.isArray(doc.include) ? doc.include : []).filter(includeOk).map((e) => e.file));
 const expanded = new Map(), expanding = [], parentsOf = new Map();
 // v with every !reference replaced by the value it points at (GitLab allows 10 levels)
 const resolve = (k, v, depth = 0) => {
@@ -330,6 +337,12 @@ const resolve = (k, v, depth = 0) => {
     const no = (why) => { bad(`.gitlab-ci.yml: ${k} has ${shown}, which ${why}; the environment it gives cannot be judged`); return undefined; };
     if (depth >= 10) return no("nests more than 10 references deep");
     if (!Array.isArray(path) || path.length === 0 || !path.every((p) => typeof p === "string")) return no("is not a list of names");
+    // a hidden key of a shared snippet lives in the included file (ai/agent-infra#114): its
+    // workflow_rules and job_rule are only rules, no environment, so they resolve to an empty list
+    if (Object.hasOwn(SNIPPETS, path[0]) && !Object.hasOwn(doc, path[0])) {
+      if (!snippetFiles.has(SNIPPETS[path[0]])) return no(`points at ${path[0]}, but the include of ${SNIPPETS[path[0]]} is not there`);
+      return path.length === 2 && ["workflow_rules", "job_rule"].includes(path[1]) ? [] : no(`does not resolve (${path[0]} defines workflow_rules and job_rule)`);
+    }
     if (!Object.hasOwn(doc, path[0])) return no(`points at ${path[0]}, which is not in the file`);
     let at = expand(path[0]);
     for (const p of path.slice(1)) {
@@ -400,14 +413,15 @@ for (const k of Object.keys(doc)) {
 for (const k of ["before_script", "after_script", "cache", "services", "image", "hooks"]) {
   if (Object.hasOwn(doc, k)) bad(`.gitlab-ci.yml: has a top-level ${k}, a deprecated global keyword GitLab still applies to every job, publish_docs included; put it under default:, which this check judges`);
 }
-// another file could add a job this check never sees, so the only include allowed is
-// the shared private-details template, pinned to a full commit (#110): a list of one
-// entry with exactly the keys project, file and ref, and nothing else
+// another file could add a job this check never sees, so the only includes allowed are the
+// shared private-details template (#110) and, beside it, the shared catchup-check and
+// batch-intake snippets (ai/agent-infra#114), each once and pinned to a full commit: a list
+// of one to three entries with exactly the keys project, file and ref, and nothing else
 if ("include" in doc) {
-  const inc = doc.include, e = Array.isArray(inc) && inc.length === 1 ? inc[0] : undefined;
-  const ok = isObj(e) && Object.keys(e).sort().join() === "file,project,ref" && e.project === "ai/agent-infra"
-    && e.file === "scripts/private-details/ci-template.yml" && typeof e.ref === "string" && /^[0-9a-f]{40}$/.test(e.ref);
-  if (!ok) bad(".gitlab-ci.yml: has a top-level include that is not the one allowed; a job in another file would escape this check, so the only include is a list of one entry: project: ai/agent-infra, file: scripts/private-details/ci-template.yml and ref: a full 40-character lowercase hex commit");
+  const inc = doc.include;
+  const ok = Array.isArray(inc) && inc.length >= 1 && inc.length <= 3 && inc.every(includeOk)
+    && new Set(inc.map((e) => e.file)).size === inc.length && inc.some((e) => e.file === PRIVATE_DETAILS);
+  if (!ok) bad(".gitlab-ci.yml: has a top-level include that is not the one allowed; a job in another file would escape this check, so the only includes are a list of project: ai/agent-infra entries, each with a full 40-character lowercase hex commit as ref, for scripts/private-details/ci-template.yml and at most once each scripts/catchup-check/ci-template.yml and scripts/batch-intake/ci-template.yml");
 }
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
 // whether the job writes it, extends it or takes it by !reference
