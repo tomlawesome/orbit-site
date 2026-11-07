@@ -6,6 +6,7 @@ import { households, account, inbox, today, persist, serialise, hydrate, forget,
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 import { createPlaces } from "./places.js";
+import { tr } from "./lang.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -26,7 +27,7 @@ export function snapshot() { return { ...serialise(), camera: state.camera, form
 export function restoreState(snap) {
   cancelFlight();
   hydrate(snap);
-  if (snap.camera && households[snap.camera] && snap.camera !== state.camera) { state.camera = snap.camera; setCamera(snap.camera); $("#back").textContent = snap.camera === "willow" ? "— the dawn" : "— your sky"; }
+  if (snap.camera && households[snap.camera] && snap.camera !== state.camera) { state.camera = snap.camera; setCamera(snap.camera); $("#back").textContent = tr(snap.camera === "willow" ? "the-dawn" : "your-sky"); }
   else if (snap.camera) setCamera(snap.camera);
   if (snap.form) createForm?.write(snap.form);
   closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist();
@@ -245,7 +246,7 @@ export function flyTo(id, done) {
     const dial = $("#dial");
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
     /* the corner says where it goes: from your own sky, down to the dawn; from another's, back to yours */
-    $("#back").textContent = id === "willow" ? "— the dawn" : "— your sky";
+    $("#back").textContent = tr(id === "willow" ? "the-dawn" : "your-sky");
     timers.push(setTimeout(() => { flight = null; hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); const next = pending; pending = null; if (next) { if (next.id === state.camera) next.done?.(); else flyTo(next.id, next.done); } }, reduced ? 50 : 900));
   };
   timers.push(setTimeout(land, reduced ? 50 : 1250));
