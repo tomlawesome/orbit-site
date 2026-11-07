@@ -1,6 +1,6 @@
 # ADR-0006: The browser's Back follows the site's own back controls
 
-**Status:** Proposed 2026-10-31 (design; nothing built yet)
+**Status:** Accepted 2026-10-31 (built in #117: `assets/js/places.js`)
 **Date:** 2026-10-31
 **Relates to:** #117 (Browser Back leaves the site instead of going back to the door); #107 (the Chromium journey's
 "Back mid-flight" flake: the click, not Back); beb49e4 (Back and Forward after a journey from the door); ADR-0005 (which
