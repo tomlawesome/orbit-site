@@ -192,7 +192,7 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # The import runs other people's code (npm packages) and so must hold nothing
 # worth stealing; the publish holds the token, runs no third-party code, and is
 # the only job in the docs-import environment, where the token is scoped (#18).
-# Both run from the schedule on main alone, never on a merge request pipeline.
+# Both run from the schedule on dev alone (#129), never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
 # Joining counts whether by name or inherited by extends or !reference (#52).
