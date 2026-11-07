@@ -67,6 +67,8 @@ export function checkTranslated(dir, sources, englishDir, { sameEnglish = false 
   const read = (f) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
   let english = null;
   try { english = JSON.parse(readFileSync(join(englishDir, "index.json"), "utf8")).generated; } catch { /* checkDocs of the English names it */ }
+  /* --same-english compares each stamp with the English's: an English index.json that cannot be read is a problem here */
+  if (sameEnglish && (typeof english !== "string" || !ISO.test(english))) problems.push(`${join(englishDir, "index.json")}: missing, not JSON or without a generated date: the translation's stamps cannot be compared with the English's`);
   const later = (where, src) => {
     if (!isObj(src) || typeof english !== "string" || typeof src.generated !== "string" || !ISO.test(src.generated)) return;
     if (src.generated > english) problems.push(`${where}: source.generated ${src.generated} is later than the English's generated ${english}: no translation is made from English not yet committed (a wrong stamp or a bad resume)`);
@@ -93,11 +95,16 @@ export function checkTranslated(dir, sources, englishDir, { sameEnglish = false 
 }
 
 export const LAG_STALE_HOURS = 36;
-/* the clock: $LAG_NOW when it is a date, else now */
-export function lagNow(env = process.env) {
-  const t = typeof env.LAG_NOW === "string" && env.LAG_NOW !== "" ? Date.parse(env.LAG_NOW) : NaN;
-  return Number.isFinite(t) ? t : Date.now();
+/* the clock: $LAG_NOW when it is a date in the format of generated, else now, with a note when LAG_NOW is set but
+   is not one (as nightly-publish.sh's reading of it) */
+const LAG_NOW_FORMAT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
+export function lagClock(env = process.env) {
+  const v = typeof env.LAG_NOW === "string" ? env.LAG_NOW : "";
+  const t = LAG_NOW_FORMAT.test(v) ? Date.parse(v) : NaN;
+  if (Number.isFinite(t)) return { now: t, note: null };
+  return { now: Date.now(), note: v ? "(LAG_NOW is not a date in the format of generated; the clock is used)" : null };
 }
+export const lagNow = (env = process.env) => lagClock(env).now;
 /*
  * { behind, later, report } for every translated page under root: behind holds { file, lang, generated, stalled,
  * hours } for each page stamped before the committed English (hours: how long ago the English's generated was, by
@@ -135,7 +142,9 @@ export function lagProblems(root, now = lagNow()) {
 const main = process.argv[1] === fileURLToPath(import.meta.url);
 if (main && process.argv[2] === "--lag") {
   let report = [], later = [];
-  try { ({ report, later } = lagProblems(process.cwd())); } catch (e) { console.log(`   (the lag could not be read: ${String(e && e.message).slice(0, 200)})`); }
+  const clock = lagClock();
+  if (clock.note) console.log(`   ${clock.note}`);
+  try { ({ report, later } = lagProblems(process.cwd(), clock.now)); } catch (e) { console.log(`   (the lag could not be read: ${String(e && e.message).slice(0, 200)})`); }
   for (const l of report.slice(0, 40)) console.log(`   (reported) ${l}`);
   if (report.length > 40) console.log(`   ... and ${report.length - 40} more`);
   /* the one failure: every page stamped later than the English, named, however many */
