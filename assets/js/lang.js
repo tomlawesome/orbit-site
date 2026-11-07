@@ -87,6 +87,11 @@ export function wireLanguages(root = document) {
   const aim = () => links().forEach((a) => { a.href = hrefIn(a.dataset.lang, location.search + location.hash); });
   aim();
   addEventListener("hashchange", aim);
+  /* the site also moves its address with pushState, which fires nothing: aim again just before a link can be taken (a
+     press of any button or key, a touch, focus), so a new tab, a middle click or a copied link opens where the visitor is */
+  root.addEventListener("pointerdown", aim, true);
+  root.addEventListener("keydown", aim, true);
+  root.addEventListener("focusin", aim, true);
   const menus = [...root.querySelectorAll(".langs")];
   const toggleOf = (m) => m.querySelector("button[aria-expanded]");
   const open = (m, on) => {
