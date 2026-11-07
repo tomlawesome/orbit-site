@@ -1420,9 +1420,9 @@ split_case "p220: a !reference to an unknown hidden key" $ci "not in the file" '
 # Cases p221-p224 (audit finding, ai/agent-infra#114): the secret scans must run on every merge path. A merge
 # request from a chore/catchup-* branch into a batch runs only the catchup-check job when a job carries the
 # snippet's job_rule, so lint, scan:gitleaks and private-details must not carry `!reference [.catchup-check, job_rule]`
-# or `!reference [.batch-intake, job_rule]` (other jobs may). The committed file still carries the catchup-check
-# reference on all three, so each case first takes those references out of the scratch copy and then plants
-# the one under test: it fails only for the planted line, not for the committed ones.
+# or `!reference [.batch-intake, job_rule]` (other jobs may). Each case first takes any such reference out of the
+# scratch copy (the committed file carries none on the three) and then plants the one under test, so it fails
+# only for the planted line.
 ci_gate_js='
   const strip = (y) => { for (const j of ["lint", "scan:gitleaks", "private-details"]) y = y.replace(new RegExp("(\\n" + j + ":\\n(?:[ #].*\\n)*?)    - !reference \\[\\.catchup-check, job_rule\\]\\n"), "$1"); return y; };
   const plant = (y, job, ref) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?  rules:\\n)"), "$1    - !reference [" + ref + ", job_rule]\n");
