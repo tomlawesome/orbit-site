@@ -222,8 +222,9 @@ export function cancelFlight() {
 function visit(id) {
   if (id === state.camera) return;
   /* your own system, tapped on another's sky, is the way down as the corner "— your sky" is: Back when the entry says a
-     sky, so the entry is yours again and the next Back leaves for the door */
-  if (id === "willow" && history.state?.sky) { try { history.back(); } catch { /* fine */ } return; }
+     sky, so the entry is yours again and the next Back leaves for the door; else (the walk's camera) a flight. The entry
+     never says your own sky */
+  if (id === "willow") { if (history.state?.sky) { try { history.back(); } catch { /* fine */ } } else flyTo(id); return; }
   if (state.camera === "willow" && !history.state?.sky) places.stack({ sky: id }); else places.hop({ sky: id });
   flyTo(id);
 }

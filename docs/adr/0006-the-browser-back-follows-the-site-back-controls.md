@@ -131,8 +131,9 @@ the drawers and the walk pushing nothing; `arrivePad`/`arrive` as the direct arr
 - `main.js`: `step` and `goBack` go; `flyToPad` and `launch` use `places.step`; the "— the dawn" controls and
   `home.onBackHome` use `up()` else the descent; the three landings' address rewrites use `keep` (not while `after` is
   set); `signOut`'s farewell uses `up()` else `settle()`; `popstate` runs `plan(places.pop())` now or after the landing.
-- `home.js`: `visit(id)` (new, the mini systems' and chips' click): `state.camera === "willow"` ? `places.stack({ sky: id })`
-  : `places.hop({ sky: id })`, then `flyTo(id)`; `flyTo` during a flight keeps the ask and flies it when the flight lands
+- `home.js`: `visit(id)` (new, the mini systems' and chips' click): for `id` `"willow"`, `history.back()` when
+  `history.state?.sky`, else `flyTo("willow")` (an entry never says the visitor's own sky); otherwise
+  `state.camera === "willow"` ? `places.stack({ sky: id })` : `places.hop({ sky: id })`, then `flyTo(id)`; `flyTo` during a flight keeps the ask and flies it when the flight lands
   (`done` of the pending one called on its landing); `cancelFlight` drops it; "— your sky" is `history.back()` when
   `history.state?.sky`, else `flyTo("willow")`; a new export `flying()` for tests.
 - `pads.js`: `open` and `close` push with `orbit` carried as decision 1 says (`{ docs, anchor, orbit }`, `{ orbit }`).
@@ -204,6 +205,10 @@ element, never a time:
 - B8. Gate, sign out, Back: leaves the page. "Sign back in", Forward: the sky. Control: today, Back at the goodbye
   shows nothing and the address stays `#home`.
 - B9. Phone Safari is the owner's run, by hand, cases B1, B3, B4 and B8 (AGENTS.md: real-device Safari is phone only).
+- B10. Gate, click a mini system (another's sky), reload: the first Back is not a dead press (another sky, or the door).
+  Control: B5's reload on a landing.
+- B11. Gate, click a mini system, then the visitor's own system there: one Back reaches the door; so does "— the dawn".
+  Control: B3, where the way home is Back.
 
 ## Build notes, in order
 
