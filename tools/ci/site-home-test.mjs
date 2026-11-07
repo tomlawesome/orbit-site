@@ -899,6 +899,23 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   home.restoreState({ ...data.serialise(), camera: "willow" });
   check("H5 restoreState puts the camera on another sky and back, and touches no entry", onNarrow && home.state.camera === "willow" && hist.calls.length === 0, `camera ${home.state.camera}, calls ${calls()}`);
   hist.reset();
+
+  /* H6 (#138, W-R1): the walk leaves the camera on another household with no sky in the entry (H5); a tap on your own
+     system there must not write a sky into the entry, or the page is home while the entry says another sky and the next
+     Back does nothing. The stand-in plays no Back: what the entry says is what the browser's Back would find. */
+  for (const [label, tap] of [["system", () => fire(hitOf("willow"), "click")], ["chip", () => chipOf("willow")?.click()]]) {
+    at("willow", { orbit: 1 });
+    home.restoreState({ ...data.serialise(), camera: "narrow" });
+    advance(200);
+    hist.reset({ orbit: 1 });
+    tap();
+    advance(200);
+    const claimed = hist.calls.filter((c) => (c.kind === "push" || c.kind === "replace") && c.state?.sky);
+    const moved = home.state.camera === "willow" || hist.calls.some((c) => c.kind === "back" || c.kind === "go");
+    check(`H6 after the walk left the camera on another sky, a tap on your own ${label} writes no sky into the entry`, !claimed.length && !hist.state?.sky, `calls ${calls()}, entry ${show(hist.state)}`);
+    check(`H6 and the tap on your own ${label} still takes the visitor home (or asks the browser to)`, moved, `camera ${home.state.camera}, calls ${calls()}`);
+  }
+  hist.reset();
 }
 
 /* ── the sky redrawn on resize, after the burst ────────────────────────── */

@@ -150,7 +150,9 @@ await attempt("P8 script words", async () => {
   const page = JSON.parse(json[1]);
   const looked = new Set();
   for (const f of readdirSync(at("assets/js")).filter((x) => x.endsWith(".js"))) {
-    for (const m of read(`assets/js/${f}`).matchAll(/\btr\(\s*"([\w-]+)"/g)) looked.add(m[1]);
+    /* every quoted key inside a tr(...) call, so tr(id === "willow" ? "the-dawn" : "your-sky") counts both (words that are
+       not keys, such as "willow", are dropped below, where a key must be in both catalogues) */
+    for (const call of read(`assets/js/${f}`).matchAll(/\btr\(([^)]*)\)/g)) for (const m of call[1].matchAll(/"([\w-]+)"/g)) looked.add(m[1]);
   }
   const gone = [...looked].filter((k) => de && en && de[k] && en[k] && de[k] !== en[k] && page[k] !== de[k]);
   check("P8a every key a script looks up with tr() that German words differently is in the German page's catalogue, in German", looked.size > 0 && !gone.length, `${looked.size} looked up; not in the page's catalogue in German: ${JSON.stringify(gone)}`);
@@ -181,6 +183,7 @@ await attempt("S1 auto-lang address", async () => {
   check("S1c ?lang=en beats a stored German choice", goes({ stored: "de", browser: ["de-DE"], search: "?lang=en" }) === null, `goes to ${goes({ stored: "de", browser: ["de-DE"], search: "?lang=en" })}`);
   check("S1d ?lang=de sends an English browser with nothing stored to de/, the address kept", goes({ browser: ["en-GB"], search: "?lang=de", hash: "#h" }) === "de/?lang=de#h", `goes to ${goes({ browser: ["en-GB"], search: "?lang=de", hash: "#h" })}`);
   check("S1e ?lang=de beats a stored English choice", goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" }) === "de/?lang=de", `goes to ${goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" })}`);
+  check("S1i ?lang=de with a same-site referrer (a click from the site's own page) still sends the visitor to de/: the address is a choice too", goes({ browser: ["en-GB"], search: "?lang=de", referrer: `${HERE}de/` }) === "de/?lang=de", `goes to ${goes({ browser: ["en-GB"], search: "?lang=de", referrer: `${HERE}de/` })}`);
   check("S1f control: no lang in the address, the same visitor is sent to de/", goes({ ...blocked, search: "?q", hash: "#h" }) === "de/?q#h", `goes to ${goes({ ...blocked, search: "?q", hash: "#h" })}`);
   check("S1g control: an unbuilt language in the address is ignored: the browser's German still sends the visitor to de/", goes({ ...blocked, search: "?lang=fr" }) === "de/?lang=fr", `goes to ${goes({ ...blocked, search: "?lang=fr" })}`);
   check("S1h control: ?lang=en with an English browser stays", goes({ browser: ["en-GB"], search: "?lang=en" }) === null, `goes to ${goes({ browser: ["en-GB"], search: "?lang=en" })}`);
