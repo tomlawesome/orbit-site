@@ -7,10 +7,10 @@
  *   T25 i18n-check: the catalogue of an unbuilt language (languages.json built:false) is checked for keys, {holes}
  *       and bare tags, but it has no hreflang, no BUILT entry and no page; state/<lang>.json has exactly the
  *       catalogue's keys; each kept key equals English's
- *   T26 the lag is watched, never failed (amendment 5, note 54501): a page three imports behind the committed
- *       English passes the lint (sh tools/ci/lint.sh docs-shape) and --lag exits 0 and prints it; a page whose
- *       source.generated is later than the committed English's is the one thing that fails, named, by the shape
- *       check. "Imports" are the commits that moved assets/docs/index.json's generated, one a night
+ *   T26 the lag is watched, never failed (amendments 5 and 6, notes 54501, 54701): a page behind the committed
+ *       English, stalled or not (the English 36 hours old or more at $LAG_NOW), passes the lint (sh tools/ci/lint.sh
+ *       docs-shape) and --lag exits 0; a page whose source.generated is later than the committed English's is the
+ *       one thing that fails, named, by the shape check and by --lag (exit 1). One commit, no history needed
  *   T27 ci-split: a second job naming environment translate, a package manager in translate_docs, needs with
  *       artifacts, the key's name (joined below from its parts) in another file, a third job in docs-import, import_docs with an environment
  *       or a changed image are each refused and named; the shipped .gitlab-ci.yml passes and holds translate_docs
@@ -103,31 +103,33 @@ await T.attempt("T25", async () => {
 });
 
 /* ---------------- T26 ---------------- */
-/* Amendment 5 (note 54501) replaces the spec's lag rule: how far a translation trails the English is watched and
-   reported, never a failure; the lint fails only on a stamp later than the committed English's */
+/* Amendment 6 (note 54701, refining amendment 5): how far a translation trails the English is measured by the data's
+   own timestamp against the clock ($LAG_NOW when set, for tests), not by counting imports: behind is source.generated
+   before the committed English's; stalled is behind with the English 36 hours old or more. Neither fails the lint;
+   the one failure is a stamp later than the English's, named, by the shape check and by --lag. */
 await T.attempt("T26", async () => {
-  const G = ["2026-03-01T04:00:00.000Z", "2026-03-02T04:00:00.000Z", "2026-03-03T04:00:00.000Z", "2026-03-04T04:00:00.000Z"];
-  /* the committed English index has had G[0], G[1], G[2], G[3] in turn (its history); the translation is stamped `generated` */
-  const lint = (generated) => {
+  const HOUR = 3600e3, E = "2026-03-04T04:00:00.000Z";   /* the committed English's generated */
+  const at = (iso, hours) => new Date(Date.parse(iso) + hours * HOUR).toISOString();
+  /* one commit holds everything (no history to count imports with); the page is stamped `generated`, the clock is `now` */
+  const lint = (generated, now) => {
     const fx = mkFixture();
     try {
-      git(fx.dir, "init", "-q");
-      for (const g of G) { fx.generated = g; fx.write(); git(fx.dir, "add", "-A"); git(fx.dir, "commit", "-q", "--no-verify", "--allow-empty", "-m", `import ${g}`); }
+      fx.generated = E; fx.write();
       fx.translated("de", { generated });
-      git(fx.dir, "add", "-A"); git(fx.dir, "commit", "-q", "--no-verify", "-m", "translate");
-      const run = (...a) => { const r = spawnSync(a[0], a.slice(1), { cwd: fx.dir, encoding: "utf8" }); return { status: r.status, text: `${r.stdout}${r.stderr}` }; };
+      git(fx.dir, "init", "-q"); git(fx.dir, "add", "-A"); git(fx.dir, "commit", "-q", "--no-verify", "-m", "one commit");
+      const run = (...a) => { const r = spawnSync(a[0], a.slice(1), { cwd: fx.dir, encoding: "utf8", env: { ...process.env, LAG_NOW: now } }); return { status: r.status, text: `${r.stdout}${r.stderr}` }; };
       return { lint: run("sh", "tools/ci/lint.sh", "docs-shape"), lag: run(process.execPath, "tools/ci/docs-i18n-shape.mjs", "--lag"),
         shape: run(process.execPath, "tools/ci/docs-i18n-shape.mjs", "assets/docs-i18n/de", "tools/docs-sources.json", "assets/docs") };
     } finally { fx.cleanup(); }
   };
-  const a = lint(G[3]), b = lint(G[2]), c = lint(G[0]), later = lint("2026-03-05T04:00:00.000Z");
-  T.check("T26a translated from the English as it is: the lint passes", a.lint.status === 0, `exit ${a.lint.status}: ${tail(a.lint.text)}`);
-  T.check("T26b one import behind: the lint passes, and --lag reports each page", b.lint.status === 0 && b.lag.status === 0 && /readme/.test(b.lag.text) && /guide/.test(b.lag.text), `lint ${b.lint.status}, lag ${b.lag.status}: ${tail(b.lag.text)}`);
-  T.check("T26c three imports behind: the lint passes (a lag is watched, never a failure)", c.lint.status === 0, `exit ${c.lint.status}: ${tail(c.lint.text)}`);
-  T.check("T26d three imports behind: --lag exits 0 and prints each page", c.lag.status === 0 && /readme/.test(c.lag.text) && /guide/.test(c.lag.text), `exit ${c.lag.status}: ${tail(c.lag.text)}`);
+  const same = lint(E, at(E, 400)), behind = lint(at(E, -24), at(E, 24)), stalled = lint(at(E, -24), at(E, 48)), later = lint(at(E, 24), at(E, 48));
+  T.check("T26a translated from the English as it is, 400 hours on: the lint passes and --lag exits 0 (English that has not changed is never stale)", same.lint.status === 0 && same.lag.status === 0, `lint ${same.lint.status}, lag ${same.lag.status}: ${tail(same.lag.text)}`);
+  T.check("T26b a page a day behind, the English changed 24 hours ago (behind, not stalled): the lint passes and --lag exits 0", behind.lint.status === 0 && behind.lag.status === 0, `lint ${behind.lint.status}, lag ${behind.lag.status}: ${tail(behind.lag.text)}`);
+  T.check("T26c a page behind, the English changed 48 hours ago (stalled): the lint passes (a lag is watched, never a failure)", stalled.lint.status === 0, `exit ${stalled.lint.status}: ${tail(stalled.lint.text)}`);
+  T.check("T26d the same stalled page: --lag exits 0", stalled.lag.status === 0, `exit ${stalled.lag.status}: ${tail(stalled.lag.text)}`);
   T.check("T26e a page stamped later than the committed English: the lint fails and names each page", later.lint.status === 1 && /readme/.test(later.lint.text) && /guide/.test(later.lint.text), `exit ${later.lint.status}: ${tail(later.lint.text)}`);
   T.check("T26f it is the shape check that fails it, naming the later stamp", later.shape.status === 1 && /readme/.test(later.shape.text) && /generated|later|newer/i.test(later.shape.text), `exit ${later.shape.status}: ${tail(later.shape.text)}`);
-  T.check("T26g and --lag still exits 0 for it", later.lag.status === 0, `exit ${later.lag.status}: ${tail(later.lag.text)}`);
+  T.check("T26g and --lag exits 1 for it, naming the page", later.lag.status === 1 && /readme/.test(later.lag.text) && /guide/.test(later.lag.text), `exit ${later.lag.status}: ${tail(later.lag.text)}`);
 });
 
 /* ---------------- T27 ---------------- */

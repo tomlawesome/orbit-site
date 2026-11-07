@@ -726,22 +726,20 @@ prepare() {
       "$realgit" -c user.name=t -c user.email=t@t commit -q -m "two pictures" ;;
   esac
 }
-# mklag <stamp> (#125, amendment 5): the checkout as it is when the English has been imported three times since the
-# German of its first source was made: assets/docs/index.json committed with generated 2000-01-01, then 2000-01-02,
-# then back to what it is (so the history holds three dates, the page's stamp the oldest or the middle one), and that
-# page committed, stamped <stamp>. The last commit is HEAD, which the artifact's job must be for.
+# mklag <hours> <now> (#125, amendment 6): the checkout as publish_docs gets it, one commit deep: the German page of
+# the first source stamped <hours> hours after the English's generated (-24: a day before it, 0: the same), and the
+# clock $LAG_NOW <now> hours after the English's generated (empty: LAG_NOW is not set). The whole tree is made one
+# commit with no parent, which is what the job clones; the lag is read from the page's stamp and the clock alone.
+isoplus() { "$realnode" -e 'console.log(new Date(Date.parse(process.argv[1]) + process.argv[2] * 3600e3).toISOString())' "$1" "$2"; }
 mklag() {
   slug=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("tools/docs-sources.json", "utf8"))[0].slug)')
-  for g in 2000-01-01T00:00:00.000Z 2000-01-02T00:00:00.000Z; do
-    "$realnode" -e 'const fs = require("fs"), f = "assets/docs/index.json", j = JSON.parse(fs.readFileSync(f, "utf8")); j.generated = process.argv[1]; fs.writeFileSync(f, JSON.stringify(j))' "$g"
-    "$realgit" add assets/docs/index.json
-    "$realgit" -c user.name=t -c user.email=t@t commit -q -m "import $g" >/dev/null 2>&1
-  done
-  "$realgit" show "$basecommit:assets/docs/index.json" > assets/docs/index.json
+  english=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("assets/docs/index.json", "utf8")).generated)')
   mkdir -p assets/docs-i18n/de
-  printf '{"source":{"generated":"%s"}}\n' "$1" > "assets/docs-i18n/de/$slug.json"
-  "$realgit" add assets/docs/index.json "assets/docs-i18n/de/$slug.json"
-  "$realgit" -c user.name=t -c user.email=t@t commit -q -m "import again, and a German page" >/dev/null 2>&1
+  printf '{"source":{"generated":"%s"}}\n' "$(isoplus "$english" "$1")" > "assets/docs-i18n/de/$slug.json"
+  lagiso=; [ -z "$2" ] || lagiso=$(isoplus "$english" "$2")
+  "$realgit" add -A assets/docs-i18n
+  only=$("$realgit" -c user.name=t -c user.email=t@t commit-tree "$("$realgit" write-tree)" -m "one commit")
+  "$realgit" reset -q --hard "$only"
 }
 run_push() { # run_push <outfile> <scenario>
   outfile=$1
@@ -755,7 +753,7 @@ run_push() { # run_push <outfile> <scenario>
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
   rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
-  [ -z "${lag:-}" ] || mklag "$lag"
+  lagiso=; [ -z "${lag:-}" ] || mklag "$lag" "${lagnow:-}"
   headsha=$basecommit     # unless the scenario's main already holds pictures or a history
   case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
   [ -z "${lag:-}" ] || headsha=$("$realgit" rev-parse HEAD)
@@ -768,7 +766,7 @@ run_push() { # run_push <outfile> <scenario>
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
     CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" DRY_RUN="${dry:-}" \
-    sh tools/ci/nightly-publish.sh > "$outfile" 2>&1 || rc=$?
+    ${lagiso:+LAG_NOW="$lagiso"} sh tools/ci/nightly-publish.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
   bare_puts=$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)
   sleeps=$(grep -c '^sleep ' "$aux/shim.log" || true)
@@ -1768,39 +1766,67 @@ check "TR9 tr-hostile: no escape or bidi control survives into the description" 
 rc=0; [ -f "$aux/mr-body" ] && awk '$0 == "````" { f = !f; next } !f && ($0 ~ /^\// || $0 ~ /@everyone/ || $0 ~ /Closes/) { bad = 1 } END { exit bad }' "$aux/mr-body" || rc=1
 check "TR9 tr-hostile: the quick action, the mention and the closing keyword stay inside the fence" "$rc"
 
-# #135 (amendment 5): publish_docs watches how far the German has fallen behind the English, from the checkout's history.
-# Two imports behind goes into the standing issue's body, one is a line in the log; a dry run prints the body. The
-# German page of the first source is stamped older than the English by two imports (G0) or by one (G1).
-dry=1; lag=2000-01-01T00:00:00.000Z
-run_push "$out" warn-none
-rcx=$rc
+# #135 (amendments 5 and 6): publish_docs watches how far the German has fallen behind the English, from the page's own
+# stamp and the clock ($LAG_NOW when set), with no git history: the checkout is one commit, as the job's clone is.
+# Behind: the page is stamped before the English's generated. Stalled: behind, and the English changed 36 hours ago or
+# more. A page behind but not stalled is a line in the job log; a stalled one goes in the issue's body ("Translations"
+# block) and reopens the issue. A dry run prints the body. The page here is stamped a day before the English.
+lagbody() { grep '^   | ' "$out"; }
+lag_case() { # lag_case <id> <page hours> <now hours> <scenario> -- runs the dry run; the checks follow
+  dry=1; lag=$2; lagnow=$3
+  run_push "$out" "$4"
+  rcx=$rc
+  dry=; lag=; lagnow=
+}
+lag_case LAG0 -24 24 warn-none
 rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue' "$out" || rc=1
-check "LAG1 a page two imports behind: the dry run still exits 0 and reports the warnings issue (exit $rcx)" "$rc"
+check "LAG0 a dry run with a page behind exits 0 and reports the warnings issue (exit $rcx)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-rc=0; grep '^   | ' "$out" | grep -q "$slug" && grep '^   | ' "$out" | grep -q '2 imports behind' || rc=1
-check "LAG2 a page two imports behind: the warnings issue's body names the page and says \"2 imports behind\"" "$rc"
-[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-rc=0; grep '^   | ' "$out" | grep -qi 'translations' || rc=1
-check "LAG3 a page two imports behind: the body has a Translations block" "$rc"
-rc=0; grep '^   | ' "$out" | grep -q 'no translation has landed since' || rc=1
-check "LAG4 a page two imports behind: the block says when a translation last landed (\"no translation has landed since <date>\")" "$rc"
-
-lag=2000-01-02T00:00:00.000Z
-run_push "$out" warn-none
-rcx=$rc
-rc=0; [ "$rcx" -eq 0 ] && ! grep '^   | ' "$out" | grep -q -e "$slug" -e 'behind' -e 'ranslations' || rc=1
-check "LAG5 a page one import behind adds nothing to the warnings issue's body (exit $rcx)" "$rc"
+rc=0; [ "$("$realgit" rev-list --count HEAD)" -eq 1 ] || rc=1
+check "LAG0 the fixture is one commit (no history to count imports with)" "$rc"
+rc=0; ! lagbody | grep -q -e "$slug" -e 'ranslations' || rc=1
+check "LAG1 a page a day behind, the English changed 24 hours ago (behind, not stalled): nothing in the warnings issue's body" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 rc=0; grep -v '^   | ' "$out" | grep -q "$slug.*behind\|behind.*$slug" || rc=1
-check "LAG6 a page one import behind is a line in the job log, naming the page" "$rc"
+check "LAG2 the same page is a line in the job log, naming it" "$rc"
+rc=0; ! grep -q 'could not read the translations' "$out" || rc=1
+check "LAG2 and the lag step did not fail" "$rc"
 
-lag=2000-01-01T00:00:00.000Z
-run_push "$out" warn-closednone
-rcx=$rc
-rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue #5 and reopen it' "$out" || rc=1
-check "LAG7 a page two imports behind reopens a closed warnings issue although the import had no warnings (exit $rcx)" "$rc"
+lag_case LAG3 -24 35 warn-none
+rc=0; [ "$rcx" -eq 0 ] && ! lagbody | grep -q -e "$slug" -e 'ranslations' || rc=1
+check "LAG3 35 hours after the English changed is not yet stalled: nothing in the body (exit $rcx)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-dry=; lag=
+lag_case LAG4 -24 36 warn-none
+rc=0; [ "$rcx" -eq 0 ] && lagbody | grep -q "de/$slug" && lagbody | grep -q '36 hours' || rc=1
+check "LAG4 36 hours after (LAG_STALE_HOURS): the body names de/$slug and the 36 hours (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lag_case LAG5 -24 48 warn-none
+rc=0; [ "$rcx" -eq 0 ] && lagbody | grep -qi 'translations' && lagbody | grep -q "de/$slug" && lagbody | grep -q '48 hours' || rc=1
+check "LAG5 48 hours after: the body has a Translations block that names de/$slug and the 48 hours (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; lagbody | grep -q 'no translation has landed' || rc=1
+check "LAG5 the block says no translation has landed" "$rc"
+rc=0; lagbody | grep -q '^   | none$' && rc=1
+check "LAG5 and the body no longer says none" "$rc"
+
+lag_case LAG6 0 400 warn-none
+rc=0; [ "$rcx" -eq 0 ] && ! lagbody | grep -q -e "$slug" -e 'ranslations' && ! grep -v '^   | ' "$out" | grep -q "$slug" && lagbody | grep -q '^   | none$' || rc=1
+check "LAG6 a page stamped the same as the English, 400 hours on: nothing (English that has not changed is never stale; exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lag_case LAG7 -24 "" warn-none
+rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'could not read the translations' "$out" && lagbody | grep -q "de/$slug" || rc=1
+check "LAG7 LAG_NOW not set: the clock is used, no error, and the English (changed long ago) is stalled: the body names de/$slug (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lag_case LAG8 -24 48 warn-closednone
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue #5 and reopen it' "$out" || rc=1
+check "LAG8 a stalled page reopens a closed warnings issue although the import had no warnings (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+lag_case LAG9 -24 24 warn-closednone
+rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'and reopen it' "$out" || rc=1
+check "LAG9 a page behind but not stalled does not reopen it (exit $rcx)" "$rc"
 
 # the docs mode is as it was: dev only, schedule only
 pinned "in docs mode on batch-b" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=batch-b
