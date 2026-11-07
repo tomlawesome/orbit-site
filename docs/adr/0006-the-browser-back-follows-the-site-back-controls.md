@@ -72,7 +72,8 @@ worth adding only from a click or a key, and an entry added on load is worth not
    what it was). From another's sky to a third, the entry is replaced, not pushed: the demo has two levels, your sky
    and another's, as the corner says ("— your sky" always goes to yours). "— your sky" is `history.back()` when the
    entry's state has `sky`, else `flyTo("willow")`; so is a tap on the visitor's own system there. The browser's Back from another's sky flies to the visitor's own;
-   Forward flies out to the sky named in the state. The walk and `restoreState` push nothing.
+   Forward flies out to the sky named in the state. The walk and `restoreState` push nothing. A reload or a restored tab
+   on another's sky shows the sky its entry names, so the first Back flies home as before.
 5. **A sky asked for during a sky flight is flown to when the flight lands** (the last one asked). Today `flyTo` refuses
    it, so a Back mid-flight would leave the camera and the entry disagreeing. `cancelFlight` drops a pending ask.
 6. **Signing out drops the sky's entries:** when the goodbye lands, `history.go(-orbit)` when `orbit` is 1 or more and below `history.length` (the

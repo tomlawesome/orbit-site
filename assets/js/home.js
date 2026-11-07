@@ -563,6 +563,10 @@ function wireCreate() {
 
 export function mountHome(skyCams) {
   state.skyCams = skyCams;
+  /* a reload or a restored tab on another household's sky: the entry still says that sky, so the page shows it, and Back
+     then flies home as it would have (ADR-0006) */
+  let sky = null; try { sky = history.state?.sky; } catch { /* no history */ }
+  if (sky && households[sky] && sky !== state.camera) { state.camera = sky; $("#back").textContent = tr("your-sky"); }
   setCamera(state.camera);
   $("#account-orb").textContent = account.initials;
   $("#who-name").textContent = account.name;
