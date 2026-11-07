@@ -535,6 +535,8 @@ translate_docs:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
     - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
+  # no other job's artifacts (a dotenv report in them would set this job's variables)
+  needs: []
   variables:
     GIT_DEPTH: 1
     GIT_STRATEGY: clone

@@ -547,6 +547,8 @@ if (trn !== null) {
   const needs = ex.needs === undefined ? [] : Array.isArray(ex.needs) ? ex.needs : [ex.needs];
   if (needs.some((n) => !(isObj(n) && n.artifacts === false))) bad(`.gitlab-ci.yml: translate_docs needs takes another job's artifacts (found: ${JSON.stringify(ex.needs)}); a dotenv report in them would set variables of the job holding the key, so each need says artifacts: false`);
   if (Object.hasOwn(ex, "dependencies")) bad(".gitlab-ci.yml: translate_docs has dependencies; another job's artifacts do not reach the job holding the key");
+  // with no needs a job takes the artifacts of every earlier stage, dotenv reports included: it says needs: [] itself
+  if (!(Array.isArray(trn.needs) && trn.needs.length === 0 && Array.isArray(ex.needs) && ex.needs.length === 0)) bad(`.gitlab-ci.yml: translate_docs must say needs: [] itself, found: ${JSON.stringify(ex.needs ?? null)}; without it the job holding the key takes every earlier stage's artifacts, and a dotenv report in them would set its variables`);
   const pm = (l) => /\b(npm|npx|yarn|pnpm)\b/.test(l);
   for (const h of ["script", "before_script", "after_script"]) {
     const from = Object.hasOwn(ex, h) ? "" : Object.hasOwn(def, h) ? " from default" : null;
@@ -582,7 +584,7 @@ if (trn !== null) {
     if (gitRaw.translate_docs[v].length === 0) bad(`.gitlab-ci.yml: translate_docs ${v} is not written out as ${want} in the job itself; GitLab's reader can read a value brought in another way differently from this check's`);
     if (gitRaw.translate_docs[v].some((x) => !ok(x))) bad(`.gitlab-ci.yml: translate_docs ${v} is written other than as ${want}; GitLab's reader can read another spelling differently from this check's`);
   }
-  const OWN = new Set(["stage", "image", "interruptible", "timeout", "resource_group", "environment", "rules", "variables", "script", "artifacts"]);
+  const OWN = new Set(["stage", "image", "interruptible", "timeout", "resource_group", "environment", "rules", "needs", "variables", "script", "artifacts"]);
   for (const k of Object.keys(trn)) if (!OWN.has(k)) bad(`.gitlab-ci.yml: translate_docs has ${k}, a key the job holding the key does not take; that job is written out in full and holds nothing else`);
   if (trn.interruptible !== false) bad(`.gitlab-ci.yml: translate_docs interruptible must be false (a boolean), its own, found: ${Object.hasOwn(trn, "interruptible") ? JSON.stringify(trn.interruptible) : "none"}; a newer pipeline must not cancel a paid batch midway`);
   if (trn.resource_group !== "translate") bad(`.gitlab-ci.yml: translate_docs resource_group must be translate, found: ${JSON.stringify(trn.resource_group ?? null)}; two runs at once would each submit a paid batch`);
