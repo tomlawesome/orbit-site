@@ -211,6 +211,7 @@
   "copy-failed": "nicht kopiert",
   "docs-stamp": "aus den Repositorys kartiert · {date}",
   "docs-stale": "Übersetzt aus dem Englischen vom {date}; das Englische hat sich seitdem geändert.",
+  "docs-kept": "Übersetzt aus dem Englischen vom {date}; einige Abschnitte dieser Seite sind noch auf Englisch.",
   "docs-missing-title": "noch nichts da",
   "docs-missing": "Die Doku wurde noch nicht importiert. Du findest sie im {link}.",
   "docs-missing-link": "Repository",

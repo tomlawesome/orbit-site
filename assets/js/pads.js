@@ -382,27 +382,38 @@ export function createDocs(pad) {
   const englishPages = new Map();
   const englishPage = (slug) => englishPages.get(slug) || getJson(`${EN_DOCS}${slug}.json`).then((d) => { englishPages.set(slug, d); return d; });
   /* A translated page made from English that has changed since (a section's hash16 differs from the one the job
-     recorded, the sections are not the same set) or with sections the job left in English (source.kept) says so in
-     one line at its top, with the English page's link (#125 spec 3). Not dismissible; a page whose English cannot be
-     read, or a browser without crypto.subtle, shows none. */
+     recorded, the sections are not the same set) says so in one line at its top, with the English page's link (#125
+     spec 3): "docs-stale". One whose English is unchanged but with sections the job left in English (source.kept, or a
+     section recorded with RETRY_HASH, the hash no English has) says that instead: "docs-kept". Not dismissible; a
+     page whose English cannot be read, or a browser without crypto.subtle, shows the kept line if it has kept
+     sections, else none. Resolves to "changed", "kept" or false. */
+  const RETRY_HASH = "0000000000000000";
   async function stale(slug, doc) {
     const src = doc && doc.source;
     if (!src || typeof src !== "object" || !src.sections || typeof src.sections !== "object") return false;
-    if (Array.isArray(src.kept) && src.kept.length) return true;
-    const en = await englishPage(slug), secs = Array.isArray(en && en.sections) ? en.sections : [];
-    const ids = Object.keys(src.sections);
-    if (ids.length !== secs.length || secs.some((x) => !Object.hasOwn(src.sections, x.id))) return true;
-    for (const x of secs) if ((await hash16(sectionText(x))) !== src.sections[x.id]) return true;
-    return false;
+    let kept = Array.isArray(src.kept) && src.kept.length > 0;
+    let secs;
+    try {
+      const en = await englishPage(slug);
+      secs = Array.isArray(en && en.sections) ? en.sections : [];
+      const ids = Object.keys(src.sections);
+      if (ids.length !== secs.length || secs.some((x) => !Object.hasOwn(src.sections, x.id))) return "changed";
+      for (const x of secs) {
+        if (src.sections[x.id] === RETRY_HASH) { kept = true; continue; }
+        if ((await hash16(sectionText(x))) !== src.sections[x.id]) return "changed";
+      }
+    } catch (e) { if (!kept) throw e; }
+    return kept ? "kept" : false;
   }
   function staleBanner(slug, doc) {
     $(".docs-stale", reader)?.remove();
     stale(slug, doc).then((yes) => {
       if (!yes || reader.hidden || reader.dataset.slug !== slug || $(".docs-stale", reader)) return;
+      const key = yes === "kept" ? "docs-kept" : "docs-stale";
       const p = document.createElement("p");
       p.className = "docs-stale";
       const g = typeof doc.source.generated === "string" ? when(doc.source.generated) : "";
-      p.innerHTML = `<span>${esc(tr("docs-stale", { date: g }))}</span> <a data-lang="en" href="${esc(site(""))}#docs/${esc(slug)}" hreflang="en" lang="en">${esc(tr("ai-notice-english"))}</a>`;
+      p.innerHTML = `<span>${esc(tr(key, { date: g }))}</span> <a data-lang="en" href="${esc(site(""))}#docs/${esc(slug)}" hreflang="en" lang="en">${esc(tr("ai-notice-english"))}</a>`;
       reader.prepend(p);
     }).catch(() => { /* no English to compare with, or no crypto.subtle: no banner */ });
   }
