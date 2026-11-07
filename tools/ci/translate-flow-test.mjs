@@ -21,13 +21,29 @@
  *   T20 exit 2: English docs off shape, off the markup allow-list, or a section over 100,000 characters, before any request
  *   T21 exit 1: an unknown language, an unknown flag, a bad value, a malformed glossary or languages.json
  *
+ * Review round (#125, findings 2 to 16 of the inline review):
+ *   T15 (finding 6) the fake now reports the API's real request_counts, so one expired or canceled item among
+ *       succeeded ones is kept English, exit 0 (T15a, T15e)
+ *   T34 (2)  a resume whose English changed in place (same count, same ids) is refused: exit 4, nothing written
+ *   T35 (5)  a second run while the first batch is still running submits no second batch
+ *   T36 (12) a retry batch that does not end prints an id that resumes the run, round 1's results kept
+ *   T37 (12) a max_tokens cut-off is retried with a larger max_tokens
+ *   T38 (13) a batch whose creation answer was lost is found again, not created twice
+ *   T39 (14) an errored or expired item is tried again on the next run; it is not kept for good
+ *   T40 (10) a redirect from the results URL to another origin never carries the key
+ *   T41 (11) a body that does not end is cut off by a limit; T42 (11) a call that never answers does not outlast
+ *       --timeout-minutes
+ *   T43 (15) the fake's ids for a retried chunk are the tool's, and its attempt counts go on
+ *
  * Assumption (the spec leaves it open): --poll-seconds and --timeout-minutes take fractions (0.05, 0.02).
  *
  *   node tools/ci/translate-flow-test.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { pathToFileURL } from "node:url";
 import { startFake } from "./fake-claude.mjs";
 import { T, REPO, swap, translateHtml, mkFixture, runTool, argsFor, snapshot, reportNames, hash16, sectionHash, textOf, summaryOf } from "./translate-fixture.mjs";
 
@@ -77,11 +93,25 @@ await T.attempt("T15", async () => {
   try {
     const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
     T.exit("T15a errored, expired and refused results do not abort the run: exit 0", r, 0);
+    if (r.code !== 0) return;
     const readme = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null, guide = fx.exists("assets/docs-i18n/de/guide.json") ? fx.read("assets/docs-i18n/de/guide.json") : null;
     T.check("T15b each of the three is kept English in its page", !!readme && !!guide && readme.source.kept.includes("top") && readme.source.kept.includes("diagram") && guide.source.kept.includes("start"), JSON.stringify([readme && readme.source.kept, guide && guide.source.kept]));
     T.check("T15c the other items are written as translated", !!readme && !!guide && readme.sections.find((s) => s.id === "shot").html.includes("é") && guide.sections.find((s) => s.id === "long").html.includes("é") && fx.exists("assets/i18n/de.json"), "shot, long and the catalogue");
     const rep = fx.readReport();
     T.check("T15d the report lists each, with what happened", reportNames(rep, TOP, /error/i) && reportNames(rep, "docs/readme/diagram", /expire/i) && reportNames(rep, "docs/guide/start", /refus/i), "errored, expired, refused");
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T15e", async () => {
+  /* one canceled request among succeeded ones: the batch's counts say canceled 1, succeeded N-1 */
+  const fx = mkFixture(), fake = await startFake({ script: (cid) => (cid === `${TOP}@de` ? { canceled: true } : undefined) });
+  try {
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T15e one canceled item among succeeded ones: exit 0", r, 0);
+    if (r.code !== 0) return;
+    const readme = fx.read("assets/docs-i18n/de/readme.json");
+    T.check("T15e the canceled item is kept English and the others are translated", readme.source.kept.includes("top") && readme.sections.find((s) => s.id === "shot").html.includes("é"), JSON.stringify(readme.source.kept));
+    T.check("T15e the report lists it as canceled", reportNames(fx.readReport(), TOP, /cancel/i), "canceled");
   } finally { await fake.close(); fx.cleanup(); }
 });
 
@@ -138,9 +168,10 @@ await T.attempt("T19", async () => {
       T.check("T19c the batch is NOT cancelled (no POST .../cancel)", fake.cancels.length === 0 && !!id, `${fake.cancels.length} cancels`);
       T.check("T19d no report claims success: no assets/i18n/de.json, no docs-i18n/de", !fx.exists("assets/i18n/de.json") && !fx.exists("assets/docs-i18n/de"), "nothing written");
     } finally { await fake.close(); fx.cleanup(); } }
-  { /* the default timeout is 50 minutes: read from the tool's text, since a test cannot wait that long */
-    const src = readFileSync(join(REPO, "tools/ci/translate.mjs"), "utf8");
-    T.check("T19e --timeout-minutes defaults to 50", /timeout-minutes[^\n]*\b50\b|\b50\b[^\n]*timeout/i.test(src) && !/timeout-minutes[^\n]*\b170\b/.test(src), "50, not 170"); }
+  { /* the default timeout is 50 minutes: parseArgs' own default, since a test cannot wait that long */
+    const { parseArgs } = await import(pathToFileURL(join(REPO, "tools/ci/translate.mjs")).href);
+    const o = parseArgs([], {});
+    T.check("T19e --timeout-minutes defaults to 50", o.timeoutMinutes === 50, `parseArgs([]).timeoutMinutes = ${o.timeoutMinutes}`); }
   for (const status of [401, 403]) {
     const fx = mkFixture(), fake = await startFake({ status });
     try { await same(`T19f HTTP ${status}`, fake, fx, ["--langs", "de"], 4); } finally { await fake.close(); fx.cleanup(); }
@@ -259,5 +290,161 @@ await T.attempt("T21", async () => {
       T.check(`T21 ${what}: no request, no file touched`, !r.notBuilt && fake.requests.length === 0 && snapshot(fx.dir) === before, `${fake.requests.length} requests`);
     } finally { await fake.close(); fx.cleanup(); }
   }
+});
+
+/* ---- the review round (findings 2 to 16): each case plants one fault the review found ---- */
+const idOf = (r) => { const m = /TRANSLATE_BATCH_ID=(\S+)/.exec(r.out + r.err); return m ? m[1] : ""; };
+
+await T.attempt("T34", async () => {
+  /* finding 2: the batch was made from the English of an earlier commit; one section's English is edited in place since,
+     so the count and the ids still match. The translation of the OLD English must not be stamped with the new hash. */
+  const fx = mkFixture(), fake = await startFake({ never: true });
+  try {
+    const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T34a the first run is pending: exit 5", r1, 5);
+    const id = fake.batches[0] && fake.batches[0].id;
+    if (!id) return T.check("T34a a batch was submitted", false, "none");
+    const top = fx.pages.readme.sections.find((x) => x.id === "top");
+    fx.setSection("readme", "top", { html: top.html.replace("tidy", "calm and orderly") });
+    fake.never = false;
+    const posts = fake.posts, before = snapshot(fx.dir);
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } });
+    const written = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null;
+    const stamped = written && written.source.sections.top === sectionHash(fx.pages.readme.sections.find((x) => x.id === "top")) && written.sections.find((x) => x.id === "top").html.includes("tidy");
+    T.exit("T34b a resume whose English changed in place (same count, same ids): exit 4", r, 4);
+    T.check("T34c nothing submitted, nothing written", !r.notBuilt && fake.posts === posts && snapshot(fx.dir) === before, stamped ? "the translation of the old English was stamped with the new English's hash" : `${fake.posts - posts} new posts`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T35", async () => {
+  /* finding 5: the first run left its batch running (exit 5); the next run on the same commit, with no id, must not pay
+     for a second full batch */
+  const fx = mkFixture(), fake = await startFake({ never: true });
+  try {
+    const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T35a the first run is pending: exit 5", r1, 5);
+    const before = snapshot(fx.dir);
+    const r2 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.check("T35b the second run submits no second batch while the first still runs", !r2.notBuilt && fake.posts === 1, `${fake.posts} batches submitted`);
+    T.check("T35c and it does not claim to have finished: not exit 0, nothing written", !r2.notBuilt && r2.code !== 0 && snapshot(fx.dir) === before, `exit ${r2.code}`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T36", async () => {
+  /* finding 12: round 1 ends with one item broken, the retry batch does not end: the id the run prints must resume it,
+     with round 1's paid results kept */
+  const fx = mkFixture(), fake = await startFake({ never: 1, script: (cid, n, q, ans) => (cid === `${TOP}@de` && n === 1 ? { answer: dropStrong(ans) } : undefined) });
+  try {
+    const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T36a a retry batch that does not end: exit 5", r1, 5);
+    const id = idOf(r1);
+    T.check("T36b two batches were made and the run prints an id to resume", fake.batches.length === 2 && !!id, `${fake.batches.length} batches, id ${id || "none"}`);
+    if (!id) return;
+    fake.never = false;
+    const posts = fake.posts;
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } });
+    T.exit("T36c resuming with the printed id finishes the run: exit 0", r, 0);
+    T.check("T36d it submitted nothing", !r.notBuilt && fake.posts === posts, `${fake.posts - posts} new posts`);
+    const p = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null;
+    T.check("T36e round 1's results are kept (shot translated) and the retried item is translated too (top)", !!p && p.sections.find((x) => x.id === "shot").html.includes("é") && p.sections.find((x) => x.id === "top").html.includes("é") && !p.source.kept.includes("top"), p ? `kept ${JSON.stringify(p.source.kept)}` : "no page");
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T37", async () => {
+  /* finding 12: an answer cut off at max_tokens is asked again with room for more, not with the same limit */
+  const fx = mkFixture(), fake = await startFake({ script: (cid, n) => (cid === `${TOP}@de` && n === 1 ? { cutoff: true } : undefined) });
+  try {
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T37a a cut-off first answer, a good second one: exit 0", r, 0);
+    const tries = fake.sent.filter((q) => q.customId === `${TOP}@de`);
+    T.check("T37b the item was sent twice", tries.length === 2, `${tries.length} times`);
+    T.check("T37c the second request has a larger max_tokens than the first", tries.length === 2 && tries[1].params.max_tokens > tries[0].params.max_tokens, tries.map((q) => q.params.max_tokens).join(" then "));
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T38", async () => {
+  /* finding 13: the API made the batch but the answer was lost on the way; the retry must find that batch, not make a second */
+  const fx = mkFixture(), fake = await startFake({ lose: 1 });
+  try {
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { timeout: 120000 });
+    T.exit("T38a a lost answer to the batch's creation: the run finishes, exit 0", r, 0);
+    T.check("T38b exactly one batch exists (the retry found the one already made)", fake.batches.length === 1, `${fake.batches.length} batches, ${fake.posts} posts`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T39", async () => {
+  /* finding 14: an errored item (an expired or canceled one is the same kind of trouble) is the API's trouble, not the text's: the next run on the same English tries it again */
+  let fail = true;
+  const fx = mkFixture(), fake = await startFake({ script: (cid) => (fail && cid === `${TOP}@de` ? { errored: true } : fail && cid === "site/de/2@de" ? { errored: true } : undefined) });
+  try {
+    let r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T39a a run with one errored section and one errored chunk: exit 0", r, 0);
+    const n1 = fake.sent.length;
+    fail = false;
+    r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T39b the next run, the same English: exit 0", r, 0);
+    const again = fake.sent.slice(n1).map((q) => q.customId);
+    T.check("T39c the errored section is sent again", again.includes(`${TOP}@de`), JSON.stringify(again));
+    T.check("T39d the errored chunk is sent again", again.some((c) => c.startsWith("site/de/")), JSON.stringify(again));
+    const p = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null, st = fx.exists("tools/i18n/state/de.json") ? fx.read("tools/i18n/state/de.json") : null;
+    T.check("T39e both are translated now, nothing kept", !!p && !!st && p.sections.find((x) => x.id === "top").html.includes("é") && !p.source.kept.length && st.kept.length === 0, p ? `kept ${JSON.stringify(p.source.kept)} / ${st && st.kept.length} keys` : "no page");
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T40", async () => {
+  /* finding 10: the results URL answers with a redirect to another origin; the key is a custom header and fetch keeps it
+     across origins unless told not to follow */
+  const seen = [];
+  const other = createServer((req, res) => { seen.push(req.headers); res.writeHead(200, { "content-type": "application/x-jsonl" }); res.end("\n"); });
+  await new Promise((ok) => other.listen(0, "127.0.0.1", ok));
+  const fx = mkFixture(), fake = await startFake({ redirectResults: `http://127.0.0.1:${other.address().port}/stolen` });
+  try {
+    const before = snapshot(fx.dir);
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    const leaked = seen.filter((h) => h["x-api-key"]);
+    T.check("T40a the other origin never receives the x-api-key header", !r.notBuilt && leaked.length === 0, `${leaked.length} of ${seen.length} requests carried the key`);
+    T.check("T40b and the run does not go on with what the other origin answered: not exit 0, nothing written", !r.notBuilt && r.code !== 0 && snapshot(fx.dir) === before, `exit ${r.code}`);
+  } finally { await fake.close(); await new Promise((ok) => { other.closeAllConnections?.(); other.close(ok); }); fx.cleanup(); }
+});
+
+await T.attempt("T41", async () => {
+  /* finding 11: a body from outside has a limit. The fake sends 256 MiB that never forms a result; a limit stops reading
+     well before that (the limit's own size is the tool's to choose, under 256 MiB) */
+  for (const what of ["results", "status"]) {
+    const fx = mkFixture(), fake = await startFake({ flood: what });
+    try {
+      const before = snapshot(fx.dir);
+      const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { timeout: 120000 });
+      T.check(`T41 a ${what} body that does not end: the tool hangs up before the end`, !r.notBuilt && fake.flooded.aborted, `${Math.round(fake.flooded.sent / 1048576)} MiB written, aborted ${fake.flooded.aborted}`);
+      T.exit(`T41 a ${what} body that does not end: exit 4`, r, 4);
+      T.check(`T41 ${what}: nothing written`, !r.notBuilt && snapshot(fx.dir) === before, "files changed");
+    } finally { await fake.close(); fx.cleanup(); }
+  }
+});
+
+await T.attempt("T42", async () => {
+  /* finding 11: a poll the API never answers must not outlast --timeout-minutes (the batch is left running: exit 5) */
+  const fx = mkFixture(), fake = await startFake({ hang: "status" });
+  try {
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"), { timeout: 20000 });
+    T.exit("T42a a status call that never answers, --timeout-minutes 0.02: exit 5", r, 5);
+    const id = fake.batches[0] && fake.batches[0].id;
+    T.check("T42b the batch id is printed and the batch is not cancelled", !r.notBuilt && !!id && (r.out + r.err).includes(id) && fake.cancels.length === 0, `id ${id}`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T43", async () => {
+  /* finding 15: the fake names a retried chunk as the tool does, so a script sees attempt 1 then 2 for it */
+  const calls = [];
+  const noHole = (a) => { a.items = a.items.map((x) => (x.id === "k003" ? { id: x.id, text: "Du hast Elemente fällig" } : x)); return a; };
+  const fx = mkFixture(), fake = await startFake({ script: (cid, n, q, ans) => { calls.push(`${cid}#${n}`); return cid.startsWith("site/de/1@") && n === 1 ? { answer: noHole(ans) } : undefined; } });
+  try {
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--only", "site"));
+    T.exit("T43a a run where one key of the first chunk fails once: exit 0", r, 0);
+    const planned = [...r.out.matchAll(/^\s+(site\/\S+@de)\s/gm)].map((m) => m[1]);
+    const sent1 = fake.batches[0] ? fake.batches[0].requests.map((q) => q.customId) : [];
+    T.check("T43b the ids the fake gives the first batch are the ids the tool plans", planned.length === 3 && JSON.stringify(planned) === JSON.stringify(sent1), `tool ${planned.join(",")}; fake ${sent1.join(",")}`);
+    T.check("T43c the retry of the chunk is that chunk's attempt 2", calls.includes("site/de/1@de#1") && calls.includes("site/de/1@de#2"), calls.filter((c) => c.startsWith("site/de/1@")).join(" "));
+  } finally { await fake.close(); fx.cleanup(); }
 });
 T.done();

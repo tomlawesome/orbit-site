@@ -18,6 +18,8 @@
  *       report, and never as an argument (--api-key is refused)
  *   T18g-k the default cap is 3,000,000 when neither --max-tokens nor TRANSLATE_MAX_TOKENS is set: an estimate of
  *       about 2.5M proceeds, about 3.1M exits 3 with nothing sent (amendment 1, item 4)
+ *   T18m-o (finding 4) the retry batch counts against the same cap: with the cap one token over the plan's estimate, a run
+ *       that needs a retry exits 3 before submitting it, and a run that needs none goes through
  *
  *   node tools/ci/translate-request-test.mjs
  */
@@ -109,6 +111,30 @@ await T.attempt("T18", async () => {
     r = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--max-tokens", String(cap)), { env: { TRANSLATE_MAX_TOKENS: "1000" } });
     T.exit("T18e at the cap the run goes on (--max-tokens wins over the variable): exit 0", r, 0);
     T.check("T18f requests were made and the files written at the cap", fake.posts > 0 && fx.exists("assets/i18n/de.json"), `${fake.posts} posts`);
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T18m", async () => {
+  /* finding 4: the cap is a spend ceiling, and the retry batch is spend. The owner keeps TRANSLATE_MAX_TOKENS as the way to
+     raise it, so the test is only that round 2 counts against the same cap as round 1. The cap is set one token over the
+     estimate of the whole plan: a run with nothing to retry fits, a run that needs a retry batch does not. */
+  const TOP = "docs/readme/top";
+  const fx = mkFixture(), fake = await startFake();
+  try {
+    const dry = async (n) => (await run(fx, fake, "--dry-run", "--langs", "de", "--max-tokens", String(n))).code;
+    let lo = 1, hi = 100000000;
+    if ((await dry(hi)) !== 0) return T.check("T18m the plan's estimate", false, "a dry run far under the cap does not exit 0");
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if ((await dry(mid)) === 0) hi = mid; else lo = mid + 1; }
+    const cap = lo + 1;
+    const clean = await run(fx, fake, "--langs", "de", "--max-tokens", String(cap));
+    T.exit("T18m control: at one token over the estimate a run with nothing to retry goes through: exit 0", clean, 0);
+    const fx2 = mkFixture(), fake2 = await startFake({ script: (cid, n, q, ans) => { if (cid === `${TOP}@de` && n === 1) { ans.html = ans.html.replace("<strong>", "").replace("</strong>", ""); return { answer: ans }; } return undefined; } });
+    try {
+      const before = snapshot(fx2.dir);
+      const r = await run(fx2, fake2, "--langs", "de", "--max-tokens", String(cap));
+      T.exit("T18n one item needs a retry batch and the estimate of both rounds is over the cap: exit 3", r, 3);
+      T.check("T18o the retry batch is not submitted (one batch only), and nothing is written", !r.notBuilt && fake2.batches.length === 1 && snapshot(fx2.dir) === before, `${fake2.batches.length} batches`);
+    } finally { await fake2.close(); fx2.cleanup(); }
   } finally { await fake.close(); fx.cleanup(); }
 });
 

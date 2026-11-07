@@ -569,6 +569,11 @@ case $route in /issues*) # the issue calls: their query and data, and a copy of 
     case $d in description@*) f=${d#description@}; [ ! -f "$f" ] || cp "$f" "$STATE/issue-body" ;; esac
   done ;;
 esac
+case $method:$route in POST:/merge_requests) # the merge request's description, sent from a file (#125: the report's summary)
+  printf '%s\n' "$data" | tr '|' '\n' | while IFS= read -r d; do
+    case $d in description@*) f=${d#description@}; [ ! -f "$f" ] || cp "$f" "$STATE/mr-body" ;; esac
+  done ;;
+esac
 if [ -n "$ismerge" ]; then # one line per merge PUT: header ok?, timeout flags, sha sent
   query=; case $path in *\?*) query=${path#*\?} ;; esac
   sha=$(printf '%s|%s' "$data" "$query" | tr '|&' '\n\n' | sed -n 's/^sha=//p' | head -n 1)
@@ -721,6 +726,23 @@ prepare() {
       "$realgit" -c user.name=t -c user.email=t@t commit -q -m "two pictures" ;;
   esac
 }
+# mklag <stamp> (#125, amendment 5): the checkout as it is when the English has been imported three times since the
+# German of its first source was made: assets/docs/index.json committed with generated 2000-01-01, then 2000-01-02,
+# then back to what it is (so the history holds three dates, the page's stamp the oldest or the middle one), and that
+# page committed, stamped <stamp>. The last commit is HEAD, which the artifact's job must be for.
+mklag() {
+  slug=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("tools/docs-sources.json", "utf8"))[0].slug)')
+  for g in 2000-01-01T00:00:00.000Z 2000-01-02T00:00:00.000Z; do
+    "$realnode" -e 'const fs = require("fs"), f = "assets/docs/index.json", j = JSON.parse(fs.readFileSync(f, "utf8")); j.generated = process.argv[1]; fs.writeFileSync(f, JSON.stringify(j))' "$g"
+    "$realgit" add assets/docs/index.json
+    "$realgit" -c user.name=t -c user.email=t@t commit -q -m "import $g" >/dev/null 2>&1
+  done
+  "$realgit" show "$basecommit:assets/docs/index.json" > assets/docs/index.json
+  mkdir -p assets/docs-i18n/de
+  printf '{"source":{"generated":"%s"}}\n' "$1" > "assets/docs-i18n/de/$slug.json"
+  "$realgit" add assets/docs/index.json "assets/docs-i18n/de/$slug.json"
+  "$realgit" -c user.name=t -c user.email=t@t commit -q -m "import again, and a German page" >/dev/null 2>&1
+}
 run_push() { # run_push <outfile> <scenario>
   outfile=$1
   # a clean scratch repository and state for every run
@@ -733,8 +755,10 @@ run_push() { # run_push <outfile> <scenario>
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
   rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
-  headsha=$basecommit     # unless the scenario's main already holds pictures
+  [ -z "${lag:-}" ] || mklag "$lag"
+  headsha=$basecommit     # unless the scenario's main already holds pictures or a history
   case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
+  [ -z "${lag:-}" ] || headsha=$("$realgit" rev-parse HEAD)
   "$realpython" -W ignore "$aux/mkzip.py" "$aux/artifact.zip" "$aux/docs-head" "$2"
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
@@ -1607,9 +1631,16 @@ idx = json.load(open('assets/docs/index.json'))
 en = json.load(open('assets/i18n/en.json'))
 files = {}
 entries = []
-for s in srcs:
+OLD, NEW = '2020-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z'
+for n, s in enumerate(srcs):
     p = json.load(open('assets/docs/%s.json' % s['slug']))
-    p['source'] = {'generated': idx['generated'], 'sections': {x['id']: h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)) for x in p['sections']}, 'kept': [x['id'] for x in p['sections']]}
+    gen = idx['generated']          # the English the page was made from: the checkout's, unless the scenario says other
+    if sc == 'tr-stale' or (sc == 'tr-onepage' and n == 0): gen = OLD
+    if sc == 'tr-newer': gen = NEW
+    p['source'] = {'generated': gen, 'sections': {x['id']: h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)) for x in p['sections']}, 'kept': [x['id'] for x in p['sections']]}
+    if sc == 'tr-script' and n == 0: # a script in a section the translation made (so not kept in English)
+        p['source']['kept'] = [x['id'] for x in p['sections'][1:]]
+        p['sections'][0]['html'] = '<p>x</p><script>alert(1)</script>'
     files['assets/docs-i18n/de/%s.json' % s['slug']] = dump(p)
     q = {k: v for k, v in p.items()}
     q['sections'] = [{k: v for k, v in x.items() if k != 'html'} for x in p['sections']]
@@ -1625,6 +1656,15 @@ extra = {
     'tr-html': ('assets/docs-i18n/de/x.html', b'<p>x</p>'),
     'tr-deep': ('assets/docs-i18n/de/sub/x.json', b'{}'),
 }
+# #125 review 8: an artifact that breaks one rule of the gate, the rest of it good
+dp = 'assets/docs-i18n/de/%s.json' % srcs[0]['slug']
+if sc == 'tr-catalogue': # a key of en.json missing from the catalogue
+    first = next(iter(en)); files['assets/i18n/de.json'] = dump({k: v for k, v in en.items() if k != first})
+if sc == 'tr-lang': files['assets/i18n/xx.json'] = dump(en) # a language tools/i18n/languages.json does not list
+if sc == 'tr-half': del files['tools/i18n/state/de.json'] # a language present but not whole
+if sc == 'tr-noreport': del files['translate-report.json']
+if sc == 'tr-hostile': # a summary that tries to close its fence, run a quick action, mention, and hide text
+    files['translate-report.json'] = dump({'summary': 'de: 0 translated\n````\n/close\n@everyone Closes #1\n\x1b[2Jhidden \u202egnirts\n```\nmore'})
 def zi(name, mode):
     z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
 with zipfile.ZipFile(out, 'w') as z:
@@ -1639,7 +1679,7 @@ run_tr() { # run_tr <outfile> <scenario> <branch> <pipeline source>
   for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/i18n/translate-*'); do "$realgit" branch -q -D "$b"; done
   rm -rf scratch-tmp; mkdir scratch-tmp
   rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
-    "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran "$aux"/tok.log "$aux"/issue-body "$aux"/issues.log
+    "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran "$aux"/tok.log "$aux"/issue-body "$aux"/issues.log "$aux"/mr-body
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
   : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"; : > "$aux/mr-query.log"; : > "$aux/tok.log"; : > "$aux/issues.log"
   "$realpython" -W ignore "$aux/mktr.py" "$aux/artifact.zip" "$2"
@@ -1696,6 +1736,72 @@ for pair in tr-en:en.json tr-docs:assets/docs/x.json tr-other:tools/ci/serve.mjs
   check "TR7 $sc: an archive with $named is refused, naming it, and nothing is pushed (exit $rcz)" "$rc"
   [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 done
+# #125 review 8 and amendment 5: the gate has its refusals, each before anything ships. The archive is good but for one thing.
+tr_refused() { # tr_refused <scenario> <what it holds> <regex (grep -i) naming what is wrong>
+  run_tr "$out" "$1" dev schedule
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -qi -e "$3" "$out" && [ -z "$trbranch" ] && ! grep -q '^POST /merge_requests' "$aux/api.log" \
+    && ! grep -q 'push' "$aux/shim.log" || rc=1
+  check "TR8 $1: an archive with $2 is refused, naming it, and nothing is pushed or opened (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+}
+tr_refused tr-script "a <script> in a section the translation made" 'script\|markup'
+tr_refused tr-catalogue "a catalogue missing a key of en.json" 'catalogue\|assets/i18n/de\.json'
+tr_refused tr-lang "a language that tools/i18n/languages.json does not list" 'xx\.json'
+tr_refused tr-half "a language present without its state file" 'not whole\|state/de\.json'
+tr_refused tr-noreport "no translate-report.json" 'translate-report\.json'
+# the stamp: every page is made from the English the checkout holds (amendment 5), whether all are older, one is, or one is later
+tr_refused tr-stale "every page made from an older English than the checkout's" 'generated'
+tr_refused tr-onepage "one page made from an older English than the checkout's" 'generated'
+tr_refused tr-newer "a page made from a later English than the checkout's" 'generated'
+# a report whose summary tries to close its fence, run a quick action, mention, hide text: the merge request's
+# description is the summary, in one fence, with no backtick, control or bidi character left
+run_tr "$out" tr-hostile dev schedule
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && [ -f "$aux/mr-body" ] || rc=1
+check "TR9 tr-hostile: a hostile summary does not stop the publish (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; [ -f "$aux/mr-body" ] && [ "$(grep -c '^````$' "$aux/mr-body")" -eq 2 ] && ! grep -q '```.*```' "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: the description's one fence is closed only by the report's own end (no line of the summary can close it)" "$rc"
+rc=0; [ -f "$aux/mr-body" ] && ! LC_ALL=C grep -q "$(printf '\033')" "$aux/mr-body" && ! grep -q "$(printf '\342\200\256')" "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: no escape or bidi control survives into the description" "$rc"
+rc=0; [ -f "$aux/mr-body" ] && awk '$0 == "````" { f = !f; next } !f && ($0 ~ /^\// || $0 ~ /@everyone/ || $0 ~ /Closes/) { bad = 1 } END { exit bad }' "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: the quick action, the mention and the closing keyword stay inside the fence" "$rc"
+
+# #135 (amendment 5): publish_docs watches how far the German has fallen behind the English, from the checkout's history.
+# Two imports behind goes into the standing issue's body, one is a line in the log; a dry run prints the body. The
+# German page of the first source is stamped older than the English by two imports (G0) or by one (G1).
+dry=1; lag=2000-01-01T00:00:00.000Z
+run_push "$out" warn-none
+rcx=$rc
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue' "$out" || rc=1
+check "LAG1 a page two imports behind: the dry run still exits 0 and reports the warnings issue (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep '^   | ' "$out" | grep -q "$slug" && grep '^   | ' "$out" | grep -q '2 imports behind' || rc=1
+check "LAG2 a page two imports behind: the warnings issue's body names the page and says \"2 imports behind\"" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep '^   | ' "$out" | grep -qi 'translations' || rc=1
+check "LAG3 a page two imports behind: the body has a Translations block" "$rc"
+rc=0; grep '^   | ' "$out" | grep -q 'no translation has landed since' || rc=1
+check "LAG4 a page two imports behind: the block says when a translation last landed (\"no translation has landed since <date>\")" "$rc"
+
+lag=2000-01-02T00:00:00.000Z
+run_push "$out" warn-none
+rcx=$rc
+rc=0; [ "$rcx" -eq 0 ] && ! grep '^   | ' "$out" | grep -q -e "$slug" -e 'behind' -e 'ranslations' || rc=1
+check "LAG5 a page one import behind adds nothing to the warnings issue's body (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -v '^   | ' "$out" | grep -q "$slug.*behind\|behind.*$slug" || rc=1
+check "LAG6 a page one import behind is a line in the job log, naming the page" "$rc"
+
+lag=2000-01-01T00:00:00.000Z
+run_push "$out" warn-closednone
+rcx=$rc
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue #5 and reopen it' "$out" || rc=1
+check "LAG7 a page two imports behind reopens a closed warnings issue although the import had no warnings (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+dry=; lag=
+
 # the docs mode is as it was: dev only, schedule only
 pinned "in docs mode on batch-b" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=batch-b
 pinned "in docs mode from a web pipeline" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=web

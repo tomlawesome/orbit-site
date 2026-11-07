@@ -11,7 +11,8 @@
  *   J6  de/ with an English browser never redirects (one navigation only)
  *   J7  the root shows no AI notice
  *   J9  a translated docs page older than the English shows the stale banner, with a link to the English
- *   J10 the de/ reader reads assets/docs-i18n/de/, falls back to English per section and per page, and the root never asks for it
+ *   J10 the de/ reader reads assets/docs-i18n/de/; a translated page shows no untranslated line, a page with no German file is read in
+ *       English with that line shown (decision 11a: page-level, never per section); the root never asks for it
  *
  * Contract the page is held to (the builder's): <html lang>, data-i18n keys, localStorage "orbit-lang", the notice
  * an element with class .ai-notice holding an <a hreflang="en"> to the English page, and the switch links
@@ -176,8 +177,8 @@ try {
   });
 
   /* J9, J10 (#125 stage 2): fake German docs served by route, so no built translation is needed in the tree. The
-     page "readme" is translated except its second section (hash does not match the English: shown in English with the
-     untranslated line); every other page has no German file (404: falls back to the English page). With fresh, every
+     page "readme" is translated (its second section kept in English, its hash not the English's: the stale banner says
+     so, J9); every other page has no German file (404: the whole English page is read, and the untranslated line shown). With fresh, every
      section's hash matches the English and none is kept: spec 3 shows the stale banner when "any [hash] differs from
      source.sections, or source.kept is non-empty", so only such a page can show none (J9b). The German page is known
      to be shown by its title in the reader's heading: the reader sets a page's title and its sections' html, never the
@@ -223,12 +224,18 @@ try {
     await docsOpen(page);
     await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
     check("J10a the de/ reader asks for assets/docs-i18n/de/", fake.asked.some((u) => u.endsWith("/assets/docs-i18n/de/readme.json") || u.endsWith("/assets/docs-i18n/de/index.json")), JSON.stringify(fake.asked));
-    const un = await page.locator("#docspad .untranslated").count();
-    check("J10b a section whose hash no longer matches shows in English with the untranslated line (#docspad .untranslated)", un >= 1, `${un} line(s)`);
+    /* the line is in the page's markup (de/index.html) without a hidden attribute, so a count of the elements proves nothing:
+       what matters is whether the visitor sees it (decision 11a: it stands over an English page, never a translated one) */
+    const un = await page.locator("#docspad .reader .untranslated:visible").count();
+    check("J10b a translated page shows no untranslated line (#docspad .reader .untranslated is not visible)", un === 0, `${un} visible`);
     const gone = eIndex.sources.find((x) => x.slug !== "readme");
     await page.goto(`${SITE}de/${Q}#docs/${gone.slug}`, { waitUntil: "load" });
     await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), gone.sections[0].title, { timeout: 8000 });
-    check("J10c a page with no German file falls back to the English page", true, `${gone.slug} read in English`);
+    const shownGone = await page.locator("#docspad .reader .untranslated:visible").count();
+    const h1 = (await page.locator("#docspad .readhead h1").textContent()) || "";
+    const asked404 = fake.asked.some((u) => u.endsWith(`/assets/docs-i18n/de/${gone.slug}.json`));
+    check("J10c a page with no German file is read in English, with the untranslated line shown", asked404 && shownGone === 1 && h1 !== "Orbit (de)" && h1.length > 0,
+      `asked the German file: ${asked404}; ${shownGone} visible line(s); heading "${h1}"`);
   });
   await run("J10d", { context: { locale: "en-US" } }, async (page) => {
     const fake = await fakeDocs(page, eIndex.generated);

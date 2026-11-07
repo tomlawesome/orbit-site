@@ -7,7 +7,8 @@
  *
  *   T6  (a) a result that drops a <strong>, adds a <br> or changes an href is refused, the rule named
  *   T7  (b) a changed character in <pre class="code"> or <code> is refused
- *   T8  (e) a mermaid label translated passes; a changed arrow, node id or line count is refused
+ *   T8  (e) a mermaid label translated passes; a changed arrow, node id or line count is refused; a label that
+ *       carries markup the English lacks (an entity-escaped link or picture, which Mermaid renders as html) is refused
  *   T9  (f)/(m) German 3x English is refused, Japanese 0.4x passes; and the table is the right one: German 0.4x
  *       and Japanese 2x are refused; a catalogue 3x is refused
  *   T10 (k) a catalogue value missing {n}, or adding <a>, is refused
@@ -75,6 +76,10 @@ await T.attempt("T8", async () => {
   await refused("T8b a changed arrow", DIAGRAM, RULE.e, html((h) => h.replace("--&gt; b(", "--- b(")));
   await refused("T8c a changed node id", DIAGRAM, RULE.e, html((h) => h.replace("b --&gt; c[", "x --&gt; c[")));
   await refused("T8d a missing line", DIAGRAM, RULE.e, html((h) => h.replace("\n    b --&gt; c[(&quot;The database&quot;)]", "")));
+  await refused("T8e a label carrying an entity-escaped link the English lacks", DIAGRAM, new RegExp(`${RULE.e.source}|label|markup`, "i"),
+    html((h) => h.replace("Your browser", "Your &lt;a href='https://evil.example/login'&gt;browser&lt;/a&gt;")));
+  await refused("T8f a label carrying an entity-escaped picture the English lacks", DIAGRAM, new RegExp(`${RULE.e.source}|label|markup`, "i"),
+    html((h) => h.replace("The database", "The &lt;img src=&quot;https://evil.example/p.png&quot;&gt; database")));
 });
 
 await T.attempt("T9", async () => {
