@@ -22,12 +22,13 @@
  * assets/docs-i18n/<lang>/<slug>.json and index.json (spec 1); and the report (default translate-report.json).
  * A file whose content would not change is not rewritten.
  *
- * Requests go out as one Message Batch with custom_ids r0000, r0001, ... (the index in the run's request list, which
- * is in language order and then plan order); results are mapped back by custom_id, never by position. Submit, then
+ * Requests go out as one Message Batch with custom_ids r0000-<key>, r0001-<key>, ... (the index in the run's request
+ * list, which is in language order and then plan order, and the idempotency key: the first 12 hex of the run's
+ * digest, the same in the retry round); results are mapped back by custom_id, never by position. Submit, then
  * poll with a resumable job id (spec amendment 1): a batch not ended within --timeout-minutes is left running, a
  * resume token printed, exit 5. The token is <batch>.<digest> (round 1) or <round-1 batch>.<round-2 batch>.<digest>
- * (the retry round), the digest being hash16 of the round-1 request list (custom_ids and params: the English, the
- * prompt, the model). A later run with --resume <token> or TRANSLATE_BATCH_ID=<token> submits nothing for those
+ * (the retry round), the digest being hash16 of the round-1 request list with bare ids (r0000, ...; the params: the
+ * English, the prompt, the model). A later run with --resume <token> or TRANSLATE_BATCH_ID=<token> submits nothing for those
  * batches, rebuilds the request list, refuses it unless its digest is the token's (so a translation of other English
  * is never stamped with this English's hash), checks the batch holds its ids and finishes from the results, round
  * 1's included. A bare batch id is taken only when this machine's record (~/.cache/orbit-translate/batches.json,
@@ -231,7 +232,8 @@ const userText = (lang, L, item, broke) => [
 ].join("\n\n");
 export const maxTokensFor = (chars) => Math.min(MAX_OUT, Math.ceil((4 * chars) / 3.5) + 1024);
 
-/* the wire id of the n-th request of a batch of `count` (the API allows only [a-zA-Z0-9_-]{1,64}) */
+/* the bare id of the n-th request of a batch of `count`; on the wire it carries the run's key, wireId(n, count) + "-" +
+   12 hex (the API allows only [a-zA-Z0-9_-]{1,64}) */
 export const wireId = (n, count) => `r${String(n).padStart(Math.max(4, String(Math.max(0, count - 1)).length), "0")}`;
 /* a retry of an answer cut off at max_tokens gets twice the room, up to twice MAX_OUT */
 const maxTokensAgain = (chars) => Math.min(2 * MAX_OUT, 2 * maxTokensFor(chars));
@@ -561,6 +563,8 @@ async function runBatch(o, client, requests, deadline, log, job) {
     if (isObj(b) && b.processing_status === "ended") try {
       const c = isObj(b.request_counts) ? b.request_counts : {}, n = (k) => (Number.isFinite(c[k]) ? c[k] : 0);
       const total = ["processing", "succeeded", "errored", "canceled", "expired"].reduce((t, k) => t + n(k), 0);
+      const notOurs = (why) => Object.assign(new Exit(4, why), { notOurs: true });
+      if (job.adopt && total !== requests.length) throw notOurs(`it holds ${total} requests, not ${requests.length}`);
       if (resumeId && total !== requests.length) throw new Exit(4, `batch ${id} holds ${total} requests but this commit's sources make ${requests.length}: it is not this run's batch; nothing written`);
       /* one errored, expired or canceled request is kept in English (and sent again next run); none succeeded is the batch's failure */
       if (requests.length && n("succeeded") === 0) throw new Exit(4, `batch ${id} ended with no request succeeded (errored ${n("errored")}, canceled ${n("canceled")}, expired ${n("expired")}); nothing written`);
@@ -571,16 +575,18 @@ async function runBatch(o, client, requests, deadline, log, job) {
         let r; try { r = JSON.parse(line); } catch { throw new Exit(4, `batch ${id}: a results line is not JSON`); }
         if (!isObj(r) || typeof r.custom_id !== "string") throw new Exit(4, `batch ${id}: a results line has no custom_id`);
         const k = index.get(r.custom_id);
+        if (k === undefined && job.adopt) throw notOurs(`its results hold a custom_id without this run's key (${JSON.stringify(r.custom_id.slice(0, 70))})`);
         if (k === undefined) throw new Exit(4, `batch ${id}: the results hold a custom_id this run never sent (${JSON.stringify(r.custom_id.slice(0, 70))})${resumeId ? ": it is not this run's batch" : ""}; nothing written`);
         if (out.has(k)) throw new Exit(4, `batch ${id}: the results hold custom_id ${r.custom_id} twice; nothing written`);
         out.set(k, r.result);
       }
+      if (job.adopt && out.size !== requests.length) throw notOurs(`it returned ${out.size} results for ${requests.length} requests`);
       if (resumeId && out.size !== requests.length) throw new Exit(4, `batch ${id} returned ${out.size} results for ${requests.length} requests: it is not this run's batch; nothing written`);
       job.read(id);
       return out;
     } catch (e) {
       /* the batch's results cannot be used (exit 4): its record goes, so no later run takes it up again */
-      if (e instanceof Exit && e.code === 4 && !e.retry && job.failed) job.failed(id);
+      if (e instanceof Exit && e.code === 4 && !e.retry && !e.notOurs && job.failed) job.failed(id);
       throw e;
     }
     if (Date.now() >= deadline) throw pending(`has not ended within ${o.timeoutMinutes} minutes`);
@@ -645,11 +651,14 @@ export async function run(opts) {
         const payload = { items: it.payload.items.filter((x) => broke.keys.includes(x.id)) };
         return { ...it, payload, chars: JSON.stringify(payload).length };
       };
-      const requestsFor = (round, todo) => todo.map((t, n) => request(itemFor(round, t), system, t.broke, wireId(n, todo.length)));
+      const bareFor = (round, todo) => todo.map((t, n) => request(itemFor(round, t), system, t.broke, wireId(n, todo.length)));
       let todo = items.map((it) => ({ it, broke: null }));
-      const first = requestsFor(1, todo), digest = digestOf(first);
+      /* the idempotency key: the digest of round 1's requests with bare ids rides in every custom_id of the run */
+      const bare = bareFor(1, todo), digest = digestOf(bare), key = digest.slice(0, 12);
+      const requestsFor = (round, todo) => bareFor(round, todo).map((q) => ({ ...q, custom_id: `${q.custom_id}-${key}` }));
+      const first = requestsFor(1, todo);
       /* the batches to take up instead of submitting: [round 1's, round 2's] */
-      let resume = null;
+      let resume = null, adopt = false;
       if (o.resume) {
         let { ids, digest: want } = o.resume;
         if (want === null) {
@@ -678,18 +687,19 @@ export async function run(opts) {
           const all = await client.list(), running = all.filter((b) => b.processing_status === "in_progress");
           if (running.length) throw new Exit(5, `batch ${String(running[0].id).slice(0, 80)} is still in progress on this key${running.length > 1 ? ` (and ${running.length - 1} more)` : ""}: nothing submitted, so no second batch is paid for. Resume it with the TRANSLATE_BATCH_ID its run printed, or run again once it has ended`);
           /*
-           * with no record (a CI runner keeps none), an ended batch on the key is taken as this run's unread one when
-           * the key's newest ended batch holds exactly this many requests, every one succeeded, made after the English
-           * it would translate (created_at after its generated) and within RECORD_DAYS. Its results are then held to
-           * this run's ids as any resume's are, and each answer to the checks.
+           * with no record (a CI runner keeps none), the key's newest ended batch is a candidate for this run's unread
+           * one when it holds exactly this many requests, every one succeeded, made after the English it would
+           * translate (created_at after its generated) and within RECORD_DAYS. It is taken up only if every result's
+           * custom_id carries this run's key (runBatch, job.adopt); otherwise a new batch is made and none of the
+           * other batch's text is used.
            */
           const n = (b, k) => (isObj(b.request_counts) && Number.isFinite(b.request_counts[k]) ? b.request_counts[k] : 0);
           const ended = all.find((b) => b.processing_status === "ended");
           const made = ended && typeof ended.created_at === "string" ? Date.parse(ended.created_at) : null;
           if (ended && BATCH_ID.test(String(ended.id)) && n(ended, "succeeded") === first.length && ["errored", "canceled", "expired", "processing"].every((k) => n(ended, k) === 0)
             && (made === null || (Number.isFinite(made) && made > Date.parse(eng.generated) && made >= Date.now() - RECORD_DAYS * 86400e3))) {
-            resume = [ended.id];
-            log(`batch ${ended.id} on this key ended with ${first.length} requests, all succeeded, made after this English: taking it up as this run's unread batch, nothing submitted`);
+            resume = [ended.id]; adopt = true;
+            log(`batch ${ended.id} on this key ended with ${first.length} requests, all succeeded, made after this English: taking it up if its ids carry this run's key (${key})`);
           }
         }
       }
@@ -710,7 +720,16 @@ export async function run(opts) {
           read: (id) => rec.drop(id),
           failed: (id) => rec.drop(id),
         };
-        const results = await runBatch(o, client, requests, deadline, log, job);
+        job.adopt = adopt && round === 1;
+        let results;
+        try { results = await runBatch(o, client, requests, deadline, log, job); }
+        catch (e) {
+          if (!(e && e.notOurs && job.adopt)) throw e;
+          /* the candidate from the list is another run's: nothing of it is used, and this run's batch is made */
+          log(`batch ${job.resumeId}: ${e.message}; it is another run's, so none of its text is used and a batch is made for this one`);
+          resume = null; adopt = false; job.adopt = false; job.resumeId = null;
+          results = await runBatch(o, client, requests, deadline, log, job);
+        }
         ids.push(job.id);
         batches++;
         const again = [];
