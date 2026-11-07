@@ -5,7 +5,7 @@
  *
  *   node tools/ci/translate.mjs [--langs de,fr] [--only site|docs] [--dry-run] [--max-tokens N]
  *        [--out DIR] [--report FILE] [--poll-seconds 60] [--timeout-minutes 50] [--api-base URL]
- *        [--resume BATCH_ID]   (or TRANSLATE_BATCH_ID=BATCH_ID in the environment)
+ *        [--resume TOKEN]   (or TRANSLATE_BATCH_ID=TOKEN in the environment)
  *
  * Patterns: a content-hash incremental build (each translated item carries hash16 of its English; only a changed
  * hash is sent again); schema-constrained output with post-validation (structured JSON out, the mechanical checks of
@@ -14,8 +14,9 @@
  * and checked against the cap before anything is sent; --dry-run needs no key and sends nothing).
  *
  * The key is read from the environment (ANTHROPIC_API_KEY) and nowhere else: never an argument, never printed,
- * sent only as the x-api-key header, and only to --api-base's own origin (a results URL elsewhere is refused). The
- * job that runs this holds the key, so it runs no third-party code: Node's standard library and fetch, raw HTTP.
+ * sent only as the x-api-key header, and only to --api-base's own origin (a results URL elsewhere is refused, and a
+ * redirect is never followed). The job that runs this holds the key, so it runs no third-party code: Node's standard
+ * library and fetch, raw HTTP. Every call has a time limit and every answer a size limit (LIMITS).
  *
  * Writes, under --out (default the checkout): assets/i18n/<lang>.json and tools/i18n/state/<lang>.json, and
  * assets/docs-i18n/<lang>/<slug>.json and index.json (spec 1); and the report (default translate-report.json).
@@ -23,17 +24,35 @@
  *
  * Requests go out as one Message Batch with custom_ids r0000, r0001, ... (the index in the run's request list, which
  * is in language order and then plan order); results are mapped back by custom_id, never by position. Submit, then
- * poll with a resumable job id (spec amendment 1): a batch not ended within --timeout-minutes is left running, its id
- * printed, exit 5; a later run of the same commit with --resume <id> or TRANSLATE_BATCH_ID=<id> submits nothing for
- * that batch, rebuilds the request list, checks it matches the batch (count and ids) and finishes from its results.
+ * poll with a resumable job id (spec amendment 1): a batch not ended within --timeout-minutes is left running, a
+ * resume token printed, exit 5. The token is <batch>.<digest> (round 1) or <round-1 batch>.<round-2 batch>.<digest>
+ * (the retry round), the digest being hash16 of the round-1 request list (custom_ids and params: the English, the
+ * prompt, the model). A later run with --resume <token> or TRANSLATE_BATCH_ID=<token> submits nothing for those
+ * batches, rebuilds the request list, refuses it unless its digest is the token's (so a translation of other English
+ * is never stamped with this English's hash), checks the batch holds its ids and finishes from the results, round
+ * 1's included. A bare batch id is taken only when this machine's record (~/.cache/orbit-translate/batches.json,
+ * written when a batch is made, dropped once its results are read) gives its digest.
+ *
+ * One batch at a time is paid for: a run with no token takes up a still-running batch its machine's record holds for
+ * the same request list; failing that, it lists the key's batches and submits nothing while one is in progress
+ * (exit 5). A create whose answer was lost looks for the batch it made before trying again. The retry round counts
+ * against the same cap as the first (exit 3 before it is submitted, nothing written).
+ *
+ * An item that failed for the API's reasons (errored, expired, canceled) is kept in English with RETRY_HASH, a hash
+ * no English has, so the next run sends it again; an item whose answer broke the rules twice, or was refused, is kept
+ * with its English's hash until that English changes.
  *
  * Exit codes: 0 done (items kept in English are in the report); 1 usage or configuration; 2 the English is off its
- * shape; 3 the estimate is above the cap, nothing sent; 4 the API (no key, 401/403, a network failure after 3 tries,
- * a batch that ended errored, expired or canceled, a results file with an unknown or repeated custom_id, a resumed
- * batch that does not match the rebuilt request list); 5 pending (the batch has not ended: resume it with its id).
+ * shape; 3 an estimate is above the cap, nothing sent (or the retry round not sent and nothing written); 4 the API (no
+ * key, 401/403, a redirect, an answer over its size limit, a network failure after 3 tries, a batch with no succeeded
+ * request, a results file with an unknown or repeated custom_id, a resumed batch that does not match the rebuilt
+ * request list or its digest); 5 pending (a batch has not ended or could not be polled, or another is in progress:
+ * resume with the token).
  * On 1 to 5 no output file is touched.
  */
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { htmlTokens } from "../sanitise-html.mjs";
@@ -47,6 +66,15 @@ export const MODEL = "claude-opus-5-5";
 export const PRICES = { input: 2, output: 10, cacheRead: 0.2 };
 export const DEFAULT_CAP = 3_000_000;
 const CHUNK = 60, MAX_HTML = 100_000, MAX_OUT = 16_000;
+/* the source hash of an item kept in English for the API's reasons: no English hashes to it, so the next run sends it */
+export const RETRY_HASH = "0000000000000000";
+/* the size of an answer read from the API (a status, a list, a create) and of a batch's results file; past it the
+   connection is dropped and the run is exit 4. A request answers at most MAX_OUT tokens (about 64 KB of text), so
+   even a full run of every language (some 800 requests) stays under half the results limit. */
+const MiB = 1 << 20;
+export const LIMITS = { json: 4 * MiB, results: 128 * MiB };
+/* how long one call may take: a poll at most a minute (and never past the deadline), the rest five minutes */
+const CALL_MS = { poll: 60_000, other: 300_000 };
 const RATIO = { latin: [0.5, 2.5], arabic: [0.5, 2.5], cjk: [0.2, 1.5] };
 /* the shortest English catalogue value whose length ratio is judged: "Go" for "Los geht's" is a fine translation */
 const RATIO_MIN_CHARS = 20;
@@ -67,6 +95,15 @@ const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const fmt = (n) => Math.round(n).toLocaleString("en-GB");
 
 /* ---------------------------------------------------------------- arguments -- */
+/* a resume token: <batch>, <batch>.<digest> or <round-1 batch>.<round-2 batch>.<digest> -> { ids, digest|null } */
+const BATCH_ID = /^[\w-]{1,128}$/, DIGEST = /^[0-9a-f]{16}$/;
+export function parseToken(t) {
+  const parts = String(t).split("."), digest = parts.length > 1 ? parts.pop() : null;
+  if (parts.length > 2 || !parts.every((p) => BATCH_ID.test(p)) || (digest !== null && !DIGEST.test(digest))) {
+    throw new Exit(1, "the batch to resume (--resume or TRANSLATE_BATCH_ID) is not a resume token: <batch>.<digest> or <batch>.<batch>.<digest>, as a pending run prints it");
+  }
+  return { ids: parts, digest };
+}
 const FLAGS = new Set(["--langs", "--only", "--dry-run", "--max-tokens", "--out", "--report", "--poll-seconds", "--timeout-minutes", "--api-base", "--resume"]);
 export function parseArgs(argv, env = process.env) {
   const o = { langs: null, only: null, dryRun: false, maxTokens: null, out: null, report: null, pollSeconds: 60, timeoutMinutes: 50, resume: null, apiBase: "https://api.anthropic.com" };
@@ -88,7 +125,7 @@ export function parseArgs(argv, env = process.env) {
     else if (a === "--api-base") { let u; try { u = new URL(v); } catch { throw new Exit(1, `--api-base ${JSON.stringify(v)} is not a URL`); } if (!/^https?:$/.test(u.protocol)) throw new Exit(1, "--api-base is not http(s)"); o.apiBase = u.origin; }
   }
   if (o.resume === null && env.TRANSLATE_BATCH_ID) o.resume = env.TRANSLATE_BATCH_ID;
-  if (o.resume !== null && !/^[\w-]{1,128}$/.test(o.resume)) throw new Exit(1, "the batch id to resume (--resume or TRANSLATE_BATCH_ID) is not a batch id");
+  if (o.resume !== null) o.resume = parseToken(o.resume);
   if (o.maxTokens === null) {
     const e = env.TRANSLATE_MAX_TOKENS;
     if (e !== undefined && e !== "") { if (!/^\d+$/.test(e) || Number(e) < 1) throw new Exit(1, "TRANSLATE_MAX_TOKENS is not a whole number of tokens"); o.maxTokens = Number(e); }
@@ -193,14 +230,16 @@ export const maxTokensFor = (chars) => Math.min(MAX_OUT, Math.ceil((4 * chars) /
 
 /* the wire id of the n-th request of a batch of `count` (the API allows only [a-zA-Z0-9_-]{1,64}) */
 export const wireId = (n, count) => `r${String(n).padStart(Math.max(4, String(Math.max(0, count - 1)).length), "0")}`;
+/* a retry of an answer cut off at max_tokens gets twice the room, up to twice MAX_OUT */
+const maxTokensAgain = (chars) => Math.min(2 * MAX_OUT, 2 * maxTokensFor(chars));
 function request(item, system, broke, custom_id) {
   return {
     custom_id,
     params: {
       model: MODEL,
-      max_tokens: maxTokensFor(item.chars),
+      max_tokens: broke && broke.cutoff ? maxTokensAgain(item.chars) : maxTokensFor(item.chars),
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userText(item.lang, item.L, item, broke) }],
+      messages: [{ role: "user", content: userText(item.lang, item.L, item, broke && broke.rules) }],
       output_config: { effort: "high", format: { type: "json_schema", schema: item.kind === "section" ? SECTION_SCHEMA : CHUNK_SCHEMA } },
     },
   };
@@ -366,55 +405,134 @@ export function checkChunk(item, text, en, glossary) {
 
 /* ---------------------------------------------------------------- the API -- */
 const sleep = (s) => new Promise((ok) => setTimeout(ok, s * 1000));
+/* an Exit the caller may try again: a network failure, a time-out, a 429 or a 5xx */
+const retryable = (msg) => Object.assign(new Exit(4, msg), { retry: true });
+/* a body read up to `limit` bytes: past it the connection is dropped and the answer refused */
+async function readCapped(res, limit, what, ctl) {
+  if (!res.body) return "";
+  const reader = res.body.getReader(), chunks = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > limit) {
+      ctl.abort();
+      await reader.cancel().catch(() => {});
+      throw new Exit(4, `${what}: the answer is larger than ${limit / MiB} MiB, its limit; it was cut off and refused`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
 function api(o) {
   const headers = (extra) => ({ "x-api-key": o.key, "anthropic-version": "2023-06-01", ...extra });
-  async function call(method, url, body, extra = {}) {
+  /* one call: its answer's text, within its time and size limits, never following a redirect (the key is a custom
+     header, which fetch would carry to the redirect's host); tries: how often a network failure, 429 or 5xx is tried */
+  async function call(method, url, body, { tries = 3, limit = LIMITS.json, ms = CALL_MS.other } = {}) {
     if (new URL(url).origin !== o.apiBase) throw new Exit(4, `the API pointed at another host (${new URL(url).host}); the key goes only to ${new URL(o.apiBase).host}`);
+    const what = `${method} ${new URL(url).pathname}`;
     for (let t = 1; ; t++) {
-      let res;
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), ms);
+      let status, text;
       try {
-        res = await o.fetch(url, { method, headers: headers(body ? { "content-type": "application/json", ...extra } : extra), body: body ? JSON.stringify(body) : undefined });
+        const res = await o.fetch(url, { method, redirect: "manual", signal: ctl.signal,
+          headers: headers(body ? { "content-type": "application/json" } : {}), body: body ? JSON.stringify(body) : undefined });
+        status = res.status;
+        if (res.type === "opaqueredirect" || (status >= 300 && status < 400)) {
+          ctl.abort();
+          throw new Exit(4, `HTTP ${status} from the API: ${what} answered with a redirect, which is not followed (the key goes only to ${new URL(o.apiBase).host}); nothing written`);
+        }
+        text = await readCapped(res, limit, what, ctl);
       } catch (e) {
-        if (t >= 3) throw new Exit(4, `network failure after 3 tries: ${method} ${new URL(url).pathname}: ${String(e && (e.cause?.code || e.message)).slice(0, 120)}`);
+        if (e instanceof Exit) throw e;
+        const why = ctl.signal.aborted ? `no answer within ${Math.round(ms / 1000)} s` : String(e && (e.cause?.code || e.message)).slice(0, 120);
+        if (t >= tries) throw retryable(`network failure${tries > 1 ? ` after ${tries} tries` : ""}: ${what}: ${why}`);
+        await sleep(Math.min(5, o.pollSeconds) * t); continue;
+      } finally { clearTimeout(timer); }
+      if (status === 401 || status === 403) throw new Exit(4, `HTTP ${status} from the API: the key was refused`);
+      if (status === 429 || status >= 500) {
+        if (t >= tries) throw retryable(`HTTP ${status} from the API${tries > 1 ? ` after ${tries} tries` : ""}: ${what}`);
         await sleep(Math.min(5, o.pollSeconds) * t); continue;
       }
-      if (res.status === 401 || res.status === 403) throw new Exit(4, `HTTP ${res.status} from the API: the key was refused`);
-      if (res.status === 429 || res.status >= 500) {
-        if (t >= 3) throw new Exit(4, `HTTP ${res.status} from the API after 3 tries: ${method} ${new URL(url).pathname}`);
-        await res.text().catch(() => ""); await sleep(Math.min(5, o.pollSeconds) * t); continue;
-      }
-      if (!res.ok) throw new Exit(4, `HTTP ${res.status} from the API: ${method} ${new URL(url).pathname}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
-      return res;
+      if (status < 200 || status > 299) throw new Exit(4, `HTTP ${status} from the API: ${what}: ${text.slice(0, 300)}`);
+      return text;
     }
   }
+  const json = (text, what) => { try { return JSON.parse(text); } catch { throw new Exit(4, `${what}: the API's answer is not JSON`); } };
   const base = `${o.apiBase}/v1/messages/batches`;
+  /* the key's batches, newest first (the first page: the job makes one or two a night) */
+  const list = async () => { const j = json(await call("GET", `${base}?limit=100`), "the batch list"); return isObj(j) && Array.isArray(j.data) ? j.data.filter(isObj) : []; };
   return {
-    async create(requests) {
-      const j = await (await call("POST", base, { requests })).json();
-      if (!j || typeof j.id !== "string" || !/^[\w-]+$/.test(j.id)) throw new Exit(4, "the API's answer to the batch has no id");
-      return j.id;
+    list,
+    /*
+     * make a batch. A create whose answer is lost (a network failure, a 5xx) may have made it: before trying again the
+     * list is read, and a batch in progress with this many requests that was not there before is taken as the one made
+     */
+    async create(requests, log) {
+      const before = new Set((await list()).map((b) => b.id));
+      for (let t = 1; ; t++) {
+        try {
+          const j = json(await call("POST", base, { requests }, { tries: 1 }), "the batch's creation");
+          if (!isObj(j) || typeof j.id !== "string" || !BATCH_ID.test(j.id)) throw new Exit(4, "the API's answer to the batch has no id");
+          return j.id;
+        } catch (e) {
+          if (!(e instanceof Exit && e.retry)) throw e;
+          const made = (await list()).filter((b) => !before.has(b.id) && b.processing_status === "in_progress" && isObj(b.request_counts) && b.request_counts.processing === requests.length);
+          if (made.length === 1 && BATCH_ID.test(made[0].id)) { log(`the answer to the batch's creation was lost, but the batch was made: ${made[0].id}`); return made[0].id; }
+          if (t >= 3) throw new Exit(4, `${e.message} (3 tries in all)`);
+          await sleep(Math.min(5, o.pollSeconds) * t);
+        }
+      }
     },
-    get: async (id) => (await call("GET", `${base}/${id}`)).json(),
-    results: async (url) => (await call("GET", url)).text(),
+    get: async (id, ms) => json(await call("GET", `${base}/${id}`, null, { tries: 1, ms }), `batch ${id}`),
+    results: async (url) => call("GET", url, null, { limit: LIMITS.results }),
   };
 }
+
+/* this machine's record of the batches it made and has not read: batch id -> { digest, round, first } */
+function records(o) {
+  const file = join(o.env.HOME || homedir(), ".cache/orbit-translate/batches.json");
+  const read = () => { const j = tryJson(file); return isObj(j) ? j : {}; };
+  const write = (j) => { try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(`${file}.tmp`, `${JSON.stringify(j, null, 1)}\n`); renameSync(`${file}.tmp`, file); } catch { /* a convenience: a token resumes without it */ } };
+  return {
+    get: (id) => { const e = read()[id]; return isObj(e) && DIGEST.test(e.digest) && (e.round === 1 || (e.round === 2 && BATCH_ID.test(e.first))) ? e : null; },
+    entries: () => Object.entries(read()).filter(([id, e]) => BATCH_ID.test(id) && isObj(e) && DIGEST.test(e.digest)),
+    set: (id, e) => { const j = read(); j[id] = { ...e, made: new Date().toISOString() }; write(j); },
+    drop: (id) => { const j = read(); if (Object.hasOwn(j, id)) { delete j[id]; write(j); } },
+  };
+}
+export const digestOf = (requests) => createHash("sha256").update(JSON.stringify(requests), "utf8").digest("hex").slice(0, 16);
 
 /*
  * one batch, sent (or, resuming, found), waited for and read: a Map of the index in `requests` -> result. Results are
  * mapped back by custom_id; an unknown or repeated one is exit 4. A batch not ended by the deadline is left running
- * (no cancel): exit 5 with its id. Resuming, the batch must hold exactly these requests' ids.
+ * (no cancel): exit 5 with the token that resumes it (job.token(id)). Resuming, the batch must hold exactly these
+ * requests' ids. A batch made is recorded on this machine (job.made(id)) until its results are read.
  */
-async function runBatch(o, client, requests, deadline, log, resumeId) {
+async function runBatch(o, client, requests, deadline, log, job) {
   const index = new Map(requests.map((r, n) => [r.custom_id, n]));
-  const id = resumeId || await client.create(requests);
+  const resumeId = job.resumeId;
+  const id = job.id = resumeId || await client.create(requests, log);
+  if (!resumeId) job.made(id);
   log(resumeId ? `resuming batch ${id}: ${requests.length} requests expected, nothing submitted` : `batch ${id}: ${requests.length} requests`);
-  for (;;) {
-    const b = await client.get(id);
-    if (b && b.processing_status === "ended") {
+  const pending = (why) => new Exit(5, `batch ${id} ${why}; it is left running (not cancelled) and nothing is written. ` +
+    `Resume it from the same commit with TRANSLATE_BATCH_ID=${job.token(id)} (or --resume ${job.token(id)}).`);
+  for (let fails = 0; ;) {
+    let b;
+    try { b = await client.get(id, Math.max(1000, Math.min(CALL_MS.poll, deadline - Date.now()))); fails = 0; }
+    catch (e) {
+      if (!(e instanceof Exit && e.retry)) throw e;
+      if (Date.now() >= deadline) throw pending(`has not been seen to end within ${o.timeoutMinutes} minutes (${e.message})`);
+      if (++fails >= 3) throw pending(`could not be polled (${e.message})`);
+      await sleep(Math.min(5, o.pollSeconds) * fails); continue;
+    }
+    if (isObj(b) && b.processing_status === "ended") {
       const c = isObj(b.request_counts) ? b.request_counts : {}, n = (k) => (Number.isFinite(c[k]) ? c[k] : 0);
       const total = ["processing", "succeeded", "errored", "canceled", "expired"].reduce((t, k) => t + n(k), 0);
       if (resumeId && total !== requests.length) throw new Exit(4, `batch ${id} holds ${total} requests but this commit's sources make ${requests.length}: it is not this run's batch; nothing written`);
-      if (requests.length && (n("succeeded") === 0 || n("canceled") > 0 || n("expired") > 0)) throw new Exit(4, `batch ${id} ended without its results (succeeded ${n("succeeded")}, errored ${n("errored")}, canceled ${n("canceled")}, expired ${n("expired")}); nothing written`);
+      /* one errored, expired or canceled request is kept in English (and sent again next run); none succeeded is the batch's failure */
+      if (requests.length && n("succeeded") === 0) throw new Exit(4, `batch ${id} ended with no request succeeded (errored ${n("errored")}, canceled ${n("canceled")}, expired ${n("expired")}); nothing written`);
       if (typeof b.results_url !== "string") throw new Exit(4, `batch ${id} ended with no results_url`);
       const out = new Map();
       for (const line of (await client.results(b.results_url)).split("\n")) {
@@ -427,26 +545,28 @@ async function runBatch(o, client, requests, deadline, log, resumeId) {
         out.set(k, r.result);
       }
       if (resumeId && out.size !== requests.length) throw new Exit(4, `batch ${id} returned ${out.size} results for ${requests.length} requests: it is not this run's batch; nothing written`);
+      job.read(id);
       return out;
     }
-    if (Date.now() >= deadline) {
-      throw new Exit(5, `batch ${id} has not ended within ${o.timeoutMinutes} minutes; it is left running (not cancelled) and nothing is written. ` +
-        `Resume it from the same commit with TRANSLATE_BATCH_ID=${id} (or --resume ${id}).`);
-    }
+    if (Date.now() >= deadline) throw pending(`has not ended within ${o.timeoutMinutes} minutes`);
     await sleep(Math.min(o.pollSeconds, Math.max(0.01, (deadline - Date.now()) / 1000)));
   }
 }
 
-/* a result's text, or why there is none (errored, expired, canceled, refusal, max_tokens) */
+/*
+ * a result's text, or why there is none (errored, expired, canceled, refusal, max_tokens). keep: not retried in this
+ * run; transient: the API's trouble, not the text's, so it is kept with RETRY_HASH and the next run sends it again
+ */
 function resultText(r) {
-  if (!isObj(r)) return { fail: "errored: no result came back for this request", keep: true };
-  if (r.type === "errored") return { fail: `errored: the API answered with an error (${String(r.error?.error?.type || r.error?.type || "unknown").slice(0, 40)})`, keep: true };
-  if (r.type === "expired") return { fail: "expired: the batch expired before this request ran", keep: true };
-  if (r.type === "canceled") return { fail: "canceled: the request was canceled", keep: true };
+  const api = (fail) => ({ fail, keep: true, transient: true });
+  if (!isObj(r)) return api("errored: no result came back for this request");
+  if (r.type === "errored") return api(`errored: the API answered with an error (${String(r.error?.error?.type || r.error?.type || "unknown").slice(0, 40)})`);
+  if (r.type === "expired") return api("expired: the batch expired before this request ran");
+  if (r.type === "canceled") return api("canceled: the request was canceled");
   const m = r.message;
-  if (r.type !== "succeeded" || !isObj(m)) return { fail: `errored: an unknown result type ${String(r.type).slice(0, 20)}`, keep: true };
+  if (r.type !== "succeeded" || !isObj(m)) return api(`errored: an unknown result type ${String(r.type).slice(0, 20)}`);
   if (m.stop_reason === "refusal") return { fail: "refused: the model declined this item (stop_reason refusal)", keep: true, usage: m.usage };
-  if (m.stop_reason === "max_tokens") return { fail: "(g) the answer was cut off at max_tokens", usage: m.usage };
+  if (m.stop_reason === "max_tokens") return { fail: "(g) the answer was cut off at max_tokens", cutoff: true, usage: m.usage };
   const text = (Array.isArray(m.content) ? m.content : []).filter((b) => b && b.type === "text").map((b) => b.text).join("");
   return { text, usage: m.usage };
 }
@@ -473,21 +593,67 @@ export async function run(opts) {
     log(`plan: ${items.length} item(s) to send, ${plans.reduce((n, p) => n + p.unchanged, 0)} unchanged (${plans.map((p) => `${p.lang}: ${p.items.length}`).join(", ")})`);
     for (const it of items) log(`   ${it.customId}  ${it.kind === "chunk" ? `${it.keys.length} keys, ` : ""}${it.chars} chars`);
     log(`estimate: ${fmt(est.input)} input tokens + ${fmt(est.output)} output tokens = ${fmt(est.total)} tokens (cap ${fmt(o.maxTokens)})`);
-    log(`   about $${est.dollars.toFixed(2)} at batch prices with the system block cached; at most $${est.dollarsNoCache.toFixed(2)} with no cache hit (${MODEL}: $${PRICES.input} in, $${PRICES.output} out, $${PRICES.cacheRead} cache read per million tokens; a retry batch comes on top)`);
+    log(`   about $${est.dollars.toFixed(2)} at batch prices with the system block cached; at most $${est.dollarsNoCache.toFixed(2)} with no cache hit (${MODEL}: $${PRICES.input} in, $${PRICES.output} out, $${PRICES.cacheRead} cache read per million tokens; a retry batch, if one is needed, counts against the same cap)`);
     if (est.total > o.maxTokens) throw new Exit(3, `the estimate, ${fmt(est.total)} tokens, is above the cap of ${fmt(o.maxTokens)}: nothing sent`);
     if (o.dryRun) { log("dry run: nothing sent, nothing written"); return 0; }
 
-    const outcome = new Map(); /* customId -> { section } | { good: {key: text}, bad: {key: [rules]} } | { kept: [rules] } */
+    const outcome = new Map(); /* customId -> { section } | { good: {key: text}, bad: {key: [rules]}, retry: [key] } | { kept: [rules], retry } */
     const usage = { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 };
     const add = (u) => { if (isObj(u)) for (const k of Object.keys(usage)) usage[k] += Number.isFinite(u[k]) ? u[k] : 0; };
     let batches = 0;
     if (items.length) {
       if (!o.key) throw new Exit(4, "ANTHROPIC_API_KEY is not set: the run needs the key (a dry run does not)");
-      const client = api(o), deadline = Date.now() + o.timeoutMinutes * 60_000;
+      const client = api(o), rec = records(o), deadline = Date.now() + o.timeoutMinutes * 60_000;
+      /* the round-n item of a todo entry: a chunk's retry carries only the keys that broke */
+      const itemFor = (round, { it, broke }) => {
+        if (round === 1 || it.kind !== "chunk") return it;
+        const payload = { items: it.payload.items.filter((x) => broke.keys.includes(x.id)) };
+        return { ...it, payload, chars: JSON.stringify(payload).length };
+      };
+      const requestsFor = (round, todo) => todo.map((t, n) => request(itemFor(round, t), system, t.broke, wireId(n, todo.length)));
       let todo = items.map((it) => ({ it, broke: null }));
+      const first = requestsFor(1, todo), digest = digestOf(first);
+      /* the batches to take up instead of submitting: [round 1's, round 2's] */
+      let resume = null;
+      if (o.resume) {
+        let { ids, digest: want } = o.resume;
+        if (want === null) {
+          const e = rec.get(ids[0]);
+          if (!e) throw new Exit(1, `batch ${ids[0]}: this machine has no record of it, so nothing shows it was made from this checkout's English; resume with the whole token the pending run printed (<batch>.<digest>)`);
+          ids = e.round === 2 ? [e.first, ids[0]] : ids; want = e.digest;
+        }
+        if (want !== digest) throw new Exit(4, `batch ${ids[ids.length - 1]} was made from another request list (digest ${want}) than this checkout makes (${digest}): the English, the prompt or the plan changed since; it is not this run's batch; nothing submitted, nothing written`);
+        resume = ids;
+      } else {
+        /* a batch made from this very request list that is still running (a run that ended pending): take it up rather than pay twice */
+        for (const [id, e] of rec.entries().sort((a, b) => b[1].round - a[1].round)) {
+          if (e.digest !== digest) continue;
+          let b = null; try { b = await client.get(id, CALL_MS.poll); } catch (err) { if (!(err instanceof Exit && err.retry)) throw err; }
+          if (isObj(b) && b.processing_status === "in_progress") { resume = e.round === 2 ? [e.first, id] : [id]; log(`batch ${id}, made from this same request list, is still running: taking it up, nothing submitted`); break; }
+          if (isObj(b) && b.processing_status === "ended") rec.drop(id); /* its run failed after it ended (exit 4): it is not taken up again */
+        }
+        if (!resume) {
+          const running = (await client.list()).filter((b) => b.processing_status === "in_progress");
+          if (running.length) throw new Exit(5, `batch ${String(running[0].id).slice(0, 80)} is still in progress on this key${running.length > 1 ? ` (and ${running.length - 1} more)` : ""}: nothing submitted, so no second batch is paid for. Resume it with the TRANSLATE_BATCH_ID its run printed, or run again once it has ended`);
+        }
+      }
+      const ids = [];
       for (let round = 1; round <= 2 && todo.length; round++) {
-        const requests = todo.map(({ it, broke }, n) => request(round === 1 || it.kind !== "chunk" ? it : { ...it, payload: { items: it.payload.items.filter((x) => broke.keys.includes(x.id)) } }, system, broke && broke.rules, wireId(n, todo.length)));
-        const results = await runBatch(o, client, requests, deadline, log, round === 1 ? o.resume : null);
+        const requests = round === 1 ? first : requestsFor(2, todo);
+        if (round === 2) {
+          /* the retry round is spend too: it counts against the same cap as the first */
+          const est2 = estimate(todo.map((t) => { const x = itemFor(2, t); return { ...x, chars: x.chars + t.broke.rules.join("; ").length }; }), system);
+          log(`retry: ${todo.length} item(s); estimate ${fmt(est2.total)} tokens, ${fmt(est.total + est2.total)} with the first round (cap ${fmt(o.maxTokens)})`);
+          if (est.total + est2.total > o.maxTokens) throw new Exit(3, `the estimate of both rounds, ${fmt(est.total + est2.total)} tokens, is above the cap of ${fmt(o.maxTokens)}: the retry batch is not sent and nothing is written`);
+        }
+        const job = {
+          resumeId: resume ? resume[round - 1] || null : null,
+          token: (id) => [...ids, id, digest].join("."),
+          made: (id) => rec.set(id, round === 1 ? { digest, round } : { digest, round, first: ids[0] }),
+          read: (id) => rec.drop(id),
+        };
+        const results = await runBatch(o, client, requests, deadline, log, job);
+        ids.push(job.id);
         batches++;
         const again = [];
         for (const [n, { it, broke }] of todo.entries()) {
@@ -496,9 +662,10 @@ export async function run(opts) {
           const prev = outcome.get(it.customId);
           if (r.fail) {
             if (r.keep || round === 2) {
-              if (it.kind === "chunk") { const keys = broke ? broke.keys : it.keys; outcome.set(it.customId, { good: prev ? prev.good : {}, bad: { ...(prev ? prev.bad : {}), ...Object.fromEntries(keys.map((k) => [k, [r.fail]])) } }); }
-              else outcome.set(it.customId, { kept: [r.fail] });
-            } else again.push({ it, broke: { rules: [r.fail], keys: broke ? broke.keys : it.keys } });
+              const retry = r.transient ? (it.kind === "chunk" ? (broke ? broke.keys : it.keys) : true) : null;
+              if (it.kind === "chunk") { const keys = broke ? broke.keys : it.keys; outcome.set(it.customId, { good: prev ? prev.good : {}, bad: { ...(prev ? prev.bad : {}), ...Object.fromEntries(keys.map((k) => [k, [r.fail]])) }, retry: [...(prev && prev.retry || []), ...(retry || [])] }); }
+              else outcome.set(it.customId, { kept: [r.fail], retry: !!retry });
+            } else again.push({ it, broke: { rules: [r.fail], keys: broke ? broke.keys : it.keys, cutoff: !!r.cutoff } });
             continue;
           }
           if (it.kind === "section") {
@@ -520,6 +687,7 @@ export async function run(opts) {
         }
         todo = again;
       }
+      if (resume && resume.length > ids.length) throw new Exit(4, `batch ${resume[resume.length - 1]} is a retry round, but this checkout's first round needs none: it is not this run's batch; nothing written`);
     }
 
     /* the files, in memory first: nothing is written until every batch is read */
@@ -528,16 +696,19 @@ export async function run(opts) {
       const R = reportLangs[p.lang] = { translated: 0, unchanged: p.unchanged, kept: 0, keptItems: [] };
       const keep = (id, rules, extra = {}) => { R.kept++; const e = { lang: p.lang, id, ...extra, rules }; R.keptItems.push(e); keptAll.push(e); };
       if (p.cat) {
-        const cat = {}, kept = new Set(p.state.kept.filter((k) => typeof k === "string"));
+        const cat = {}, kept = new Set(p.state.kept.filter((k) => typeof k === "string")), hashes = { ...p.hashes };
         const chunkOf = new Map(p.items.filter((it) => it.kind === "chunk").flatMap((it) => it.keys.map((k) => [k, it])));
         for (const k of Object.keys(eng.en)) {
           const it = chunkOf.get(k);
           if (!it) { cat[k] = p.cat[k]; continue; }
-          const res = outcome.get(it.customId) || { good: {}, bad: { [k]: ["errored: no result"] } };
+          const res = outcome.get(it.customId) || { good: {}, bad: { [k]: ["errored: no result"] }, retry: [k] };
           if (Object.hasOwn(res.good, k) && !res.bad[k]) { cat[k] = res.good[k]; kept.delete(k); R.translated++; }
-          else { cat[k] = eng.en[k]; kept.add(k); keep(it.id, res.bad[k] || ["errored: no result"], { key: k }); }
+          else {
+            cat[k] = eng.en[k]; kept.add(k); keep(it.id, res.bad[k] || ["errored: no result"], { key: k });
+            if (!res.bad[k] || (res.retry || []).includes(k)) hashes[k] = RETRY_HASH; /* the API failed it: sent again next run */
+          }
         }
-        const state = { catalogue: { ...p.hashes }, kept: Object.keys(eng.en).filter((k) => kept.has(k)) };
+        const state = { catalogue: hashes, kept: Object.keys(eng.en).filter((k) => kept.has(k)) };
         files.set(join(out, `assets/i18n/${p.lang}.json`), `${JSON.stringify(cat, null, 2)}\n`);
         files.set(join(out, `tools/i18n/state/${p.lang}.json`), `${JSON.stringify(state, null, 2)}\n`);
       }
@@ -545,7 +716,7 @@ export async function run(opts) {
         const entries = [];
         for (const src of eng.sources) {
           const engPage = eng.pages[src.slug], pg = p.pages[src.slug], prev = pg.prev;
-          const sections = [], keptIds = [];
+          const sections = [], keptIds = [], hashes = { ...pg.hashes };
           for (const s of engPage.sections) {
             const res = outcome.get(`docs/${src.slug}/${s.id}@${p.lang}`);
             const due = p.items.some((it) => it.kind === "section" && it.slug === src.slug && it.eng.id === s.id);
@@ -553,10 +724,13 @@ export async function run(opts) {
               sections.push(prev.sections.find((x) => isObj(x) && x.id === s.id));
               if (prev.source.kept.includes(s.id)) keptIds.push(s.id);
             } else if (res && res.section) { sections.push(res.section); R.translated++; }
-            else { sections.push(structuredClone(s)); keptIds.push(s.id); keep(`docs/${src.slug}/${s.id}`, res ? res.kept : ["errored: no result"]); }
+            else {
+              sections.push(structuredClone(s)); keptIds.push(s.id); keep(`docs/${src.slug}/${s.id}`, res ? res.kept : ["errored: no result"]);
+              if (!res || res.retry) hashes[s.id] = RETRY_HASH; /* the API failed it: sent again next run */
+            }
           }
           const { sections: _drop, ...head } = engPage;
-          const page = { ...head, sections, source: { generated: eng.generated, sections: pg.hashes, kept: keptIds } };
+          const page = { ...head, sections, source: { generated: eng.generated, sections: hashes, kept: keptIds } };
           files.set(join(out, `assets/docs-i18n/${p.lang}/${src.slug}.json`), JSON.stringify(page));
           entries.push({ ...head, sections: sections.map(({ html, ...rest }) => rest), source: page.source });
         }
