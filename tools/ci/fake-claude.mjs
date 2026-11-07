@@ -128,7 +128,7 @@ export async function startFake({ key = FAKE_KEY, script = () => undefined, poll
           const q = { customId: logical, wireId: r.custom_id, lang, system: systemText(r.params), user, params: r.params, item };
           sent.push(q);
           const answer = item ? defaultAnswer(item) : {};
-          const s = script(r.custom_id, attempt, q, answer) || {};
+          const s = script(logical, attempt, q, answer) || {};
           lines.push(resultLine(r.custom_id, endAs ? endAs : s.errored ? "errored" : s.expired ? "expired" : s.refusal ? "refusal" : "ok", s.answer !== undefined ? s.answer : answer));
         }
         if (corrupt === "shuffle") lines.reverse();
