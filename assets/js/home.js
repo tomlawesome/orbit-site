@@ -221,6 +221,9 @@ export function cancelFlight() {
    the entry is changed in place (your sky and another's are the two levels); the address stays what it was (ADR-0006) */
 function visit(id) {
   if (id === state.camera) return;
+  /* your own system, tapped on another's sky, is the way down as the corner "— your sky" is: Back when the entry says a
+     sky, so the entry is yours again and the next Back leaves for the door */
+  if (id === "willow" && history.state?.sky) { try { history.back(); } catch { /* fine */ } return; }
   if (state.camera === "willow" && !history.state?.sky) places.stack({ sky: id }); else places.hop({ sky: id });
   flyTo(id);
 }
