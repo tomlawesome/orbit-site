@@ -408,7 +408,9 @@ for `page`; the `page` group is where the map's granularity is a dial the owner 
   and real time so the field can be refreshed from a log.
 - **Runner concurrency**: eight jobs at once on promotion; a lane that holds fewer queues them.
 - **Merge results are not tested on CE**: a merge request's tests run on its source head, not the merged tree.
-  Today's gate has the same gap; the push pipeline on `dev` (question 17) is the one that sees the merged tree.
+  Today's gate has the same gap. Since ai/agent-infra#113 a push to `dev` starts no pipeline, so the merge request's
+  own pipeline, on its source head, is the one run, and no pipeline sees the merged tree before promotion runs
+  everything (corrected, #138: this said the push pipeline on `dev`, question 17, saw it).
 - **The map's own change runs everything**, so a one-line map edit costs a full run: that is the fail-safe working,
   not a fault.
 
