@@ -737,6 +737,7 @@ mklag() {
   mkdir -p assets/docs-i18n/de
   printf '{"source":{"generated":"%s"}}\n' "$(isoplus "$english" "$1")" > "assets/docs-i18n/de/$slug.json"
   lagiso=; [ -z "$2" ] || lagiso=$(isoplus "$english" "$2")
+  [ -z "${lagraw:-}" ] || lagiso=$lagraw   # a LAG_NOW given as it is, to be refused
   "$realgit" add -A assets/docs-i18n
   only=$("$realgit" -c user.name=t -c user.email=t@t commit-tree "$("$realgit" write-tree)" -m "one commit")
   "$realgit" reset -q --hard "$only"
@@ -1827,6 +1828,18 @@ check "LAG8 a stalled page reopens a closed warnings issue although the import h
 lag_case LAG9 -24 24 warn-closednone
 rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'and reopen it' "$out" || rc=1
 check "LAG9 a page behind but not stalled does not reopen it (exit $rcx)" "$rc"
+
+# fix review 8: a LAG_NOW that is not a date in the format of generated (here a date without a time, which a looser parser
+# takes) is not honoured, by this side as by the lint's (docs-i18n-shape.mjs): the log says the clock is used, and the clock
+# decides. Honoured, the year 2000 would put the English in the future and the page would not be stalled.
+lagraw=2000-01-01
+lag_case LAGB -24 "" warn-none
+lagraw=
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'LAG_NOW' "$out" && grep -i 'LAG_NOW' "$out" | grep -qi 'clock' || rc=1
+check "LAGB a LAG_NOW that is not in the format of generated: the log says the clock is used (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; lagbody | grep -q "de/$slug" || rc=1
+check "LAGB and the page is judged by the clock (stalled), not by the bad value" "$rc"
 
 # the docs mode is as it was: dev only, schedule only
 pinned "in docs mode on batch-b" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=batch-b

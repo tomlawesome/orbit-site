@@ -728,6 +728,11 @@ split_case "t7: translate_docs on a reused build folder (GIT_STRATEGY: fetch)" $
   y = y.replace(/(translate_docs:[\s\S]*?  variables:\n    GIT_DEPTH: 1\n)/, (m) => m + "    GIT_STRATEGY: fetch\n");'
 split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSLATE_MAX_TOKENS" '
   y = y.replace("\nvariables:\n  # The commit of the include above", () => "\nvariables:\n  TRANSLATE_MAX_TOKENS: \"900000000\"\n  # The commit of the include above");'
+# fix review 3: translate_docs has no needs, so it would take the artifacts of every earlier stage (a dotenv among them,
+# which would put variables in the job that holds the key). It must say needs: [] . The edit takes any needs line out and
+# marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
+split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
+  y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
 split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
   y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
 split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '

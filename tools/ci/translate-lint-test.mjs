@@ -11,6 +11,8 @@
  *       English, stalled or not (the English 36 hours old or more at $LAG_NOW), passes the lint (sh tools/ci/lint.sh
  *       docs-shape) and --lag exits 0; a page whose source.generated is later than the committed English's is the
  *       one thing that fails, named, by the shape check and by --lag (exit 1). One commit, no history needed
+ *       (fix review 5, 8) --same-english reports an English index.json that is missing or not JSON; a LAG_NOW that
+ *       is not a date in the format of generated is not honoured, the clock is used and --lag says so (T26h-l)
  *   T27 ci-split: a second job naming environment translate, a package manager in translate_docs, needs with
  *       artifacts, the key's name (joined below from its parts) in another file, a third job in docs-import, import_docs with an environment
  *       or a changed image are each refused and named; the shipped .gitlab-ci.yml passes and holds translate_docs
@@ -129,6 +131,27 @@ await T.attempt("T26", async () => {
   T.check("T26d the same stalled page: --lag exits 0", stalled.lag.status === 0, `exit ${stalled.lag.status}: ${tail(stalled.lag.text)}`);
   T.check("T26e a page stamped later than the committed English: the lint fails and names each page", later.lint.status === 1 && /readme/.test(later.lint.text) && /guide/.test(later.lint.text), `exit ${later.lint.status}: ${tail(later.lint.text)}`);
   T.check("T26f it is the shape check that fails it, naming the later stamp", later.shape.status === 1 && /readme/.test(later.shape.text) && /generated|later|newer/i.test(later.shape.text), `exit ${later.shape.status}: ${tail(later.shape.text)}`);
+  /* fix review 8: LAG_NOW that is not a date in the format of generated (here a date without a time) is not honoured: the
+     clock is used, and the log says so. The English is of March, the clock is later, so the page is stalled; honoured, the
+     year 2000 would put the English in the future and the page would not be. */
+  const bad = lint(at(E, -24), "2000-01-01");
+  T.check("T26h a LAG_NOW that is not in the format of generated: --lag exits 0 and says the clock is used", bad.lag.status === 0 && /LAG_NOW/.test(bad.lag.text) && /clock/i.test(bad.lag.text), `exit ${bad.lag.status}: ${tail(bad.lag.text)}`);
+  T.check("T26i and the page is judged by the clock (stalled), not by the bad value", /stalled/i.test(bad.lag.text), tail(bad.lag.text));
+  /* fix review 5: --same-english must not pass when the checkout's English index.json is missing or not JSON (the stamp
+     cannot be compared, which is what the flag is for) */
+  const sameRun = (breakIt) => {
+    const fx = mkFixture();
+    try {
+      fx.generated = E; fx.write(); fx.translated("de", { generated: E });
+      if (breakIt) breakIt(join(fx.dir, "assets/docs/index.json"));
+      const r = spawnSync(process.execPath, ["tools/ci/docs-i18n-shape.mjs", "assets/docs-i18n/de", "tools/docs-sources.json", "assets/docs", "--same-english"], { cwd: fx.dir, encoding: "utf8" });
+      return { status: r.status, text: `${r.stdout}${r.stderr}` };
+    } finally { fx.cleanup(); }
+  };
+  const sc = sameRun(null), sm = sameRun((p) => rmSync(p)), sj = sameRun((p) => writeFileSync(p, "{not json"));
+  T.check("T26j control: --same-english with the English index present and the page stamped with it passes", sc.status === 0, `exit ${sc.status}: ${tail(sc.text)}`);
+  T.check("T26k --same-english with the English index.json missing is a problem: exit 1, naming index.json", sm.status === 1 && /index\.json/.test(sm.text), `exit ${sm.status}: ${tail(sm.text)}`);
+  T.check("T26l --same-english with the English index.json not JSON is a problem: exit 1, naming index.json", sj.status === 1 && /index\.json/.test(sj.text), `exit ${sj.status}: ${tail(sj.text)}`);
   T.check("T26g and --lag exits 1 for it, naming the page", later.lag.status === 1 && /readme/.test(later.lag.text) && /guide/.test(later.lag.text), `exit ${later.lag.status}: ${tail(later.lag.text)}`);
 });
 

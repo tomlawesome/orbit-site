@@ -11,6 +11,7 @@
  *   J6  de/ with an English browser never redirects (one navigation only)
  *   J7  the root shows no AI notice
  *   J9  a translated docs page older than the English shows the stale banner, with a link to the English
+ *   J9c a page with sections left in English (source.kept) and nothing else wrong shows a banner that does not say the English has changed
  *   J10 the de/ reader reads assets/docs-i18n/de/; a translated page shows no untranslated line, a page with no German file is read in
  *       English with that line shown (decision 11a: page-level, never per section); the root never asks for it
  *
@@ -186,11 +187,11 @@ try {
   const h16 = (x) => createHash("sha256").update(x, "utf8").digest("hex").slice(0, 16);
   const eIndex = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8"));
   const eReadme = JSON.parse(readFileSync(join(ROOT, "assets/docs/readme.json"), "utf8"));
-  const fakeDocs = async (page, generated, fresh = false) => {
+  const fakeDocs = async (page, generated, fresh = false, keptOnly = false) => {
     const asked = [];
     const first = eReadme.sections[0], second = eReadme.sections[1];
     const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
-      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second && !fresh ? [second.id] : [] } };
+      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second && (!fresh || keptOnly) ? [second.id] : [] } };
     const dIndex = { generated, sources: eIndex.sources.filter((x) => x.slug === "readme").map((x) => ({ ...x, title: "Orbit (de)" })) };
     await page.route("**/assets/docs-i18n/**", (route) => {
       const u = new URL(route.request().url()); asked.push(u.pathname);
@@ -217,6 +218,21 @@ try {
     await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
     const n = await page.locator("#docspad .docs-stale:visible").count();
     check("J9b a translation as new as the English shows no stale banner", n === 0, `${n} visible`);
+  });
+  /* fix review 4: a banner that shows only because a section was left in English (source.kept: two failed tries, a RETRY_HASH)
+     while every hash matches the English and the stamp is the English's must not say the English has changed since. */
+  await run("J9c", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated, true, true);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const text = (await banner.first().textContent()) || "";
+    const de = JSON.parse(readFileSync(join(ROOT, "assets/i18n/de.json"), "utf8"));
+    const changed = String(de["docs-stale"]).split("{date}").pop().replace(/^[\s;,.]+/, "").replace(/[\s.]+$/, ""); /* "das Englische hat sich seitdem geändert" */
+    const link = await banner.first().locator("a[hreflang='en']").count();
+    check("J9c a page with sections left in English and nothing else wrong shows a banner with a link to the English", link >= 1 && text.trim().length > 0, `${link} link(s), "${text.trim()}"`);
+    check("J9c and that banner does not say the English has changed since", changed.length > 5 && !text.includes(changed), `banner "${text.trim()}", the changed-since line ends "${changed}"`);
   });
   await run("J10", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
     const fake = await fakeDocs(page, eIndex.generated);

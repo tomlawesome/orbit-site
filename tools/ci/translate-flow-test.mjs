@@ -33,6 +33,10 @@
  *   T40 (10) a redirect from the results URL to another origin never carries the key
  *   T41 (11) a body that does not end is cut off by a limit; T42 (11) a call that never answers does not outlast
  *       --timeout-minutes
+ *   T44 (fix review 2) a batch that ended after its run exited 5 is taken up on the next run, its results read, with no
+ *       second batch: through this machine's record, and through the key's batch list when the record is gone
+ *   T45 (fix review 6) batches.json: a record older than 29 days is not used (the API keeps results 29 days), one just
+ *       under is; a file over 1 MiB is refused rather than read, one just under is read
  *   T43 (15) the fake's ids for a retried chunk are the tool's, and its attempt counts go on
  *
  * Assumption (the spec leaves it open): --poll-seconds and --timeout-minutes take fractions (0.05, 0.02).
@@ -40,7 +44,7 @@
  *   node tools/ci/translate-flow-test.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
@@ -323,11 +327,64 @@ await T.attempt("T35", async () => {
   try {
     const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
     T.exit("T35a the first run is pending: exit 5", r1, 5);
+    /* the machine's record would take the first batch up by itself (T44); without it the key's batch list is the only
+       guard CI has (a runner has no cache), so the record is deleted and the list guard is what is tried */
+    rmSync(join(fx.tmp, ".cache"), { recursive: true, force: true });
     const before = snapshot(fx.dir);
     const r2 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
     T.check("T35b the second run submits no second batch while the first still runs", !r2.notBuilt && fake.posts === 1, `${fake.posts} batches submitted`);
     T.check("T35c and it does not claim to have finished: not exit 0, nothing written", !r2.notBuilt && r2.code !== 0 && snapshot(fx.dir) === before, `exit ${r2.code}`);
   } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T44", async () => {
+  /* fix review 2: the first run exits 5, its batch ends afterwards; the next run on the same commit must read that
+     batch's results, not drop its record and pay for a second full batch. Once through the record, once with the record
+     gone (a CI runner has none), through the key's list. */
+  for (const [name, wipe] of [["the record", false], ["the key's batch list (no record)", true]]) {
+    const fx = mkFixture(), fake = await startFake({ never: true });
+    try {
+      const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+      T.exit(`T44 (${name}) the first run is pending: exit 5`, r1, 5);
+      if (wipe) rmSync(join(fx.tmp, ".cache"), { recursive: true, force: true });
+      fake.never = false;
+      const r2 = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+      T.exit(`T44 (${name}) the batch ended in between: the next run finishes: exit 0`, r2, 0);
+      T.check(`T44 (${name}) no second batch is submitted`, !r2.notBuilt && fake.posts === 1, `${fake.posts} batches submitted`);
+      T.check(`T44 (${name}) the paid results are written`, fx.exists("assets/docs-i18n/de/readme.json"), "no German page");
+    } finally { await fake.close(); fx.cleanup(); }
+  }
+});
+
+await T.attempt("T45", async () => {
+  /* fix review 6: ~/.cache/orbit-translate/batches.json. A bare batch id is taken only on this machine's record, so
+     the record being used or not shows in whether a bare id is accepted. Records older than 29 days are pruned when
+     the file is read; a file over 1 MiB is refused rather than read. */
+  const DAY = 86400e3;
+  const bare = async (mutate) => {
+    const fx = mkFixture(), fake = await startFake({ never: true });
+    try {
+      const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+      const id = fake.batches[0] && fake.batches[0].id, file = join(fx.tmp, ".cache/orbit-translate/batches.json");
+      if (r1.code !== 5 || !id || !existsSync(file)) return { setup: `first run exit ${r1.code}, id ${id || "none"}, record ${existsSync(file)}` };
+      const j = JSON.parse(readFileSync(file, "utf8"));
+      mutate(j, id); writeFileSync(file, JSON.stringify(j));
+      fake.never = false;
+      const posts = fake.posts, before = snapshot(fx.dir);
+      const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } });
+      return { r, posts: fake.posts - posts, untouched: snapshot(fx.dir) === before };
+    } finally { await fake.close(); fx.cleanup(); }
+  };
+  const aged = (days) => (j, id) => { j[id].made = new Date(Date.now() - days * DAY).toISOString(); };
+  const padded = (bytes) => (j) => { j.pad = "x".repeat(bytes); };
+  const c1 = await bare(aged(28));
+  T.check("T45a a record 28 days old is used: a bare id resumes it, exit 0", !c1.setup && c1.r.code === 0, c1.setup || `exit ${c1.r.code}`);
+  const c2 = await bare(aged(30));
+  T.check("T45b a record 30 days old is pruned: a bare id is refused (exit 1, no record), nothing submitted or written", !c2.setup && c2.r.code === 1 && /record/i.test(c2.r.out + c2.r.err) && c2.posts === 0 && c2.untouched, c2.setup || `exit ${c2.r.code}, ${c2.posts} posts`);
+  const c3 = await bare(padded(900 * 1024));
+  T.check("T45c a record file just under 1 MiB is read: exit 0", !c3.setup && c3.r.code === 0, c3.setup || `exit ${c3.r.code}`);
+  const c4 = await bare(padded(1200 * 1024));
+  T.check("T45d a record file over 1 MiB is refused, not read: a bare id is not accepted (exit 1), nothing submitted or written", !c4.setup && c4.r.code === 1 && c4.posts === 0 && c4.untouched, c4.setup || `exit ${c4.r.code}, ${c4.posts} posts`);
 });
 
 await T.attempt("T36", async () => {

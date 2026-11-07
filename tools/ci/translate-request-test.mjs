@@ -20,6 +20,8 @@
  *       about 2.5M proceeds, about 3.1M exits 3 with nothing sent (amendment 1, item 4)
  *   T18m-o (finding 4) the retry batch counts against the same cap: with the cap one token over the plan's estimate, a run
  *       that needs a retry exits 3 before submitting it, and a run that needs none goes through
+ *   T18p (fix review 7) resuming a retry batch already submitted is not stopped by the cap: with the cap over round 1's
+ *       estimate only, the resume goes through
  *
  *   node tools/ci/translate-request-test.mjs
  */
@@ -135,6 +137,29 @@ await T.attempt("T18m", async () => {
       T.exit("T18n one item needs a retry batch and the estimate of both rounds is over the cap: exit 3", r, 3);
       T.check("T18o the retry batch is not submitted (one batch only), and nothing is written", !r.notBuilt && fake2.batches.length === 1 && snapshot(fx2.dir) === before, `${fake2.batches.length} batches`);
     } finally { await fake2.close(); fx2.cleanup(); }
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T18p", async () => {
+  /* fix review 7: the retry round's estimate is checked against the cap before it is submitted; a resume of a retry
+     batch already submitted (and paid) must not be stopped by it. The first run has the default cap and its retry batch
+     does not end (exit 5); the resume is given a cap one token over round 1's estimate, under both rounds'. */
+  const TOP = "docs/readme/top";
+  const fx = mkFixture(), fake = await startFake({ never: 1, script: (cid, n, q, ans) => { if (cid === `${TOP}@de` && n === 1) { ans.html = ans.html.replace("<strong>", "").replace("</strong>", ""); return { answer: ans }; } return undefined; } });
+  try {
+    const dry = async (n) => (await run(fx, fake, "--dry-run", "--langs", "de", "--max-tokens", String(n))).code;
+    let lo = 1, hi = 100000000;
+    if ((await dry(hi)) !== 0) return T.check("T18p the plan's estimate", false, "a dry run far under the cap does not exit 0");
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if ((await dry(mid)) === 0) hi = mid; else lo = mid + 1; }
+    const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T18p the retry batch does not end: exit 5", r1, 5);
+    const m = /TRANSLATE_BATCH_ID=(\S+)/.exec(r1.out + r1.err), id = m ? m[1] : "";
+    if (!id || fake.batches.length !== 2) return T.check("T18p two batches and a token to resume", false, `${fake.batches.length} batches, token ${id || "none"}`);
+    fake.never = false;
+    const posts = fake.posts;
+    const r = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--max-tokens", String(lo + 1)), { env: { TRANSLATE_BATCH_ID: id } });
+    T.exit("T18p resuming the paid retry batch under a cap that fits round 1 only goes through: exit 0 (not 3)", r, 0);
+    T.check("T18p and it submitted nothing", !r.notBuilt && fake.posts === posts, `${fake.posts - posts} new posts`);
   } finally { await fake.close(); fx.cleanup(); }
 });
 
