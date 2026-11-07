@@ -187,9 +187,10 @@ grep -q '^  PLAYWRIGHT_IMAGE: \$CI_IMAGE_CACHE_MCR/playwright:[A-Za-z0-9._-][A-Z
 grep -E '^  [A-Z_]+_IMAGE:' .gitlab-ci.yml | grep -v -E '@sha256:[a-f0-9]{64}$' | sed 's/^  \([A-Z_]*\):.*/   .gitlab-ci.yml: \1 must pin a digest/' | grep . && fail=1
 # private-details runs the gitleaks release scan:gitleaks runs, but names it after $CI_IMAGE_CACHE_GHCR, which
 # Renovate cannot read: a bump moves scan:gitleaks' pin alone, so every gitleaks pin must be the same tag and
-# digest (ALL-F2, #138)
-gl_pins=$(grep -oE 'gitleaks/gitleaks:[^[:space:]"]*' .gitlab-ci.yml | sort -u)
-if [ "$(grep -cE 'gitleaks/gitleaks:' .gitlab-ci.yml)" -lt 2 ] || [ "$(printf '%s\n' "$gl_pins" | grep -c .)" -ne 1 ]; then
+# digest (ALL-F2, #138). Only a pin is counted: the value of an `image:` or `name:` key, never a comment
+gl_lines=$(grep -E '^[[:space:]]*(image|name):[[:space:]]*"?[^#[:space:]"]*gitleaks/gitleaks:' .gitlab-ci.yml || true)
+gl_pins=$(printf '%s\n' "$gl_lines" | grep -oE 'gitleaks/gitleaks:[^[:space:]"]*' | sort -u)
+if [ "$(printf '%s\n' "$gl_lines" | grep -c .)" -lt 2 ] || [ "$(printf '%s\n' "$gl_pins" | grep -c .)" -ne 1 ]; then
   echo "   .gitlab-ci.yml: scan:gitleaks and private-details must pin the same gitleaks image, tag and digest (Renovate bumps scan:gitleaks' alone; copy it to private-details); found: $(printf '%s\n' "$gl_pins" | tr '\n' ' ')"; fail=1
 fi
 fi
