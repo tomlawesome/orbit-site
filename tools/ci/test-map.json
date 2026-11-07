@@ -99,6 +99,7 @@
       "tools/ci/door-timing.mjs",
       "tools/fonts.mjs",
       "tools/ci/lint-test.sh",
+      "tools/ci/flake-gate.sh",
       "index.html",
       "sw.js",
       "404.html",
@@ -108,7 +109,6 @@
     "none": [
       "docs/**",
       "tools/ci/flake-check.sh",
-      "tools/ci/flake-gate.sh",
       "*.md",
       "assets/door/README.md",
       "LICENSE",
