@@ -1563,11 +1563,15 @@ warn_ok warn-skip "an archive with a skip-unmatched warning (a stale skip entry)
 rc=0; [ -f "$body" ] && in_fence 'skip-unmatched  skip heading "Screenshots"' || rc=1
 check "W11 warn-skip: the skip-unmatched line reaches the issue inside a fence, prefixed by its kind" "$rc"
 [ "$rc" -eq 0 ] || show_body
-# W11b: every kind the import can write is one the publish accepts; a kind added to import-docs.mjs alone would
-# stop the nightly publish, as skip-unmatched did
-for k in $(grep -o 'say("[a-z-]*"' tools/import-docs.mjs | sed 's/^say("//; s/"$//' | sort -u); do
-  rc=0; grep -q "\"$k\"" tools/ci/nightly-publish.sh || rc=1
-  check "W11 the publish's allowed warning kinds include '$k', which the import writes" "$rc"
+# W11b: every kind import-docs.mjs writes, by say("<kind>" or warn(src, "<kind>", is a member of the python `kinds` set in
+# the publish's check_warnings (read from that line, not found anywhere in the script); a kind added to the import alone
+# would stop the nightly publish, as skip-unmatched did
+pub_kinds=$(grep -E '^kinds = \{' tools/ci/nightly-publish.sh | grep -oE '"[a-z-]+"' | tr -d '"')
+rc=0; [ -n "$pub_kinds" ] || rc=1
+check "W11 the publish's kinds set is found in tools/ci/nightly-publish.sh" "$rc"
+for k in $(grep -oE '(say\(|warn\(src, )"[a-z-]+"' tools/import-docs.mjs | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u); do
+  rc=0; printf '%s\n' "$pub_kinds" | grep -qx "$k" || rc=1
+  check "W11 the publish's kinds set includes '$k', which the import writes" "$rc"
 done
 
 # W7: a look-alike by another user, and one by the bot with another title, are never touched; a new issue is made

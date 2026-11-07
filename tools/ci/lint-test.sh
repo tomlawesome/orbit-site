@@ -2500,32 +2500,43 @@ else
 fi
 
 # Case (d-s1) (D-S1, #138): .gitlab-ci.yml says a newly published CVE fails the daily Trivy run "and not an unrelated
-# merge request". A job that runs trivy with the vulnerability scanner and --exit-code 1 must therefore not fail a
-# pipeline that is not the schedule: for such a pipeline its rules either leave it out (when: never, or no rule matches)
-# or let it fail (allow_failure: true), or its script is decided by the pipeline source. Secrets and licences
-# (--scanners without vuln) always block, so a job that scans only those is not judged. Read from the committed file with
-# the same js-yaml the lint uses; a rule that is a !reference is a snippet's, which the job rules here do not decide.
+# merge request". Every job that runs trivy is judged by running its script lines with a stand-in `trivy` that logs
+# its arguments, once with CI_PIPELINE_SOURCE=schedule and once with merge_request_event and push: the vulnerability
+# scan (--scanners without it, or with vuln) must carry --exit-code 1 on the schedule, and --exit-code 0 (or none) in a
+# pipeline that is not the schedule, unless that pipeline's rules leave the job out (when: never, no rule) or let it
+# fail (allow_failure: true). Secrets and licences always block, so a scan of those only is not judged. A script that
+# merely mentions CI_PIPELINE_SOURCE, or that swaps the two branches, therefore fails. Read from the committed file
+# with the js-yaml the lint uses.
 cat > "$cspjs.trivy" <<'JS'
-const fs = require("fs"), yaml = require("js-yaml");
+const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process"), yaml = require("js-yaml");
 const ref = yaml.defineSequenceTag("!reference", { create: () => [], addItem: (c, i) => { c.push(i); }, finalize: (c) => ({ "!reference": c }), identify: () => false });
 const doc = yaml.load(fs.readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.CORE_SCHEMA.withTags(ref) });
 const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : [v]).filter((x) => typeof x === "string");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trivy-shim-")), log = path.join(dir, "log");
+fs.writeFileSync(path.join(dir, "trivy"), "#!/bin/sh\necho \"$*\" >> \"$TRIVY_LOG\"\n", { mode: 0o755 });
+// the vulnerability scans a job's script makes in a pipeline of this source, with the --exit-code each carries
+const scans = (job, source) => {
+  fs.writeFileSync(log, "");
+  for (const l of lines(job.script)) cp.spawnSync("sh", ["-c", l], { env: { PATH: dir + ":" + process.env.PATH, CI_PIPELINE_SOURCE: source, TRIVY: "true", TRIVY_LOG: log, CI_PROJECT_DIR: process.cwd() } });
+  return fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((a) => {
+    const sc = /--scanners[ =](\S+)/.exec(a), code = /--exit-code[ =](\S+)/.exec(a);
+    return { vuln: !sc || sc[1].split(",").includes("vuln"), code: code ? code[1] : "0", args: a };
+  }).filter((c) => c.vuln);
+};
 const bad = [];
-let seen = 0;
+let jobs = 0;
 for (const [name, job] of Object.entries(doc)) {
-  if (!job || typeof job !== "object" || !job.script) continue;
-  for (const l of lines(job.script).filter((x) => /\btrivy\b/.test(x) && /--exit-code[ =]1\b/.test(x))) {
-    const sc = /--scanners[ =]([a-z,]+)/.exec(l);
-    if (sc && !sc[1].split(",").includes("vuln")) continue;
-    seen++;
-    if (/CI_PIPELINE_SOURCE/.test(l)) continue;
-    // the first rule that matches a pipeline that is not the schedule: no `if`, or an `if` that does not ask for the schedule
-    const rule = (job.rules || []).find((r) => r && !r["!reference"] && !(typeof r.if === "string" && /==\s*"schedule"/.test(r.if)));
-    if (rule && rule.when !== "never" && rule.allow_failure !== true) bad.push(name);
-  }
+  if (!job || typeof job !== "object" || !job.script || !lines(job.script).some((l) => /\btrivy\b/.test(l))) continue;
+  jobs++;
+  if (!scans(job, "schedule").some((c) => c.code === "1")) bad.push(name + ": its daily schedule run has no vulnerability scan with --exit-code 1, so a new CVE would not fail it");
+  // the first rule that matches a pipeline that is not the schedule: no `if`, or an `if` that does not ask for the schedule
+  const rule = (job.rules || []).find((r) => r && !r["!reference"] && !(typeof r.if === "string" && /==\s*"schedule"/.test(r.if)));
+  if (!rule || rule.when === "never" || rule.allow_failure === true) continue;
+  for (const src of ["merge_request_event", "push"]) for (const c of scans(job, src)) if (c.code !== "0") bad.push(name + ": a " + src + " pipeline runs a vulnerability scan with --exit-code " + c.code + ", so a new CVE fails an unrelated pipeline");
 }
-if (seen === 0) { console.log("no trivy job with the vulnerability scanner and --exit-code 1 found"); process.exit(2); }
-if (bad.length) { console.log("fails a pipeline that is not the daily schedule on a new CVE: " + bad.join(", ")); process.exit(1); }
+fs.rmSync(dir, { recursive: true, force: true });
+if (jobs === 0) { console.log("no job runs trivy"); process.exit(2); }
+if (bad.length) { console.log(bad.join("\n")); process.exit(1); }
 JS
 rc=0
 node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
@@ -2534,15 +2545,41 @@ if [ "$rc" -eq 0 ]; then
 else
   echo "FAIL (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline (exit $rc)"; sed 's/^/     /' "$out"; failed=1
 fi
+# the same judgement on planted scripts: the branches swapped, and a comment that only names CI_PIPELINE_SOURCE (both fail),
+# and the committed script's own shape (control, passes)
+trivy_case() { # trivy_case <label> <want: 0 or 1> <js: edits y>
+  F=.gitlab-ci.yml JS="$3" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  rc=0
+  node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+trivy_case "(d-s1b) scan:trivy with the exit codes swapped between schedule and the rest fails" 1 '
+  y = y.replace("= schedule ]; then vuln_exit=\"--exit-code 1\"; else vuln_exit=\"--exit-code 0\"; fi", "= schedule ]; then vuln_exit=\"--exit-code 0\"; else vuln_exit=\"--exit-code 1\"; fi");'
+trivy_case "(d-s1c) scan:trivy with --exit-code 1 on every pipeline and a comment naming CI_PIPELINE_SOURCE fails" 1 '
+  y = y.replace(/      if \[ "\$CI_PIPELINE_SOURCE" = schedule \]; then vuln_exit="--exit-code 1"; else vuln_exit="--exit-code 0"; fi\n/, "      # CI_PIPELINE_SOURCE = schedule fails on a CVE, anything else does not\n      vuln_exit=\"--exit-code 1\"\n");'
+trivy_case "(d-s1d) scan:trivy never failing on a vulnerability, not even on the schedule, fails" 1 '
+  y = y.replace("then vuln_exit=\"--exit-code 1\"; else", "then vuln_exit=\"--exit-code 0\"; else");'
 rm -f "$cspjs.trivy"
 
-# Cases (f2a), (f2b) (ALL-F2, #138): private-details runs the same gitleaks release as scan:gitleaks (its comment says
-# so), but pins it a second time from a variable-prefixed image name Renovate cannot see. A bump of one pin alone must
-# be refused by the lint, naming gitleaks. Planted in the private-details image only, by tag and by digest.
-gl_pins_case() {
+# Cases (f2a)-(f2e) (ALL-F2, #138): private-details runs the same gitleaks release as scan:gitleaks (its comment says
+# so), but pins it a second time from a variable-prefixed image name Renovate cannot see. The lint must refuse, naming
+# gitleaks: a bump of one pin alone (by tag, by digest), one pin deleted (either job), and a second pin that is only
+# in a comment (the private-details image replaced by another, its old pin kept in a comment), which is no pin.
+gl_pins_case() { # gl_pins_case <label> <js: edits y>
   F=.gitlab-ci.yml JS="$2" node -e '
     const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
-    y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:)(\S+)/, (m, a, b) => a + new Function("p", process.env.JS)(b));
+    y = new Function("y", process.env.JS + "; return y;")(y);
     if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
     fs.writeFileSync(process.env.F, y);
   ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
@@ -2555,13 +2592,23 @@ gl_pins_case() {
   fi
   git reset -q --hard HEAD~1
 }
-gl_pins_case "(f2a) private-details pinning another gitleaks version than scan:gitleaks" 'return p.replace(/^v[0-9.]+/, "v8.99.0");'
-gl_pins_case "(f2b) private-details pinning another gitleaks digest than scan:gitleaks" 'return p.replace(/@sha256:[0-9a-f]{8}/, "@sha256:00000000");'
+gl_pins_case "(f2a) private-details pinning another gitleaks version than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:)v[0-9.]+/, "$1v8.99.0");'
+gl_pins_case "(f2b) private-details pinning another gitleaks digest than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+@sha256:)[0-9a-f]{8}/, (m, a) => a + "00000000");'
+gl_pins_case "(f2c) private-details with no gitleaks pin" '
+  y = y.replace(/\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+/, "$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2d) scan:gitleaks with no gitleaks pin" '
+  y = y.replace(/ghcr\.io\/gitleaks\/gitleaks:\S+/, "ghcr.io/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2e) the second gitleaks pin only in a comment" '
+  y = y.replace(/(\n  image:\n    name: )(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+)/, "\n  # was $2$1$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
 
-# Cases (f-sec12a)-(f-sec12c) (SEC-12, #138): tools/ci/flake-gate.sh lists the quarantines from the code that really
-# takes a test out of the gate. A quarantined("#N", text in a comment is not a quarantine, so a flake at three
-# sightings that links #N and has only such a comment is refused (not-quarantined), while the real call is accepted.
-# The scratch copy's flakes.md is replaced by one flake at three sightings linking #777.
+# Cases (f-sec12a)-(f-sec12i) (SEC-12, #138): tools/ci/flake-gate.sh counts as a quarantine only a call that starts a
+# line, `await quarantined("#<issue>",` (indent allowed); the lint refuses any other `quarantined("#` in tools/ci/*.mjs,
+# so nothing hides a text the gate would misread. The gate cases plant one line in a file of their own beside a
+# flakes.md of one flake at three sightings linking #777: no quarantine is counted from a comment, a string, a template
+# literal or a call after other code (exit 1, not-quarantined), and an anchored call is (exit 0). The lint cases append
+# the line to a tracked test file and want the lint to name the file and quarantined.
 cat > docs/flakes.md <<'MD'
 # Flakes
 
@@ -2573,7 +2620,7 @@ cat > docs/flakes.md <<'MD'
 MD
 git add -f docs/flakes.md
 git -c user.name=t -c user.email=t@t commit -q -m "one flake at three sightings"
-flake_case() { # flake_case <label> <want: 0 or 1> <line planted in tools/ci/zz-flake-fixture.mjs>
+flake_case() { # flake_case <label> <want: 0 or 1> <lines planted in tools/ci/zz-flake-fixture.mjs>
   printf '%s\n' "$3" > tools/ci/zz-flake-fixture.mjs
   git add -f tools/ci/zz-flake-fixture.mjs
   git -c user.name=t -c user.email=t@t commit -q -m "$1"
@@ -2586,13 +2633,35 @@ flake_case() { # flake_case <label> <want: 0 or 1> <line planted in tools/ci/zz-
   fi
   git reset -q --hard HEAD~1
 }
-flake_case "(f-sec12a) a quarantined(\"#777\", text in a line comment is not a quarantine" 1 '// quarantined("#777", ["firefox"], "made-up check", async () => {});'
-flake_case "(f-sec12b) a quarantined(\"#777\", text in a block comment is not a quarantine" 1 '/*
- * quarantined("#777", ["firefox"], "made-up check")
+flake_case "(f-sec12a) quarantined(\"#777\", in a line comment is not a quarantine" 1 '// await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12b) quarantined(\"#777\", in a block comment is not a quarantine" 1 '/*
+ await quarantined("#777", ["firefox"], "made-up check")
  */'
-flake_case "(f-sec12c) a quarantined(\"#777\", text in a trailing comment is not a quarantine" 1 'export const x = 1; // was quarantined("#777", ["firefox"], "made-up check") until it was fixed'
-flake_case "(f-sec12d) a real quarantined(\"#777\", call is a quarantine (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12c) a trailing // quarantined(\"#777\", after /\"/ is not a quarantine" 1 'export const re = /"/; // quarantined("#777", ["firefox"], "made-up check")'
+flake_case "(f-sec12d) quarantined(\"#777\") in a string is not a quarantine" 1 "export const s = 'quarantined(\"#777\")';"
+flake_case "(f-sec12e) quarantined(\"#777\", in a template literal is not a quarantine" 1 'export const t = `await quarantined("#777", [])`;'
+flake_case "(f-sec12f) a real call placed after other code on its line is not a quarantine" 1 'export const re = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12g) an anchored await quarantined(\"#777\", call is a quarantine (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12h) an indented anchored await quarantined(\"#777\", call is a quarantine (control)" 0 '  await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 git reset -q --hard HEAD~1
+flake_lint_case() { # flake_lint_case <label> <want: 0 or 1> <line appended to tools/ci/dates-test.mjs>
+  printf '%s\n' "$3" >> tools/ci/dates-test.mjs
+  commit_all "$1"
+  lint_to_out
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -i quarantined "$out" | grep -q 'dates-test\.mjs'; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming dates-test.mjs and quarantined, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_lint_case "(f-sec12i) the lint refusing quarantined(\"#777\") in a string" 1 "export const s7 = 'quarantined(\"#777\")';"
+flake_lint_case "(f-sec12j) the lint refusing quarantined(\"#777\", in a template literal" 1 'export const t7 = `await quarantined("#777", [])`;'
+flake_lint_case "(f-sec12k) the lint refusing a real call after other code on its line" 1 'export const re7 = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
+flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
 rm -f "$cspjs"
 
