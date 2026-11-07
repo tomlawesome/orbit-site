@@ -553,13 +553,15 @@ PY
 # and one four-backtick fence holding its lines as `<kind>  <message>`. Every
 # backtick in a message is made ' so no line can close the fence, and every line
 # in it starts with a kind, so none is a quick action (/), a mention (@) or a
-# reference (#, !); inside a fence GitLab renders none of them.
+# reference (#, !); inside a fence GitLab renders none of them. Then, when the
+# lag file <lag> (translation_lag's) has rows, a "### Translations" block: per
+# language each page two or more imports behind the English, in one fence too.
 warnings_body() {
   env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
-    python3 -I - "$1" "$2" "$3" "$CI_PIPELINE_ID" "$(date -u '+%Y-%m-%d %H:%M UTC')" <<'PY'
-import json, sys
+    python3 -I - "$1" "$2" "$3" "$CI_PIPELINE_ID" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$4" <<'PY'
+import json, re, sys
 
-wpath, srcs, out, pipeline, when = sys.argv[1:6]
+wpath, srcs, out, pipeline, when, lagpath = sys.argv[1:7]
 with open(wpath, encoding="utf-8") as f:
     lines = f.read().split("\n")[:-1]
 by = {}
@@ -577,6 +579,26 @@ for s in json.load(open(srcs, encoding="utf-8")):
     if k in by and k not in seen:
         seen.add(k)
         body += ["### %s/%s" % k, "", "````"] + by[k] + ["````", ""]
+rows = []
+try:
+    with open(lagpath, encoding="utf-8") as f:
+        for l in f.read().split("\n"):
+            p = l.split("\t")
+            # only what the lag check writes: a language code, a slug, a count, a date or "-"
+            if len(p) == 4 and re.fullmatch(r"[a-z]{2,3}(-[A-Z][a-z]{3})?", p[0]) and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", p[1]) \
+                    and re.fullmatch(r"[0-9]{1,4}", p[2]) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}|-", p[3]):
+                rows.append(p)
+except OSError:
+    pass
+if rows:
+    body += ["### Translations", "", "Translated pages two or more imports behind the English: the nightly translation "
+             "has not kept up (one behind is the nightly order and is not listed).", ""]
+    for lang in sorted({r[0] for r in rows}):
+        body += ["%s:" % lang, "", "````"]
+        for r in rows:
+            if r[0] == lang:
+                body.append("%s  %s imports behind; no translation has landed since %s" % (r[1], r[2], r[3] if r[3] != "-" else "(unknown)"))
+        body += ["````", ""]
 with open(out, "w", encoding="utf-8", newline="\n") as f:
     f.write("\n".join(body).rstrip("\n") + "\n")
 PY
@@ -586,15 +608,16 @@ PY
 # keeps its Dependency Dashboard: found by author (the import token's own user),
 # label docs-import and exact title, rewritten in place, never duplicated. None:
 # it is created; two or more: nothing is edited. A closed one is reopened when
-# there are warnings. Run last, in a subshell, as
+# there are warnings or a translation two or more imports behind (#125
+# amendment 5). Run last, in a subshell, as
 # `( update_warnings_issue ) || echo ...`, so nothing in it can change how the
 # job ends. Every call has a time limit and the header file on disk only while
 # it runs; answers are parsed once it is gone; the body goes from a file, never
 # an argument. GitLab's own filter by author_id is checked again here. Under
 # DRY_RUN it only reads, and prints the action and the body.
 update_warnings_issue() {
-  wf=$art/import-warnings.txt; body=$scratch/issue-body; reopen=
-  warnings_body "$wf" "$scratch/sources.json" "$body" || return 1
+  wf=$art/import-warnings.txt; body=$scratch/issue-body; reopen=; lagf=$scratch/lag-block
+  warnings_body "$wf" "$scratch/sources.json" "$body" "$lagf" || return 1
   ans=$(me) || { echo "   (could not ask GitLab who the import token's user is)"; return 1; }
   uid=$(printf '%s\n' "$ans" | json 'if (!Number.isInteger(j.id) || j.id < 1) process.exit(1); console.log(j.id)') || return 1
   found=$(apij 'const m = j.filter((x) => x && x.title === "'"$WARN_TITLE"'" && x.author && x.author.id === '"$uid"' && Array.isArray(x.labels) && x.labels.includes("docs-import"));
@@ -610,7 +633,7 @@ update_warnings_issue() {
   fi
   if [ "$count" -eq 1 ]; then
     case $iid in ''|*[!0-9]*) return 1 ;; esac
-    [ ! -s "$wf" ] || [ "$state" != closed ] || reopen=1
+    { [ ! -s "$wf" ] && [ ! -s "$lagf" ]; } || [ "$state" != closed ] || reopen=1
   fi
   if [ -n "$DRY_RUN" ]; then
     if [ "$count" -eq 0 ]; then echo "DRY_RUN: would create the warnings issue, with this body:"
@@ -627,6 +650,92 @@ update_warnings_issue() {
       ${reopen:+--data-urlencode} ${reopen:+state_event=reopen} >/dev/null || return 1
     echo "   rewrote the warnings issue #$iid${reopen:+ and reopened it}"
   fi
+}
+
+# How far the translations trail the English (#125 amendment 5), from the
+# checkout's history, read with cgit (node runs no file here): a page's imports
+# behind are the distinct generated dates assets/docs/index.json has had after
+# the page's source.generated, as the lint's --lag counts them. Each page behind
+# is a line in the log; those two or more behind go to $scratch/lag-block
+# ("<lang> TAB <slug> TAB <imports> TAB <date of the page's last commit>") for
+# the warnings issue. Watched, never failed: run as `( translation_lag ) ||
+# echo ...`. A shallow checkout has no history to count, so nothing is reported.
+translation_lag() {
+  lagd=$scratch/lag; mkdir -p "$lagd/idx" "$lagd/pages"; : > "$scratch/lag-block"
+  if [ "$(cgit rev-parse --is-shallow-repository)" != false ]; then
+    echo "   the checkout is shallow: no history to count the imports since each translation, so no lag is reported"
+    return 0
+  fi
+  cgit cat-file blob HEAD:assets/docs/index.json > "$lagd/current.json" || return 1
+  : > "$lagd/pages.txt"; n=0
+  cgit ls-tree -r --name-only HEAD -- assets/docs-i18n > "$lagd/tree" || return 1
+  while IFS= read -r f; do
+    case $f in assets/docs-i18n/*/*.json) ;; *) continue ;; esac
+    case ${f#assets/docs-i18n/} in */*/*|*/index.json) continue ;; esac
+    n=$((n + 1))
+    cgit cat-file blob "HEAD:$f" > "$lagd/pages/$n" || return 1
+    printf '%s\t%s\t%s\n' "$n" "$f" "$(cgit log -1 --format=%cs -- "$f")" >> "$lagd/pages.txt"
+  done < "$lagd/tree"
+  [ "$n" -gt 0 ] || return 0
+  # the oldest stamp bounds the history read: an import after it was committed after it
+  oldest=$(lag_py oldest) || return 1
+  [ -n "$oldest" ] || return 0
+  m=0
+  for sha in $(cgit log --format=%H --since="$oldest" -- assets/docs/index.json); do
+    m=$((m + 1)); cgit cat-file blob "$sha:assets/docs/index.json" > "$lagd/idx/$(printf '%06d' "$m")" 2>/dev/null || :
+  done
+  lag_py count
+}
+# lag_py <oldest|count>: translation_lag's reading of the files it fetched
+lag_py() {
+  env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN python3 -I - "$1" "$lagd" "$scratch/lag-block" <<'PY'
+import json, os, re, sys
+
+step, d, block = sys.argv[1:4]
+ISO = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z")
+def generated(path):
+    try:
+        g = json.load(open(path, encoding="utf-8")).get("generated")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return g if isinstance(g, str) and ISO.fullmatch(g) else None
+current = generated(os.path.join(d, "current.json"))
+pages = []
+for l in open(os.path.join(d, "pages.txt"), encoding="utf-8").read().split("\n"):
+    p = l.split("\t")
+    m = len(p) == 3 and re.fullmatch(r"assets/docs-i18n/([a-z]{2,3}(?:-[A-Z][a-z]{3})?)/([a-z0-9][a-z0-9-]{0,79})\.json", p[1])
+    if not m or current is None:
+        continue
+    try:
+        src = json.load(open(os.path.join(d, "pages", p[0]), encoding="utf-8")).get("source")
+        g = src.get("generated") if isinstance(src, dict) else None
+    except (OSError, ValueError, AttributeError):
+        continue  # the lint's shape check names it
+    if isinstance(g, str) and ISO.fullmatch(g) and g < current:
+        pages.append((m.group(1), m.group(2), p[1], g, p[2] if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", p[2]) else "-"))
+if step == "oldest":
+    print(min((x[3] for x in pages), default=""))
+    sys.exit(0)
+# newest first, as git log gave them; a page's imports are the distinct dates down to the first not after its stamp
+history = [x for x in (generated(os.path.join(d, "idx", f)) for f in sorted(os.listdir(os.path.join(d, "idx")))) if x is not None]
+def imports_after(g):
+    seen = set()
+    for x in history:
+        if x <= g:
+            break
+        seen.add(x)
+    return len(seen)
+rows = []
+for lang, slug, f, g, landed in pages:
+    n = imports_after(g)
+    if n >= 2:
+        print("   %s: translated from the English of %s, %d imports behind the English (%s): in the warnings issue" % (f, g, n, current))
+        rows.append("%s\t%s\t%d\t%s" % (lang, slug, n, landed))
+    elif n == 1:
+        print("   %s: translated from the English of %s, one import behind (%s): the next translation run catches up" % (f, g, current))
+with open(block, "w", encoding="utf-8", newline="\n") as f:
+    f.write("".join(r + "\n" for r in rows))
+PY
 }
 
 # The warnings issue is the import's: a translation leaves it alone.
@@ -708,7 +817,9 @@ check_import() {
 }
 
 # The translation's artifact (#125 stage 2): unpacked, each language's pages
-# held to docs-i18n-shape against the checkout's English and to docs-markup, and
+# held to docs-i18n-shape against the checkout's English (every page stamped
+# with exactly its generated, amendment 5: a translation of other English is
+# refused, nothing pushed) and to docs-markup, and
 # the catalogues and their state to i18n-check's rules (en.json and
 # languages.json from the checkout). LANGS is the languages it holds.
 check_translations() {
@@ -718,7 +829,7 @@ check_translations() {
   LANGS=$(printf '%s\n' "$got" | tail -n 1)
   for l in $LANGS; do
     if ! shape=$(env -u ORBIT_SITE_IMPORT_TOKEN -u CI_JOB_TOKEN \
-        node tools/ci/docs-i18n-shape.mjs "$art/assets/docs-i18n/$l" "$scratch/sources.json" assets/docs); then
+        node tools/ci/docs-i18n-shape.mjs "$art/assets/docs-i18n/$l" "$scratch/sources.json" assets/docs --same-english); then
       echo "refusing the artifact: assets/docs-i18n/$l is not the shape the translation writes:"
       printf '%s\n' "$shape"
       exit 1
@@ -756,6 +867,8 @@ main() {
     check_translations
   else
     check_import
+    echo "== the translations' lag"
+    ( translation_lag ) || echo "   (could not read the translations' lag; the next run will)"
   fi
 
   if [ -n "$DRY_RUN" ]; then

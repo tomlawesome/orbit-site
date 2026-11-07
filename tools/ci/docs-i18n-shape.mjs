@@ -10,12 +10,19 @@
  *   no img/ folder: every <img src> is one of the English folder's pictures (assets/docs/img/) or the mark.
  *
  *   node tools/ci/docs-i18n-shape.mjs <dir> <sources.json> <english docs dir>   prints each problem, exits 1 if any
- *   node tools/ci/docs-i18n-shape.mjs --lag                                     the lag rule, on the checkout
+ *        [--same-english]   (publish_translations) every page made from exactly that English, not merely no later
+ *   node tools/ci/docs-i18n-shape.mjs --lag                                     the lag, on the checkout
  *
- * The lag rule (spec 4): a translated page is made from the English of its source.generated; the imports since are
- * the distinct generated dates assets/docs/index.json has had in git history after it. One import behind is the
- * nightly order (import one night, translate the next) and is reported; two or more fail. Without git history (a
- * shallow clone) only "behind" is known, and it is reported, not failed.
+ * A page's source.generated later than the English index's generated (in <english docs dir>/index.json) is a
+ * problem of the shape: no translation is made from English that is not yet committed, so it is a wrong stamp or a
+ * bad resume (#125 amendment 5).
+ *
+ * The lag (amendment 5, replacing spec 4's lint rule): a translated page is made from the English of its
+ * source.generated; the imports since are the distinct generated dates assets/docs/index.json has had in git
+ * history after it. How far a translation trails is the nightly schedule's state, not something a commit can break,
+ * so it is watched, never failed: --lag prints each page behind and always exits 0, and publish_docs puts a page two
+ * or more imports behind in the "Docs import warnings" issue (counting the same way, in nightly-publish.sh). Without git history (a shallow clone) only "behind" is
+ * known.
  *
  * Run by the lint on each language folder present, and by the publish job on the translate job's artifact.
  */
@@ -54,10 +61,17 @@ function sourceProblems(where, src, ids) {
   return out;
 }
 
-export function checkTranslated(dir, sources, englishDir) {
+export function checkTranslated(dir, sources, englishDir, { sameEnglish = false } = {}) {
   const problems = checkDocs(dir, sources, { extraPageKeys: ["source"], pictures: join(englishDir, "img"), noImgDir: true });
   if (!Array.isArray(sources)) return problems;
   const read = (f) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
+  let english = null;
+  try { english = JSON.parse(readFileSync(join(englishDir, "index.json"), "utf8")).generated; } catch { /* checkDocs of the English names it */ }
+  const later = (where, src) => {
+    if (!isObj(src) || typeof english !== "string" || typeof src.generated !== "string" || !ISO.test(src.generated)) return;
+    if (src.generated > english) problems.push(`${where}: source.generated ${src.generated} is later than the English's generated ${english}: no translation is made from English not yet committed (a wrong stamp or a bad resume)`);
+    else if (sameEnglish && src.generated !== english) problems.push(`${where}: source.generated ${src.generated} is not the English's generated ${english}: the translation was made from other English than this checkout's`);
+  };
   const pages = {};
   for (const s of sources) {
     const f = `${s.slug}.json`, p = existsSync(join(dir, f)) ? read(f) : null;
@@ -65,6 +79,7 @@ export function checkTranslated(dir, sources, englishDir) {
     pages[s.slug] = p;
     if (!Object.hasOwn(p, "source")) continue; /* checkDocs named it */
     problems.push(...sourceProblems(f, p.source, p.sections.map((x) => isObj(x) ? x.id : null)));
+    later(f, p.source);
   }
   const idx = existsSync(join(dir, "index.json")) ? read("index.json") : null;
   if (isObj(idx) && Array.isArray(idx.sources)) idx.sources.forEach((e, k) => {
@@ -81,7 +96,10 @@ export function checkTranslated(dir, sources, englishDir) {
 function importsAfter(root, since) {
   const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 << 20 });
   let shas;
-  try { shas = git("log", "--format=%H", "--", "assets/docs/index.json").split("\n").filter(Boolean); } catch { return null; }
+  try {
+    if (git("rev-parse", "--is-shallow-repository").trim() !== "false") return null; /* a shallow clone cannot count them */
+    shas = git("log", "--format=%H", "--", "assets/docs/index.json").split("\n").filter(Boolean);
+  } catch { return null; }
   if (!shas.length) return null;
   const seen = [];
   for (const sha of shas) {
@@ -94,9 +112,10 @@ function importsAfter(root, since) {
   return seen;
 }
 
-/* { fail: [...], report: [...] } for every translated page under root */
+/* { behind: [...], report: [...] } for every translated page under root that trails the committed English: behind
+   holds { file, lang, generated, imports } (imports null without history), report a line for each */
 export function lagProblems(root) {
-  const out = { fail: [], report: [] };
+  const out = { behind: [], report: [] };
   const base = join(root, "assets/docs-i18n");
   if (!existsSync(base)) return out;
   let current;
@@ -116,8 +135,9 @@ export function lagProblems(root) {
   const after = importsAfter(root, oldest);
   for (const [f, g] of pages) {
     const n = after === null ? null : after.filter((x) => x > g).length;
+    out.behind.push({ file: f, lang: f.split("/")[2], generated: g, imports: n });
     if (n === null) out.report.push(`${f}: translated from the English of ${g}, older than the English's ${current} (no git history to count the imports since)`);
-    else if (n >= 2) out.fail.push(`${f}: translated from the English of ${g}, ${n} imports behind the English (${current}); one is the nightly order, two or more mean the translation job has not kept up`);
+    else if (n >= 2) out.report.push(`${f}: translated from the English of ${g}, ${n} imports behind the English (${current}); one is the nightly order, two or more mean the translation job has not kept up (publish_docs reports it in the warnings issue)`);
     else if (n === 1) out.report.push(`${f}: translated from the English of ${g}, one import behind (${current}): the next translation run catches up`);
   }
   return out;
@@ -125,16 +145,17 @@ export function lagProblems(root) {
 
 const main = process.argv[1] === fileURLToPath(import.meta.url);
 if (main && process.argv[2] === "--lag") {
-  const { fail, report } = lagProblems(process.cwd());
+  let report = [];
+  try { ({ report } = lagProblems(process.cwd())); } catch (e) { console.log(`   (the lag could not be read: ${String(e && e.message).slice(0, 200)})`); }
   for (const l of report.slice(0, 40)) console.log(`   (reported) ${l}`);
-  for (const l of fail.slice(0, 40)) console.log(`   ${l}`);
-  process.exit(fail.length ? 1 : 0);
+  if (report.length > 40) console.log(`   ... and ${report.length - 40} more`);
+  process.exit(0);
 } else if (main) {
-  const [dir, srcFile, englishDir] = process.argv.slice(2);
-  if (!dir || !srcFile || !englishDir) { console.log("usage: node tools/ci/docs-i18n-shape.mjs <dir> <sources.json> <english docs dir>"); process.exit(1); }
+  const [dir, srcFile, englishDir, flag] = process.argv.slice(2);
+  if (!dir || !srcFile || !englishDir || (flag !== undefined && flag !== "--same-english")) { console.log("usage: node tools/ci/docs-i18n-shape.mjs <dir> <sources.json> <english docs dir> [--same-english]"); process.exit(1); }
   let sources;
   try { sources = JSON.parse(readFileSync(srcFile, "utf8")); } catch { console.log(`${srcFile} cannot be read as JSON`); process.exit(1); }
-  const problems = checkTranslated(dir, sources, englishDir);
+  const problems = checkTranslated(dir, sources, englishDir, { sameEnglish: flag === "--same-english" });
   for (const p of problems.slice(0, 20)) console.log(`   ${p}`);
   if (problems.length > 20) console.log(`   ... and ${problems.length - 20} more`);
   process.exit(problems.length ? 1 : 0);

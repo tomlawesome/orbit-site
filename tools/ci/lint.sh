@@ -133,14 +133,16 @@ echo "== the imported docs have the shape the import writes"
 # what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
 # (the publish job holds the artifact to the same check, #18)
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
-# each translated folder (#125 stage 2): the same shape, its source record, the
-# English pictures; and how far it lags the English (one import is reported,
-# two or more fail: tools/ci/docs-i18n-shape.mjs says why)
+# each translated folder (#125 stage 2): the same shape, its source record
+# (never stamped later than the committed English), the English pictures. How
+# far it lags the English is printed, never failed (#125 amendment 5): the lag
+# is the nightly schedule's state, which no merge request can break or mend;
+# publish_docs reports two or more imports behind in the warnings issue
 for d in assets/docs-i18n/*/; do
   [ -d "$d" ] || continue
   node tools/ci/docs-i18n-shape.mjs "${d%/}" tools/docs-sources.json assets/docs || fail=1
 done
-node tools/ci/docs-i18n-shape.mjs --lag || fail=1
+node tools/ci/docs-i18n-shape.mjs --lag
 fi
 
 if on docs-markup; then
