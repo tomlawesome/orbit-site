@@ -322,6 +322,15 @@ export function blankLabels(line) {
   for (let prev = null; prev !== s;) { prev = s; s = s.replace(/\[[^[\](){}|]*\]|\([^[\](){}|]*\)|\{[^[\](){}|]*\}|\|[^|]*\|/g, "\u0001"); }
   return s.replace(/\s+/g, " ").trim();
 }
+/* how much markup a mermaid line's label text holds: each <, > or entity for one in the parts blankLabels blanks
+   (the line is already entity-decoded once, so an escaped tag in the source is a tag here) */
+export function labelMarkup(line) {
+  let s = line, n = 0;
+  const tally = (m) => { n += (m.match(/[<>]|&(lt|gt|#0*6[02]|#x0*3[ce]);/gi) || []).length; return "\u0001"; };
+  s = s.replace(/"[^"\n]*"/g, tally);
+  for (let prev = null; prev !== s;) { prev = s; s = s.replace(/\[[^[\](){}|]*\]|\([^[\](){}|]*\)|\{[^[\](){}|]*\}|\|[^|]*\|/g, tally); }
+  return n;
+}
 const DANGER = /<script|<style|javascript:|\bon\w+\s*=/gi;
 const dangers = (s) => (String(s).match(DANGER) || []).length;
 const firstDiff = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) return `at ${i + 1}: English ${a[i] ?? "nothing"}, answer ${b[i] ?? "nothing"}`.slice(0, 200); return ""; };
@@ -360,7 +369,12 @@ export function checkSection(item, text, glossary) {
   else me.forEach((src, i) => {
     const le = src.split("\n"), la = ma[i].split("\n");
     if (le.length !== la.length) p.push(`(e) mermaid diagram ${i + 1} has ${la.length} lines, English ${le.length}`);
-    else { const k = le.findIndex((l, j) => blankLabels(l) !== blankLabels(la[j])); if (k >= 0) p.push(`(e) mermaid diagram ${i + 1} line ${k + 1} changes more than its labels (a node id, arrow or keyword)`); }
+    else {
+      const k = le.findIndex((l, j) => blankLabels(l) !== blankLabels(la[j]));
+      if (k >= 0) p.push(`(e) mermaid diagram ${i + 1} line ${k + 1} changes more than its labels (a node id, arrow or keyword)`);
+      const m = le.findIndex((l, j) => labelMarkup(la[j]) > labelMarkup(l));
+      if (m >= 0) p.push(`(e) mermaid diagram ${i + 1} line ${m + 1}: a label carries markup (<, > or an entity for one) the English label lacks, which Mermaid would render as html`);
+    }
   });
   const r = ratioProblem(textOf(eng.html).length, textOf(a.html).length, script, "(f)");
   if (r) p.push(r);
