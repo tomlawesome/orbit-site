@@ -37,6 +37,10 @@
  *       second batch: through this machine's record, and through the key's batch list when the record is gone
  *   T45 (fix review 6) batches.json: a record older than 29 days is not used (the API keeps results 29 days), one just
  *       under is; a file over 1 MiB is refused rather than read, one just under is read
+ *   T46 (idempotency key) every custom_id carries the run's request digest, r<index>-<first 12 hex of the digest>
+ *       (^r\d{4}-[0-9a-f]{12}$, at most 64 characters); the list path, with no record, adopts an ended batch only
+ *       if its ids carry this run's digest: its own is adopted, another run's of the same size is not and none of
+ *       its text is written
  *   T43 (15) the fake's ids for a retried chunk are the tool's, and its attempt counts go on
  *
  * Assumption (the spec leaves it open): --poll-seconds and --timeout-minutes take fractions (0.05, 0.02).
@@ -354,6 +358,51 @@ await T.attempt("T44", async () => {
       T.check(`T44 (${name}) the paid results are written`, fx.exists("assets/docs-i18n/de/readme.json"), "no German page");
     } finally { await fake.close(); fx.cleanup(); }
   }
+});
+
+await T.attempt("T46", async () => {
+  /* the standard idempotency-key pattern: the key (the run's request digest) rides in each request's custom_id, so a batch
+     found on the key's list can be told to be this run's. The form chosen here: r<index>-<12 hex of the digest>. */
+  const FORM = /^r\d{4}-([0-9a-f]{12})$/;
+  const ids = (fake) => fake.batches.flatMap((b) => b.requests.map((q) => q.wireId));
+  /* (c) the form, and one digest for the whole run, retry batch included */
+  const TOPID = "docs/readme/top";
+  const fc = mkFixture(), fakeC = await startFake({ script: (cid, n, q, ans) => (cid === `${TOPID}@de` && n === 1 ? { answer: dropStrong(ans) } : undefined) });
+  try {
+    const r = await runTool(fc, argsFor(fc, fakeC, "--langs", "de"));
+    T.exit("T46c a run with a retry batch: exit 0", r, 0);
+    const all = ids(fakeC), digests = new Set(all.map((x) => (FORM.exec(x) || [])[1]));
+    T.check("T46c every custom_id sent, in both batches, is r<4+ digits>-<12 hex> and at most 64 characters", fakeC.batches.length === 2 && all.length > 0 && all.every((x) => FORM.test(x) && x.length <= 64), `${all.length} ids in ${fakeC.batches.length} batches, e.g. ${JSON.stringify(all.slice(0, 2))}`);
+    T.check("T46c and they all carry the same digest (the run's)", digests.size === 1 && !digests.has(undefined), `${digests.size} distinct`);
+  } finally { await fakeC.close(); fc.cleanup(); }
+  /* (a) the key's list, no record (a CI runner has none): an ended batch carrying this run's digest is adopted */
+  const fa = mkFixture(), fakeA = await startFake({ never: true });
+  try {
+    const r1 = await runTool(fa, argsFor(fa, fakeA, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T46a the first run is pending: exit 5", r1, 5);
+    rmSync(join(fa.tmp, ".cache"), { recursive: true, force: true });
+    fakeA.never = false;
+    const r2 = await runTool(fa, argsFor(fa, fakeA, "--langs", "de"));
+    T.exit("T46a an ended batch carrying this run's digest is adopted: exit 0", r2, 0);
+    T.check("T46a no second batch is submitted, and the page is written", !r2.notBuilt && fakeA.posts === 1 && fa.exists("assets/docs-i18n/de/readme.json"), `${fakeA.posts} batches submitted`);
+  } finally { await fakeA.close(); fa.cleanup(); }
+  /* (b) an ended batch of the same size made from other English (T34's edit in place: same count, same ids) is another
+     run's: not adopted, a new batch is made from the English as it is, and none of the other batch's text is written */
+  const fb = mkFixture(), fakeB = await startFake({ never: true });
+  try {
+    const r1 = await runTool(fb, argsFor(fb, fakeB, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T46b the other run is pending: exit 5", r1, 5);
+    const top = fb.pages.readme.sections.find((x) => x.id === "top");
+    fb.setSection("readme", "top", { html: top.html.replace("tidy", "calm and orderly") });
+    rmSync(join(fb.tmp, ".cache"), { recursive: true, force: true });
+    fakeB.never = false;   /* the other run's batch has ended by now, with its results unread */
+    const r2 = await runTool(fb, argsFor(fb, fakeB, "--langs", "de"));
+    T.exit("T46b the run finishes: exit 0", r2, 0);
+    T.check("T46b the other digest's batch is not adopted: a second batch is submitted", !r2.notBuilt && fakeB.posts === 2, `${fakeB.posts} batches submitted`);
+    const p = fb.exists("assets/docs-i18n/de/readme.json") ? fb.read("assets/docs-i18n/de/readme.json") : null;
+    const t = p && p.sections.find((x) => x.id === "top");
+    T.check("T46b none of the other batch's text is written: the top section is the translation of the English as it is", !!t && !t.html.includes("tidy") && t.html.includes("calm and orderly"), t ? t.html.slice(0, 120) : "no page");
+  } finally { await fakeB.close(); fb.cleanup(); }
 });
 
 await T.attempt("T45", async () => {
