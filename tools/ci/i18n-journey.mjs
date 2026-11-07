@@ -14,6 +14,11 @@
  *   J9c a page with sections left in English (source.kept) and nothing else wrong shows a banner that does not say the English has changed
  *   J10 the de/ reader reads assets/docs-i18n/de/; a translated page shows no untranslated line, a page with no German file is read in
  *       English with that line shown (decision 11a: page-level, never per section); the root never asks for it
+ *   J11 (#138, ALL-S1) a German browser that keeps nothing (site data blocked) and sends no referrer: the root sends it to
+ *       de/; the notice's English link there opens the English page and it stays (it is not sent back to de/)
+ *   J12 (#138, ALL-F6) the notice's English link, opened in a new tab with a modifier-click, a middle click or copied from
+ *       the context menu, points at the address the visitor is at now (the site moves its hash without a hashchange), not
+ *       the one the page loaded with
  *
  * Contract the page is held to (the builder's): <html lang>, data-i18n keys, localStorage "orbit-lang", the notice
  * an element with class .ai-notice holding an <a hreflang="en"> to the English page, and the switch links
@@ -259,6 +264,56 @@ try {
     await docsOpen(page);
     await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), eReadme.sections[0].title, { timeout: 8000 });
     check("J10d the root (English) never asks for assets/docs-i18n/", fake.asked.length === 0, JSON.stringify(fake.asked));
+  });
+
+  /* J11 (#138, ALL-S1): site data blocked and the referrer stripped, as a privacy setting does: nothing is left to remember
+     the visitor's choice by but the address the English link opens */
+  await run("J11", { context: { locale: "de-DE" } }, async (page) => {
+    const navs = [];
+    page.on("framenavigated", (f) => { if (f === page.mainFrame()) navs.push(f.url()); });
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("blocked", "SecurityError"); } });
+      Object.defineProperty(Document.prototype, "referrer", { configurable: true, get() { return ""; } });
+    });
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
+    await page.waitForURL((u) => inDe(u.href) && u.hash === "#docs");
+    await docsOpen(page);
+    const pad = page.locator("#docspad .ai-notice a[hreflang='en']");
+    await pad.first().waitFor({ state: "visible" });
+    const mark = navs.length;
+    await pad.first().click();
+    await page.waitForURL((u) => !inDe(u.href));
+    await page.waitForLoadState("load");
+    await page.evaluate(() => document.fonts.ready).catch(() => {});
+    const after = navs.slice(mark);
+    check("J11 a German browser that keeps nothing and sends no referrer reaches the English page from the notice's link, and stays", !inDe(page.url()) && after.every((u) => !inDe(u)) && (await page.evaluate(() => document.documentElement.lang).catch(() => "")).startsWith("en"), JSON.stringify(after));
+  });
+
+  /* J12 (#138, ALL-F6): the site moves its hash with history.pushState (no hashchange), so the notice's English link must be
+     aimed at the address now, whichever way the visitor takes it: modifier-click or middle click (a new tab), or the context menu */
+  await run("J12", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.locator("#docspad .entry").first().waitFor({ state: "attached", timeout: 30000 });
+    await page.evaluate(() => document.querySelector("#docspad .entry").click());
+    await page.waitForFunction(() => location.hash.startsWith("#docs/") && !!document.querySelector("#docspad .reader") && !document.querySelector("#docspad").hidden);
+    const here = await page.evaluate(() => location.hash);
+    const link = page.locator("#docspad .ai-notice a[hreflang='en']");
+    await link.first().waitFor({ state: "visible" });
+    const opened = async (init) => {
+      const [tab] = await Promise.all([page.context().waitForEvent("page"), link.first().click(init)]);
+      await tab.waitForURL((u) => u.href !== "about:blank");
+      const at = new URL(tab.url());
+      await tab.close();
+      return at;
+    };
+    const ctrl = await opened({ modifiers: ["Control"] });
+    check("J12a a modifier-click on the notice's English link opens the English page at the address the visitor is at now", !inDe(ctrl.href) && ctrl.hash === here, `${ctrl.href} (want ${here})`);
+    const middle = await opened({ button: "middle" });
+    check("J12b a middle click opens it there too", !inDe(middle.href) && middle.hash === here, `${middle.href} (want ${here})`);
+    await link.first().click({ button: "right" });
+    const copied = new URL(await link.first().evaluate((a) => a.href));
+    check("J12c the link the context menu copies is aimed there too", copied.hash === here, `${copied.href} (want ${here})`);
   });
 } catch (e) {
   check("harness", false, String(e && e.stack || e));

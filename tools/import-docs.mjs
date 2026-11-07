@@ -73,7 +73,8 @@ async function fetchSource(src) {
 const REPOS = [...new Set(SOURCES.map((s) => s.repo))];
 
 /* every warning of this import, { repo, path, kind, message }, told in the log as it comes and written to the
-   warnings file at the end */
+   warnings file at the end. A new kind goes in the publish's allowed kinds too (tools/ci/nightly-publish.sh,
+   check_warnings), or the publish refuses the artifact (ALL-F21, #138; nightly-import-test.sh W11 checks) */
 const warnings = [];
 function warn(src, kind, message) {
   let m = logSafe(message);

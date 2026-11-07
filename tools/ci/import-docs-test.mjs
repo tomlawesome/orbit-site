@@ -777,7 +777,8 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
   const put = (dir, path, data) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), data); };
   const stub = (s2) => `# ${s2.name}\n\nAbout ${s2.name}.\n\n## Details\n\nText for ${s2.name}.\n`;
   const readme = ["# Orbit", "", "Landing words.", "", "## Quick start", "", "Start words.", "", "## Contributor notes", "", "Hidden words.", "",
-    "### Quick start", "", "A third-level heading is not a match.", "", "## After", "", "More words.", ""].join("\n");
+    "### Quick start", "", "A third-level heading is not a match.", "", "## After", "", "More words.", "",
+    "### Deep only", "", "Only ever a third-level heading.", ""].join("\n");
   let k = 0;
   const scenario = (skip) => {
     const sources = real.map(({ skip: _s, from: _f, ...s2 }) => (s2.slug === "readme" ? { ...s2, skip } : s2));
@@ -786,9 +787,10 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     for (const s2 of sources) put(s2.repo === O ? from : fromL, s2.path, s2.slug === "readme" ? readme : stub(s2));
     const r = spawnSync(process.execPath, ["tools/import-docs.mjs", "--from", from, "--out", out, "--warnings", wf], { cwd: repoCopy, encoding: "utf8", timeout: 120000, env: { ...process.env, NODE_NO_WARNINGS: "1" } });
     const file = join(out, "readme.json");
-    const titles = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).sections.map((x) => x.title) : null;
+    const secs = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).sections : null;
+    const titles = secs ? secs.map((x) => x.title) : null;
     const rows = (existsSync(wf) ? readFileSync(wf, "utf8") : "").split("\n").filter(Boolean).map((l) => l.split("\t"));
-    return { status: r.status, stderr: r.stderr ?? "", err: r.error ? String(r.error.message) : "", titles, unmatched: rows.filter((f) => f[2] === "skip-unmatched") };
+    return { status: r.status, stderr: r.stderr ?? "", err: r.error ? String(r.error.message) : "", titles, secs, unmatched: rows.filter((f) => f[2] === "skip-unmatched") };
   };
 
   // K1 (a): a skip entry that is no second-level heading -> one skip-unmatched warning naming it; every section is kept
@@ -809,10 +811,13 @@ const padded = (head, size) => Buffer.concat([head, Buffer.alloc(size - head.len
     eq("K2 no skip-unmatched warning", r.unmatched.length, 0);
     check("K2 no skip-unmatched line on stderr", !/skip-unmatched|skip heading/.test(r.stderr), `stderr: ${r.stderr.slice(0, 300)}`);
   }
-  // K3: a third-level heading of the same text does not satisfy a skip entry
+  // K3: a third-level heading does not satisfy a skip entry; "Deep only" exists only as '### Deep only', so a matcher that counts it stays silent and fails here
   {
-    const r = scenario(["Quick start", "Contributor notes", "Nope"]);
-    check("K3 only the entry that matches no second-level heading is warned about", r.unmatched.length === 1 && r.unmatched[0][3].includes("Nope"), `warnings ${JSON.stringify(r.unmatched)}`);
+    const r = scenario(["Quick start", "Deep only"]);
+    check("K3 an entry whose only match is a third-level heading is warned about, and only it", r.unmatched.length === 1 && r.unmatched[0][3].includes("Deep only"), `warnings ${JSON.stringify(r.unmatched)}`);
+    check("K3 the second-level match is dropped and the rest kept", JSON.stringify(r.titles) === JSON.stringify(["Orbit", "Contributor notes", "After"]), `sections ${JSON.stringify(r.titles)}`);
+    const after = r.secs && r.secs.find((x) => x.title === "After");
+    check("K3 the third-level heading's text stays in its section", !!after && after.html.includes("Only ever a third-level heading."), `After html ${after ? after.html.slice(0, 200) : "missing"}`);
   }
   rmSync(tmp, { recursive: true, force: true });
 }

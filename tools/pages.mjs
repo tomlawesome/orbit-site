@@ -16,14 +16,14 @@
  *   - every path to the site's files (src, href, data-href: assets/…, sw.js) one up, to the root's; a link to "./"
  *     stays this language's own landing. No <base>: it would turn every #link into a link to the root
  *   - the words the site's scripts write, as <script type="application/json" id="i18n"> (assets/js/lang.js reads it):
- *     every key of the catalogue no element of the page names
+ *     every key of the catalogue no element of the page names, and every key a script names (tr() reads only this)
  * and assets/i18n/en.js, the English catalogue as a module for lang.js (a JSON module would need a newer browser).
  *
  *   node tools/pages.mjs            writes de/index.html (each language's) and assets/i18n/en.js
  *   node tools/pages.mjs --check    exits 1 if any differs from what it would write
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { doorBlocks } from "./door-markup.mjs";
@@ -80,6 +80,15 @@ export function markup(words, inner, key = "?") {
 const SITE_FILE = /(\s(?:src|href|data-href)=")(assets\/|sw\.js")/g;
 const sha = (s) => `'sha256-${createHash("sha256").update(s, "utf8").digest("base64")}'`;
 
+/* the keys the site's scripts may look up: every quoted string in assets/js, as the lint counts a key used (a key chosen
+   in the call, tr(n === 1 ? "a" : "b"), is one too) */
+const scriptKeys = () => {
+  const keys = new Set();
+  const dir = join(ROOT, "assets/js");
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".js"))) for (const m of readFileSync(join(dir, f), "utf8").matchAll(/"([a-z0-9][\w-]*)"/g)) keys.add(m[1]);
+  return keys;
+};
+
 /* index.html in a language, from its catalogue */
 export function build(indexHtml, catalogue, lang) {
   const cat = catalogue || {};
@@ -113,8 +122,8 @@ export function build(indexHtml, catalogue, lang) {
   });
   html = html.replace(SITE_FILE, "$1../$2");
   /* the words the scripts write */
-  const named = new Set(strings(indexHtml).map((s) => s.key));
-  const own = Object.fromEntries(Object.keys(cat).filter((k) => !named.has(k)).sort().map((k) => [k, cat[k]]));
+  const named = new Set(strings(indexHtml).map((s) => s.key)), looked = scriptKeys();
+  const own = Object.fromEntries(Object.keys(cat).filter((k) => !named.has(k) || looked.has(k)).sort().map((k) => [k, cat[k]]));
   const data = JSON.stringify(own).replace(/</g, "\\u003c");
   html = html.replace(/\n([ \t]*)<\/head>/, `\n$1  <script type="application/json" id="i18n">${data}</script>\n$1</head>`);
   return html;

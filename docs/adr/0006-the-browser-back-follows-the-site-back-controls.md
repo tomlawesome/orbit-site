@@ -1,6 +1,6 @@
 # ADR-0006: The browser's Back follows the site's own back controls
 
-**Status:** Proposed 2026-10-31 (design; nothing built yet)
+**Status:** Accepted 2026-10-31 (built in #117: `assets/js/places.js`)
 **Date:** 2026-10-31
 **Relates to:** #117 (Browser Back leaves the site instead of going back to the door); #107 (the Chromium journey's
 "Back mid-flight" flake: the click, not Back); beb49e4 (Back and Forward after a journey from the door); ADR-0005 (which
@@ -63,7 +63,7 @@ worth adding only from a click or a key, and an entry added on load is worth not
 2. **A landing's rewrite of its address keeps the entry's state.** `goToWorld` and the flights' `land()` use
    `replaceState(history.state, "", "#id")`. The direct `replaceState(null, "", " ")` stays only where the door is reached
    with no door entry below (a direct arrival's "— the dawn").
-3. **Up is `history.go(-orbit)` when `orbit` is 1 or more, else the direct descent.** This replaces `goBack`'s
+3. **Up is `history.go(-orbit)` when `orbit` is 1 or more and below `history.length`, else the direct descent.** This replaces `goBack`'s
    `history.back()`: from a docs page two entries above the door, Up reaches the door in one go and leaves nothing
    stale; from a direct arrival it descends and rewrites the one entry to `/`. The docs' own entries carry `orbit`
    (decision 1) so this holds there too.
@@ -71,11 +71,12 @@ worth adding only from a click or a key, and an entry added on load is worth not
    mini system or a chip pushes `{ ...state, sky: id }` with the address unchanged (no new address: `#home` or `/` stays
    what it was). From another's sky to a third, the entry is replaced, not pushed: the demo has two levels, your sky
    and another's, as the corner says ("— your sky" always goes to yours). "— your sky" is `history.back()` when the
-   entry's state has `sky`, else `flyTo("willow")`. The browser's Back from another's sky flies to the visitor's own;
-   Forward flies out to the sky named in the state. The walk and `restoreState` push nothing.
+   entry's state has `sky`, else `flyTo("willow")`; so is a tap on the visitor's own system there. The browser's Back from another's sky flies to the visitor's own;
+   Forward flies out to the sky named in the state. The walk and `restoreState` push nothing. A reload or a restored tab
+   on another's sky shows the sky its entry names, so the first Back flies home as before.
 5. **A sky asked for during a sky flight is flown to when the flight lands** (the last one asked). Today `flyTo` refuses
    it, so a Back mid-flight would leave the camera and the entry disagreeing. `cancelFlight` drops a pending ask.
-6. **Signing out drops the sky's entries:** when the goodbye lands, `history.go(-orbit)` when `orbit` is 1 or more (the
+6. **Signing out drops the sky's entries:** when the goodbye lands, `history.go(-orbit)` when `orbit` is 1 or more and below `history.length` (the
    door's entry is current under the goodbye; the pop does nothing there), else the entry is rewritten to `/`. Back at
    the goodbye leaves the site; "Sign back in" shows the door; Forward from that door flies in, as after any Back.
 7. **Back and Forward are planned by one pure function,** `plan({ current, hash, state, from })` in a new module
@@ -116,7 +117,7 @@ the drawers and the walk pushing nothing; `arrivePad`/`arrive` as the direct arr
     `stack(more, hash?)` pushes `{ ...more, orbit: h.state?.orbit ? h.state.orbit + 1 : 0 }`, the address `hash` or
     unchanged when omitted; `hop(more)` replaces the state with `{ ...h.state, ...more }`, address unchanged;
     `keep(hash)` is `replaceState(h.state, "", hash)`; `settle()` is `replaceState(null, "", " ")`;
-    `up()` returns true after `h.go(-orbit)` when `orbit` is 1 or more, else false and does nothing;
+    `up()` returns true after `h.go(-orbit)` when `orbit` is 1 or more and below `h.length`, else false and does nothing;
     `pop()` is called in the `popstate` handler and returns `{ hash, state, from }`, `hash` the address's hash up to the
     first `/` (`""`, `"#home"`, `"#install"`, `"#docs"`, `"#info"`, other), `state` the entry's, `from` the state of the
     entry before it; every method keeps `from` current. Each history call is in a try/catch, as today.
@@ -130,8 +131,9 @@ the drawers and the walk pushing nothing; `arrivePad`/`arrive` as the direct arr
 - `main.js`: `step` and `goBack` go; `flyToPad` and `launch` use `places.step`; the "— the dawn" controls and
   `home.onBackHome` use `up()` else the descent; the three landings' address rewrites use `keep` (not while `after` is
   set); `signOut`'s farewell uses `up()` else `settle()`; `popstate` runs `plan(places.pop())` now or after the landing.
-- `home.js`: `visit(id)` (new, the mini systems' and chips' click): `state.camera === "willow"` ? `places.stack({ sky: id })`
-  : `places.hop({ sky: id })`, then `flyTo(id)`; `flyTo` during a flight keeps the ask and flies it when the flight lands
+- `home.js`: `visit(id)` (new, the mini systems' and chips' click): for `id` `"willow"`, `history.back()` when
+  `history.state?.sky`, else `flyTo("willow")` (an entry never says the visitor's own sky); otherwise
+  `state.camera === "willow"` ? `places.stack({ sky: id })` : `places.hop({ sky: id })`, then `flyTo(id)`; `flyTo` during a flight keeps the ask and flies it when the flight lands
   (`done` of the pending one called on its landing); `cancelFlight` drops it; "— your sky" is `history.back()` when
   `history.state?.sky`, else `flyTo("willow")`; a new export `flying()` for tests.
 - `pads.js`: `open` and `close` push with `orbit` carried as decision 1 says (`{ docs, anchor, orbit }`, `{ orbit }`).
@@ -151,7 +153,7 @@ records calls):
 - P3. `hop({ sky: "grans" })` above `{ orbit: 1 }` replaces with `{ orbit: 1, sky: "grans" }`, address unchanged, no push.
 - P4. `keep("#docs")` replaces with the same state object; `settle()` replaces with null at `" "`.
 - P5. `up()` above `{ orbit: 2 }` calls `go(-2)` and returns true; above `{ orbit: 0 }`, null and `{ sky: "x" }` alone
-  it calls nothing and returns false.
+  it calls nothing and returns false; so it does above `{ orbit: 60 }` in a history of 50 entries, and `{ orbit: 3 }` in 3.
 - P6. `pop()` returns the entry's hash up to the first `/` (`"#docs/a/b"` gives `"#docs"`), the state, and `from` = the
   state before: after `step("#home")` then a stand-in pop to `null`, `from` is `{ orbit: 1 }`; a second pop with no
   change between gives `from` null. Control: `from` after `hop` is the hopped state.
@@ -203,6 +205,10 @@ element, never a time:
 - B8. Gate, sign out, Back: leaves the page. "Sign back in", Forward: the sky. Control: today, Back at the goodbye
   shows nothing and the address stays `#home`.
 - B9. Phone Safari is the owner's run, by hand, cases B1, B3, B4 and B8 (AGENTS.md: real-device Safari is phone only).
+- B10. Gate, click a mini system (another's sky), reload: the first Back is not a dead press (another sky, or the door).
+  Control: B5's reload on a landing.
+- B11. Gate, click a mini system, then the visitor's own system there: one Back reaches the door; so does "— the dawn".
+  Control: B3, where the way home is Back.
 
 ## Build notes, in order
 

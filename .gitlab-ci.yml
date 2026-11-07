@@ -11,8 +11,8 @@
 
 # The shared check for personal details (ai/agent-infra#32, #110): one set of
 # rules for every project, kept on the agent host and read by the job from a
-# file the runner host mounts. The include is the only one ci-split allows
-# (ADR-0005). The ref is the commit the tag names, not the tag: a protected
+# file the runner host mounts. ci-split allows this include and, beside it,
+# the two shared snippets below, nothing else (ADR-0005). The ref is the commit the tag names, not the tag: a protected
 # tag can be deleted and made again on other code, a commit cannot move.
 # PRIVATE_DETAILS_SHA below names the same commit, so the script the job runs
 # is the pinned one too. Moving to a new tag moves both and the comment together.
@@ -20,9 +20,22 @@ include:
   - project: ai/agent-infra
     ref: 7430d171259104c4623040c2360699585d601bf5 # private-details/v4
     file: scripts/private-details/ci-template.yml
+  # A catch-up MR (chore/catchup-* into batch-a or batch-b) runs the catch-up
+  # check, the lint, the secret scan and the personal-details check, since it
+  # merges onto a mirrored branch; an MR into a batch runs static checks only,
+  # the full pipeline running once on batch to dev (ai/agent-infra#114,
+  # decision 60a). ci-split refuses either rule on those three jobs. Commits
+  # the tags name:
+  - project: ai/agent-infra
+    ref: 03499313d89b421212af02db3735662397eebfb3 # catchup-check/v2
+    file: scripts/catchup-check/ci-template.yml
+  - project: ai/agent-infra
+    ref: 063b5b95a96b139b0a858bb009466456a19e5674 # batch-intake/v1
+    file: scripts/batch-intake/ci-template.yml
 
 stages:
   - lint
+  - test # the shared catchup-check job runs here
   - live
   - check
   - maintenance
@@ -36,6 +49,8 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
   rules:
+    - !reference [.catchup-check, workflow_rules]
+    - !reference [.batch-intake, workflow_rules]
     # Tags publish nothing here: Pages serves a branch.
     - if: $CI_COMMIT_TAG
       when: never
@@ -132,6 +147,8 @@ lint:test:
   stage: lint
   image: $NODE_IMAGE
   rules:
+    - !reference [.catchup-check, job_rule]
+    - !reference [.batch-intake, job_rule]
     - *not_scheduled
     - when: on_success
   variables:
@@ -148,6 +165,8 @@ lint:import:
   stage: lint
   image: $NODE_IMAGE
   rules:
+    - !reference [.catchup-check, job_rule]
+    - !reference [.batch-intake, job_rule]
     - *not_scheduled
     - when: on_success
   variables:
@@ -165,6 +184,7 @@ lint:duplication:
   stage: lint
   image: $NODE_IMAGE
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -204,7 +224,9 @@ private-details:
   needs: []
   # the template names the image by tag only; pinned here by digest, the same
   # gitleaks release scan:gitleaks runs, so a repointed tag cannot run with the
-  # checkout, the mounted rules and the job token
+  # checkout, the mounted rules and the job token. Renovate cannot read a name
+  # led by a variable and bumps scan:gitleaks' pin alone: the lint refuses the
+  # two pins differing, so copy the bump here (ALL-F2, #138)
   image:
     name: $CI_IMAGE_CACHE_GHCR/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
     entrypoint: [""]
@@ -215,9 +237,12 @@ private-details:
     - when: on_success
 
 # Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
-# across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they
-# have a fix, secrets and licences always. It also runs from the daily schedule (a schedule with TRIVY=true), so a
-# newly published CVE fails that run and not an unrelated merge request.
+# across the tree, HIGH or CRITICAL; vulnerabilities only when they have a fix.
+# Secrets and licences block every pipeline. A vulnerability blocks only the
+# daily schedule (a schedule with TRIVY=true): every other pipeline scans and
+# lists it in the log, but passes, so a newly published CVE fails that run and
+# not an unrelated merge request (D-S1, #138). A scan that cannot run (no
+# database, say) fails any pipeline.
 # Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
 # database is fetched at run time and kept in GitLab's cache, never committed.
 scan:trivy:
@@ -232,12 +257,16 @@ scan:trivy:
     paths:
       - .trivycache/
   rules:
+    - !reference [.catchup-check, job_rule]
     - if: $CI_PIPELINE_SOURCE == "schedule" && $TRIVY == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - when: on_success
   script:
-    - trivy fs --no-progress --scanners vuln,secret,license --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+    - trivy fs --no-progress --scanners secret,license --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = schedule ]; then vuln_exit="--exit-code 1"; else vuln_exit="--exit-code 0"; fi
+      trivy fs --no-progress --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL $vuln_exit --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
 
 # zizmor and actionlint: the GitHub workflows the mirror keeps (CodeQL).
 # zizmor runs offline, since an online audit would need a GitHub token.
@@ -247,6 +276,7 @@ scan:zizmor:
     name: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
     entrypoint: [""]
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -258,6 +288,7 @@ scan:actionlint:
     name: docker.io/rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
     entrypoint: [""]
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -273,6 +304,7 @@ scan:shellcheck:
   image:
     name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -288,6 +320,7 @@ flake-check:
   image:
     name: docker.io/koalaman/shellcheck-alpine:v0.11.0@sha256:9955be09ea7f0dbf7ae942ac1f2094355bb30d96fffba0ec09f5432207544002
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -298,6 +331,7 @@ scan:ruff:
   image:
     name: ghcr.io/astral-sh/ruff:0.17.3-alpine@sha256:ee6d979c4e410a67b3057b6918bf8c0a7a36dbe6357e21cefb41d3f46d0b9c46
   rules:
+    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -325,6 +359,8 @@ live:firefox:
   needs: []
   parallel: 2
   rules:
+    - !reference [.catchup-check, job_rule]
+    - !reference [.batch-intake, job_rule]
     - *not_scheduled
     - when: on_success
   variables:
@@ -341,6 +377,8 @@ live:chromium:
   needs: []
   parallel: 3
   rules:
+    - !reference [.catchup-check, job_rule]
+    - !reference [.batch-intake, job_rule]
     - *not_scheduled
     - when: on_success
   variables:
@@ -369,6 +407,8 @@ coverage:
   image: $NODE_IMAGE
   needs: [lint, live:chromium]
   rules:
+    - !reference [.catchup-check, job_rule]
+    - !reference [.batch-intake, job_rule]
     - *not_scheduled
     - when: on_success
   variables:

@@ -311,19 +311,22 @@ const docsCase = async () => {
         await holdUp;
         await route.continue().catch(() => {});
       });
-      await page.goto(`${SITE}?preview#docs/readme`, { waitUntil: "load" });
+      /* fit=skip: the docs' Back stays closed until the flight is ready, and the speed test on a slow runner can hold that past any click's wait (#136) */
+      await page.goto(`${SITE}?preview&fit=skip#docs/readme`, { waitUntil: "load" });
       await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
       await Promise.race([held, sleep(30000).then(() => { throw new Error("the docs page (assets/docs/readme.json) was never requested"); })]);
       let left = null;
       if (leave) {
-        await page.locator("#docspad .back.dawn").click();
+        await page.locator("#docspad .back.dawn").click({ timeout: 120000 });
         await page.locator("#door").waitFor({ state: "visible", timeout: 30000 });
         await page.waitForFunction(() => { const pad = document.querySelector("#docspad"); const cs = getComputedStyle(pad); return pad.hidden || cs.display === "none" || cs.visibility === "hidden"; }, null, { timeout: 30000 });
         await sleep(500);
         left = await page.evaluate(() => ({ entries: history.length, hash: location.hash }));
       }
       release();
-      await sleep(1500);
+      /* stayed: wait for the reader, however slow the runner; left: nothing to wait for, so give a wrong opening time to show */
+      if (leave) await sleep(1500);
+      else await page.waitForFunction(() => !document.querySelector("#docspad .reader").hidden, null, { timeout: 60000 }).catch(() => {});
       const now = await page.evaluate(() => {
         const pad = document.querySelector("#docspad");
         const cs = getComputedStyle(pad);
@@ -644,6 +647,20 @@ const retryCase = async () => {
   } finally { await rctx.close(); }
 };
 
+/* ── B10 (#133): the door's phone switch moved to 840, the site's own pages keep theirs at 600 ─────────────── */
+const sitePageCase = async () => {
+  const pctx = await browser.newContext({ viewport: { width: 700, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await runCase("B10", "700x900: a site page (the home's walk bar) still has its desktop layout", async (want) => {
+      const page = await open(pctx);
+      await enterHome(page);
+      const name = await page.evaluate(() => { const el = document.querySelector("#transport .name"); const cs = el && getComputedStyle(el); return cs ? { display: cs.display, w: el.getBoundingClientRect().width } : null; });
+      want(name && name.display !== "none" && name.w > 0, `the walk bar's name is shown at 700 wide (the site's switch is 600): ${JSON.stringify(name)}`);
+      await page.close();
+    });
+  } finally { await pctx.close().catch(() => {}); }
+};
+
 try {
   await new Promise((ok, no) => {
     const t0 = Date.now();
@@ -660,6 +677,7 @@ try {
   const background = () => { others.push(docsCase(), docsFaultCase(), mermaidCase(), lostContextCase().then(retryCase)); };
   await homeCases(ctx, background);
   await cameraCase(ctx);
+  await sitePageCase();
   await Promise.all(others);
 } catch (e) {
   console.log(`FAIL site browser test: ${e.message.split("\n")[0]}`);

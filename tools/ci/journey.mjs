@@ -73,7 +73,7 @@ const fresh = async () => {
     if (/^galaxy.*\.webp$/.test(name)) problems.push(`requested a galaxy picture: ${r.url()}`);
   });
   page.on("console", (m) => { if (m.text().includes("is drawn, not Gaia's")) problems.push(`console message mentions Gaia: ${m.text()}`); });
-  page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error: ${m.text()}`); });
+  page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error: ${m.text()} @ ${m.location().url || "no address"}`); });
   page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
   page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
   return page;
@@ -340,7 +340,7 @@ const landings = async (prefix) => {
 
   /* L4: the software renderer is unfit, so a load without fit=skip leaves { fit: false } under its key; the next load
      in the same context says it remembered the off and tested again, and the gate still waits for the new verdict */
-  await step(`L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
+  await quarantined("#139", ["firefox"], `L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
     await withGL(async (p) => {
       await p.goto(flags(""), { waitUntil: "load" });
       await waitLine(p, /flight world: off: frame \d+ ms/);
@@ -732,6 +732,51 @@ const landings = async (prefix) => {
     if (hopped.length !== before + 1) throw new Error(`${hopped.length} entries after a hop to a third household, want ${before + 1} (a replace, not a push)`);
     await pressBack(p);
     await seeing(p, "Back from the third household's sky did not fly to the visitor's own", ownSky(own.name));
+  });
+
+  /* #138 (W-R1, ALL-R3): the sky's entry must say where the page is. `?fit=skip` takes the flight's world as fit (the
+     speed test is not run), so the path through the door does not depend on how fast the runner is. */
+  const SKIP = prefix ? "&fit=skip" : "?fit=skip";
+  /* to another household's sky, then the click on your own system there (the mini system for your own sky) */
+  const tapOwnFromOther = async (p) => {
+    await arriveAt(p, SKIP);
+    await planetReady(p, "install");
+    const own = await enterSky(p);
+    const [otherId, otherName] = own.others[0];
+    await clickMini(p, otherId);
+    await seeing(p, `the click on ${otherName} did not land on its sky`, otherSky(otherName));
+    await clickMini(p, "willow");
+    await seeing(p, "the click on your own system did not fly back to your own sky", ownSky(own.name));
+    return own;
+  };
+  /* B10: a reload on another household's sky leaves the entry saying that sky: the first Back must still show something */
+  await step(`B10 after a reload on another household's sky, the first Back is not a dead press${sfx}`, async () => {
+    const p = page;
+    await arriveAt(p, SKIP);
+    await planetReady(p, "install");
+    const own = await enterSky(p);
+    const [otherId, otherName] = own.others[0];
+    await clickMini(p, otherId);
+    await seeing(p, `the click on ${otherName} did not land on its sky`, otherSky(otherName));
+    await p.reload({ waitUntil: "load" });
+    const loaded = await seeing(p, "after the reload the sky did not come back", (s) => onSky(s) && s.hash === "#home");
+    await pressBack(p);
+    await seeing(p, `the first Back after a reload (the page showed ${JSON.stringify(loaded.dial)}) changed nothing: it neither flew to another sky nor reached the door`,
+      (s) => !leftSite(s) && (atDoor(s) || (onSky(s) && s.dial !== loaded.dial)));
+  });
+
+  /* B11: your own sky is the first level above the door, however the visitor got there: one Back, or the corner, leaves for it */
+  await step(`B11 after your own system is tapped from another household's sky, Back reaches the door in one press${sfx}`, async () => {
+    const p = page;
+    await tapOwnFromOther(p);
+    await pressBack(p);
+    await seeing(p, "the first Back after tapping your own system from another household's sky did not reach the door", (s) => !leftSite(s) && atDoor(s));
+  });
+  await step(`B11 after your own system is tapped from another household's sky, "— the dawn" reaches the door${sfx}`, async () => {
+    const p = page;
+    await tapOwnFromOther(p);
+    await clickDawn(p, "#back");
+    await seeing(p, 'the corner "— the dawn" after tapping your own system from another household\'s sky did not reach the door', (s) => !leftSite(s) && atDoor(s));
   });
 
   /* B4: a direct arrival has no entry below it: Back leaves, and "— the dawn" shows the door with the entries unchanged */

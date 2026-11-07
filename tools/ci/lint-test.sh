@@ -16,7 +16,7 @@
 # outside the folder, and an index.html whose door differs from markup.js; and
 # section "the docs import is split" (issue #18): import_docs holding the token
 # or an environment, publish_docs losing its environment, taking npm, or its
-# artifact, or either job running anywhere but the schedule on main; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
+# artifact, or either job running anywhere but the schedule on dev; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
 # sw.js must be orbit-media- plus the first 12 hex characters of a SHA-256 over the
 # tracked picture files outside assets/docs/ (a change to a picture without a new
 # name fails and names sw.js and the expected name; a change only under
@@ -637,7 +637,7 @@ fi
 # Cases (s1)-(s11) judge the section "the docs import is split" (issue #18):
 # import_docs runs other people's code and holds no token; publish_docs holds it
 # in the docs-import environment, runs no npm, and takes the artifact. Both run
-# from the schedule on main alone. split_case <label> <file> <named> <js>: <js>
+# from the schedule on dev alone. split_case <label> <file> <named> <js>: <js>
 # edits the string y (the file's text) and must change it; the lint must fail
 # naming <file> with <named>. <named> is an extended regular expression and the
 # whole of it, alternatives included, must sit on a line after "<file>: ", so a
@@ -768,7 +768,7 @@ warn_split_case() {
 # (w1) the committed file hands on exactly the two
 rc=0
 node -e '
-  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"));
+  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8").replace(/!reference /g, ""));
   const p = JSON.stringify(y.import_docs.artifacts.paths);
   if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
 ' > "$out" 2>&1 || rc=$?
@@ -1373,16 +1373,28 @@ yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
 # 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
 # project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
 # bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
-# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+# <entries> is the text after "include:" with \n for newlines, replacing the file's own include; <how> is pass or refuse.
+# The two snippet entries (catchup-check, batch-intake; ai/agent-infra#114) are allowed beside it, each once,
+# and the job_rule / workflow_rules !reference to them resolves (p208-p222).
 inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case() {
+  # a refuse case keeps the two pinned snippet entries behind the planted fault (a list of entries
+  # that carry none of their own), so the !reference lines still resolve and the case fails only
+  # for its own fault, named by the include message (or $4); bare strings and mappings cannot
+  # take list entries and fail on the shape alone
+  e="$3"
+  case "$e" in
+    "  - "*) case "$e" in *catchup-check/ci-template*|*batch-intake/ci-template*) ;; *) e="$e$inc_two$inc_three" ;; esac ;;
+  esac
   if [ "$2" = pass ]; then
-    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+    yaml_pass_case "$1" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   else
-    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+    split_case "$1" $ci "${4:-top-level include that is not the one allowed}" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   fi
 }
-inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p177: the allowed includes (ai/agent-infra, private-details, catchup-check and batch-intake, full shas) pass" pass "$inc_pass$inc_two$inc_three"
 inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
@@ -1413,6 +1425,88 @@ inc_case "p204: a remote include as a bare string" refuse " https://example.inva
 inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
+inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
+inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two" "the include of scripts/batch-intake/ci-template.yml is not there"
+inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
+inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p213: catchup-check twice" refuse "$inc_pass$inc_two$inc_two"
+inc_case "p214: a snippet entry with an extra rules key" refuse "$inc_pass$inc_two    rules:\n      - when: always\n"
+inc_case "p215: another file in ai/agent-infra beside the allowed three" refuse "$inc_pass$inc_two$inc_three  - project: ai/agent-infra\n    file: scripts/backmerge-skip/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p216: a snippet entry beside a local entry" refuse "$inc_pass$inc_two  - local: other.yml\n"
+# the !reference lines point at the snippets' hidden keys, which live in the included files
+split_case "p217: a !reference to .catchup-check with no catchup-check include" $ci "catchup-check" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # catchup-check\/v2\n    file: scripts\/catchup-check\/ci-template.yml/, "");'
+split_case "p218: a !reference to .batch-intake with no batch-intake include" $ci "batch-intake" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # batch-intake\/v1\n    file: scripts\/batch-intake\/ci-template.yml/, "");'
+split_case "p219: a !reference to a key the snippet does not define" $ci "catchup-check" '
+  y = y.replace("[.catchup-check, job_rule]", "[.catchup-check, environment]");'
+split_case "p220: a !reference to an unknown hidden key" $ci "not in the file" '
+  y = y.replace("[.batch-intake, job_rule]", "[.other-snippet, job_rule]");'
+# Cases p221-p224 (audit finding, ai/agent-infra#114): the secret scans must run on every merge path. A merge
+# request from a chore/catchup-* branch into a batch runs only the catchup-check job when a job carries the
+# snippet's job_rule, so lint, scan:gitleaks and private-details must not carry `!reference [.catchup-check, job_rule]`
+# or `!reference [.batch-intake, job_rule]` (other jobs may). Each case first takes any such reference out of the
+# scratch copy (the committed file carries none on the three) and then plants the one under test, so it fails
+# only for the planted line.
+ci_gate_js='
+  const strip = (y) => { for (const j of ["lint", "scan:gitleaks", "private-details"]) y = y.replace(new RegExp("(\\n" + j + ":\\n(?:[ #].*\\n)*?)    - !reference \\[\\.catchup-check, job_rule\\]\\n"), "$1"); return y; };
+  const plant = (y, job, ref) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?  rules:\\n)"), "$1    - !reference [" + ref + ", job_rule]\n");
+  y = strip(y);'
+split_case "p221: scan:gitleaks taking the catchup-check job_rule" $ci "scan:gitleaks.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "scan:gitleaks", ".catchup-check");'
+split_case "p222: private-details taking the batch-intake job_rule" $ci "private-details.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "private-details", ".batch-intake");'
+split_case "p223: lint taking the catchup-check job_rule" $ci "lint.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "lint", ".catchup-check");'
+# control: the same kind of reference on a job outside the three is fine (the three carry none in this copy)
+split_pass_case() {
+  F="$2" Y="$(cat "$2")" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out proxy ci-split
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+split_pass_case "p224: scan:trivy taking the batch-intake job_rule, the three scans carrying none" $ci "$ci_gate_js"'
+  y = plant(y, "scan:trivy", ".batch-intake");'
+# Cases p225-p232 (fix review of #138, ai/agent-infra#114): the same refusal by every other route a rule list can
+# reach a snippet's job_rule: through extends (one parent, a list of parents, a chain), through !reference to a hidden
+# job's rules, through a YAML anchor on the entry or on the whole list, and through another
+# job's rules. The committed file carries no such route on the three, so each case plants the route alone. The three
+# scans' own rules block is swapped for the route; a hidden `.route_rules` job is added to carry the snippet's rule.
+route_js='
+  const swap = (y, job, repl) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?)  rules:\\n(?: {4}.*\\n)+"), "$1" + repl);
+  const hidden = (y, body) => y + "\n.route_rules:\n" + body;
+  const top = (y, body) => ".route_rules:\n" + body + "\n" + y;
+  const CC = "    - !reference [.catchup-check, job_rule]\n", BI = "    - !reference [.batch-intake, job_rule]\n";'
+split_case "p225: scan:gitleaks taking the catchup-check job_rule by extends" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "scan:gitleaks", "  extends: .route_rules\n");'
+split_case "p226: private-details taking the batch-intake job_rule by extends, in a list of parents" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  extends: [.not_a_parent, .route_rules]\n");'
+split_case "p227: lint taking the catchup-check job_rule by extends, two parents up" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC) + "\n.route_child:\n  extends: .route_rules\n", "lint", "  extends: .route_child\n");'
+split_case "p228: lint taking the catchup-check job_rule by !reference to a hidden job rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "lint", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+split_case "p229: private-details taking the batch-intake job_rule by !reference to a hidden job rules list" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+# an alias needs its anchor first, so the hidden job goes to the top of the file for the two anchor cases
+split_case "p230: private-details taking the batch-intake job_rule by a YAML anchor on the entry" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules:\n    - &route_rule !reference [.batch-intake, job_rule]\n"), "private-details", "  rules:\n    - *route_rule\n    - when: on_success\n");'
+split_case "p231: lint taking the catchup-check job_rule by a YAML anchor on the whole rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules: &route_list\n" + CC), "lint", "  rules: *route_list\n");'
+split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the catchup-check job_rule, by !reference" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(y, "scan:gitleaks", "  rules:\n    - !reference [scan:trivy, rules]\n");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -2430,6 +2524,170 @@ if [ "$rc" -eq 0 ]; then
 else
   echo "FAIL (p8i) the committed tree passes the whole lint (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
 fi
+
+# Case (d-s1) (D-S1, #138): .gitlab-ci.yml says a newly published CVE fails the daily Trivy run "and not an unrelated
+# merge request". Every job that runs trivy is judged by running its script lines with a stand-in `trivy` that logs
+# its arguments, once with CI_PIPELINE_SOURCE=schedule and once with merge_request_event and push: the vulnerability
+# scan (--scanners without it, or with vuln) must carry --exit-code 1 on the schedule, and --exit-code 0 (or none) in a
+# pipeline that is not the schedule, unless that pipeline's rules leave the job out (when: never, no rule) or let it
+# fail (allow_failure: true). Secrets and licences always block, so a scan of those only is not judged. A script that
+# merely mentions CI_PIPELINE_SOURCE, or that swaps the two branches, therefore fails. Read from the committed file
+# with the js-yaml the lint uses.
+cat > "$cspjs.trivy" <<'JS'
+const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process"), yaml = require("js-yaml");
+const ref = yaml.defineSequenceTag("!reference", { create: () => [], addItem: (c, i) => { c.push(i); }, finalize: (c) => ({ "!reference": c }), identify: () => false });
+const doc = yaml.load(fs.readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.CORE_SCHEMA.withTags(ref) });
+const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : [v]).filter((x) => typeof x === "string");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trivy-shim-")), log = path.join(dir, "log");
+fs.writeFileSync(path.join(dir, "trivy"), "#!/bin/sh\necho \"$*\" >> \"$TRIVY_LOG\"\n", { mode: 0o755 });
+// the vulnerability scans a job's script makes in a pipeline of this source, with the --exit-code each carries
+const scans = (job, source) => {
+  fs.writeFileSync(log, "");
+  for (const l of lines(job.script)) cp.spawnSync("sh", ["-c", l], { env: { PATH: dir + ":" + process.env.PATH, CI_PIPELINE_SOURCE: source, TRIVY: "true", TRIVY_LOG: log, CI_PROJECT_DIR: process.cwd() } });
+  return fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((a) => {
+    const sc = /--scanners[ =](\S+)/.exec(a), code = /--exit-code[ =](\S+)/.exec(a);
+    return { vuln: !sc || sc[1].split(",").includes("vuln"), code: code ? code[1] : "0", args: a };
+  }).filter((c) => c.vuln);
+};
+const bad = [];
+let jobs = 0;
+for (const [name, job] of Object.entries(doc)) {
+  if (!job || typeof job !== "object" || !job.script || !lines(job.script).some((l) => /\btrivy\b/.test(l))) continue;
+  jobs++;
+  if (!scans(job, "schedule").some((c) => c.code === "1")) bad.push(name + ": its daily schedule run has no vulnerability scan with --exit-code 1, so a new CVE would not fail it");
+  // the first rule that matches a pipeline that is not the schedule: no `if`, or an `if` that does not ask for the schedule
+  const rule = (job.rules || []).find((r) => r && !r["!reference"] && !(typeof r.if === "string" && /==\s*"schedule"/.test(r.if)));
+  if (!rule || rule.when === "never" || rule.allow_failure === true) continue;
+  for (const src of ["merge_request_event", "push"]) for (const c of scans(job, src)) if (c.code !== "0") bad.push(name + ": a " + src + " pipeline runs a vulnerability scan with --exit-code " + c.code + ", so a new CVE fails an unrelated pipeline");
+}
+fs.rmSync(dir, { recursive: true, force: true });
+if (jobs === 0) { console.log("no job runs trivy"); process.exit(2); }
+if (bad.length) { console.log(bad.join("\n")); process.exit(1); }
+JS
+rc=0
+node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline"
+else
+  echo "FAIL (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline (exit $rc)"; sed 's/^/     /' "$out"; failed=1
+fi
+# the same judgement on planted scripts: the branches swapped, and a comment that only names CI_PIPELINE_SOURCE (both fail),
+# and the committed script's own shape (control, passes)
+trivy_case() { # trivy_case <label> <want: 0 or 1> <js: edits y>
+  F=.gitlab-ci.yml JS="$3" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  rc=0
+  node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+trivy_case "(d-s1b) scan:trivy with the exit codes swapped between schedule and the rest fails" 1 '
+  y = y.replace("= schedule ]; then vuln_exit=\"--exit-code 1\"; else vuln_exit=\"--exit-code 0\"; fi", "= schedule ]; then vuln_exit=\"--exit-code 0\"; else vuln_exit=\"--exit-code 1\"; fi");'
+trivy_case "(d-s1c) scan:trivy with --exit-code 1 on every pipeline and a comment naming CI_PIPELINE_SOURCE fails" 1 '
+  y = y.replace(/      if \[ "\$CI_PIPELINE_SOURCE" = schedule \]; then vuln_exit="--exit-code 1"; else vuln_exit="--exit-code 0"; fi\n/, "      # CI_PIPELINE_SOURCE = schedule fails on a CVE, anything else does not\n      vuln_exit=\"--exit-code 1\"\n");'
+trivy_case "(d-s1d) scan:trivy never failing on a vulnerability, not even on the schedule, fails" 1 '
+  y = y.replace("then vuln_exit=\"--exit-code 1\"; else", "then vuln_exit=\"--exit-code 0\"; else");'
+rm -f "$cspjs.trivy"
+
+# Cases (f2a)-(f2e) (ALL-F2, #138): private-details runs the same gitleaks release as scan:gitleaks (its comment says
+# so), but pins it a second time from a variable-prefixed image name Renovate cannot see. The lint must refuse, naming
+# gitleaks: a bump of one pin alone (by tag, by digest), one pin deleted (either job), and a second pin that is only
+# in a comment (the private-details image replaced by another, its old pin kept in a comment), which is no pin.
+gl_pins_case() { # gl_pins_case <label> <js: edits y>
+  F=.gitlab-ci.yml JS="$2" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -qi gitleaks "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming gitleaks)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+gl_pins_case "(f2a) private-details pinning another gitleaks version than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:)v[0-9.]+/, "$1v8.99.0");'
+gl_pins_case "(f2b) private-details pinning another gitleaks digest than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+@sha256:)[0-9a-f]{8}/, (m, a) => a + "00000000");'
+gl_pins_case "(f2c) private-details with no gitleaks pin" '
+  y = y.replace(/\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+/, "$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2d) scan:gitleaks with no gitleaks pin" '
+  y = y.replace(/ghcr\.io\/gitleaks\/gitleaks:\S+/, "ghcr.io/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2e) the second gitleaks pin only in a comment" '
+  y = y.replace(/(\n  image:\n    name: )(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+)/, "\n  # was $2$1$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+
+# Cases (f-sec12a)-(f-sec12i) (SEC-12, #138): tools/ci/flake-gate.sh counts as a quarantine only a call that starts a
+# line, `await quarantined("#<issue>",` (indent allowed); the lint refuses any other `quarantined("#` in tools/ci/*.mjs,
+# so nothing hides a text the gate would misread. The gate cases plant one line in a file of their own beside a
+# flakes.md of one flake at three sightings linking #777: no quarantine is counted from a comment, a string, a template
+# literal or a call after other code (exit 1, not-quarantined), and an anchored call is (exit 0). The lint cases append
+# the line to a tracked test file and want the lint to name the file and quarantined.
+cat > docs/flakes.md <<'MD'
+# Flakes
+
+## made-up check: it times out [#777](https://example.invalid/issues/777)
+
+- 2026-11-01 · aaaaaaa · job one · timed out
+- 2026-11-02 · bbbbbbb · job two · timed out
+- 2026-11-03 · ccccccc · job three · timed out
+MD
+git add -f docs/flakes.md
+git -c user.name=t -c user.email=t@t commit -q -m "one flake at three sightings"
+flake_case() { # flake_case <label> <want: 0 or 1> <lines planted in tools/ci/zz-flake-fixture.mjs>
+  printf '%s\n' "$3" > tools/ci/zz-flake-fixture.mjs
+  git add -f tools/ci/zz-flake-fixture.mjs
+  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+  rc=0
+  sh tools/ci/flake-gate.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_case "(f-sec12a) quarantined(\"#777\", in a line comment is not a quarantine" 1 '// await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12b) quarantined(\"#777\", in a block comment is not a quarantine" 1 '/*
+ await quarantined("#777", ["firefox"], "made-up check")
+ */'
+flake_case "(f-sec12c) a trailing // quarantined(\"#777\", after /\"/ is not a quarantine" 1 'export const re = /"/; // quarantined("#777", ["firefox"], "made-up check")'
+flake_case "(f-sec12d) quarantined(\"#777\") in a string is not a quarantine" 1 "export const s = 'quarantined(\"#777\")';"
+flake_case "(f-sec12e) quarantined(\"#777\", in a template literal is not a quarantine" 1 'export const t = `await quarantined("#777", [])`;'
+flake_case "(f-sec12f) a real call placed after other code on its line is not a quarantine" 1 'export const re = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12g) an anchored await quarantined(\"#777\", call is a quarantine (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12h) an indented anchored await quarantined(\"#777\", call is a quarantine (control)" 0 '  await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+git reset -q --hard HEAD~1
+flake_lint_case() { # flake_lint_case <label> <want: 0 or 1> <line appended to tools/ci/dates-test.mjs>
+  printf '%s\n' "$3" >> tools/ci/dates-test.mjs
+  commit_all "$1"
+  lint_to_out
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -i quarantined "$out" | grep -q 'dates-test\.mjs'; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming dates-test.mjs and quarantined, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_lint_case "(f-sec12i) the lint refusing quarantined(\"#777\") in a string" 1 "export const s7 = 'quarantined(\"#777\")';"
+flake_lint_case "(f-sec12j) the lint refusing quarantined(\"#777\", in a template literal" 1 'export const t7 = `await quarantined("#777", [])`;'
+flake_lint_case "(f-sec12k) the lint refusing a real call after other code on its line" 1 'export const re7 = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
+flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
 rm -f "$cspjs"
 

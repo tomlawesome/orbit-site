@@ -6,6 +6,7 @@ import { households, account, inbox, today, persist, serialise, hydrate, forget,
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 import { createPlaces } from "./places.js";
+import { tr } from "./lang.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -26,7 +27,7 @@ export function snapshot() { return { ...serialise(), camera: state.camera, form
 export function restoreState(snap) {
   cancelFlight();
   hydrate(snap);
-  if (snap.camera && households[snap.camera] && snap.camera !== state.camera) { state.camera = snap.camera; setCamera(snap.camera); $("#back").textContent = snap.camera === "willow" ? "— the dawn" : "— your sky"; }
+  if (snap.camera && households[snap.camera] && snap.camera !== state.camera) { state.camera = snap.camera; setCamera(snap.camera); $("#back").textContent = tr(snap.camera === "willow" ? "the-dawn" : "your-sky"); }
   else if (snap.camera) setCamera(snap.camera);
   if (snap.form) createForm?.write(snap.form);
   closeRow(); renderDial(); renderManifest(); renderGalaxy(); renderInbox(); persist();
@@ -220,6 +221,10 @@ export function cancelFlight() {
    the entry is changed in place (your sky and another's are the two levels); the address stays what it was (ADR-0006) */
 function visit(id) {
   if (id === state.camera) return;
+  /* your own system, tapped on another's sky, is the way down as the corner "— your sky" is: Back when the entry says a
+     sky, so the entry is yours again and the next Back leaves for the door; else (the walk's camera) a flight. The entry
+     never says your own sky */
+  if (id === "willow") { if (history.state?.sky) { try { history.back(); } catch { /* fine */ } } else flyTo(id); return; }
   if (state.camera === "willow" && !history.state?.sky) places.stack({ sky: id }); else places.hop({ sky: id });
   flyTo(id);
 }
@@ -245,7 +250,7 @@ export function flyTo(id, done) {
     const dial = $("#dial");
     dial.classList.remove("arrive", "bloom"); void dial.offsetWidth; dial.classList.add("bloom");
     /* the corner says where it goes: from your own sky, down to the dawn; from another's, back to yours */
-    $("#back").textContent = id === "willow" ? "— the dawn" : "— your sky";
+    $("#back").textContent = tr(id === "willow" ? "the-dawn" : "your-sky");
     timers.push(setTimeout(() => { flight = null; hero.classList.remove("flying", "arriving"); state.flying = false; changed(); if (done) done(); const next = pending; pending = null; if (next) { if (next.id === state.camera) next.done?.(); else flyTo(next.id, next.done); } }, reduced ? 50 : 900));
   };
   timers.push(setTimeout(land, reduced ? 50 : 1250));
@@ -559,6 +564,10 @@ function wireCreate() {
 
 export function mountHome(skyCams) {
   state.skyCams = skyCams;
+  /* a reload or a restored tab on another household's sky: the entry still says that sky, so the page shows it, and Back
+     then flies home as it would have (ADR-0006) */
+  let sky = null; try { sky = history.state?.sky; } catch { /* no history */ }
+  if (sky && households[sky] && sky !== state.camera) { state.camera = sky; $("#back").textContent = tr("your-sky"); }
   setCamera(state.camera);
   $("#account-orb").textContent = account.initials;
   $("#who-name").textContent = account.name;

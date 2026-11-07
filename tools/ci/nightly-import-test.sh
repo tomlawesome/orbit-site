@@ -226,6 +226,7 @@ warnings = {
     'warn-bidi': wl(S0, 'link-cleaned', 'fine') + wl(S0, 'link-dropped', 'rtl \u202e txt'),
     'warn-badrepo': wl({'repo': 'someone/else', 'path': S0['path']}, 'link-dropped', 'x'),
     'warn-badkind': wl(S0, 'link-evil', 'x'),
+    'warn-skip': wl(S0, 'skip-unmatched', 'skip heading "Screenshots" is not a second-level heading of the file'),
     'warn-long': wl(S0, 'link-dropped', 'z' * (401 - len(wl(S0, 'link-dropped', '')) + 1)),
     'warn-many': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(201)),
     'warn-max': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(200)),
@@ -1475,7 +1476,7 @@ in_fence() {
 }
 # fence_lines: every line inside a fence starts with a kind and two spaces; prints how many there are
 fence_lines() {
-  awk '$0 == "````" { f = !f; next } f { n++; if ($0 !~ /^(link-cleaned|link-dropped|block-lost-text|block-unclosed|picture-not-copied|more)  /) bad++ }
+  awk '$0 == "````" { f = !f; next } f { n++; if ($0 !~ /^(link-cleaned|link-dropped|block-lost-text|block-unclosed|picture-not-copied|skip-unmatched|more)  /) bad++ }
     END { if (bad) print -1; else print n + 0 }' "$body"
 }
 warn_ok() { # warn_ok <scenario> <what it is>: the job exits 0 and the merge request is set to merge
@@ -1578,6 +1579,24 @@ warn_refused warn-missing "an archive without import-warnings.txt" 'missing.*imp
 warn_ok warn-max "an archive with 200 warning lines (the most allowed)"
 rc=0; [ -f "$body" ] && [ "$(fence_lines)" -eq 200 ] || rc=1
 check "W6 warn-max: all 200 lines reach the issue" "$rc"
+
+# W11 (ALL-F19, ALL-F21, #138): a source with a `skip` entry whose heading upstream renamed makes the import write a
+# skip-unmatched warning (#124). That is a warning for the standing issue, never a reason to refuse the artifact: the
+# publish accepts the kind, publishes, and the line reaches the issue in a fence, kind first.
+warn_ok warn-skip "an archive with a skip-unmatched warning (a stale skip entry)"
+rc=0; [ -f "$body" ] && in_fence 'skip-unmatched  skip heading "Screenshots"' || rc=1
+check "W11 warn-skip: the skip-unmatched line reaches the issue inside a fence, prefixed by its kind" "$rc"
+[ "$rc" -eq 0 ] || show_body
+# W11b: every kind import-docs.mjs writes, by say("<kind>" or warn(src, "<kind>", is a member of the python `kinds` set in
+# the publish's check_warnings (read from that line, not found anywhere in the script); a kind added to the import alone
+# would stop the nightly publish, as skip-unmatched did
+pub_kinds=$(grep -E '^kinds = \{' tools/ci/nightly-publish.sh | grep -oE '"[a-z-]+"' | tr -d '"')
+rc=0; [ -n "$pub_kinds" ] || rc=1
+check "W11 the publish's kinds set is found in tools/ci/nightly-publish.sh" "$rc"
+for k in $(grep -oE '(say\(|warn\(src, )"[a-z-]+"' tools/import-docs.mjs | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u); do
+  rc=0; printf '%s\n' "$pub_kinds" | grep -qx "$k" || rc=1
+  check "W11 the publish's kinds set includes '$k', which the import writes" "$rc"
+done
 
 # W7: a look-alike by another user, and one by the bot with another title, are never touched; a new issue is made
 warn_ok warn-lookalike "an archive whose only look-alike issues are another user's or titled otherwise"

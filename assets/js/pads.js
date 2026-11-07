@@ -664,7 +664,7 @@ export function createInfo(pad, world = null) {
 /* a line is held for as long as it takes to read: a floor, and time per word */
 
 /* the planets on the sunrise's ring: each one a door, named on the ring itself */
-/* the one phone width (px), the same as the CSS breakpoint (max-width: 599.98px) and the door's */
+/* the site's one phone width (px), the same as site.css's breakpoint (max-width: 599.98px); the door's is 840 (#133) */
 const PHONE = 600;
 export function wirePlanets(door, onGo) {
   /* the name sits 21 units past the body, 15 on a phone, where the outermost orbit runs close to the edge;
