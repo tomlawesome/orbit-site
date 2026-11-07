@@ -458,6 +458,10 @@ echo "== the test map is complete: every file in a group, every pattern live, ev
 # tools/ci/test-map.json says which browser tests a change runs (ADR-0005); a path it does not know runs
 # everything, and this refuses one before it merges. Reads .gitlab-ci.yml with js-yaml, as ci-split does.
 node tools/ci/test-map-check.mjs || fail=1
+# A quarantine takes a test out of the gate, and tools/ci/flake-gate.sh finds one by a line test alone, so every
+# quarantined("#<issue>" text in tools/ci/*.mjs must be an `await` call starting its line; one in a comment, a
+# string, a template literal or after other code is refused (SEC-12, #138; tools/ci/quarantine-lint.mjs)
+node tools/ci/quarantine-lint.mjs || fail=1
 fi
 
 if [ "$fail" = 0 ]; then echo "lint: ok"; else echo "lint: failed"; exit 1; fi

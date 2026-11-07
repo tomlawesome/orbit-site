@@ -100,6 +100,7 @@
       "tools/fonts.mjs",
       "tools/ci/lint-test.sh",
       "tools/ci/flake-gate.sh",
+      "tools/ci/quarantine-lint.mjs",
       "index.html",
       "sw.js",
       "404.html",
