@@ -5,16 +5,19 @@
 <html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon" data-i18n-attr="data-maintenance:launching-soon">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' 'sha256-4iYz6XiPqUMVc3oqEZ7H7EpvMJA56DnitB0Fy1huhcI='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' 'sha256-uKssLWPhnfdAHlAr3Rubsq67L/Jq+zIEhPOw28Q+31g='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <!-- ?preview in the address shows the whole site past the maintenance door (for checking before launch) -->
   <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
   <!-- auto-lang: the root only (tools/pages.mjs leaves it out of the translated pages, which never redirect). With no stored
        choice, the first of the browser's languages that the site is built in sends the visitor there once, the address's
        query and hash kept; English, or a stored "en", stays. The same rule as assets/js/lang.js: pick (the lint holds them
        to one answer). And a visitor who came from one of the site's own pages (de/'s switch or its AI notice) is never
-       sent back: following a link there was a choice, even where the browser keeps nothing stored. Its hash is in the
-       policy meta -->
-  <script>(function(){var b=["de"],s=null,g=null,r=document.referrer,l,p,i;if(r&&r.indexOf(location.href.split(/[?#]/)[0].replace(/[^\/]*$/,""))===0)return;try{s=localStorage.getItem("orbit-lang")}catch(e){}if(s==="en")return;if(b.indexOf(s)>=0)g=s;else for(l=navigator.languages||[navigator.language],i=0;i<l.length;i++){p=String(l[i]).toLowerCase().split("-")[0];if(p==="en")break;if(b.indexOf(p)>=0){g=p;break}}if(g)location.replace(g+"/"+location.search+location.hash)})();</script>
+       sent back: following a link there was a choice, even where the browser keeps nothing stored. A lang= in the
+       address is read first and beats the referrer and a stored choice: "en" stays, a built language is gone to. Every
+       language link's href carries it (only a plain click whose choice was stored goes without it), so the choice holds
+       where the browser keeps nothing and sends no referrer. It stays in the address (places.js makes the
+       one history call), an accepted cost. Its hash is in the policy meta -->
+  <script>(function(){var b=["de"],s=null,g=null,r=document.referrer,q=/[?&]lang=([^&]*)/.exec(location.search),l,p,i;q=q&&q[1];if(q==="en")return;if(b.indexOf(q)>=0)s=q;else{if(r&&r.indexOf(location.href.split(/[?#]/)[0].replace(/[^\/]*$/,""))===0)return;try{s=localStorage.getItem("orbit-lang")}catch(e){}}if(s==="en")return;if(b.indexOf(s)>=0)g=s;else for(l=navigator.languages||[navigator.language],i=0;i<l.length;i++){p=String(l[i]).toLowerCase().split("-")[0];if(p==="en")break;if(b.indexOf(p)>=0){g=p;break}}if(g)location.replace(g+"/"+location.search+location.hash)})();</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title data-i18n="page-title">Orbit — everything in your orbit, on track</title>
   <meta name="description" data-i18n-attr="content:meta-description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. Three containers, one command to install." />

@@ -9,6 +9,7 @@ export default {
  "back-shortly": "Back shortly",
  "foot-door": "A <a>tomlawson.io</a> project · Earth: <a>NASA</a>",
  "the-dawn": "— the dawn",
+ "your-sky": "— your sky",
  "willow-house-owner": "Willow House · owner",
  "source": "Source",
  "security-policy": "Security policy",

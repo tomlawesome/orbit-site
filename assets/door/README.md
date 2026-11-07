@@ -377,7 +377,9 @@ On the worker path the gate's context stays on the page, idle, and the world's
 is made in the worker: two contexts, one of them holding nothing. The worker
 posts its judgement (`verdict { fit, ms, skipped, how }`), which the page keeps
 and resolves `verdict()` on; the page reads the kept verdict itself, and
-`abandon` is posted to the worker. A fallback to the page hands `verdict()` to
+`abandon` is posted to the worker and also fails the page's `verdict()`
+(`{ fit: false, how: "failed" }`) if none is in: the first verdict wins, so it
+stays failed whatever a stalled worker says later. A fallback to the page hands `verdict()` to
 the page's engine.
 
 The console says which, once, when the host gave a worker: `orbit · flight:

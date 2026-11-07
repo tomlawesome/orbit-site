@@ -13,10 +13,11 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
 - 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
 
-## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
+## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s [#139]
 
 - 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
 - 2026-11-05 · 1bdc740 · pipeline 3695 live:firefox 1/2 job 47264 · Timeout 120000ms again on a slow runner; the change touches only the door's media queries, and job 47135 on the same commit passed L4
+- 2026-11-07 · 14f42ab3 · journey.mjs, Firefox headed under xvfb with software GL, agent host · Timeout 120000ms waiting for "flight world: off: frame N ms" in 3 of 4 runs on batch-b's unchanged tip; passed in the fourth
 
 ## journey L1, L2 #116, Chromium: "the gate waits for the world and the flight, then flies; nothing is stored under fit=skip" (preview): the gate's click times out
 

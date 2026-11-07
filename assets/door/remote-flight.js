@@ -182,8 +182,14 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   return {
     compiled() { return engine ? engine.compiled() : compiled; },
     verdict() { return engine ? engine.verdict() : verdict; },
-    /* the journey's hold gave up on the world (journey.js: WORLD_FAILED): the worker's engine is told */
-    abandon() { if (engine) { engine.abandon(); return; } post({ type: "abandon" }); },
+    /* the journey's hold gave up on the world (journey.js: WORLD_FAILED): the worker's engine is told, and the verdict, if
+       none is in, is failed here too, as the page engine's abandon fails it: a worker that has stalled answers nothing,
+       and the gate and the backs wait on the verdict */
+    abandon() {
+      if (engine) { engine.abandon(); return; }
+      post({ type: "abandon" });
+      decide({ fit: false, ms: Infinity, how: "failed" });
+    },
     aside() { return aside; },
     /* (a world in a worker cannot stall the page: the journey keeps real time, 6a.3) */
     get drawingWorld() { return engine ? engine.drawingWorld : false; },
