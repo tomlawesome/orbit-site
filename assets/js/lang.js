@@ -74,8 +74,8 @@ export const hrefIn = (lang, rest = "", mark = true) => {
 };
 
 /* the language menu and the notice's English link (any a[data-lang]). Each link is a real link, kept pointing at this
-   same address (query, such as ?preview, and hash) in its language, so it can be opened in a new tab or copied; a plain
-   click stores the choice, then goes there. The menu is a disclosure (WAI-ARIA APG): its button opens and closes the
+   same address (query, such as ?preview, and hash) in its language, with lang= that language, so it can be opened in a
+   new tab or copied; a plain click stores the choice, then goes there. The menu is a disclosure (WAI-ARIA APG): its button opens and closes the
    list; Escape, a click outside it or focus leaving it closes it. The notice's hide button hides every notice for the
    rest of the session (never for good: owner, 2026-11-05) */
 const HIDDEN = "orbit-ai-notice";
@@ -129,7 +129,8 @@ export function wireLanguages(root = document) {
     const a = /** @type {HTMLAnchorElement | null} */ (el.closest?.("a[data-lang]"));
     if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    /* a stored choice needs no lang= in the address; where it cannot be stored, the address carries it */
+    /* the link's href always carries lang=; a plain click whose choice is stored goes without it (the stored choice
+       holds), and with it where the choice cannot be stored */
     let kept = true;
     try { localStorage.setItem("orbit-lang", a.dataset.lang); } catch { kept = false; }
     location.assign(hrefIn(a.dataset.lang, location.search + location.hash, !kept));
