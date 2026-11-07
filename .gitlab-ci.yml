@@ -231,9 +231,12 @@ private-details:
     - when: on_success
 
 # Trivy: known vulnerabilities in tools/package-lock.json, secrets and licences
-# across the tree, blocking on HIGH or CRITICAL: vulnerabilities only when they
-# have a fix, secrets and licences always. It also runs from the daily schedule (a schedule with TRIVY=true), so a
-# newly published CVE fails that run and not an unrelated merge request.
+# across the tree, HIGH or CRITICAL; vulnerabilities only when they have a fix.
+# Secrets and licences block every pipeline. A vulnerability blocks only the
+# daily schedule (a schedule with TRIVY=true): every other pipeline scans and
+# lists it in the log, but passes, so a newly published CVE fails that run and
+# not an unrelated merge request (D-S1, #138). A scan that cannot run (no
+# database, say) fails any pipeline.
 # Accepted findings: .trivyignore.yaml, each with a reason and an expiry. The
 # database is fetched at run time and kept in GitLab's cache, never committed.
 scan:trivy:
@@ -254,7 +257,10 @@ scan:trivy:
       when: never
     - when: on_success
   script:
-    - trivy fs --no-progress --scanners vuln,secret,license --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+    - trivy fs --no-progress --scanners secret,license --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = schedule ]; then vuln_exit="--exit-code 1"; else vuln_exit="--exit-code 0"; fi
+      trivy fs --no-progress --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL $vuln_exit --ignorefile .trivyignore.yaml --skip-dirs .git,.trivycache .
 
 # zizmor and actionlint: the GitHub workflows the mirror keeps (CodeQL).
 # zizmor runs offline, since an online audit would need a GitHub token.
