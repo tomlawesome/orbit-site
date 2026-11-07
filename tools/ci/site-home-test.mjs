@@ -17,13 +17,20 @@
  * #117 (ADR-0006, H1-H5): the history calls a visit makes are recorded on a stand-in `history`; a click on another
  * household pushes one entry, a hop from there replaces it, the corner is history.back() when the entry says a sky, a
  * flight asked for mid-flight is flown when it lands, and the walk's way (flyTo, restoreState) touches no entry.
+ *
+ * #138 (W-F1, --de): the same page as tools/pages.mjs writes it in German (its markup, and the script catalogue it carries
+ * for the words the scripts write), in a second process: the corner's label stays German after a flight to another
+ * household, after a flight home, and after the walk's restoreState.
  */
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "../pages.mjs";
 
 /* --motion: the same page without reduced motion, for the full-length timings (a second process: reduced is read once) */
 const MOTION = process.argv[2] === "--motion";
+/* --de: the page in German (a second process: the page's catalogue is read once) */
+const DE = process.argv[2] === "--de";
 
 let failed = false;
 const check = (name, ok, detail) => {
@@ -221,11 +228,21 @@ function parseHTML(html) {
 
 /* the page: index.html's <main id="home">, inside <html><body> */
 const indexHtml = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
-const mainHtml = indexHtml.match(/<main id="home"[\s\S]*?<\/main>/)?.[0];
+const deCat = JSON.parse(readFileSync(new URL("../../assets/i18n/de.json", import.meta.url), "utf8"));
+const deHtml = DE ? build(indexHtml, deCat, "de") : "";
+const mainHtml = (DE ? deHtml : indexHtml).match(/<main id="home"[\s\S]*?<\/main>/)?.[0];
 if (!mainHtml) { console.log("FAIL the page: index.html has no <main id=\"home\">"); process.exit(1); }
 const htmlEl = new Element("html"), bodyEl = new Element("body");
 htmlEl.appendChild(bodyEl);
 for (const n of parseHTML(mainHtml)) bodyEl.appendChild(n);
+if (DE) {
+  /* the German page's own catalogue (lang.js reads it when it loads), as the page carries it */
+  const words = new Element("script");
+  words.id = "i18n";
+  words.textContent = /<script type="application\/json" id="i18n">([\s\S]*?)<\/script>/.exec(deHtml)?.[1] ?? "{}";
+  bodyEl.appendChild(words);
+  htmlEl.lang = "de";
+}
 
 const winListeners = {};
 const storage = () => {
@@ -237,6 +254,7 @@ const storage = () => {
 };
 const document = {
   documentElement: htmlEl, body: bodyEl, activeElement: null, listeners: {},
+  baseURI: pathToFileURL(fileURLToPath(new URL(DE ? "../../de/" : "../../", import.meta.url))).href,
   querySelector: (s) => htmlEl.matches(s) ? htmlEl : htmlEl.querySelector(s),
   querySelectorAll: (s) => htmlEl.querySelectorAll(s),
   getElementById: (id) => htmlEl.querySelector(`#${id}`),
@@ -314,6 +332,24 @@ const changes = [];
 home.onChange(() => changes.push(home.state.camera));
 
 home.mountHome(skyCams);
+
+/* W-F1 (#138): on the German page the corner's label is German wherever the camera is */
+if (DE) {
+  const back = () => $("#back").textContent;
+  check("W-F1 control: the German page's corner starts in German", back() === deCat["the-dawn"], `corner ${show(back())} (want ${show(deCat["the-dawn"])})`);
+  home.flyTo("seaside");
+  advance(100);
+  check("W-F1 control: the flight landed on the other household", home.state.camera === "seaside" && !home.state.flying, `camera ${home.state.camera}`);
+  check("W-F1 after a flight to another household the corner is not English", back() !== "— your sky" && back().trim() !== "", `corner ${show(back())}`);
+  home.flyTo("willow");
+  advance(100);
+  check("W-F1 after a flight home the corner says the German 'the dawn'", home.state.camera === "willow" && back() === deCat["the-dawn"], `corner ${show(back())} (want ${show(deCat["the-dawn"])})`);
+  home.restoreState({ ...data.serialise(), camera: "narrow" });
+  check("W-F1 after the walk puts the camera on another household the corner is not English", home.state.camera === "narrow" && back() !== "— your sky" && back().trim() !== "", `corner ${show(back())}`);
+  home.restoreState({ ...data.serialise(), camera: "willow" });
+  check("W-F1 after the walk puts the camera home the corner says the German 'the dawn'", home.state.camera === "willow" && back() === deCat["the-dawn"], `corner ${show(back())} (want ${show(deCat["the-dawn"])})`);
+  process.exit(failed ? 1 : 0);
+}
 
 if (MOTION) {
   home.openRow("i-boiler", true);
@@ -898,6 +934,13 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--motion"], { encoding: "utf8", timeout: 60000 });
   process.stdout.write(r.stdout || "");
   if (r.status !== 0) check("the page without reduced motion", false, `exit ${r.status}: ${(r.stderr || "").trim().split("\n").slice(-3).join(" | ")}`);
+}
+
+/* the German page, in a second process */
+{
+  const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--de"], { encoding: "utf8", timeout: 60000 });
+  process.stdout.write(r.stdout || "");
+  if (r.status !== 0) check("the German page", false, `exit ${r.status}: ${(r.stderr || "").trim().split("\n").slice(-3).join(" | ")}`);
 }
 
 process.exit(failed ? 1 : 0);

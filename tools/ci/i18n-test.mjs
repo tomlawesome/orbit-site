@@ -15,10 +15,18 @@
  *   L2  lang.js pick(): stored beats languages; "de-AT" picks de; no match gives null; stored "en" gives null;
  *       "en" in languages means the root (null)
  *   N1  404.html says its line in German and English and has no <script>
+ *   P8  (#138, W1-F1) every key a script looks up with tr() that the German catalogue words differently is in the German
+ *       page's own script catalogue (so tr() answers in German), including the year-ring's boiler-service, car-mot and
+ *       home-insurance, which the markup also names
+ *   S1  (#138, ALL-S1) the root's auto-lang script, run over a table of address x storage x browser (the visitor's
+ *       address is the one signal left when the browser keeps nothing and sends no referrer): an explicit lang in the
+ *       address beats a stored choice and the browser's languages ("en" stays, a built language goes there, anything
+ *       else is ignored); with no lang in the address the rule is as before
  *
  *   node tools/ci/i18n-test.mjs
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -133,6 +141,49 @@ await attempt("L lang.js", async () => {
   check("L2c first built language wins over earlier unbuilt ones", pick({ stored: null, languages: ["fr-FR", "de-DE", "en"], built: ["de"] }) === "de", "fr, de");
   check("L2d no match gives null", pick({ stored: null, languages: ["fr-FR", "ja"], built: ["de"] }) === null, "fr, ja");
   check("L2e stored en gives null", pick({ stored: "en", languages: ["de-DE"], built: ["de"] }) === null, "en stored");
+});
+
+await attempt("P8 script words", async () => {
+  const html = built || read("de/index.html");
+  const json = /<script type="application\/json" id="i18n">([\s\S]*?)<\/script>/.exec(html);
+  if (!json) throw new Error("de/ has no <script type=\"application/json\" id=\"i18n\">");
+  const page = JSON.parse(json[1]);
+  const looked = new Set();
+  for (const f of readdirSync(at("assets/js")).filter((x) => x.endsWith(".js"))) {
+    for (const m of read(`assets/js/${f}`).matchAll(/\btr\(\s*"([\w-]+)"/g)) looked.add(m[1]);
+  }
+  const gone = [...looked].filter((k) => de && en && de[k] && en[k] && de[k] !== en[k] && page[k] !== de[k]);
+  check("P8a every key a script looks up with tr() that German words differently is in the German page's catalogue, in German", looked.size > 0 && !gone.length, `${looked.size} looked up; not in the page's catalogue in German: ${JSON.stringify(gone)}`);
+  const ring = ["boiler-service", "car-mot", "home-insurance"].filter((k) => !de || page[k] !== de[k]);
+  check("P8b the year-ring's three labels (boiler-service, car-mot, home-insurance) are in the page's catalogue in German", !ring.length, `missing or English: ${JSON.stringify(ring)}`);
+});
+
+await attempt("S1 auto-lang address", async () => {
+  const auto = /<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(indexHtml);
+  if (!auto) throw new Error("index.html has no auto-lang script");
+  const HERE = "https://example.test/site/";
+  /* where the script sends a visitor: the address it replaces the page with, or null when it stays */
+  const goes = ({ search = "", hash = "", referrer = "", stored = null, browser = [] }) => {
+    let went = null;
+    vm.runInNewContext(auto[1], {
+      localStorage: { getItem: () => { if (stored === "unreadable") throw new Error("blocked"); return stored; } },
+      navigator: { languages: browser, language: browser[0] },
+      document: { referrer },
+      location: { href: `${HERE}${search}${hash}`, search, hash, replace: (u) => { went = u; } },
+      String,
+    });
+    return went;
+  };
+  /* the visitor the finding names: German first, site data blocked, no referrer */
+  const blocked = { stored: "unreadable", browser: ["de-DE"] };
+  check("S1a ?lang=en keeps a German browser with blocked storage and no referrer at the root", goes({ ...blocked, search: "?lang=en" }) === null, `goes to ${goes({ ...blocked, search: "?lang=en" })}`);
+  check("S1b the same with another query riding along (?preview&lang=en) and a hash", goes({ ...blocked, search: "?preview&lang=en", hash: "#docs" }) === null, `goes to ${goes({ ...blocked, search: "?preview&lang=en", hash: "#docs" })}`);
+  check("S1c ?lang=en beats a stored German choice", goes({ stored: "de", browser: ["de-DE"], search: "?lang=en" }) === null, `goes to ${goes({ stored: "de", browser: ["de-DE"], search: "?lang=en" })}`);
+  check("S1d ?lang=de sends an English browser with nothing stored to de/, the address kept", goes({ browser: ["en-GB"], search: "?lang=de", hash: "#h" }) === "de/?lang=de#h", `goes to ${goes({ browser: ["en-GB"], search: "?lang=de", hash: "#h" })}`);
+  check("S1e ?lang=de beats a stored English choice", goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" }) === "de/?lang=de", `goes to ${goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" })}`);
+  check("S1f control: no lang in the address, the same visitor is sent to de/", goes({ ...blocked, search: "?q", hash: "#h" }) === "de/?q#h", `goes to ${goes({ ...blocked, search: "?q", hash: "#h" })}`);
+  check("S1g control: an unbuilt language in the address is ignored: the browser's German still sends the visitor to de/", goes({ ...blocked, search: "?lang=fr" }) === "de/?lang=fr", `goes to ${goes({ ...blocked, search: "?lang=fr" })}`);
+  check("S1h control: ?lang=en with an English browser stays", goes({ browser: ["en-GB"], search: "?lang=en" }) === null, `goes to ${goes({ browser: ["en-GB"], search: "?lang=en" })}`);
 });
 
 await attempt("N1 404", async () => {
