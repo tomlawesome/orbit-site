@@ -507,21 +507,28 @@ renovate:
 # ANTHROPIC_API_KEY is Masked + Protected, set by the owner with its environment
 # scope `translate`, which only this job joins (ci-split refuses any other, and
 # refuses the key's name in any file but this one, the job's script and the
-# tool). GitLab CE cannot stop a change merged into dev from adding a job to that
-# environment; the lint, review and the key's own spend limit in the Console are
-# what stand behind it. The job prints the dry-run estimate before it spends, and
+# tool). The lint judges this job as strictly as publish_docs: its keys an
+# allowlist, no before_script or after_script, its variables exactly the two
+# below, no parallel or rule variables, and TRANSLATE_MAX_TOKENS set nowhere in
+# this file (only by hand, on a pipeline started from the web). GitLab CE cannot stop a change merged into dev from adding a job to
+# that environment; the lint, review and the key's own spend limit in the
+# Console are what stand behind it. resource_group keeps to one run at a time,
+# and the tool itself refuses to submit while a batch is in progress on the
+# key. The job prints the dry-run estimate before it spends, and
 # stops (exit 3) when the estimate is over TRANSLATE_MAX_TOKENS (3,000,000 when
 # unset). It fits the one-hour runner lane: a batch not ended after 50 minutes
-# is left running and the job fails with exit 5, printing the batch id; a
-# pipeline started by hand with TRANSLATE=true and TRANSLATE_BATCH_ID=<that id>
-# on the same commit submits nothing, waits for that batch and finishes the run
-# (#125 spec amendment 1). Its artifact goes to publish_translations, which
+# is left running and the job fails with exit 5, printing a resume token (the
+# batch id and a digest of its requests); a pipeline started by hand with
+# TRANSLATE=true and TRANSLATE_BATCH_ID=<that token> submits nothing, waits for
+# that batch and finishes the run, and refuses it if the English has changed
+# since (#125 spec amendment 1, review finding 2). Its artifact goes to publish_translations, which
 # treats it as untrusted: en.json and en.js are never in it.
 translate_docs:
   stage: maintenance
   image: $NODE_IMAGE
   interruptible: false
   timeout: 1h
+  resource_group: translate
   environment:
     name: translate
     deployment_tier: other
@@ -530,6 +537,7 @@ translate_docs:
     - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
   variables:
     GIT_DEPTH: 1
+    GIT_STRATEGY: clone
   script:
     - sh tools/ci/nightly-translate.sh
   artifacts:

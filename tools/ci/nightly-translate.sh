@@ -5,8 +5,9 @@
 # then for real. Each exit code is passed through: 0 done, 2 bad input, 3 the
 # estimate is over the cap (TRANSLATE_MAX_TOKENS, 3,000,000 when unset), 4 the
 # API failed (translate.mjs has the detail), 5 the batch has not ended within
-# 50 minutes (left running, its id printed: a pipeline with TRANSLATE=true and
-# TRANSLATE_BATCH_ID=<id> on the same commit resumes it); on any of them
+# 50 minutes or another batch is in progress on the key (left running, its
+# resume token printed: a pipeline with TRANSLATE=true and
+# TRANSLATE_BATCH_ID=<token> resumes it, while the English is unchanged); on any of them
 # nothing is written, so the job hands on no artifact and publish_translations
 # does not run.
 #

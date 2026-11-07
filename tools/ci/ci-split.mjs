@@ -147,7 +147,9 @@ const imageVars = []; // [name, path, line] for every key naming a variable the 
 const GIT_RAW = ["GIT_DEPTH", "GIT_STRATEGY"];
 // the jobs in the docs-import environment, which holds the publish token (#125 adds the second)
 const PUBLISHERS = ["publish_docs", "publish_translations"];
-const gitRaw = Object.fromEntries(PUBLISHERS.map((j) => [j, { GIT_DEPTH: [], GIT_STRATEGY: [] }]));
+// ...and the job holding the Anthropic API key, judged the same way (#125, review finding 3)
+const RAW_JOBS = [...PUBLISHERS, "translate_docs"];
+const gitRaw = Object.fromEntries(RAW_JOBS.map((j) => [j, { GIT_DEPTH: [], GIT_STRATEGY: [] }]));
 const at_ = (path, e) => `line ${lineAt(startOf(e))}${path.length ? `, in ${path.join(" > ")}` : ""}`;
 const walk = (n, path) => {
   const e = n.e;
@@ -172,7 +174,7 @@ const walk = (n, path) => {
       else name = t;
     }
     if (name !== null && IMAGE_VARS.has(name)) imageVars.push([name, path, lineAt(ke.valueStart)]);
-    if (GIT_RAW.includes(name) && path.length === 2 && PUBLISHERS.includes(path[0]) && path[1] === "variables") gitRaw[path[0]][name].push(v.e);
+    if (GIT_RAW.includes(name) && path.length === 2 && RAW_JOBS.includes(path[0]) && path[1] === "variables") gitRaw[path[0]][name].push(v.e);
     walk(v, [...path, name ?? "?"]);
   }
 };
@@ -284,7 +286,7 @@ for (const [name, j] of [["translate_docs", trn], ["publish_translations", ptr]]
   if (!two) bad(`.gitlab-ci.yml: ${name} rules must be exactly the two translation rules (if: ${TRANSLATE_RULES.join(" ; if: ")}), found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
 }
 if (imp !== null) {
-  if ("environment" in imp) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs joins docs-import, or the token reaches the job that runs npm");
+  if ("environment" in imp) bad(".gitlab-ci.yml: import_docs has an environment; only publish_docs and publish_translations join docs-import, or the token reaches the job that runs npm");
   if (strings(imp).some((t) => t.includes("ORBIT_SITE_IMPORT_TOKEN"))) bad(".gitlab-ci.yml: import_docs names ORBIT_SITE_IMPORT_TOKEN");
   if (!lines(imp.script).some((l) => /nightly-import\.sh/.test(l))) bad(".gitlab-ci.yml: import_docs does not run tools/ci/nightly-import.sh");
   const art = isObj(imp.artifacts) ? imp.artifacts : {};
@@ -533,6 +535,9 @@ if (ptr !== null) publishJob("publish_translations", ptr, "translate_docs", "sh 
 // translate_docs holds the Anthropic API key (scoped to the translate environment, which
 // only it may name, above): it takes no other job's artifacts, runs no package
 // manager and so no third-party code, and runs on the pinned image (#125 spec §4).
+// It is judged as strictly as the jobs holding the publish token (review finding 3):
+// its keys an allowlist, no before_script or after_script, no parallel, no rule
+// setting variables, its variables exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone.
 if (trn !== null) {
   const ex = isObj(expand("translate_docs")) ? expand("translate_docs") : {};
   const def = isObj(doc.default) && isObj(expand("default")) ? expand("default") : {};
@@ -552,9 +557,40 @@ if (trn !== null) {
   }
   if (trn.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: translate_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(trn, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the key`);
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: translate_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the key");
+  const LINE = "sh tools/ci/nightly-translate.sh";
   const script = lines(ex.script);
-  if (!(script.length === 1 && script[0] === "sh tools/ci/nightly-translate.sh")) bad(`.gitlab-ci.yml: translate_docs script must be exactly one line, sh tools/ci/nightly-translate.sh, found: ${JSON.stringify(ex.script ?? null)}`);
+  if (!(script.length === 1 && script[0] === LINE)) bad(`.gitlab-ci.yml: translate_docs script must be exactly one line, ${LINE}, found: ${JSON.stringify(ex.script ?? null)}`);
+  const empty = (v) => v === undefined || v === null || (Array.isArray(v) && v.flat(Infinity).length === 0);
+  for (const h of ["before_script", "after_script"]) {
+    const own = Object.hasOwn(ex, h) && ex[h] !== null;
+    const v = own ? ex[h] : def[h];
+    if (!empty(v)) bad(`.gitlab-ci.yml: translate_docs ${own ? "has" : "takes"} ${h === "after_script" ? "an" : "a"} ${h}${own ? "" : " from default"} (${JSON.stringify(v)}); nothing runs beside the key but ${LINE}`);
+  }
+  if (Object.hasOwn(ex, "parallel")) bad(`.gitlab-ci.yml: translate_docs has parallel (${JSON.stringify(ex.parallel)}); a parallel matrix can override the job's variables, so the job holding the key runs once, as written`);
+  const rulesOf = Array.isArray(ex.rules) ? ex.rules.flat(Infinity) : ex.rules === undefined ? [] : [ex.rules];
+  if (rulesOf.some((r) => isObj(r) && Object.hasOwn(r, "variables"))) bad(".gitlab-ci.yml: translate_docs has rules that set variables; a rule's variables override the job's own, so no rule of the job holding the key sets any");
+  const VARS = { GIT_DEPTH: 1, GIT_STRATEGY: "clone" };
+  const exact = (v) => isObj(v) && !(v[SHADOW] || []).length && Object.keys(v).length === Object.keys(VARS).length && Object.entries(VARS).every(([k, x]) => Object.hasOwn(v, k) && v[k] === x);
+  const varsWhy = "a variable on the job holding the key can change what the runner or the tool does (TRANSLATE_MAX_TOKENS, the cap, is read from the environment of a hand-started pipeline only)";
+  if (!exact(trn.variables)) bad(`.gitlab-ci.yml: translate_docs variables must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, each written once, found: ${JSON.stringify(trn.variables ?? null)}; ${varsWhy}`);
+  else if (!exact(ex.variables)) bad(`.gitlab-ci.yml: translate_docs variables, with what it extends, must be exactly GIT_DEPTH: 1 and GIT_STRATEGY: clone, found: ${JSON.stringify(ex.variables ?? null)}; ${varsWhy}`);
+  const RAW = {
+    GIT_DEPTH: ["the plain number 1", (e) => e.type === E.SCALAR && e.style === STYLE.PLAIN && yaml.getScalarValue(src, e) === "1"],
+    GIT_STRATEGY: ["the plain or quoted text clone", (e) => e.type === E.SCALAR && [STYLE.PLAIN, STYLE.SINGLE_QUOTED, STYLE.DOUBLE_QUOTED].includes(e.style) && yaml.getScalarValue(src, e) === "clone"],
+  };
+  for (const [v, [want, ok]] of Object.entries(RAW)) {
+    if (gitRaw.translate_docs[v].length === 0) bad(`.gitlab-ci.yml: translate_docs ${v} is not written out as ${want} in the job itself; GitLab's reader can read a value brought in another way differently from this check's`);
+    if (gitRaw.translate_docs[v].some((x) => !ok(x))) bad(`.gitlab-ci.yml: translate_docs ${v} is written other than as ${want}; GitLab's reader can read another spelling differently from this check's`);
+  }
+  const OWN = new Set(["stage", "image", "interruptible", "timeout", "resource_group", "environment", "rules", "variables", "script", "artifacts"]);
+  for (const k of Object.keys(trn)) if (!OWN.has(k)) bad(`.gitlab-ci.yml: translate_docs has ${k}, a key the job holding the key does not take; that job is written out in full and holds nothing else`);
+  if (trn.interruptible !== false) bad(`.gitlab-ci.yml: translate_docs interruptible must be false (a boolean), its own, found: ${Object.hasOwn(trn, "interruptible") ? JSON.stringify(trn.interruptible) : "none"}; a newer pipeline must not cancel a paid batch midway`);
+  if (trn.resource_group !== "translate") bad(`.gitlab-ci.yml: translate_docs resource_group must be translate, found: ${JSON.stringify(trn.resource_group ?? null)}; two runs at once would each submit a paid batch`);
 }
+// The cap is read from the environment (review finding 4): no line of the
+// pipeline sets it, for translate_docs or for every job (global variables), in
+// any key or value; it is raised only by hand, on a pipeline started from the web.
+for (const t of strings(doc)) if (t.includes("TRANSLATE_MAX_TOKENS")) { bad(".gitlab-ci.yml: names TRANSLATE_MAX_TOKENS outside a comment; the translation's cap is never set by the pipeline file, only by hand on a pipeline started from the web"); break; }
 
 // The key's name appears only in the job that holds it, the script it runs and
 // the tool that reads it (#125 spec §4): any other file naming it may be reading it.
