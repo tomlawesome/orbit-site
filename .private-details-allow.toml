@@ -11,9 +11,12 @@ paths = [
 ]
 
 [[allowlists]]
-description = "the same disclosure line, verbatim in English, on the German copy of the install page (#125): the exception lets it move with the page but never be reworded or removed, so it is never translated (no catalogue key)"
+description = "the same disclosure line, verbatim in English, on the German copy of the install page (#125): the exception lets it move with the page but never be reworded or removed, so it is never translated (no catalogue key). Only that line is allowed: the path and the whole line must both match, so any other credit on the page is still refused (gitleaks hands the line over with the newline before it, hence the \\n?; the regex writes the tool's name with [a], so this file does not match the rule itself)"
 targetRules = ["ai-attribution"]
+condition = "AND"
 paths = ['''^de/index\.html$''']
+regexTarget = "line"
+regexes = ['''^\n?[ \t]*<p class="made">Designed by a human, written by Cl[a]ude\.</p>[ \t]*$''']
 
 [[allowlists]]
 description = "tool names: the assistant's settings folder, and the no-real-names lint's own pattern list"

@@ -3,8 +3,8 @@
 **Status:** Accepted (owner, 2026-10-10: decisions 5a, 6a, 7)
 **Amended:** 2026-10-31, section 6 (#116): owner decisions 18a and 19a replace decision 7 (nothing remembered) and the
 "a flight never waits for a verdict" half of 12d. A way in opens only once its proper version is loaded and the
-verdict is in; the verdict is remembered on the device for a week and re-taken quietly each visit. For the owner's
-review before any code.
+verdict is in; the verdict is remembered on the device for a week and re-taken quietly each visit. Built 2026-10-31
+(#116: `WORLD_FAILED`, `rememberedFit`, `WEEK`).
 **Date:** 2026-10-10
 **Relates to:** #2 (door freezes on software-GL machines); #116 (no way in plays a cheaper version for want of
 readiness); #115 (the gate opens 9-12 s on the phone); Orbit #1253 and #1310; ADR-0001; ADR-0004 6a.5 (the leisure
