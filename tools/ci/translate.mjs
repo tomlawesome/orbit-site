@@ -31,12 +31,15 @@
  * batches, rebuilds the request list, refuses it unless its digest is the token's (so a translation of other English
  * is never stamped with this English's hash), checks the batch holds its ids and finishes from the results, round
  * 1's included. A bare batch id is taken only when this machine's record (~/.cache/orbit-translate/batches.json,
- * written when a batch is made, dropped once its results are read) gives its digest.
+ * written when a batch is made, dropped once its results are read or prove unusable (exit 4); records older than
+ * 29 days, the API's keeping of results, are pruned on read, and a file over 1 MiB is refused) gives its digest.
  *
- * One batch at a time is paid for: a run with no token takes up a still-running batch its machine's record holds for
- * the same request list; failing that, it lists the key's batches and submits nothing while one is in progress
- * (exit 5). A create whose answer was lost looks for the batch it made before trying again. The retry round counts
- * against the same cap as the first (exit 3 before it is submitted, nothing written).
+ * One batch at a time is paid for: a run with no token takes up a batch its machine's record holds for the same
+ * request list, running or ended with its results unread; failing that, it lists the key's batches and submits
+ * nothing while one is in progress (exit 5), and takes up the newest ended one when it holds exactly this many
+ * requests, all succeeded, made after this English (a CI runner keeps no record). A create whose answer was lost
+ * looks for the batch it made before trying again. The retry round counts against the same cap as the first (exit
+ * 3 before it is submitted, nothing written); a retry batch already made and taken up is never stopped by it.
  *
  * An item that failed for the API's reasons (errored, expired, canceled) is kept in English with RETRY_HASH, a hash
  * no English has, so the next run sends it again; an item whose answer broke the rules twice, or was refused, is kept
@@ -51,7 +54,7 @@
  * On 1 to 5 no output file is touched.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -504,11 +507,25 @@ function api(o) {
   };
 }
 
-/* this machine's record of the batches it made and has not read: batch id -> { digest, round, first } */
-function records(o) {
+/*
+ * this machine's record of the batches it made and has not read: batch id -> { digest, round, first, made }. A record
+ * older than RECORD_DAYS (the Batches API keeps results 29 days) is pruned when the file is read; a file over
+ * RECORD_MAX is refused, not read (nor written over): the run goes on as with no record.
+ */
+export const RECORD_DAYS = 29, RECORD_MAX = MiB;
+function records(o, log = () => {}) {
   const file = join(o.env.HOME || homedir(), ".cache/orbit-translate/batches.json");
-  const read = () => { const j = tryJson(file); return isObj(j) ? j : {}; };
-  const write = (j) => { try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(`${file}.tmp`, `${JSON.stringify(j, null, 1)}\n`); renameSync(`${file}.tmp`, file); } catch { /* a convenience: a token resumes without it */ } };
+  let refused = false;
+  const read = () => {
+    if (refused) return {};
+    try { if (existsSync(file) && statSync(file).size > RECORD_MAX) { refused = true; log(`${file} is larger than ${RECORD_MAX / MiB} MiB: refused, not read; the run goes on as with no record`); return {}; } } catch { return {}; }
+    const j = tryJson(file);
+    if (!isObj(j)) return {};
+    const since = Date.now() - RECORD_DAYS * 86400e3, out = {};
+    for (const [id, e] of Object.entries(j)) if (isObj(e) && typeof e.made === "string" && Date.parse(e.made) >= since) out[id] = e;
+    return out;
+  };
+  const write = (j) => { if (refused) return; try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(`${file}.tmp`, `${JSON.stringify(j, null, 1)}\n`); renameSync(`${file}.tmp`, file); } catch { /* a convenience: a token resumes without it */ } };
   return {
     get: (id) => { const e = read()[id]; return isObj(e) && DIGEST.test(e.digest) && (e.round === 1 || (e.round === 2 && BATCH_ID.test(e.first))) ? e : null; },
     entries: () => Object.entries(read()).filter(([id, e]) => BATCH_ID.test(id) && isObj(e) && DIGEST.test(e.digest)),
@@ -541,7 +558,7 @@ async function runBatch(o, client, requests, deadline, log, job) {
       if (++fails >= 3) throw pending(`could not be polled (${e.message})`);
       await sleep(Math.min(5, o.pollSeconds) * fails); continue;
     }
-    if (isObj(b) && b.processing_status === "ended") {
+    if (isObj(b) && b.processing_status === "ended") try {
       const c = isObj(b.request_counts) ? b.request_counts : {}, n = (k) => (Number.isFinite(c[k]) ? c[k] : 0);
       const total = ["processing", "succeeded", "errored", "canceled", "expired"].reduce((t, k) => t + n(k), 0);
       if (resumeId && total !== requests.length) throw new Exit(4, `batch ${id} holds ${total} requests but this commit's sources make ${requests.length}: it is not this run's batch; nothing written`);
@@ -561,6 +578,10 @@ async function runBatch(o, client, requests, deadline, log, job) {
       if (resumeId && out.size !== requests.length) throw new Exit(4, `batch ${id} returned ${out.size} results for ${requests.length} requests: it is not this run's batch; nothing written`);
       job.read(id);
       return out;
+    } catch (e) {
+      /* the batch's results cannot be used (exit 4): its record goes, so no later run takes it up again */
+      if (e instanceof Exit && e.code === 4 && !e.retry && job.failed) job.failed(id);
+      throw e;
     }
     if (Date.now() >= deadline) throw pending(`has not ended within ${o.timeoutMinutes} minutes`);
     await sleep(Math.min(o.pollSeconds, Math.max(0.01, (deadline - Date.now()) / 1000)));
@@ -617,7 +638,7 @@ export async function run(opts) {
     let batches = 0;
     if (items.length) {
       if (!o.key) throw new Exit(4, "ANTHROPIC_API_KEY is not set: the run needs the key (a dry run does not)");
-      const client = api(o), rec = records(o), deadline = Date.now() + o.timeoutMinutes * 60_000;
+      const client = api(o), rec = records(o, log), deadline = Date.now() + o.timeoutMinutes * 60_000;
       /* the round-n item of a todo entry: a chunk's retry carries only the keys that broke */
       const itemFor = (round, { it, broke }) => {
         if (round === 1 || it.kind !== "chunk") return it;
@@ -639,23 +660,45 @@ export async function run(opts) {
         if (want !== digest) throw new Exit(4, `batch ${ids[ids.length - 1]} was made from another request list (digest ${want}) than this checkout makes (${digest}): the English, the prompt or the plan changed since; it is not this run's batch; nothing submitted, nothing written`);
         resume = ids;
       } else {
-        /* a batch made from this very request list that is still running (a run that ended pending): take it up rather than pay twice */
+        /*
+         * a batch made from this very request list whose results were never read (a run that ended pending): still
+         * running or ended, it is taken up rather than paid for twice. Its record goes only once its results are read,
+         * or turn out unusable (exit 4).
+         */
         for (const [id, e] of rec.entries().sort((a, b) => b[1].round - a[1].round)) {
           if (e.digest !== digest) continue;
           let b = null; try { b = await client.get(id, CALL_MS.poll); } catch (err) { if (!(err instanceof Exit && err.retry)) throw err; }
-          if (isObj(b) && b.processing_status === "in_progress") { resume = e.round === 2 ? [e.first, id] : [id]; log(`batch ${id}, made from this same request list, is still running: taking it up, nothing submitted`); break; }
-          if (isObj(b) && b.processing_status === "ended") rec.drop(id); /* its run failed after it ended (exit 4): it is not taken up again */
+          if (isObj(b) && (b.processing_status === "in_progress" || b.processing_status === "ended")) {
+            resume = e.round === 2 ? [e.first, id] : [id];
+            log(`batch ${id}, made from this same request list, ${b.processing_status === "ended" ? "has ended with its results unread" : "is still running"}: taking it up, nothing submitted`);
+            break;
+          }
         }
         if (!resume) {
-          const running = (await client.list()).filter((b) => b.processing_status === "in_progress");
+          const all = await client.list(), running = all.filter((b) => b.processing_status === "in_progress");
           if (running.length) throw new Exit(5, `batch ${String(running[0].id).slice(0, 80)} is still in progress on this key${running.length > 1 ? ` (and ${running.length - 1} more)` : ""}: nothing submitted, so no second batch is paid for. Resume it with the TRANSLATE_BATCH_ID its run printed, or run again once it has ended`);
+          /*
+           * with no record (a CI runner keeps none), an ended batch on the key is taken as this run's unread one when
+           * the key's newest ended batch holds exactly this many requests, every one succeeded, made after the English
+           * it would translate (created_at after its generated) and within RECORD_DAYS. Its results are then held to
+           * this run's ids as any resume's are, and each answer to the checks.
+           */
+          const n = (b, k) => (isObj(b.request_counts) && Number.isFinite(b.request_counts[k]) ? b.request_counts[k] : 0);
+          const ended = all.find((b) => b.processing_status === "ended");
+          const made = ended && typeof ended.created_at === "string" ? Date.parse(ended.created_at) : null;
+          if (ended && BATCH_ID.test(String(ended.id)) && n(ended, "succeeded") === first.length && ["errored", "canceled", "expired", "processing"].every((k) => n(ended, k) === 0)
+            && (made === null || (Number.isFinite(made) && made > Date.parse(eng.generated) && made >= Date.now() - RECORD_DAYS * 86400e3))) {
+            resume = [ended.id];
+            log(`batch ${ended.id} on this key ended with ${first.length} requests, all succeeded, made after this English: taking it up as this run's unread batch, nothing submitted`);
+          }
         }
       }
       const ids = [];
       for (let round = 1; round <= 2 && todo.length; round++) {
         const requests = round === 1 ? first : requestsFor(2, todo);
-        if (round === 2) {
-          /* the retry round is spend too: it counts against the same cap as the first */
+        if (round === 2 && !(resume && resume[1])) {
+          /* the retry round is spend too: it counts against the same cap as the first (one already made and paid for,
+             taken up, is never stopped by it) */
           const est2 = estimate(todo.map((t) => { const x = itemFor(2, t); return { ...x, chars: x.chars + t.broke.rules.join("; ").length }; }), system);
           log(`retry: ${todo.length} item(s); estimate ${fmt(est2.total)} tokens, ${fmt(est.total + est2.total)} with the first round (cap ${fmt(o.maxTokens)})`);
           if (est.total + est2.total > o.maxTokens) throw new Exit(3, `the estimate of both rounds, ${fmt(est.total + est2.total)} tokens, is above the cap of ${fmt(o.maxTokens)}: the retry batch is not sent and nothing is written`);
@@ -665,6 +708,7 @@ export async function run(opts) {
           token: (id) => [...ids, id, digest].join("."),
           made: (id) => rec.set(id, round === 1 ? { digest, round } : { digest, round, first: ids[0] }),
           read: (id) => rec.drop(id),
+          failed: (id) => rec.drop(id),
         };
         const results = await runBatch(o, client, requests, deadline, log, job);
         ids.push(job.id);
