@@ -11,8 +11,8 @@
 
 # The shared check for personal details (ai/agent-infra#32, #110): one set of
 # rules for every project, kept on the agent host and read by the job from a
-# file the runner host mounts. The include is the only one ci-split allows
-# (ADR-0005). The ref is the commit the tag names, not the tag: a protected
+# file the runner host mounts. ci-split allows this include and, beside it,
+# the two shared snippets below, nothing else (ADR-0005). The ref is the commit the tag names, not the tag: a protected
 # tag can be deleted and made again on other code, a commit cannot move.
 # PRIVATE_DETAILS_SHA below names the same commit, so the script the job runs
 # is the pinned one too. Moving to a new tag moves both and the comment together.
@@ -20,9 +20,12 @@ include:
   - project: ai/agent-infra
     ref: 7430d171259104c4623040c2360699585d601bf5 # private-details/v4
     file: scripts/private-details/ci-template.yml
-  # A catch-up MR (chore/catchup-* into batch-a or batch-b) runs one small job;
-  # an MR into a batch runs static checks only, the full pipeline running once
-  # on batch to dev (ai/agent-infra#114, decision 60a). Commits the tags name:
+  # A catch-up MR (chore/catchup-* into batch-a or batch-b) runs the catch-up
+  # check, the lint, the secret scan and the personal-details check, since it
+  # merges onto a mirrored branch; an MR into a batch runs static checks only,
+  # the full pipeline running once on batch to dev (ai/agent-infra#114,
+  # decision 60a). ci-split refuses either rule on those three jobs. Commits
+  # the tags name:
   - project: ai/agent-infra
     ref: 03499313d89b421212af02db3735662397eebfb3 # catchup-check/v2
     file: scripts/catchup-check/ci-template.yml
@@ -104,7 +107,6 @@ lint:
     # `live:chromium` adds Chromium's and `coverage` checks them against the floors (#14).
     COVERAGE_DIR: coverage
   rules:
-    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   artifacts:
@@ -203,7 +205,6 @@ scan:gitleaks:
   variables:
     GIT_DEPTH: 0
   rules:
-    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
   script:
@@ -226,7 +227,6 @@ private-details:
   variables:
     PRIVATE_DETAILS_SINCE: 37d5d31f0deb512e6b98fbf23074ec955ec91d17
   rules:
-    - !reference [.catchup-check, job_rule]
     - *not_scheduled
     - when: on_success
 

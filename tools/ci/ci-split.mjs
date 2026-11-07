@@ -423,6 +423,45 @@ if ("include" in doc) {
     && new Set(inc.map((e) => e.file)).size === inc.length && inc.some((e) => e.file === PRIVATE_DETAILS);
   if (!ok) bad(".gitlab-ci.yml: has a top-level include that is not the one allowed; a job in another file would escape this check, so the only includes are a list of project: ai/agent-infra entries, each with a full 40-character lowercase hex commit as ref, for scripts/private-details/ci-template.yml and at most once each scripts/catchup-check/ci-template.yml and scripts/batch-intake/ci-template.yml");
 }
+// The snippets' job_rule takes a job off a catch-up or batch merge request (ai/agent-infra#114).
+// Those merge onto a branch mirrored to GitHub, so the jobs that look for secrets and personal
+// details must run on them too: none of the three takes a snippet's job_rule, whether in its
+// own rules, through extends or through a !reference in the file. Read from the file as
+// written, since resolve() turns a snippet's rule into an empty list.
+const SCANS = ["lint", "scan:gitleaks", "private-details"];
+// the rules a key runs: its own, else those of its last parent in extends that has some
+const rulesOf = (k, seen = new Set()) => {
+  if (seen.has(k) || !isObj(doc[k])) return undefined;
+  seen.add(k);
+  if (Object.hasOwn(doc[k], "rules")) return doc[k].rules;
+  const ext = doc[k].extends;
+  const parents = (typeof ext === "string" ? [ext] : Array.isArray(ext) ? ext.flat(Infinity) : []).filter((p) => typeof p === "string");
+  for (const p of parents.reverse()) { const r = rulesOf(p, seen); if (r !== undefined) return r; }
+  return undefined;
+};
+// the snippets whose job_rule v takes, following each !reference to a key of the file (the
+// value it names where that can be read here, else the whole key, failing closed)
+const snippetRules = (v, out = new Set(), seen = new Set(), depth = 0) => {
+  if (Array.isArray(v)) { for (const x of v) snippetRules(x, out, seen, depth); return out; }
+  if (!isObj(v)) return out;
+  if (Object.hasOwn(v, "!reference")) {
+    const path = v["!reference"];
+    if (!Array.isArray(path) || !path.every((p) => typeof p === "string") || depth >= 10) return out;
+    if (Object.hasOwn(SNIPPETS, path[0]) && !Object.hasOwn(doc, path[0])) { if (path[1] === "job_rule") out.add(path[0]); return out; }
+    const key = path.join("\n");
+    if (!Object.hasOwn(doc, path[0]) || seen.has(key)) return out;
+    seen.add(key);
+    let at = path[1] === "rules" ? rulesOf(path[0]) : doc[path[0]];
+    for (const p of path.slice(path[1] === "rules" ? 2 : 1)) at = isObj(at) && Object.hasOwn(at, p) ? at[p] : (Array.isArray(at) && /^\d+$/.test(p) ? at[Number(p)] : undefined);
+    return snippetRules(at === undefined ? doc[path[0]] : at, out, seen, depth + 1);
+  }
+  for (const x of Object.values(v)) snippetRules(x, out, seen, depth);
+  return out;
+};
+for (const j of SCANS) {
+  for (const s of snippetRules(rulesOf(j))) bad(`.gitlab-ci.yml: ${j} takes !reference [${s}, job_rule] in its rules, which would skip the secret scan on a catch-up or batch merge request; that merge lands on a branch mirrored to GitHub, so a secret or personal detail it carried would be published unchecked. Take the line off ${SCANS.join(", ")}`);
+}
+
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
 // whether the job writes it, extends it or takes it by !reference
 for (const k of Object.keys(doc)) {
