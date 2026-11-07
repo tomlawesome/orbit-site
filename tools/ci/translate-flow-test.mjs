@@ -401,7 +401,7 @@ await T.attempt("T46", async () => {
     T.check("T46b the other digest's batch is not adopted: a second batch is submitted", !r2.notBuilt && fakeB.posts === 2, `${fakeB.posts} batches submitted`);
     const p = fb.exists("assets/docs-i18n/de/readme.json") ? fb.read("assets/docs-i18n/de/readme.json") : null;
     const t = p && p.sections.find((x) => x.id === "top");
-    T.check("T46b none of the other batch's text is written: the top section is the translation of the English as it is", !!t && !t.html.includes("tidy") && t.html.includes("calm and orderly"), t ? t.html.slice(0, 120) : "no page");
+    T.check("T46b none of the other batch's text is written: the top section is the translation of the English as it is", !!t && !t.html.includes("tidy") && t.html.includes(swap("calm and orderly")), t ? t.html.slice(0, 120) : "no page");
   } finally { await fakeB.close(); fb.cleanup(); }
 });
 
