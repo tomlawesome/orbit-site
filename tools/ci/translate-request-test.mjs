@@ -8,8 +8,9 @@
  *   T5  request parameters: model claude-opus-5-5, max_tokens 4 x estimated English tokens (chars / 3.5) + 1,024 and
  *       at most 16,000, output_config.effort high, a strict JSON schema, fallbacks "default" and its beta header,
  *       anthropic-version 2023-06-01, no temperature, no thinking
- *   T31 custom_id: every request's is "r" + its zero-padded index in the run's request list (r0000, r0001, ...),
- *       unique, within ^[a-zA-Z0-9_-]{1,64}$ (the fake answers 400 to any other, so a run that breaks it fails)
+ *   T31 custom_id: every request's is "r" + its zero-padded index in the run's request list + "-" + the first 12 hex
+ *       of the run's request digest (r0000-<12 hex>, r0001-<12 hex>, ...: the idempotency key), the same digest in
+ *       every id of the run, unique, within ^[a-zA-Z0-9_-]{1,64}$ (the fake answers 400 to any other, so a run that breaks it fails)
  *   T17 --dry-run with no key prints the estimate (tokens, dollars) and the plan, makes no request, exits 0, and
  *       writes nothing (also with a key present)
  *   T18 an estimate above the cap exits 3 with nothing sent and nothing written; at the cap the run goes on. The
@@ -201,7 +202,9 @@ await T.attempt("T31", async () => {
     const ids = first.map((q) => q.custom_id);
     T.check("T31b every custom_id matches ^[a-zA-Z0-9_-]{1,64}$", ids.length > 2 && ids.every((i) => CUSTOM_ID.test(i)), `${ids.length} ids, first ${ids[0]}`);
     const pad = String(ids.length - 1).length;
-    T.check("T31c each is r + its zero-padded index (r0000, r0001, ...) in the order sent", ids.length > 2 && ids.every((id, n) => id === "r" + String(n).padStart(Math.max(4, pad), "0")), ids.slice(0, 3).join(","));
+    const parts = ids.map((id) => /^r(\d+)-([0-9a-f]{12})$/.exec(id));
+    T.check("T31c each is r + its zero-padded index + - + 12 hex of the digest (r0000-<12 hex>, ...) in the order sent", ids.length > 2 && parts.every((m, n) => m && m[1] === String(n).padStart(Math.max(4, pad), "0")), ids.slice(0, 3).join(","));
+    T.check("T31f every id of the run carries the same digest", parts.length > 2 && parts.every((m) => m) && new Set(parts.map((m) => m[2])).size === 1, `${new Set(parts.map((m) => m && m[2])).size} distinct`);
     T.check("T31d no id repeats within a batch", new Set(ids).size === ids.length, `${new Set(ids).size} distinct of ${ids.length}`);
     T.check("T31e the request list is sorted: ids follow the run's order, de requests before ja (ordered by language)", fake.sent.length > 2 && fake.sent.findIndex((q) => q.lang === "ja") > fake.sent.map((q) => q.lang).lastIndexOf("de"), "languages in order");
   } finally { await fake.close(); fx.cleanup(); }
