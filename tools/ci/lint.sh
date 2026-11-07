@@ -203,10 +203,12 @@ grep -E '^  [A-Z_]+_IMAGE:' .gitlab-ci.yml | grep -v -E '@sha256:[a-f0-9]{64}$' 
 fi
 
 if on ci-split; then
-echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
+echo "== the docs import is split: import_docs holds no token, exactly publish_docs and publish_translations are in the docs-import environment, translate_docs alone in translate, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
-# worth stealing; the publish holds the token, runs no third-party code, and is
-# the only job in the docs-import environment, where the token is scoped (#18).
+# worth stealing; the publish holds the token, runs no third-party code, and
+# exactly two jobs are in the docs-import environment, where the token is
+# scoped: publish_docs (#18) and publish_translations (#125), judged alike.
+# translate_docs, which holds the Anthropic API key, is alone in translate.
 # Both run from the schedule on main alone, never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.

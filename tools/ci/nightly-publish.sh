@@ -17,7 +17,9 @@
 # ORBIT_SITE_IMPORT_TOKEN, a service account's personal access token, role
 # Developer on orbit-site (to merge into dev) and Reporter on ai/agent-infra (to
 # read the shared private-details check), scopes api and write_repository, a
-# Masked + Protected CI/CD variable scoped to the `docs-import` environment, which only this job joins.
+# Masked + Protected CI/CD variable scoped to the `docs-import` environment,
+# which exactly two jobs join: publish_docs and publish_translations, both
+# running this script (the second with the argument `translations`, #125).
 # It runs no third-party code: no npm, and node and python only for the
 # image's own JSON and zip handling. The import job ran such code, so nothing
 # from it is trusted:
