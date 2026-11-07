@@ -30,7 +30,7 @@ Standard patterns used, each named where it applies:
 | Merge request into `dev` (or a branch) | the `lint` job, whole (about 3 min) | the tests the map links to the changed paths; nothing for a docs-only change | report; gates only what was measured in full (section 6) |
 | Push to `dev` after a merge | whole | the same selection, against the push's range (question 17) | as above |
 | Promotion: merge request `dev` -> `main` | whole | everything, both browsers | gates, as today |
-| The nightly import's merge request (`docs/import-*` -> `main`) | whole | the `docs` group (about 5 min, today 50) | report |
+| The nightly import's merge request (`docs/import-*` -> `dev`, since #129) | whole | the `docs` group (about 5 min, today 50) | report |
 | Push to `main` | whole | none (question 17) | none |
 | Schedules (`import_docs`, `publish_docs`, `renovate`) | unchanged | unchanged | unchanged |
 

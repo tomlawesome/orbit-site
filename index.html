@@ -2,24 +2,35 @@
 <!-- data-maintenance: the site is in maintenance mode. The door stands alone: its planets turn but open nothing,
      and in place of the way in is the attribute's message ("Back shortly" if it gives none). Take the attribute away
      and the whole site is back. -->
-<html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon">
+<html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon" data-i18n-attr="data-maintenance:launching-soon">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' 'sha256-4iYz6XiPqUMVc3oqEZ7H7EpvMJA56DnitB0Fy1huhcI='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <!-- ?preview in the address shows the whole site past the maintenance door (for checking before launch) -->
   <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
+  <!-- auto-lang: the root only (tools/pages.mjs leaves it out of the translated pages, which never redirect). With no stored
+       choice, the first of the browser's languages that the site is built in sends the visitor there once, the address's
+       query and hash kept; English, or a stored "en", stays. The same rule as assets/js/lang.js: pick (the lint holds them
+       to one answer). And a visitor who came from one of the site's own pages (de/'s switch or its AI notice) is never
+       sent back: following a link there was a choice, even where the browser keeps nothing stored. Its hash is in the
+       policy meta -->
+  <script>(function(){var b=["de"],s=null,g=null,r=document.referrer,l,p,i;if(r&&r.indexOf(location.href.split(/[?#]/)[0].replace(/[^\/]*$/,""))===0)return;try{s=localStorage.getItem("orbit-lang")}catch(e){}if(s==="en")return;if(b.indexOf(s)>=0)g=s;else for(l=navigator.languages||[navigator.language],i=0;i<l.length;i++){p=String(l[i]).toLowerCase().split("-")[0];if(p==="en")break;if(b.indexOf(p)>=0){g=p;break}}if(g)location.replace(g+"/"+location.search+location.hash)})();</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Orbit — everything in your orbit, on track</title>
-  <meta name="description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. Three containers, one command to install." />
+  <title data-i18n="page-title">Orbit — everything in your orbit, on track</title>
+  <meta name="description" data-i18n-attr="content:meta-description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. Three containers, one command to install." />
   <meta name="theme-color" content="#05070d" />
   <link rel="icon" href="assets/img/mark.svg" type="image/svg+xml" />
   <link rel="icon" href="assets/img/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png" />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Orbit — everything in your orbit, on track" />
-  <meta property="og:description" content="A self-hosted home operations hub. The year is the orbit; your household is the sun." />
+  <meta property="og:title" data-i18n-attr="content:page-title" content="Orbit — everything in your orbit, on track" />
+  <meta property="og:description" data-i18n-attr="content:og-description" content="A self-hosted home operations hub. The year is the orbit; your household is the sun." />
   <meta property="og:image" content="https://tomlawesome.github.io/orbit-site/assets/img/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
+  <!-- the same page in each language the site is built in (#125); x-default is the English root -->
+  <link rel="alternate" hreflang="en" href="https://tomlawesome.github.io/orbit-site/" />
+  <link rel="alternate" hreflang="de" href="https://tomlawesome.github.io/orbit-site/de/" />
+  <link rel="alternate" hreflang="x-default" href="https://tomlawesome.github.io/orbit-site/" />
   <script>try{var t=localStorage.getItem("orbit-pack");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="stylesheet" href="assets/fonts/fonts.css" />
   <link rel="stylesheet" href="assets/door/door.css" />
@@ -60,9 +71,14 @@
   <link rel="modulepreload" href="assets/js/remote-world.js" />
 </head>
 <body class="at-door">
-  <noscript><p class="corner">Orbit's site needs JavaScript to draw its sky. The install steps are on GitHub: <a href="https://github.com/tomlawesome/orbit">github.com/tomlawesome/orbit</a></p></noscript>
+  <noscript><p class="corner" data-i18n="noscript">Orbit's site needs JavaScript to draw its sky. The install steps are on GitHub: <a href="https://github.com/tomlawesome/orbit">github.com/tomlawesome/orbit</a></p></noscript>
   <div class="sky" id="sky" aria-hidden="true"></div>
   <div class="vignette" aria-hidden="true"></div>
+  <!-- the language menu (#125): one control in one place on the door, the sky and every pad (top left, under the back
+       link), a disclosure (WAI-ARIA APG): a button showing the page's language code, and a real link per language,
+       which assets/js/lang.js keeps pointing at this same address (query and hash) in that language. Until it runs
+       (or with scripts off) the links show as they are -->
+  <nav class="langs" aria-label="Language" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="EN, language: English" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">EN</span></button><ul id="langs-list"><li><a data-lang="en" href="./" hreflang="en" lang="en" aria-current="page">EN · English</a></li><li><a data-lang="de" href="de/" hreflang="de" lang="de">DE · Deutsch</a></li></ul></nav>
 
   <!-- ═══ THE DOOR: the sign-in's dawn ═══════════════════════════════ -->
   <!-- the shared door's markup (assets/door/markup.js), written between the door markers by `node tools/door-markup.mjs`
@@ -119,27 +135,28 @@
         </svg><i class="runner" aria-hidden="true"></i></div>
         <!-- slot:lockup -->
         <!-- the bodies: the gold planet on the ring, and the three doors on their orbits, each a layer the compositor turns -->
-        <div class="planets" aria-label="The sections">
+        <div data-i18n-attr="aria-label:the-sections" class="planets" aria-label="The sections">
           <span class="trdot" aria-hidden="true"><b class="trail"></b><i></i></span>
-          <a class="planet" href="#docs" data-r="88" data-section="docs" aria-label="Docs" style="--c:#8fb8ff;--r:88;--dur:58s;--delay:-14s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span class="tag">docs</span></a>
-          <a class="planet" href="#install" data-r="104" data-section="install" aria-label="Install" style="--c:#7c3aed;--r:104;--dur:46s;--delay:-33s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span class="tag">install</span></a>
-          <a class="planet" href="#info" data-r="120" data-section="info" aria-label="Information" style="--c:#f87171;--r:120;--dur:67s;--delay:-40s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span class="tag">information</span></a>
+          <a data-i18n-attr="aria-label:docs-label" class="planet" href="#docs" data-r="88" data-section="docs" aria-label="Docs" style="--c:#8fb8ff;--r:88;--dur:58s;--delay:-14s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span data-i18n="docs" class="tag">docs</span></a>
+          <a data-i18n-attr="aria-label:install-label" class="planet" href="#install" data-r="104" data-section="install" aria-label="Install" style="--c:#7c3aed;--r:104;--dur:46s;--delay:-33s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span data-i18n="install" class="tag">install</span></a>
+          <a data-i18n-attr="aria-label:info-label" class="planet" href="#info" data-r="120" data-section="info" aria-label="Information" style="--c:#f87171;--r:120;--dur:67s;--delay:-40s"><span class="spin"><i class="hit"></i><i class="halo"></i><i class="body"></i></span><span data-i18n="information" class="tag">information</span></a>
         </div>
         <!-- /slot:lockup -->
         <h1 class="name">orbit</h1>
-        <div class="gate-wrap"><!-- slot:gate --><button class="gate" id="gate" type="button">Get into Orbit</button><p class="notice"><span class="t">Back shortly</span><span class="d" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p><!-- /slot:gate --></div>
+        <div class="gate-wrap"><!-- slot:gate --><button data-i18n="get-into-orbit" class="gate" id="gate" type="button">Get into Orbit</button><p class="notice"><span data-i18n="back-shortly" class="t">Back shortly</span><span class="d" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p><!-- /slot:gate --></div>
       </div>
     </div>
     <!-- slot:foot -->
-    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project · Earth: <a href="https://earthobservatory.nasa.gov/features/NightLights" title="Black Marble city lights, Blue Marble land and clouds: NASA Earth Observatory" target="_blank" rel="noopener">NASA</a></p>
+    <!-- ai-notice -->
+    <p class="doorfoot by" data-i18n="foot-door">A <a href="https://tomlawson.io">tomlawson.io</a> project · Earth: <a data-i18n-attr="title:black-marble-city-lights-blue" href="https://earthobservatory.nasa.gov/features/NightLights" title="Black Marble city lights, Blue Marble land and clouds: NASA Earth Observatory" target="_blank" rel="noopener">NASA</a></p>
     <!-- /slot:foot -->
   </div>
   <!-- /door -->
 
   <!-- ═══ THE SKY: home ══════════════════════════════════════════════ -->
   <main id="home" hidden>
-    <button class="corner back" id="back" type="button">— the dawn</button>
-    <a class="orb inbox-orb" id="inbox-orb" href="#inbox" aria-label="Inbox">
+    <button data-i18n="the-dawn" class="corner back" id="back" type="button">— the dawn</button>
+    <a data-i18n-attr="aria-label:inbox" class="orb inbox-orb" id="inbox-orb" href="#inbox" aria-label="Inbox">
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
         <circle cx="9" cy="11" r="2.6" fill="currentColor"/>
         <path d="M 3 11 A 6 6 0 0 1 15 11" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".65"/>
@@ -147,108 +164,108 @@
       </svg>
       <i class="count">0</i>
     </a>
-    <button class="orb" id="account-orb" type="button" aria-expanded="false" aria-controls="account" title="Menu">AR</button>
-    <div class="account" id="account" role="region" aria-label="Account and menu">
-      <div class="who"><b id="who-name"></b><span>Willow House · owner</span></div>
+    <button data-i18n-attr="title:menu" class="orb" id="account-orb" type="button" aria-expanded="false" aria-controls="account" title="Menu">AR</button>
+    <div data-i18n-attr="aria-label:account-and-menu" class="account" id="account" role="region" aria-label="Account and menu">
+      <div class="who"><b id="who-name"></b><span data-i18n="willow-house-owner">Willow House · owner</span></div>
       <nav>
-        <button type="button" data-open-drawer="installdrawer">Get into Orbit</button>
-        <a href="https://github.com/tomlawesome/orbit">Source</a>
-        <a href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a>
-        <a href="https://github.com/tomlawesome/orbit-launcher">The launcher</a>
+        <button data-i18n="get-into-orbit" type="button" data-open-drawer="installdrawer">Get into Orbit</button>
+        <a data-i18n="source" href="https://github.com/tomlawesome/orbit">Source</a>
+        <a data-i18n="security-policy" href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md">Security policy</a>
+        <a data-i18n="the-launcher" href="https://github.com/tomlawesome/orbit-launcher">The launcher</a>
       </nav>
-      <div class="swatches" role="group" aria-label="Theme">
+      <div data-i18n-attr="aria-label:theme" class="swatches" role="group" aria-label="Theme">
         <span>THEME</span>
-        <button type="button" data-pack="starchart" style="--sw:#060b1c" title="star chart" aria-label="Star chart"></button>
-        <button type="button" data-pack="afterdark" style="--sw:#05070d" title="after dark" aria-label="After dark"></button>
-        <button type="button" data-pack="clouds" style="--sw:#eef2f9" title="clouds" aria-label="Clouds"></button>
-        <button type="button" data-pack="dawn" style="--sw:#d2d3d4" title="dawn" aria-label="Dawn"></button>
-        <button type="button" data-pack="retrograde" style="--sw:#080a14;--sw-shadow:inset 0 0 0 1px #ff4fd8" title="retrograde" aria-label="Retrograde"></button>
+        <button data-i18n-attr="title:star-chart,aria-label:star-chart-2" type="button" data-pack="starchart" style="--sw:#060b1c" title="star chart" aria-label="Star chart"></button>
+        <button data-i18n-attr="title:after-dark,aria-label:after-dark-2" type="button" data-pack="afterdark" style="--sw:#05070d" title="after dark" aria-label="After dark"></button>
+        <button data-i18n-attr="title:clouds,aria-label:clouds-2" type="button" data-pack="clouds" style="--sw:#eef2f9" title="clouds" aria-label="Clouds"></button>
+        <button data-i18n-attr="title:dawn,aria-label:dawn-2" type="button" data-pack="dawn" style="--sw:#d2d3d4" title="dawn" aria-label="Dawn"></button>
+        <button data-i18n-attr="title:retrograde,aria-label:retrograde-2" type="button" data-pack="retrograde" style="--sw:#080a14;--sw-shadow:inset 0 0 0 1px #ff4fd8" title="retrograde" aria-label="Retrograde"></button>
       </div>
-      <div class="acctfoot"><button class="signout" id="signout" type="button">sign out →</button><button class="signout reset" id="reset" type="button" title="Back to the sample household, on this device">reset the site</button></div>
+      <div class="acctfoot"><button data-i18n="sign-out" class="signout" id="signout" type="button">sign out →</button><button data-i18n-attr="title:back-to-the-sample-household" data-i18n="reset-the-site" class="signout reset" id="reset" type="button" title="Back to the sample household, on this device">reset the site</button></div>
     </div>
 
     <!-- CON-12: creation lives in the sky; the north star is the drawer's handle -->
-    <aside class="drawer-top" id="createdrawer" role="region" aria-label="Add to your orbit">
+    <aside data-i18n-attr="aria-label:add-to-your-orbit" class="drawer-top" id="createdrawer" role="region" aria-label="Add to your orbit">
       <form class="inner" id="createform" autocomplete="off">
-        <h4>Add to your orbit</h4>
-        <div class="ctypes" id="types" role="group" aria-label="Type">
-          <button class="ctype" type="button" data-type="renewal" aria-pressed="false"><span class="dot con"></span>renewal</button>
-          <button class="ctype" type="button" data-type="service" aria-pressed="true"><span class="dot"></span>service</button>
-          <button class="ctype" type="button" data-type="inspection" aria-pressed="false"><span class="dot ter"></span>inspection</button>
-          <button class="ctype" type="button" data-type="expiry" aria-pressed="false"><span class="dot sug"></span>something that ends</button>
+        <h4 data-i18n="add-to-your-orbit">Add to your orbit</h4>
+        <div data-i18n-attr="aria-label:type" class="ctypes" id="types" role="group" aria-label="Type">
+          <button data-i18n="type-renewal" class="ctype" type="button" data-type="renewal" aria-pressed="false"><span class="dot con"></span>renewal</button>
+          <button data-i18n="type-service" class="ctype" type="button" data-type="service" aria-pressed="true"><span class="dot"></span>service</button>
+          <button data-i18n="type-inspection" class="ctype" type="button" data-type="inspection" aria-pressed="false"><span class="dot ter"></span>inspection</button>
+          <button data-i18n="type-expiry" class="ctype" type="button" data-type="expiry" aria-pressed="false"><span class="dot sug"></span>something that ends</button>
         </div>
         <div class="cfields">
-          <div class="cfield wide"><label for="f-name">name</label><input id="f-name" name="name" placeholder="Boiler service" required /></div>
-          <div class="cfield"><label for="f-section">section</label><select id="f-section" name="section"><option value="home">Home</option><option value="vehicles">Vehicles</option><option value="devices">Devices</option><option value="services">Services</option></select></div>
-          <div class="cfield"><label for="f-date">due</label><input id="f-date" name="date" type="date" max="9999-12-31" /></div>
-          <div class="cfield"><label for="f-cost">cost, about</label><input id="f-cost" name="cost" inputmode="decimal" placeholder="£" /></div>
-          <div class="cfield"><label for="f-recur">comes round</label><select id="f-recur" name="recur"><option value="12">every year</option><option value="6">every 6 months</option><option value="24">every 2 years</option><option value="0">one-off</option></select></div>
+          <div class="cfield wide"><label data-i18n="name" for="f-name">name</label><input data-i18n-attr="placeholder:boiler-service" id="f-name" name="name" placeholder="Boiler service" required /></div>
+          <div class="cfield"><label data-i18n="section" for="f-section">section</label><select id="f-section" name="section"><option data-i18n="home" value="home">Home</option><option data-i18n="vehicles" value="vehicles">Vehicles</option><option data-i18n="devices" value="devices">Devices</option><option data-i18n="services" value="services">Services</option></select></div>
+          <div class="cfield"><label data-i18n="due" for="f-date">due</label><input id="f-date" name="date" type="date" max="9999-12-31" /></div>
+          <div class="cfield"><label data-i18n="cost-about" for="f-cost">cost, about</label><input id="f-cost" name="cost" inputmode="decimal" placeholder="£" /></div>
+          <div class="cfield"><label data-i18n="comes-round" for="f-recur">comes round</label><select id="f-recur" name="recur"><option data-i18n="every-year" value="12">every year</option><option data-i18n="every-6-months" value="6">every 6 months</option><option data-i18n="every-2-years" value="24">every 2 years</option><option data-i18n="one-off" value="0">one-off</option></select></div>
         </div>
         <div class="crow">
           <span class="note"></span>
-          <button class="btn-primary" type="submit">Add to orbit</button>
+          <button data-i18n="add-to-orbit" class="btn-primary" type="submit">Add to orbit</button>
         </div>
       </form>
-      <button class="nstar" id="nstar" type="button" aria-expanded="false" aria-controls="createdrawer" title="Add to your orbit">
+      <button data-i18n-attr="title:add-to-your-orbit" class="nstar" id="nstar" type="button" aria-expanded="false" aria-controls="createdrawer" title="Add to your orbit">
         <svg width="30" height="30" viewBox="-15 -15 30 30" aria-hidden="true">
           <defs><linearGradient id="tron-edge" x1="0" y1="-11" x2="0" y2="11" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="var(--upcoming)"/><stop offset=".55" stop-color="var(--upcoming)"/><stop offset="1" stop-color="var(--accent)"/></linearGradient></defs>
           <g class="glint classic" style="transform-origin:0 0"><circle r="9" fill="var(--ink)" opacity=".12"/><path d="M 0 -12 L 1.7 -1.7 L 12 0 L 1.7 1.7 L 0 12 L -1.7 1.7 L -12 0 L -1.7 -1.7 Z" fill="var(--ink)" opacity=".9"/><circle r="2" fill="var(--ink)"/></g>
           <g class="glint tron" style="transform-origin:0 0"><circle r="9.5" fill="var(--upcoming)" opacity=".06"/><path d="M 0 -11 L 7.6 0 L 0 11 L -7.6 0 Z" fill="none" stroke="url(#tron-edge)" stroke-width="1.5" stroke-linejoin="miter"/><path d="M 0 -4.6 L 3.2 0 L 0 4.6 L -3.2 0 Z" fill="none" stroke="var(--accent)" stroke-width="1" opacity=".9"/><g stroke="url(#tron-edge)" stroke-width="1.3" stroke-linecap="round" opacity=".75"><line x1="-13.4" y1="0" x2="-10" y2="0"/><line x1="10" y1="0" x2="13.4" y2="0"/></g></g>
           <g class="glint sonde" style="transform-origin:0 0"><path d="M 0 -12.6 C 5.2 -12.6 7.4 -8.6 7.4 -5.4 C 7.4 -2.1 4.4 .1 1.5 1.6 L -1.5 1.6 C -4.4 .1 -7.4 -2.1 -7.4 -5.4 C -7.4 -8.6 -5.2 -12.6 0 -12.6 Z" fill="none" stroke="var(--ink)" stroke-width="1.3" stroke-linejoin="round" opacity=".9"/><path d="M -4.6 -9.4 C -3.2 -11.2 -1.6 -11.8 -.2 -11.9" fill="none" stroke="var(--sun)" stroke-width="1.1" stroke-linecap="round" opacity=".85"/><g stroke="var(--ink)" stroke-width=".9" opacity=".78"><line x1="-1.5" y1="1.9" x2="-1.1" y2="7.2"/><line x1="1.5" y1="1.9" x2="1.1" y2="7.2"/></g><rect x="-3.1" y="7.2" width="6.2" height="5" rx="1.1" fill="var(--accent-text)"/><g stroke="var(--ink)" stroke-width="1.2" stroke-linecap="round" opacity=".78"><line x1="-13.4" y1="0" x2="-10" y2="0"/><line x1="10" y1="0" x2="13.4" y2="0"/></g></g>
         </svg>
-        <span>create</span>
+        <span data-i18n="create">create</span>
       </button>
     </aside>
     <div class="scrim" id="scrim" aria-hidden="true"></div>
 
     <!-- the key: CON-7, the word rides the drawer -->
-    <aside class="drawer drawer-right" id="keydrawer" role="region" aria-label="Chart key">
-      <button class="handle" type="button" aria-expanded="false" aria-controls="keydrawer"><span>key</span></button>
-      <h4>Urgency</h4>
-      <div class="keyrow"><span class="sw" style="background:var(--overdue)"></span>overdue — inside the ring</div>
-      <div class="keyrow"><span class="sw" style="background:var(--warm)"></span>due soon</div>
-      <div class="keyrow"><span class="sw" style="background:var(--upcoming)"></span>upcoming</div>
-      <div class="keyrow"><span class="sw" style="background:var(--ok)"></span>on track — wide orbit</div>
-      <h4>Types</h4>
-      <div class="keyrow"><span class="sw" style="background:var(--ink-mid)"></span>routine service</div>
-      <div class="keyrow"><span class="sw" style="background:radial-gradient(circle,var(--ink-mid) 24%,var(--panel-raised) 34%,var(--ink-mid) 52%)"></span>renewal / contract</div>
-      <div class="keyrow"><span class="sw" style="background:linear-gradient(90deg,var(--ink-mid) 50%,rgba(0,0,0,.55) 50%)"></span>inspection / certification</div>
-      <div class="keyrow"><span class="sw" style="background:none;border:1.6px solid var(--accent)"></span>suggestion — not yet accepted</div>
-      <h4>Physics</h4>
-      <div class="keyrow">closer = sooner</div>
-      <div class="keyrow">bigger = costlier</div>
-      <div class="keyrow">belt = documents attached</div>
+    <aside data-i18n-attr="aria-label:chart-key" class="drawer drawer-right" id="keydrawer" role="region" aria-label="Chart key">
+      <button class="handle" type="button" aria-expanded="false" aria-controls="keydrawer"><span data-i18n="key">key</span></button>
+      <h4 data-i18n="urgency">Urgency</h4>
+      <div class="keyrow" data-i18n="key-overdue"><span class="sw" style="background:var(--overdue)"></span>overdue — inside the ring</div>
+      <div class="keyrow" data-i18n="key-due-soon"><span class="sw" style="background:var(--warm)"></span>due soon</div>
+      <div class="keyrow" data-i18n="key-upcoming"><span class="sw" style="background:var(--upcoming)"></span>upcoming</div>
+      <div class="keyrow" data-i18n="key-on-track"><span class="sw" style="background:var(--ok)"></span>on track — wide orbit</div>
+      <h4 data-i18n="types">Types</h4>
+      <div class="keyrow" data-i18n="key-routine"><span class="sw" style="background:var(--ink-mid)"></span>routine service</div>
+      <div class="keyrow" data-i18n="key-renewal"><span class="sw" style="background:radial-gradient(circle,var(--ink-mid) 24%,var(--panel-raised) 34%,var(--ink-mid) 52%)"></span>renewal / contract</div>
+      <div class="keyrow" data-i18n="key-inspection"><span class="sw" style="background:linear-gradient(90deg,var(--ink-mid) 50%,rgba(0,0,0,.55) 50%)"></span>inspection / certification</div>
+      <div class="keyrow" data-i18n="key-suggestion"><span class="sw" style="background:none;border:1.6px solid var(--accent)"></span>suggestion — not yet accepted</div>
+      <h4 data-i18n="physics">Physics</h4>
+      <div data-i18n="closer-sooner" class="keyrow">closer = sooner</div>
+      <div data-i18n="bigger-costlier" class="keyrow">bigger = costlier</div>
+      <div data-i18n="belt-documents-attached" class="keyrow">belt = documents attached</div>
     </aside>
 
     <!-- the inbox: the relay, then the lanes -->
-    <aside class="drawer drawer-right" id="inboxdrawer" role="region" aria-label="Inbox">
-      <button class="close" type="button" aria-label="Close the inbox">×</button>
-      <h4>Your relay</h4>
+    <aside data-i18n-attr="aria-label:inbox" class="drawer drawer-right" id="inboxdrawer" role="region" aria-label="Inbox">
+      <button data-i18n-attr="aria-label:close-the-inbox" class="close" type="button" aria-label="Close the inbox">×</button>
+      <h4 data-i18n="your-relay">Your relay</h4>
       <div class="relay-card">
-        <p>Forward a bill to your relay address and Orbit reads a copy.</p>
+        <p data-i18n="forward-a-bill-to-your">Forward a bill to your relay address and Orbit reads a copy.</p>
         <code class="addr" id="relay-addr"></code>
-        <div class="kv"><span>status</span><b class="ok">connected · listening</b></div>
-        <div class="kv"><span>ingest</span><b class="ok">enabled</b></div>
+        <div class="kv"><span data-i18n="status">status</span><b data-i18n="connected-listening" class="ok">connected · listening</b></div>
+        <div class="kv"><span data-i18n="ingest">ingest</span><b data-i18n="enabled" class="ok">enabled</b></div>
       </div>
       <div id="lanes"></div>
-      <p style="margin-top:14px">every user gets their own relay · nothing is created without your review</p>
-      <p>unreviewed arrivals burn up after 45 days · originals stay in your mailbox · Orbit only ever reads copies</p>
+      <p data-i18n="every-user-gets-their-own" style="margin-top:14px">every user gets their own relay · nothing is created without your review</p>
+      <p data-i18n="unreviewed-arrivals-burn-up-after">unreviewed arrivals burn up after 45 days · originals stay in your mailbox · Orbit only ever reads copies</p>
     </aside>
 
     <!-- get into orbit: the one line -->
-    <aside class="drawer drawer-left" id="installdrawer" role="region" aria-label="Get into Orbit">
-      <button class="close" type="button" aria-label="Close">×</button>
-      <h4>Get into Orbit</h4>
+    <aside data-i18n-attr="aria-label:get-into-orbit" class="drawer drawer-left" id="installdrawer" role="region" aria-label="Get into Orbit">
+      <button data-i18n-attr="aria-label:close" class="close" type="button" aria-label="Close">×</button>
+      <h4 data-i18n="get-into-orbit">Get into Orbit</h4>
       <div class="cmd">
         <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
-        <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
+        <button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
       </div>
     </aside>
 
     <section class="hero" id="hero">
-      <div class="galaxy" id="galaxy" aria-label="Other households"></div>
+      <div data-i18n-attr="aria-label:other-households" class="galaxy" id="galaxy" aria-label="Other households"></div>
       <div class="dialwrap" id="dialwrap">
-        <svg class="dial" id="dial" viewBox="0 0 380 380" role="img" aria-label="The year dial: items orbit by due date; distance from the household is time remaining, body size is typical cost; details in the manifest below">
+        <svg data-i18n-attr="aria-label:the-year-dial-items-orbit" class="dial" id="dial" viewBox="0 0 380 380" role="img" aria-label="The year dial: items orbit by due date; distance from the household is time remaining, body size is typical cost; details in the manifest below">
           <defs>
             <filter id="sun" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="9"/></filter>
             <radialGradient id="p-ruby" cx="34%" cy="30%" r="72%"><stop offset="0%" stop-color="var(--p-ruby-1,#ffb3ab)"/><stop offset="42%" stop-color="var(--p-ruby-2,#e0453e)"/><stop offset="100%" stop-color="var(--p-ruby-3,#7e1a1f)"/></radialGradient>
@@ -284,28 +301,28 @@
           <g class="pings" aria-hidden="true"></g>
           <g class="bodies"></g>
           <g class="belts" aria-hidden="true"></g>
-          <a class="sun-link" href="#today" aria-label="This household">
+          <a data-i18n-attr="aria-label:this-household" class="sun-link" href="#today" aria-label="This household">
             <circle cx="190" cy="190" r="13" style="fill:var(--sun)" filter="url(#sun)" opacity=".8"/>
             <circle cx="190" cy="190" r="7" style="fill:var(--sun-core)"/>
             <text id="dial-name" x="190" y="212" font-size="10" fill="var(--ink-mid)" text-anchor="middle"></text>
           </a>
         </svg>
       </div>
-      <div class="chips" id="chips" aria-label="Other households"></div>
+      <div data-i18n-attr="aria-label:other-households" class="chips" id="chips" aria-label="Other households"></div>
       <div class="hero-foot">
         <div class="splash-search">
-          <input id="explore" placeholder="explore your world" aria-label="Search items" autocomplete="off" />
+          <input data-i18n-attr="placeholder:explore-your-world,aria-label:search-items" id="explore" placeholder="explore your world" aria-label="Search items" autocomplete="off" />
           <div class="palette" id="palette"></div>
         </div>
-        <span class="cue">↓ the manifest</span>
+        <span data-i18n="cue-manifest" class="cue">↓ the manifest</span>
       </div>
     </section>
 
-    <section class="manifest" id="manifest" aria-label="The manifest">
+    <section data-i18n-attr="aria-label:the-manifest" class="manifest" id="manifest" aria-label="The manifest">
       <div class="corridor" id="corridor"></div>
       <div class="horizon" id="horizon"></div>
     </section>
-    <div class="chart-callout" id="body-callout" aria-hidden="true"><span class="line"></span><b></b><small></small><button class="chip" type="button">open</button></div>
+    <div class="chart-callout" id="body-callout" aria-hidden="true"><span class="line"></span><b></b><small></small><button data-i18n="open" class="chip" type="button">open</button></div>
   </main>
 
   <!-- ═══ THE DUSK: the goodbye ══════════════════════════════════════ -->
@@ -333,7 +350,7 @@
           <circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="2"/>
           <g class="tr"><circle cx="163" cy="63.5" r="7" fill="#d8b45a"/></g></svg></div>
         <div class="name">orbit</div>
-        <div class="gate-wrap"><!-- slot:gate --><button class="gate" id="gate-back" type="button">Sign back in</button><!-- /slot:gate --></div>
+        <div class="gate-wrap"><!-- slot:gate --><button data-i18n="sign-back-in" class="gate" id="gate-back" type="button">Sign back in</button><!-- /slot:gate --></div>
       </div>
       <div class="farewell">
         <div class="said">You are signed out.</div>
@@ -347,9 +364,9 @@
   <!-- ═══ THE FILM ═══════════════════════════════════════════════════ -->
   <div id="veil" aria-hidden="true"><svg><defs><mask id="veilmask"><rect width="100%" height="100%" fill="white"/></mask></defs><rect class="sheet" width="100%" height="100%" mask="url(#veilmask)"/></svg></div>
   <div id="film" aria-hidden="true"></div>
-  <div class="transport" id="transport" aria-label="The walk" inert>
-    <button class="tb" id="tp-play" type="button" aria-label="Play the walk"></button>
-    <button class="tb" id="tp-stop" type="button" aria-label="Stop the walk"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+  <div data-i18n-attr="aria-label:the-walk" class="transport" id="transport" aria-label="The walk" inert>
+    <button data-i18n-attr="aria-label:play-the-walk" class="tb" id="tp-play" type="button" aria-label="Play the walk"></button>
+    <button data-i18n-attr="aria-label:stop-the-walk" class="tb" id="tp-stop" type="button" aria-label="Stop the walk"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
     <div class="bar"><span class="rail"></span><span class="played"></span><span class="name" aria-hidden="true"></span></div>
     <span class="count" aria-live="polite"></span>
   </div>
@@ -358,54 +375,58 @@
   <div class="pad" id="installpad" hidden>
     <div class="sky" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
-    <button class="corner back dawn" type="button">— the dawn</button>
-    <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <button data-i18n="the-dawn" class="corner back dawn" type="button">— the dawn</button>
+    <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <!-- ai-notice -->
     <!-- the install: into orbit. The purple planet is a world; the camera goes to it, and the one line waits in the dark above it -->
     <div class="poster" aria-hidden="true"></div>
     <canvas class="orbitgl" aria-hidden="true"></canvas>
     <div class="scrim" aria-hidden="true"></div>
     <div class="words">
-      <h1 class="dark">Get out of the dark.<br/>Get into Orbit.</h1>
-      <p class="theline"><code data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copy"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button></p>
+      <h1 class="dark" data-i18n="install-headline">Get out of the dark.<br/>Get into Orbit.</h1>
+      <p class="theline"><code data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copy" data-i18n-attr="title:copy-title"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button></p>
       <p class="made">Designed by a human, written by Claude.</p>
     </div>
-    <p class="credit"><a href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Jupiter from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a href="https://photojournal.jpl.nasa.gov/catalog/PIA08389" title="Saturn's rings from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">rings</a> · <a href="https://svs.gsfc.nasa.gov/4720/" title="The Moon: NASA's Scientific Visualization Studio, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>
-    <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
+    <p class="credit"><a data-i18n-attr="title:jupiter-from-cassini-nasa-jpl" href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Jupiter from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a data-i18n-attr="title:saturn-s-rings-from-cassini" data-i18n="rings" href="https://photojournal.jpl.nasa.gov/catalog/PIA08389" title="Saturn's rings from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">rings</a> · <a data-i18n-attr="title:the-moon-nasa-s-scientific" href="https://svs.gsfc.nasa.gov/4720/" title="The Moon: NASA's Scientific Visualization Studio, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>
+    <p class="doorfoot by" data-i18n="foot-project">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
   </div>
   <div class="pad docs" id="docspad" hidden>
     <!-- the Milky Way behind the stars and the chart (tools/docsky.cjs) -->
     <div class="milky" aria-hidden="true"></div>
     <div class="sky" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
-    <button class="corner back dawn" type="button">— the dawn</button>
-    <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <button data-i18n="the-dawn" class="corner back dawn" type="button">— the dawn</button>
+    <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <!-- ai-notice -->
     <div class="topfade" aria-hidden="true"></div>
     <div class="scroll">
       <div class="index">
-        <h1>What do you need to know?</h1>
+        <p class="corner untranslated" data-i18n="docs-untranslated" data-translated-only hidden>These pages are not translated yet: they are in English.</p>
+        <h1 data-i18n="what-do-you-need-to">What do you need to know?</h1>
         <label class="search">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-          <input type="search" placeholder="search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
+          <input data-i18n-attr="placeholder:search-the-docs,aria-label:search-the-docs-2" type="search" placeholder="search the docs" aria-label="Search the docs" autocomplete="off" spellcheck="false" />
           <kbd>/</kbd>
         </label>
-        <div class="keys" aria-label="Start here"></div>
-        <div class="skymap" aria-label="The chart of the docs: each source a constellation, each entry a star">
+        <div data-i18n-attr="aria-label:start-here" class="keys" aria-label="Start here"></div>
+        <div data-i18n-attr="aria-label:the-chart-of-the-docs" class="skymap" aria-label="The chart of the docs: each source a constellation, each entry a star">
           <svg class="chart" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
         <p class="stamp"></p>
         <div class="results" aria-live="polite"></div>
-        <p class="hint"><kbd>/</kbd> search <span class="sep">·</span> <kbd>↑</kbd><kbd>↓</kbd> move <span class="sep">·</span> <kbd>↵</kbd> open</p>
+        <p class="hint" data-i18n="docs-hint"><kbd>/</kbd> search <span class="sep">·</span> <kbd>↑</kbd><kbd>↓</kbd> move <span class="sep">·</span> <kbd>↵</kbd> open</p>
       </div>
       <article class="reader" hidden>
-        <header class="readhead"><span class="corner from"><button type="button" class="todocs">— the docs</button> · <span class="src"></span></span><h1></h1><p class="source"></p></header>
+        <p class="corner untranslated" data-i18n="docs-untranslated" data-translated-only hidden>These pages are not translated yet: they are in English.</p>
+        <header class="readhead"><span class="corner from"><button data-i18n="the-docs" type="button" class="todocs">— the docs</button> · <span class="src"></span></span><h1></h1><p class="source"></p></header>
         <div class="readgrid">
-          <nav class="others" aria-label="The other sources"><span class="corner">the other sources</span><div class="minis"></div></nav>
-          <nav class="onpage" aria-label="On this page"><span class="corner">on this page</span><svg class="pagechart" aria-hidden="true"></svg></nav>
+          <nav data-i18n-attr="aria-label:the-other-sources-2" class="others" aria-label="The other sources"><span data-i18n="the-other-sources" class="corner">the other sources</span><div class="minis"></div></nav>
+          <nav data-i18n-attr="aria-label:on-this-page-2" class="onpage" aria-label="On this page"><span data-i18n="on-this-page" class="corner">on this page</span><svg class="pagechart" aria-hidden="true"></svg></nav>
           <div class="body"></div>
         </div>
-        <nav class="readnav" aria-label="The next source"></nav>
+        <nav data-i18n-attr="aria-label:the-next-source" class="readnav" aria-label="The next source"></nav>
       </article>
-      <p class="doorfoot by">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
+      <p class="doorfoot by" data-i18n="foot-project">A <a href="https://tomlawson.io">tomlawson.io</a> project</p>
     </div>
   </div>
   <div class="pad info" id="infopad" hidden>
@@ -413,28 +434,29 @@
     <!-- the information's own world, dived into from the door's coral planet (install.js, tuned in main.js) -->
     <canvas class="orbitgl" aria-hidden="true"></canvas>
     <div class="vignette" aria-hidden="true"></div>
-    <button class="corner back dawn" type="button">— the dawn</button>
-    <a class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <button data-i18n="the-dawn" class="corner back dawn" type="button">— the dawn</button>
+    <a data-i18n-attr="aria-label:orbit-the-landing-page" class="mark-row home" href="./" aria-label="Orbit — the landing page"><svg width="22" height="22" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="72" fill="none" stroke="#8791b3" stroke-width="12"/><g class="tr"><circle cx="163" cy="63.5" r="19" fill="#d8b45a"/></g></svg>orbit</a>
+    <!-- ai-notice -->
     <div class="topfade" aria-hidden="true"></div>
     <div class="scroll">
       <article class="about">
         <!-- 1 · the household, and everything that turns about it -->
         <header class="hero">
           <div class="sun" aria-hidden="true"><i></i></div>
-          <h1>Everything in your orbit, on track.</h1>
-          <p class="lede">A self-hosted home operations hub for maintenance, renewals, recurring services, contracts, cover, and the people who share them.</p>
-          <span class="cue" aria-hidden="true">scroll</span>
+          <h1 data-i18n="everything-in-your-orbit-on">Everything in your orbit, on track.</h1>
+          <p data-i18n="a-self-hosted-home-operations" class="lede">A self-hosted home operations hub for maintenance, renewals, recurring services, contracts, cover, and the people who share them.</p>
+          <span data-i18n="scroll" class="cue" aria-hidden="true">scroll</span>
         </header>
 
         <!-- 2 · the year as an orbit: things come closer as they come due, and go back out when done -->
         <section class="chapter scene split" data-scene="orbit">
           <div class="prose">
-            <span class="kicker">The orbit</span>
-            <h2>Your home has an orbit.</h2>
-            <p class="big">Boilers need servicing. Insurance renews. Cars need inspections. Contracts roll over.</p>
-            <p>Orbit puts them all round one sun: your household. The nearer something is, the sooner it's due. Done, and it swings back out to its next date. Nothing slips past unseen.</p>
+            <span data-i18n="the-orbit" class="kicker">The orbit</span>
+            <h2 data-i18n="your-home-has-an-orbit">Your home has an orbit.</h2>
+            <p data-i18n="boilers-need-servicing-insurance-renews" class="big">Boilers need servicing. Insurance renews. Cars need inspections. Contracts roll over.</p>
+            <p data-i18n="orbit-puts-them-all-round">Orbit puts them all round one sun: your household. The nearer something is, the sooner it's due. Done, and it swings back out to its next date. Nothing slips past unseen.</p>
           </div>
-          <figure class="stage yearring" aria-label="A household's year: items drawing in towards the centre as they come due, and swinging back out when they are done">
+          <figure data-i18n-attr="aria-label:a-household-s-year-items" class="stage yearring" aria-label="A household's year: items drawing in towards the centre as they come due, and swinging back out when they are done">
             <svg viewBox="0 0 400 400" role="img" aria-hidden="true">
               <defs>
                 <radialGradient id="i-sun"><stop offset="0" stop-color="#fffaf0"/><stop offset=".35" stop-color="#ffe2a0"/><stop offset="1" stop-color="#d8b45a" stop-opacity="0"/></radialGradient>
@@ -454,22 +476,22 @@
         <!-- 3 · an item, and the rhythm it keeps -->
         <section class="chapter scene split flip" data-scene="item">
           <div class="prose">
-            <span class="kicker">The rhythm</span>
-            <h2>Done once. Remembered for good.</h2>
-            <p class="big">Complete it, and the next date is worked out for you.</p>
-            <p>Every item keeps its own rhythm: when it's due, how often it comes round, what it costs, when you'll be reminded, and the documents that go with it. Reschedule or snooze when life gets in the way.</p>
+            <span data-i18n="the-rhythm" class="kicker">The rhythm</span>
+            <h2 data-i18n="done-once-remembered-for-good">Done once. Remembered for good.</h2>
+            <p data-i18n="complete-it-and-the-next" class="big">Complete it, and the next date is worked out for you.</p>
+            <p data-i18n="every-item-keeps-its-own">Every item keeps its own rhythm: when it's due, how often it comes round, what it costs, when you'll be reminded, and the documents that go with it. Reschedule or snooze when life gets in the way.</p>
           </div>
           <figure class="stage">
             <div class="card unit" aria-hidden="true">
-              <div class="row head"><i class="dot" style="--c:#8fb8ff"></i><b>Car MOT</b><span class="tag">vehicles</span></div>
+              <div class="row head"><i class="dot" style="--c:#8fb8ff"></i><b data-i18n="car-mot">Car MOT</b><span data-i18n="vehicles-2" class="tag">vehicles</span></div>
               <dl>
-                <div><dt>due</dt><dd class="due"><span class="d0">14 Mar 2026</span><span class="d1">14 Mar 2027</span></dd></div>
-                <div><dt>every</dt><dd>12 months</dd></div>
-                <div><dt>cost</dt><dd>£54.85</dd></div>
-                <div><dt>remind</dt><dd>4 weeks · 1 week before</dd></div>
+                <div><dt data-i18n="due">due</dt><dd class="due"><span data-i18n="14-mar-2026" class="d0">14 Mar 2026</span><span data-i18n="14-mar-2027" class="d1">14 Mar 2027</span></dd></div>
+                <div><dt data-i18n="every">every</dt><dd data-i18n="12-months">12 months</dd></div>
+                <div><dt data-i18n="cost">cost</dt><dd>£54.85</dd></div>
+                <div><dt data-i18n="remind">remind</dt><dd data-i18n="4-weeks-1-week-before">4 weeks · 1 week before</dd></div>
               </dl>
-              <div class="actions"><span class="btn go">Complete</span><span class="btn">Reschedule</span><span class="btn">Snooze</span></div>
-              <div class="history"><span class="done">✓ Done · 12 Mar 2026 · £54.85</span><span>✓ Done · 9 Mar 2025 · £54.85</span><span>✓ Done · 15 Mar 2024 · £54.85</span></div>
+              <div class="actions"><span data-i18n="complete" class="btn go">Complete</span><span data-i18n="reschedule" class="btn">Reschedule</span><span data-i18n="snooze" class="btn">Snooze</span></div>
+              <div class="history"><span data-i18n="done-12-mar-2026-54" class="done">✓ Done · 12 Mar 2026 · £54.85</span><span data-i18n="done-9-mar-2025-54">✓ Done · 9 Mar 2025 · £54.85</span><span data-i18n="done-15-mar-2024-54">✓ Done · 15 Mar 2024 · £54.85</span></div>
             </div>
           </figure>
         </section>
@@ -477,46 +499,46 @@
         <!-- 4 · the relay: forwarded mail -->
         <section class="chapter scene split" data-scene="relay">
           <div class="prose">
-            <span class="kicker">The relay</span>
-            <h2>Forward, then file.</h2>
-            <p class="big">Every household has its own relay address.</p>
-            <p>Forward a bill or a policy to it. Orbit reads the attachment, works out what it is, and asks before anything is added. Your mail stays in your mailbox; Orbit only ever reads a copy.</p>
+            <span data-i18n="the-relay" class="kicker">The relay</span>
+            <h2 data-i18n="forward-then-file">Forward, then file.</h2>
+            <p data-i18n="every-household-has-its-own" class="big">Every household has its own relay address.</p>
+            <p data-i18n="forward-a-bill-or-a">Forward a bill or a policy to it. Orbit reads the attachment, works out what it is, and asks before anything is added. Your mail stays in your mailbox; Orbit only ever reads a copy.</p>
           </div>
           <figure class="stage">
             <div class="relay" aria-hidden="true">
-              <div class="card step s1"><span class="meta">forwarded to</span><b>home·7f3k@relay</b><span class="file">renewal-2027.pdf</span></div>
-              <div class="card step s2"><span class="meta">orbit read it</span><b>Home insurance</b><span class="fields"><i>renews 14 Mar</i><i>£412 a year</i><i>policy 0048-21</i></span><span class="scan"></span></div>
-              <div class="card step s3"><span class="meta">your say-so</span><b>Add to your orbit?</b><span class="actions"><span class="btn go">Add</span><span class="btn">Not now</span></span></div>
+              <div class="card step s1"><span data-i18n="forwarded-to" class="meta">forwarded to</span><b>home·7f3k@relay</b><span class="file">renewal-2027.pdf</span></div>
+              <div class="card step s2"><span data-i18n="orbit-read-it" class="meta">orbit read it</span><b data-i18n="home-insurance">Home insurance</b><span class="fields"><i data-i18n="renews-14-mar">renews 14 Mar</i><i data-i18n="412-a-year">£412 a year</i><i data-i18n="policy-0048-21">policy 0048-21</i></span><span class="scan"></span></div>
+              <div class="card step s3"><span data-i18n="your-say-so" class="meta">your say-so</span><b data-i18n="add-to-your-orbit-2">Add to your orbit?</b><span class="actions"><span data-i18n="add" class="btn go">Add</span><span data-i18n="not-now" class="btn">Not now</span></span></div>
             </div>
           </figure>
         </section>
 
         <!-- 5 · designed around the household -->
         <section class="chapter scene" data-scene="facts">
-          <span class="kicker centre">Around your household</span>
-          <h2 class="centre">Shared, private, and yours to shape.</h2>
+          <span data-i18n="around-your-household" class="kicker centre">Around your household</span>
+          <h2 data-i18n="shared-private-and-yours-to" class="centre">Shared, private, and yours to shape.</h2>
           <div class="tiles">
-            <div class="tile"><span class="people" aria-hidden="true"><i style="--c:#d8b45a">A</i><i style="--c:#a78bfa">J</i><i style="--c:#4ade80">M</i></span><h3>Share the load</h3><p>Add the people you live with: by name if they already have an Orbit account, or by an invitation sent to their email.</p></div>
-            <div class="tile"><span class="glyph" aria-hidden="true"><i style="--c:#f0b429"></i><i style="--c:#8fb8ff"></i><i style="--c:#4ade80"></i><i style="--c:#f87171"></i></span><h3>Sections that fit</h3><p>Home, Vehicles, Devices and Services to begin with. Add, rename, reorder and recolour your own.</p></div>
-            <div class="tile"><span class="glyph swatch" aria-hidden="true"><i style="--c:#0b1226"></i><i style="--c:#f4efe6"></i><i style="--c:#d8b45a"></i></span><h3>Make it yours</h3><p>Five themes, four text sizes.</p></div>
-            <div class="tile"><span class="glyph line" aria-hidden="true"><i></i><i></i><i></i></span><h3>A history for everything</h3><p>What was done and when, reminders before it's due, and its documents, stored encrypted.</p></div>
-            <div class="tile"><span class="glyph phone" aria-hidden="true"><i></i></span><h3>On your home screen</h3><p>Installs like an app and can notify you. Your data stays on your server, not copied onto the phone.</p></div>
-            <div class="tile"><span class="glyph lock" aria-hidden="true"><i></i></span><h3>Private by design</h3><p>Your own sign-in, or the identity provider you already use. Nothing is shared beyond your household.</p></div>
+            <div class="tile"><span class="people" aria-hidden="true"><i style="--c:#d8b45a">A</i><i style="--c:#a78bfa">J</i><i style="--c:#4ade80">M</i></span><h3 data-i18n="share-the-load">Share the load</h3><p data-i18n="add-the-people-you-live">Add the people you live with: by name if they already have an Orbit account, or by an invitation sent to their email.</p></div>
+            <div class="tile"><span class="glyph" aria-hidden="true"><i style="--c:#f0b429"></i><i style="--c:#8fb8ff"></i><i style="--c:#4ade80"></i><i style="--c:#f87171"></i></span><h3 data-i18n="sections-that-fit">Sections that fit</h3><p data-i18n="home-vehicles-devices-and-services">Home, Vehicles, Devices and Services to begin with. Add, rename, reorder and recolour your own.</p></div>
+            <div class="tile"><span class="glyph swatch" aria-hidden="true"><i style="--c:#0b1226"></i><i style="--c:#f4efe6"></i><i style="--c:#d8b45a"></i></span><h3 data-i18n="make-it-yours">Make it yours</h3><p data-i18n="five-themes-four-text-sizes">Five themes, four text sizes.</p></div>
+            <div class="tile"><span class="glyph line" aria-hidden="true"><i></i><i></i><i></i></span><h3 data-i18n="a-history-for-everything">A history for everything</h3><p data-i18n="what-was-done-and-when">What was done and when, reminders before it's due, and its documents, stored encrypted.</p></div>
+            <div class="tile"><span class="glyph phone" aria-hidden="true"><i></i></span><h3 data-i18n="on-your-home-screen">On your home screen</h3><p data-i18n="installs-like-an-app-and">Installs like an app and can notify you. Your data stays on your server, not copied onto the phone.</p></div>
+            <div class="tile"><span class="glyph lock" aria-hidden="true"><i></i></span><h3 data-i18n="private-by-design">Private by design</h3><p data-i18n="your-own-sign-in-or">Your own sign-in, or the identity provider you already use. Nothing is shared beyond your household.</p></div>
           </div>
         </section>
 
         <!-- 6 · the system, and whose it is -->
         <section class="chapter scene split" data-scene="system">
           <div class="prose">
-            <span class="kicker">The system</span>
-            <h2>One app. Standard parts.</h2>
-            <p>Three containers on a Linux machine of your own, set up by one command. Nothing exotic to learn, nothing to babysit.</p>
+            <span data-i18n="the-system" class="kicker">The system</span>
+            <h2 data-i18n="one-app-standard-parts">One app. Standard parts.</h2>
+            <p data-i18n="three-containers-on-a-linux">Three containers on a Linux machine of your own, set up by one command. Nothing exotic to learn, nothing to babysit.</p>
             <dl class="spec">
-              <div><dt>You bring</dt><dd>A Linux host with Docker and a domain with HTTPS. Sign in with Orbit's own accounts, or with a provider you already use (any OpenID Connect, such as Authentik) if you would rather.</dd></div>
-              <div><dt>It runs</dt><dd>Orbit itself, PostgreSQL&nbsp;18 for your records, and ClamAV to check every upload before it is kept. That is all it needs. ClamAV wants about 4&nbsp;GB of memory of its own; an administrator can turn scanning off.</dd></div>
-              <div><dt>If you like</dt><dd>Email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
-              <div><dt>Your data</dt><dd>On your own disk: records in the database, documents encrypted at rest.</dd></div>
-              <div><dt>Updates</dt><dd>Run the installer again. Every release is pinned to an exact image, and your settings carry over.</dd></div>
+              <div><dt data-i18n="you-bring">You bring</dt><dd data-i18n="a-linux-host-with-docker">A Linux host with Docker and a domain with HTTPS. Sign in with Orbit's own accounts, or with a provider you already use (any OpenID Connect, such as Authentik) if you would rather.</dd></div>
+              <div><dt data-i18n="it-runs">It runs</dt><dd data-i18n="orbit-itself-postgresql-18-for">Orbit itself, PostgreSQL&nbsp;18 for your records, and ClamAV to check every upload before it is kept. That is all it needs. ClamAV wants about 4&nbsp;GB of memory of its own; an administrator can turn scanning off.</dd></div>
+              <div><dt data-i18n="if-you-like">If you like</dt><dd data-i18n="email-reminders-push-notifications-to">Email reminders, push notifications to your phone, and an inbox you forward documents to.</dd></div>
+              <div><dt data-i18n="your-data">Your data</dt><dd data-i18n="on-your-own-disk-records">On your own disk: records in the database, documents encrypted at rest.</dd></div>
+              <div><dt data-i18n="updates">Updates</dt><dd data-i18n="run-the-installer-again-every">Run the installer again. Every release is pinned to an exact image, and your settings carry over.</dd></div>
             </dl>
           </div>
           <figure class="stage">
@@ -528,21 +550,21 @@
               <text x="200" y="176" text-anchor="middle" class="lbl">orbit</text>
               <g class="o1"><circle cx="304" cy="130" r="6" fill="#8fb8ff"/><text x="316" y="134" class="lbl">postgres</text></g>
               <g class="o2"><circle cx="30" cy="130" r="6" fill="#4ade80"/><text x="42" y="134" class="lbl">clamav</text></g>
-              <g class="o3"><circle cx="200" cy="60" r="5" fill="#d8b45a"/><text x="211" y="56" class="lbl">your browser</text></g>
+              <g class="o3"><circle cx="200" cy="60" r="5" fill="#d8b45a"/><text data-i18n="your-browser" x="211" y="56" class="lbl">your browser</text></g>
             </svg>
           </figure>
         </section>
 
         <section class="chapter scene last" data-scene="yours">
-          <span class="kicker centre">Yours, all the way down</span>
-          <h2 class="centre huge">No paywall. No plan.<br/>No account with us.</h2>
-          <p class="centre">Orbit runs on your own server and asks nothing of you: no subscription, and no login anywhere but your own front door. Nothing is held back for a higher tier, because there isn't one. The source is open, the licence is the GNU Affero General Public License v3.0 or later, and it stays that way.</p>
+          <span data-i18n="yours-all-the-way-down" class="kicker centre">Yours, all the way down</span>
+          <h2 class="centre huge" data-i18n="no-paywall">No paywall. No plan.<br/>No account with us.</h2>
+          <p data-i18n="orbit-runs-on-your-own" class="centre">Orbit runs on your own server and asks nothing of you: no subscription, and no login anywhere but your own front door. Nothing is held back for a higher tier, because there isn't one. The source is open, the licence is the GNU Affero General Public License v3.0 or later, and it stays that way.</p>
           <!-- where to go next: four ports of call, each a small body on its own orbit -->
-          <nav class="ports" aria-label="Elsewhere">
-            <a class="port" href="https://github.com/tomlawesome/orbit" style="--c:#d8b45a"><span class="ob" aria-hidden="true"><i></i></span><b>The source</b><span>Read it, fork it, run it</span><em aria-hidden="true">↗</em></a>
-            <a class="port" href="https://github.com/tomlawesome/orbit-launcher" style="--c:#a78bfa"><span class="ob" aria-hidden="true"><i></i></span><b>The launcher</b><span>Install from a terminal app</span><em aria-hidden="true">↗</em></a>
-            <a class="port" href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md" style="--c:#8fb8ff"><span class="ob" aria-hidden="true"><i></i></span><b>Security policy</b><span>How to report a vulnerability</span><em aria-hidden="true">↗</em></a>
-            <a class="port" href="https://tomlawson.io" style="--c:#f87171"><span class="ob" aria-hidden="true"><i></i></span><b>tomlawson.io</b><span>Who made this</span><em aria-hidden="true">↗</em></a>
+          <nav data-i18n-attr="aria-label:elsewhere" class="ports" aria-label="Elsewhere">
+            <a class="port" href="https://github.com/tomlawesome/orbit" style="--c:#d8b45a"><span class="ob" aria-hidden="true"><i></i></span><b data-i18n="the-source">The source</b><span data-i18n="read-it-fork-it-run">Read it, fork it, run it</span><em aria-hidden="true">↗</em></a>
+            <a class="port" href="https://github.com/tomlawesome/orbit-launcher" style="--c:#a78bfa"><span class="ob" aria-hidden="true"><i></i></span><b data-i18n="the-launcher">The launcher</b><span data-i18n="install-from-a-terminal-app">Install from a terminal app</span><em aria-hidden="true">↗</em></a>
+            <a class="port" href="https://github.com/tomlawesome/orbit/blob/main/SECURITY.md" style="--c:#8fb8ff"><span class="ob" aria-hidden="true"><i></i></span><b data-i18n="security-policy">Security policy</b><span data-i18n="how-to-report-a-vulnerability">How to report a vulnerability</span><em aria-hidden="true">↗</em></a>
+            <a class="port" href="https://tomlawson.io" style="--c:#f87171"><span class="ob" aria-hidden="true"><i></i></span><b>tomlawson.io</b><span data-i18n="who-made-this">Who made this</span><em aria-hidden="true">↗</em></a>
           </nav>
         </section>
       </article>
@@ -554,6 +576,9 @@
   <div id="launchname" aria-hidden="true"></div>
 
   <div class="grain" aria-hidden="true"><canvas></canvas></div>
+  <!-- the AI notice (#125): every translated page shows it on the door and at the head of each landing, put at each
+       <!- - ai-notice - -> by tools/pages.mjs; an English page never shows it, so here it is only the catalogue's source -->
+  <template id="ai-notice"><p data-ai-notice><span data-i18n="ai-notice">This page was translated from English by AI, so some phrases may read oddly.</span> <a data-lang="en" href="./" hreflang="en" lang="en" data-i18n="ai-notice-english">Read it in English</a><button type="button" class="hide" aria-label="Hide this notice for now" data-i18n-attr="aria-label:ai-notice-hide">×</button></p></template>
   <!-- if assets/js/main.js fails to load or run before the page has loaded, the <noscript> note is shown (the same
        words, the same look); an error after the page has loaded leaves it alone. Its hash is in the policy meta. -->
   <script>(function(){function show(){stop();var n=document.querySelector("noscript");if(!n||document.querySelector(".nojs"))return;var d=document.createElement("div");d.className="nojs";d.innerHTML=n.textContent;document.body.insertBefore(d,document.body.firstChild)}function fail(e){var t=e.target;if(t===window||(t&&t.tagName==="SCRIPT"))show()}function stop(){removeEventListener("error",fail,true)}addEventListener("error",fail,true);document.addEventListener("DOMContentLoaded",stop)})();</script>

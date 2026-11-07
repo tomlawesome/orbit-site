@@ -16,7 +16,7 @@
 # outside the folder, and an index.html whose door differs from markup.js; and
 # section "the docs import is split" (issue #18): import_docs holding the token
 # or an environment, publish_docs losing its environment, taking npm, or its
-# artifact, or either job running anywhere but the schedule on main; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
+# artifact, or either job running anywhere but the schedule on dev; and section "the service worker's picture cache name" (audit #12, #21): MEDIA in
 # sw.js must be orbit-media- plus the first 12 hex characters of a SHA-256 over the
 # tracked picture files outside assets/docs/ (a change to a picture without a new
 # name fails and names sw.js and the expected name; a change only under
@@ -637,7 +637,7 @@ fi
 # Cases (s1)-(s11) judge the section "the docs import is split" (issue #18):
 # import_docs runs other people's code and holds no token; publish_docs holds it
 # in the docs-import environment, runs no npm, and takes the artifact. Both run
-# from the schedule on main alone. split_case <label> <file> <named> <js>: <js>
+# from the schedule on dev alone. split_case <label> <file> <named> <js>: <js>
 # edits the string y (the file's text) and must change it; the lint must fail
 # naming <file> with <named>. <named> is an extended regular expression and the
 # whole of it, alternatives included, must sit on a line after "<file>: ", so a
@@ -742,7 +742,7 @@ warn_split_case() {
 # (w1) the committed file hands on exactly the two
 rc=0
 node -e '
-  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8"));
+  const y = require("js-yaml").load(require("fs").readFileSync(".gitlab-ci.yml", "utf8").replace(/!reference /g, ""));
   const p = JSON.stringify(y.import_docs.artifacts.paths);
   if (p !== JSON.stringify(["assets/docs/", "import-warnings.txt"])) { console.log("import_docs artifacts paths are " + p); process.exit(1); }
 ' > "$out" 2>&1 || rc=$?
@@ -1347,16 +1347,28 @@ yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
 # 40-character lowercase hex sha (p177 passes). Every other include is refused (p178-p207): another
 # project or file, a ref that is not a full lowercase sha, a missing ref, extra keys, a second entry, a
 # bare string, a mapping, and local, remote, template and component entries. inc_case <label> <how> <entries>:
-# <entries> is the text after "include:" with \n for newlines; <how> is pass or refuse.
+# <entries> is the text after "include:" with \n for newlines, replacing the file's own include; <how> is pass or refuse.
+# The two snippet entries (catchup-check, batch-intake; ai/agent-infra#114) are allowed beside it, each once,
+# and the job_rule / workflow_rules !reference to them resolves (p208-p222).
 inc_pass="  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case() {
+  # a refuse case keeps the two pinned snippet entries behind the planted fault (a list of entries
+  # that carry none of their own), so the !reference lines still resolve and the case fails only
+  # for its own fault, named by the include message (or $4); bare strings and mappings cannot
+  # take list entries and fail on the shape alone
+  e="$3"
+  case "$e" in
+    "  - "*) case "$e" in *catchup-check/ci-template*|*batch-intake/ci-template*) ;; *) e="$e$inc_two$inc_three" ;; esac ;;
+  esac
   if [ "$2" = pass ]; then
-    yaml_pass_case "$1" 'y = y + "\ninclude:\n'"$3"'";'
+    yaml_pass_case "$1" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   else
-    split_case "$1" $ci "include" 'y = y + "\ninclude:\n'"$3"'";'
+    split_case "$1" $ci "${4:-top-level include that is not the one allowed}" 'y = y.replace(/\ninclude:\n(?:  .*\n)+/, "\ninclude:\n'"$e"'");'
   fi
 }
-inc_case "p177: the one allowed include (ai/agent-infra, the private-details template, a full sha) passes" pass "$inc_pass"
+inc_two="  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_three="  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p177: the allowed includes (ai/agent-infra, private-details, catchup-check and batch-intake, full shas) pass" pass "$inc_pass$inc_two$inc_three"
 inc_case "p178: an include from another project" refuse "  - project: ai/other\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p179: an include of another file in ai/agent-infra" refuse "  - project: ai/agent-infra\n    file: scripts/other.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p180: an include with a tag as ref" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: v1.0.0\n"
@@ -1387,6 +1399,61 @@ inc_case "p204: a remote include as a bare string" refuse " https://example.inva
 inc_case "p205: an include from a project with a similar name and the right file" refuse "  - project: tomlawesome/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p206: the allowed entry with file under a parent path" refuse "  - project: ai/agent-infra\n    file: /scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
 inc_case "p207: the allowed entry with a ref that has trailing text" refuse "  - project: ai/agent-infra\n    file: scripts/private-details/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567 extra\n"
+inc_case "p208: the three allowed entries" pass "$inc_pass$inc_two$inc_three"
+inc_case "p209: private-details and catchup-check only, while the file references .batch-intake" refuse "$inc_pass$inc_two" "the include of scripts/batch-intake/ci-template.yml is not there"
+inc_case "p210: a catchup-check entry with a tag as ref" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/catchup-check/ci-template.yml\n    ref: catchup-check/v2\n"
+inc_case "p211: a batch-intake entry with a 39-character sha" refuse "$inc_pass  - project: ai/agent-infra\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef0123456\n"
+inc_case "p212: a batch-intake entry from another project" refuse "$inc_pass  - project: ai/other\n    file: scripts/batch-intake/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p213: catchup-check twice" refuse "$inc_pass$inc_two$inc_two"
+inc_case "p214: a snippet entry with an extra rules key" refuse "$inc_pass$inc_two    rules:\n      - when: always\n"
+inc_case "p215: another file in ai/agent-infra beside the allowed three" refuse "$inc_pass$inc_two$inc_three  - project: ai/agent-infra\n    file: scripts/backmerge-skip/ci-template.yml\n    ref: 0123456789abcdef0123456789abcdef01234567\n"
+inc_case "p216: a snippet entry beside a local entry" refuse "$inc_pass$inc_two  - local: other.yml\n"
+# the !reference lines point at the snippets' hidden keys, which live in the included files
+split_case "p217: a !reference to .catchup-check with no catchup-check include" $ci "catchup-check" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # catchup-check\/v2\n    file: scripts\/catchup-check\/ci-template.yml/, "");'
+split_case "p218: a !reference to .batch-intake with no batch-intake include" $ci "batch-intake" '
+  y = y.replace(/\n  - project: ai\/agent-infra\n    ref: [0-9a-f]{40} # batch-intake\/v1\n    file: scripts\/batch-intake\/ci-template.yml/, "");'
+split_case "p219: a !reference to a key the snippet does not define" $ci "catchup-check" '
+  y = y.replace("[.catchup-check, job_rule]", "[.catchup-check, environment]");'
+split_case "p220: a !reference to an unknown hidden key" $ci "not in the file" '
+  y = y.replace("[.batch-intake, job_rule]", "[.other-snippet, job_rule]");'
+# Cases p221-p224 (audit finding, ai/agent-infra#114): the secret scans must run on every merge path. A merge
+# request from a chore/catchup-* branch into a batch runs only the catchup-check job when a job carries the
+# snippet's job_rule, so lint, scan:gitleaks and private-details must not carry `!reference [.catchup-check, job_rule]`
+# or `!reference [.batch-intake, job_rule]` (other jobs may). Each case first takes any such reference out of the
+# scratch copy (the committed file carries none on the three) and then plants the one under test, so it fails
+# only for the planted line.
+ci_gate_js='
+  const strip = (y) => { for (const j of ["lint", "scan:gitleaks", "private-details"]) y = y.replace(new RegExp("(\\n" + j + ":\\n(?:[ #].*\\n)*?)    - !reference \\[\\.catchup-check, job_rule\\]\\n"), "$1"); return y; };
+  const plant = (y, job, ref) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?  rules:\\n)"), "$1    - !reference [" + ref + ", job_rule]\n");
+  y = strip(y);'
+split_case "p221: scan:gitleaks taking the catchup-check job_rule" $ci "scan:gitleaks.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "scan:gitleaks", ".catchup-check");'
+split_case "p222: private-details taking the batch-intake job_rule" $ci "private-details.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "private-details", ".batch-intake");'
+split_case "p223: lint taking the catchup-check job_rule" $ci "lint.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "lint", ".catchup-check");'
+# control: the same kind of reference on a job outside the three is fine (the three carry none in this copy)
+split_pass_case() {
+  F="$2" Y="$(cat "$2")" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out proxy ci-split
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+split_pass_case "p224: scan:trivy taking the batch-intake job_rule, the three scans carrying none" $ci "$ci_gate_js"'
+  y = plant(y, "scan:trivy", ".batch-intake");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -1691,6 +1758,8 @@ site_case() {
 }
 site_ok() {
   plant "$1" "$2" "$3"
+  # de/index.html is written from index.html (#125): regenerate it, or the freshness check fails the case for its own reason
+  if [ "$2" = index.html ]; then node tools/pages.mjs > /dev/null; fi
   commit_all "$1"
   lint_to_out
   if [ "$rc" -eq 0 ]; then
@@ -2180,6 +2249,50 @@ login_email "a banned login in capitals as the local part of the author email" "
 GIT_AUTHOR_NAME=t GIT_COMMITTER_NAME=t GIT_AUTHOR_EMAIL="${nl}xyz@anyhost.local" GIT_COMMITTER_EMAIL=t@t git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "email probe"
 names_run "" "$nl_d" ""
 n_clean "a longer login as the local part of the author email is not the banned one"
+n_back
+
+# Cases for #132 (written from its spec note, before the fix): a listed bot identity (display name + sha256 of its email) is
+# not reported when a banned-login name comes with that identity's own email, and only then. The list is injected for tests
+# as NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="<name>:<sha256 of the lower-cased email>[,<name>:<digest>...]" (assumed hook).
+# Invented values only; the "banned login" is the probe login planted by digest, as in the cases above.
+nl2="zyx""loginr"; nl2_d=$(sha "$nl2")
+bot_email="bot.probe""@example.invalid"; bot_d=$(sha "$bot_email")
+bot_other="other.probe""@example.invalid"
+bot_run() { # bot_run LOGIN_DIGESTS: the bot list holds the probe login with bot_email's digest
+  rc=0
+  NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$1" NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="$nl:$bot_d" sh tools/ci/lint.sh names > "$out" 2>&1 || rc=$?
+  awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+}
+bot_commit() { # bot_commit NAME EMAIL: author and committer both
+  GIT_AUTHOR_NAME="$1" GIT_COMMITTER_NAME="$1" GIT_AUTHOR_EMAIL="$2" GIT_COMMITTER_EMAIL="$2" git -c user.name=t -c user.email=t@t commit -q --allow-empty -m "bot probe"
+  sid=$(git rev-parse --short HEAD)
+}
+
+# Bot case 1: the listed name with its own email passes.
+bot_commit "$nl" "$bot_email"
+bot_run "$nl_d"
+n_clean "a listed name with its email passes"
+n_back
+
+# Bot case 2: the listed name with another email is reported as a login.
+bot_commit "$nl" "$bot_other"
+bot_run "$nl_d"
+n_hist "the listed name with another email fails as a login, naming $sid and author" "$sid" "author \\(login" "" "$nl" "$bot_other"
+n_back
+
+# Bot case 3: another banned-login name with the listed email is reported.
+bot_commit "$nl2" "$bot_email"
+bot_run "$nl_d,$nl2_d"
+n_hist "another banned-login name with the listed email fails, naming $sid and author" "$sid" "author \\(login" "" "$nl2"
+n_back
+
+# Bot case 4: a listed email whose local part is a banned login is still reported.
+bot_login_email="$nl@example.invalid"
+bot_commit "$nl" "$bot_login_email"
+rc=0
+NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS="$nl_d" NO_REAL_NAMES_EXTRA_BOT_IDENTITIES="$nl:$(sha "$bot_login_email")" sh tools/ci/lint.sh names > "$out" 2>&1 || rc=$?
+awk '/^== /{on=0} /^== no real names/{on=1} on' "$out" > "$names_out"
+n_hist "a listed email whose local part is a banned login still fails, naming $sid and author" "$sid" "author \\(login" "" "$nl"
 n_back
 
 # Item 6: private addresses in a commit message are refused, in the subject, the body and a trailer. Documentation ranges

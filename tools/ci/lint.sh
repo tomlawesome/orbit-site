@@ -37,12 +37,12 @@ node --experimental-vm-modules --no-warnings -e '
     console.log(`   ${f} does not parse: ${why.name}: ${why.message}`);
     process.exitCode = 1;
   }
-' sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
+' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
 fi
 
 if on refs; then
 echo "== every local src/href in the pages exists"
-for page in index.html install.html 404.html tests/index.html; do
+for page in index.html de/index.html install.html 404.html tests/index.html; do
   grep -o -E '(src|href)="[^"#?:]+"' "$page" | sed -E 's/^[a-z]+="//; s/"$//' | sort -u | while read -r ref; do
     case "$ref" in /*|data:*) continue ;; esac
     [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
@@ -102,6 +102,10 @@ for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^ur
 done
 # and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
 node tools/door-markup.mjs --check || fail=1
+# and so does each language's page (#125): tools/pages.mjs writes de/index.html from index.html and the catalogues,
+# with the door's markup in that language; the catalogues, the page, the scripts and the auto-lang script agree
+node tools/pages.mjs --check || fail=1
+node tools/ci/i18n-check.mjs || fail=1
 fi
 
 if on types; then
@@ -150,7 +154,7 @@ for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
   [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
 done
 [ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
-for f in index.html 404.html install.html README.md LICENSE; do
+for f in index.html de/index.html 404.html install.html README.md LICENSE; do
   if grep -q -i -E 'gaia|CC BY-NC 3\.0 IGO|by-nc/3\.0/igo' "$f"; then
     echo "   $f still mentions Gaia or its CC BY-NC 3.0 IGO licence"; fail=1
   fi
@@ -188,7 +192,7 @@ echo "== the docs import is split: import_docs holds no token, publish_docs alon
 # The import runs other people's code (npm packages) and so must hold nothing
 # worth stealing; the publish holds the token, runs no third-party code, and is
 # the only job in the docs-import environment, where the token is scoped (#18).
-# Both run from the schedule on main alone, never on a merge request pipeline.
+# Both run from the schedule on dev alone (#129), never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
 # Joining counts whether by name or inherited by extends or !reference (#52).
@@ -234,7 +238,7 @@ fi
 
 if on csp; then
 echo "== the pages carry a Content-Security-Policy that covers what they run"
-# GitHub Pages sends no headers, so index.html, 404.html and install.html each carry the policy as a
+# GitHub Pages sends no headers, so index.html, de/index.html, 404.html and install.html each carry the policy as a
 # <meta http-equiv="Content-Security-Policy">. A meta covers only what follows it, so it comes first in <head>, before
 # any script, link or style. Scripts run only from the site and the page's own inline scripts, each allowed by its
 # sha256 in script-src: no 'unsafe-inline' or 'unsafe-eval' for scripts, object-src 'none', base-uri 'self', and no
@@ -248,7 +252,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
 const hash = (t) => "\x27sha256-" + crypto.createHash("sha256").update(t, "utf8").digest("base64") + "\x27";
-for (const page of ["index.html", "404.html", "install.html"]) {
+for (const page of ["index.html", "de/index.html", "404.html", "install.html"]) {
   const raw = fs.readFileSync(page, "utf8");
   // comments set aside, but keeping every offset, so a tag named in a comment is not read as a tag
   const text = raw.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
@@ -278,7 +282,8 @@ for (const page of ["index.html", "404.html", "install.html"]) {
       && !(name === "style-src" && t === "\x27unsafe-inline\x27") && !(name === "script-src" && /^\x27unsafe-(inline|eval)\x27$/.test(t)));
     if (extra.length) bad(`${page}: ${name} allows ${extra.join(" ")}; nothing on the site loads from a third party (#92), so list \x27self\x27 only and host the file here`);
   }
-  const inline = scripts.filter((s) => !s.src).map((s) => hash(s.body));
+  // a data block (type="application/json": a translated page's words, #125) is never run, so it needs no hash
+  const inline = scripts.filter((s) => !s.src && !/\btype\s*=\s*["\x27]?application\/json/i.test(s.attrs)).map((s) => hash(s.body));
   for (const h of inline) if (!src.includes(h)) bad(`${page}: an inline script has no matching hash in script-src (it would be blocked); add ${h}`);
   for (const h of src.filter((t) => /^\x27sha(256|384|512)-/.test(t))) if (!inline.includes(h)) bad(`${page}: script-src has ${h}, which matches no inline script (an edited script keeps its old hash?); the inline scripts hash to ${inline.join(" ") || "nothing"}`);
   // an inline event handler (onclick=, …) or a javascript: address needs 'unsafe-inline'; attribute values and script text set aside
@@ -350,7 +355,7 @@ const code = (f, t) => {
     if (new RegExp(`(?<![\\w$])${v}\\s*=\\s*document\\s*\\.\\s*createElement\\(\\s*["'\`]link["'\`]`).test(t) || new RegExp(`(?<![\\w$.])${v}\\s*\\.\\s*(rel|as)\\s*=`).test(t)) say(f, "a <link>'s href", m[3]);
   }
 };
-for (const f of ["index.html", "404.html", "install.html", ...list("tests", /\.html$/)]) {
+for (const f of ["index.html", "de/index.html", "404.html", "install.html", ...list("tests", /\.html$/)]) {
   const t = blank(fs.readFileSync(f, "utf8"), /<!--[\s\S]*?-->/g);
   tags(f, t);
   css(f, [...t.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>|\sstyle\s*=\s*"([^"]*)"|\sstyle\s*=\s*'([^']*)'/gi)].map((m) => m[1] ?? m[2] ?? m[3] ?? "").join("\n"), false);
