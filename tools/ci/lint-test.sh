@@ -1454,6 +1454,33 @@ split_pass_case() {
 }
 split_pass_case "p224: scan:trivy taking the batch-intake job_rule, the three scans carrying none" $ci "$ci_gate_js"'
   y = plant(y, "scan:trivy", ".batch-intake");'
+# Cases p225-p232 (fix review of #138, ai/agent-infra#114): the same refusal by every other route a rule list can
+# reach a snippet's job_rule: through extends (one parent, a list of parents, a chain), through !reference to a hidden
+# job's rules, through a YAML anchor on the entry or on the whole list, and through another
+# job's rules. The committed file carries no such route on the three, so each case plants the route alone. The three
+# scans' own rules block is swapped for the route; a hidden `.route_rules` job is added to carry the snippet's rule.
+route_js='
+  const swap = (y, job, repl) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?)  rules:\\n(?: {4}.*\\n)+"), "$1" + repl);
+  const hidden = (y, body) => y + "\n.route_rules:\n" + body;
+  const top = (y, body) => ".route_rules:\n" + body + "\n" + y;
+  const CC = "    - !reference [.catchup-check, job_rule]\n", BI = "    - !reference [.batch-intake, job_rule]\n";'
+split_case "p225: scan:gitleaks taking the catchup-check job_rule by extends" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "scan:gitleaks", "  extends: .route_rules\n");'
+split_case "p226: private-details taking the batch-intake job_rule by extends, in a list of parents" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  extends: [.not_a_parent, .route_rules]\n");'
+split_case "p227: lint taking the catchup-check job_rule by extends, two parents up" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC) + "\n.route_child:\n  extends: .route_rules\n", "lint", "  extends: .route_child\n");'
+split_case "p228: lint taking the catchup-check job_rule by !reference to a hidden job rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "lint", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+split_case "p229: private-details taking the batch-intake job_rule by !reference to a hidden job rules list" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+# an alias needs its anchor first, so the hidden job goes to the top of the file for the two anchor cases
+split_case "p230: private-details taking the batch-intake job_rule by a YAML anchor on the entry" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules:\n    - &route_rule !reference [.batch-intake, job_rule]\n"), "private-details", "  rules:\n    - *route_rule\n    - when: on_success\n");'
+split_case "p231: lint taking the catchup-check job_rule by a YAML anchor on the whole rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules: &route_list\n" + CC), "lint", "  rules: *route_list\n");'
+split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the catchup-check job_rule, by !reference" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(y, "scan:gitleaks", "  rules:\n    - !reference [scan:trivy, rules]\n");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -2471,6 +2498,101 @@ if [ "$rc" -eq 0 ]; then
 else
   echo "FAIL (p8i) the committed tree passes the whole lint (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
 fi
+
+# Case (d-s1) (D-S1, #138): .gitlab-ci.yml says a newly published CVE fails the daily Trivy run "and not an unrelated
+# merge request". A job that runs trivy with the vulnerability scanner and --exit-code 1 must therefore not fail a
+# pipeline that is not the schedule: for such a pipeline its rules either leave it out (when: never, or no rule matches)
+# or let it fail (allow_failure: true), or its script is decided by the pipeline source. Secrets and licences
+# (--scanners without vuln) always block, so a job that scans only those is not judged. Read from the committed file with
+# the same js-yaml the lint uses; a rule that is a !reference is a snippet's, which the job rules here do not decide.
+cat > "$cspjs.trivy" <<'JS'
+const fs = require("fs"), yaml = require("js-yaml");
+const ref = yaml.defineSequenceTag("!reference", { create: () => [], addItem: (c, i) => { c.push(i); }, finalize: (c) => ({ "!reference": c }), identify: () => false });
+const doc = yaml.load(fs.readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.CORE_SCHEMA.withTags(ref) });
+const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : [v]).filter((x) => typeof x === "string");
+const bad = [];
+let seen = 0;
+for (const [name, job] of Object.entries(doc)) {
+  if (!job || typeof job !== "object" || !job.script) continue;
+  for (const l of lines(job.script).filter((x) => /\btrivy\b/.test(x) && /--exit-code[ =]1\b/.test(x))) {
+    const sc = /--scanners[ =]([a-z,]+)/.exec(l);
+    if (sc && !sc[1].split(",").includes("vuln")) continue;
+    seen++;
+    if (/CI_PIPELINE_SOURCE/.test(l)) continue;
+    // the first rule that matches a pipeline that is not the schedule: no `if`, or an `if` that does not ask for the schedule
+    const rule = (job.rules || []).find((r) => r && !r["!reference"] && !(typeof r.if === "string" && /==\s*"schedule"/.test(r.if)));
+    if (rule && rule.when !== "never" && rule.allow_failure !== true) bad.push(name);
+  }
+}
+if (seen === 0) { console.log("no trivy job with the vulnerability scanner and --exit-code 1 found"); process.exit(2); }
+if (bad.length) { console.log("fails a pipeline that is not the daily schedule on a new CVE: " + bad.join(", ")); process.exit(1); }
+JS
+rc=0
+node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline"
+else
+  echo "FAIL (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline (exit $rc)"; sed 's/^/     /' "$out"; failed=1
+fi
+rm -f "$cspjs.trivy"
+
+# Cases (f2a), (f2b) (ALL-F2, #138): private-details runs the same gitleaks release as scan:gitleaks (its comment says
+# so), but pins it a second time from a variable-prefixed image name Renovate cannot see. A bump of one pin alone must
+# be refused by the lint, naming gitleaks. Planted in the private-details image only, by tag and by digest.
+gl_pins_case() {
+  F=.gitlab-ci.yml JS="$2" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:)(\S+)/, (m, a, b) => a + new Function("p", process.env.JS)(b));
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -qi gitleaks "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming gitleaks)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+gl_pins_case "(f2a) private-details pinning another gitleaks version than scan:gitleaks" 'return p.replace(/^v[0-9.]+/, "v8.99.0");'
+gl_pins_case "(f2b) private-details pinning another gitleaks digest than scan:gitleaks" 'return p.replace(/@sha256:[0-9a-f]{8}/, "@sha256:00000000");'
+
+# Cases (f-sec12a)-(f-sec12c) (SEC-12, #138): tools/ci/flake-gate.sh lists the quarantines from the code that really
+# takes a test out of the gate. A quarantined("#N", text in a comment is not a quarantine, so a flake at three
+# sightings that links #N and has only such a comment is refused (not-quarantined), while the real call is accepted.
+# The scratch copy's flakes.md is replaced by one flake at three sightings linking #777.
+cat > docs/flakes.md <<'MD'
+# Flakes
+
+## made-up check: it times out [#777](https://example.invalid/issues/777)
+
+- 2026-11-01 · aaaaaaa · job one · timed out
+- 2026-11-02 · bbbbbbb · job two · timed out
+- 2026-11-03 · ccccccc · job three · timed out
+MD
+git add -f docs/flakes.md
+git -c user.name=t -c user.email=t@t commit -q -m "one flake at three sightings"
+flake_case() { # flake_case <label> <want: 0 or 1> <line planted in tools/ci/zz-flake-fixture.mjs>
+  printf '%s\n' "$3" > tools/ci/zz-flake-fixture.mjs
+  git add -f tools/ci/zz-flake-fixture.mjs
+  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+  rc=0
+  sh tools/ci/flake-gate.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_case "(f-sec12a) a quarantined(\"#777\", text in a line comment is not a quarantine" 1 '// quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12b) a quarantined(\"#777\", text in a block comment is not a quarantine" 1 '/*
+ * quarantined("#777", ["firefox"], "made-up check")
+ */'
+flake_case "(f-sec12c) a quarantined(\"#777\", text in a trailing comment is not a quarantine" 1 'export const x = 1; // was quarantined("#777", ["firefox"], "made-up check") until it was fixed'
+flake_case "(f-sec12d) a real quarantined(\"#777\", call is a quarantine (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+git reset -q --hard HEAD~1
 
 rm -f "$cspjs"
 
