@@ -1417,6 +1417,43 @@ split_case "p219: a !reference to a key the snippet does not define" $ci "catchu
   y = y.replace("[.catchup-check, job_rule]", "[.catchup-check, environment]");'
 split_case "p220: a !reference to an unknown hidden key" $ci "not in the file" '
   y = y.replace("[.batch-intake, job_rule]", "[.other-snippet, job_rule]");'
+# Cases p221-p224 (audit finding, ai/agent-infra#114): the secret scans must run on every merge path. A merge
+# request from a chore/catchup-* branch into a batch runs only the catchup-check job when a job carries the
+# snippet's job_rule, so lint, scan:gitleaks and private-details must not carry `!reference [.catchup-check, job_rule]`
+# or `!reference [.batch-intake, job_rule]` (other jobs may). The committed file still carries the catchup-check
+# reference on all three, so each case first takes those references out of the scratch copy and then plants
+# the one under test: it fails only for the planted line, not for the committed ones.
+ci_gate_js='
+  const strip = (y) => { for (const j of ["lint", "scan:gitleaks", "private-details"]) y = y.replace(new RegExp("(\\n" + j + ":\\n(?:[ #].*\\n)*?)    - !reference \\[\\.catchup-check, job_rule\\]\\n"), "$1"); return y; };
+  const plant = (y, job, ref) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?  rules:\\n)"), "$1    - !reference [" + ref + ", job_rule]\n");
+  y = strip(y);'
+split_case "p221: scan:gitleaks taking the catchup-check job_rule" $ci "scan:gitleaks.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "scan:gitleaks", ".catchup-check");'
+split_case "p222: private-details taking the batch-intake job_rule" $ci "private-details.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "private-details", ".batch-intake");'
+split_case "p223: lint taking the catchup-check job_rule" $ci "lint.*skip the secret scan" "$ci_gate_js"'
+  y = plant(y, "lint", ".catchup-check");'
+# control: the same kind of reference on a job outside the three is fine (the three carry none in this copy)
+split_pass_case() {
+  F="$2" Y="$(cat "$2")" JS="$3" node -e '
+    let y = process.env.Y; const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    require("fs").writeFileSync(process.env.F, y + "\n");
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out proxy ci-split
+  if [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 passes (exit $rc, want 0)"
+    sed 's/^/     /' "$out"
+    failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+split_pass_case "p224: scan:trivy taking the batch-intake job_rule, the three scans carrying none" $ci "$ci_gate_js"'
+  y = plant(y, "scan:trivy", ".batch-intake");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.

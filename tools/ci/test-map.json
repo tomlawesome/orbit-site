@@ -1,5 +1,5 @@
 {
-  "hand": ["tools/ci/docsky-test.mjs"],
+  "hand": ["tools/ci/docsky-test.mjs", "tools/ci/private-details-allow-test.sh"],
   "groups": {
     "all": [
       "assets/door/*.js",
