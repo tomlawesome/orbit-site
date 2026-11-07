@@ -185,6 +185,14 @@ grep -q '^  NODE_IMAGE: [a-z0-9_-][a-z0-9_-]*\(/[a-z0-9._-][a-z0-9._-]*\)*:[A-Za
 grep -q '^  PLAYWRIGHT_IMAGE: \$CI_IMAGE_CACHE_MCR/playwright:[A-Za-z0-9._-][A-Za-z0-9._-]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: PLAYWRIGHT_IMAGE must be \$CI_IMAGE_CACHE_MCR/playwright:<tag> and pin a digest"; fail=1; }
 grep -E '^  [A-Z_]+_IMAGE:' .gitlab-ci.yml | grep -v -E '@sha256:[a-f0-9]{64}$' | sed 's/^  \([A-Z_]*\):.*/   .gitlab-ci.yml: \1 must pin a digest/' | grep . && fail=1
+# private-details runs the gitleaks release scan:gitleaks runs, but names it after $CI_IMAGE_CACHE_GHCR, which
+# Renovate cannot read: a bump moves scan:gitleaks' pin alone, so every gitleaks pin must be the same tag and
+# digest (ALL-F2, #138). Only a pin is counted: the value of an `image:` or `name:` key, never a comment
+gl_lines=$(grep -E '^[[:space:]]*(image|name):[[:space:]]*"?[^#[:space:]"]*gitleaks/gitleaks:' .gitlab-ci.yml || true)
+gl_pins=$(printf '%s\n' "$gl_lines" | grep -oE 'gitleaks/gitleaks:[^[:space:]"]*' | sort -u)
+if [ "$(printf '%s\n' "$gl_lines" | grep -c .)" -lt 2 ] || [ "$(printf '%s\n' "$gl_pins" | grep -c .)" -ne 1 ]; then
+  echo "   .gitlab-ci.yml: scan:gitleaks and private-details must pin the same gitleaks image, tag and digest (Renovate bumps scan:gitleaks' alone; copy it to private-details); found: $(printf '%s\n' "$gl_pins" | tr '\n' ' ')"; fail=1
+fi
 fi
 
 if on ci-split; then
@@ -450,6 +458,10 @@ echo "== the test map is complete: every file in a group, every pattern live, ev
 # tools/ci/test-map.json says which browser tests a change runs (ADR-0005); a path it does not know runs
 # everything, and this refuses one before it merges. Reads .gitlab-ci.yml with js-yaml, as ci-split does.
 node tools/ci/test-map-check.mjs || fail=1
+# A quarantine takes a test out of the gate, and tools/ci/flake-gate.sh finds one by a line test alone, so every
+# quarantined("#<issue>" text in tools/ci/*.mjs must be an `await` call starting its line; one in a comment, a
+# string, a template literal or after other code is refused (SEC-12, #138; tools/ci/quarantine-lint.mjs)
+node tools/ci/quarantine-lint.mjs || fail=1
 fi
 
 if [ "$fail" = 0 ]; then echo "lint: ok"; else echo "lint: failed"; exit 1; fi

@@ -349,7 +349,9 @@ import json, re, sys
 
 wpath, srcs = sys.argv[1], sys.argv[2]
 max_lines, max_line, max_message, max_bytes = (int(a) for a in sys.argv[3:7])
-kinds = {"link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "more"}
+# every kind tools/import-docs.mjs writes; one missing here refuses the import's own artifact (ALL-F19, #138), and
+# nightly-import-test.sh's W11 holds the two equal
+kinds = {"link-cleaned", "link-dropped", "block-lost-text", "block-unclosed", "picture-not-copied", "skip-unmatched", "more"}
 bad = re.compile("[\x00-\x1f\x7f-\x9f  ‪-‮⁦-⁩]")
 
 def refuse(msg):
