@@ -16,6 +16,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
 
 - 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
+- 2026-11-05 · 1bdc740 · pipeline 3695 live:firefox 1/2 job 47264 · Timeout 120000ms again on a slow runner; the change touches only the door's media queries, and job 47135 on the same commit passed L4
 
 ## journey L1, L2 #116, Chromium: "the gate waits for the world and the flight, then flies; nothing is stored under fit=skip" (preview): the gate's click times out
 
@@ -24,11 +25,6 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## journey L6 #116, Chromium: "the docs' Back is closed until the flight is ready, then opens" (preview): the descent never shows the dawn
 
 - 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
-
-## site-browser B3, Firefox: "a docs page that arrives after the visitor left the docs stays closed": the docs' Back click times out
-
-- 2026-11-05 · df30deb · pipeline 3661 live:firefox 1/2 job 46832 · control: the reader had not opened 1.5 s after the held page was released, then locator.click on `#docspad .back.dawn` timed out at 30 s; the change touched only the lint's names check and lint-test fixtures, and B3 passed on the same code in pipeline 3677
-- 2026-11-05 · df931d9 + #133 build · journey-local.sh asdawn site-browser, Firefox, agent host · the same Back click timed out at 30 s; the change touches only the door's media queries; site-browser passed on the rerun of the unchanged tree
 
 ## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
 

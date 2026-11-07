@@ -311,19 +311,22 @@ const docsCase = async () => {
         await holdUp;
         await route.continue().catch(() => {});
       });
-      await page.goto(`${SITE}?preview#docs/readme`, { waitUntil: "load" });
+      /* fit=skip: the docs' Back stays closed until the flight is ready, and the speed test on a slow runner can hold that past any click's wait (#136) */
+      await page.goto(`${SITE}?preview&fit=skip#docs/readme`, { waitUntil: "load" });
       await page.locator("#docspad").waitFor({ state: "visible", timeout: 60000 });
       await Promise.race([held, sleep(30000).then(() => { throw new Error("the docs page (assets/docs/readme.json) was never requested"); })]);
       let left = null;
       if (leave) {
-        await page.locator("#docspad .back.dawn").click();
+        await page.locator("#docspad .back.dawn").click({ timeout: 120000 });
         await page.locator("#door").waitFor({ state: "visible", timeout: 30000 });
         await page.waitForFunction(() => { const pad = document.querySelector("#docspad"); const cs = getComputedStyle(pad); return pad.hidden || cs.display === "none" || cs.visibility === "hidden"; }, null, { timeout: 30000 });
         await sleep(500);
         left = await page.evaluate(() => ({ entries: history.length, hash: location.hash }));
       }
       release();
-      await sleep(1500);
+      /* stayed: wait for the reader, however slow the runner; left: nothing to wait for, so give a wrong opening time to show */
+      if (leave) await sleep(1500);
+      else await page.waitForFunction(() => !document.querySelector("#docspad .reader").hidden, null, { timeout: 60000 }).catch(() => {});
       const now = await page.evaluate(() => {
         const pad = document.querySelector("#docspad");
         const cs = getComputedStyle(pad);
