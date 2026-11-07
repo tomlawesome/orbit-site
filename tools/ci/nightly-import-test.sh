@@ -1779,7 +1779,7 @@ rcz=$rc
 rc=0; [ "$rcz" -eq 0 ] && [ -f "$aux/mr-body" ] || rc=1
 check "TR9 tr-hostile: a hostile summary does not stop the publish (exit $rcz)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
-rc=0; [ -f "$aux/mr-body" ] && [ "$(grep -c '^````$' "$aux/mr-body")" -eq 2 ] && ! grep -q '```.*```' "$aux/mr-body" || rc=1
+rc=0; [ -f "$aux/mr-body" ] && [ "$(grep -c '^````$' "$aux/mr-body")" -eq 2 ] && ! grep -q "\`\`\`.*\`\`\`" "$aux/mr-body" || rc=1
 check "TR9 tr-hostile: the description's one fence is closed only by the report's own end (no line of the summary can close it)" "$rc"
 rc=0; [ -f "$aux/mr-body" ] && ! LC_ALL=C grep -q "$(printf '\033')" "$aux/mr-body" && ! grep -q "$(printf '\342\200\256')" "$aux/mr-body" || rc=1
 check "TR9 tr-hostile: no escape or bidi control survives into the description" "$rc"
