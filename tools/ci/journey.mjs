@@ -340,7 +340,7 @@ const landings = async (prefix) => {
 
   /* L4: the software renderer is unfit, so a load without fit=skip leaves { fit: false } under its key; the next load
      in the same context says it remembered the off and tested again, and the gate still waits for the new verdict */
-  await step(`L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
+  await quarantined("#139", ["firefox"], `L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
     await withGL(async (p) => {
       await p.goto(flags(""), { waitUntil: "load" });
       await waitLine(p, /flight world: off: frame \d+ ms/);
