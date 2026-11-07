@@ -26,10 +26,16 @@ export function createPlaces(h = globalThis.history) {
     keep(hash) { replace(stateNow(), hash); },
     /* the door's address, no state: the entry is the door's, or a direct arrival's on its way there */
     settle() { replace(null, " "); },
-    /* the way up to the door in one go, when the door's entry is below */
+    /* the way up to the door in one go, when the door's entry is below. A tab keeps about 50 entries and drops the oldest,
+       and a go() past the first is a silent no-op, so the door's entry can lie below only if `orbit` is under
+       `history.length`. That length counts forward entries too: after a Back, a dawn link and the eviction, the jump can
+       still miss, which is accepted. */
     up() {
       const orbit = orbitNow();
       if (orbit < 1) return false;
+      let length = 0;
+      try { length = h.length || 0; } catch { /* no history */ }
+      if (orbit >= length) return false;
       try { h.go(-orbit); return true; } catch { return false; }
     },
     /* in the popstate handler: where the browser is now, and the state of the entry it left */

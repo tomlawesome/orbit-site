@@ -63,7 +63,7 @@ worth adding only from a click or a key, and an entry added on load is worth not
 2. **A landing's rewrite of its address keeps the entry's state.** `goToWorld` and the flights' `land()` use
    `replaceState(history.state, "", "#id")`. The direct `replaceState(null, "", " ")` stays only where the door is reached
    with no door entry below (a direct arrival's "— the dawn").
-3. **Up is `history.go(-orbit)` when `orbit` is 1 or more, else the direct descent.** This replaces `goBack`'s
+3. **Up is `history.go(-orbit)` when `orbit` is 1 or more and below `history.length`, else the direct descent.** This replaces `goBack`'s
    `history.back()`: from a docs page two entries above the door, Up reaches the door in one go and leaves nothing
    stale; from a direct arrival it descends and rewrites the one entry to `/`. The docs' own entries carry `orbit`
    (decision 1) so this holds there too.
@@ -75,7 +75,7 @@ worth adding only from a click or a key, and an entry added on load is worth not
    Forward flies out to the sky named in the state. The walk and `restoreState` push nothing.
 5. **A sky asked for during a sky flight is flown to when the flight lands** (the last one asked). Today `flyTo` refuses
    it, so a Back mid-flight would leave the camera and the entry disagreeing. `cancelFlight` drops a pending ask.
-6. **Signing out drops the sky's entries:** when the goodbye lands, `history.go(-orbit)` when `orbit` is 1 or more (the
+6. **Signing out drops the sky's entries:** when the goodbye lands, `history.go(-orbit)` when `orbit` is 1 or more and below `history.length` (the
    door's entry is current under the goodbye; the pop does nothing there), else the entry is rewritten to `/`. Back at
    the goodbye leaves the site; "Sign back in" shows the door; Forward from that door flies in, as after any Back.
 7. **Back and Forward are planned by one pure function,** `plan({ current, hash, state, from })` in a new module
@@ -116,7 +116,7 @@ the drawers and the walk pushing nothing; `arrivePad`/`arrive` as the direct arr
     `stack(more, hash?)` pushes `{ ...more, orbit: h.state?.orbit ? h.state.orbit + 1 : 0 }`, the address `hash` or
     unchanged when omitted; `hop(more)` replaces the state with `{ ...h.state, ...more }`, address unchanged;
     `keep(hash)` is `replaceState(h.state, "", hash)`; `settle()` is `replaceState(null, "", " ")`;
-    `up()` returns true after `h.go(-orbit)` when `orbit` is 1 or more, else false and does nothing;
+    `up()` returns true after `h.go(-orbit)` when `orbit` is 1 or more and below `h.length`, else false and does nothing;
     `pop()` is called in the `popstate` handler and returns `{ hash, state, from }`, `hash` the address's hash up to the
     first `/` (`""`, `"#home"`, `"#install"`, `"#docs"`, `"#info"`, other), `state` the entry's, `from` the state of the
     entry before it; every method keeps `from` current. Each history call is in a try/catch, as today.
@@ -151,7 +151,7 @@ records calls):
 - P3. `hop({ sky: "grans" })` above `{ orbit: 1 }` replaces with `{ orbit: 1, sky: "grans" }`, address unchanged, no push.
 - P4. `keep("#docs")` replaces with the same state object; `settle()` replaces with null at `" "`.
 - P5. `up()` above `{ orbit: 2 }` calls `go(-2)` and returns true; above `{ orbit: 0 }`, null and `{ sky: "x" }` alone
-  it calls nothing and returns false.
+  it calls nothing and returns false; so it does above `{ orbit: 60 }` in a history of 50 entries, and `{ orbit: 3 }` in 3.
 - P6. `pop()` returns the entry's hash up to the first `/` (`"#docs/a/b"` gives `"#docs"`), the state, and `from` = the
   state before: after `step("#home")` then a stand-in pop to `null`, `from` is `{ orbit: 1 }`; a second pop with no
   change between gives `from` null. Control: `from` after `hop` is the hopped state.
