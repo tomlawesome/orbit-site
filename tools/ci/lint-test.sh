@@ -1583,11 +1583,14 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
-# Cases p243-p245 (#143): scan:gitleaks scans only the history of the commit its pipeline is for. The runner keeps the
-# git directory between pipelines, so the job takes a fresh clone (`GIT_STRATEGY: clone`) of the whole history
-# (`GIT_DEPTH: 0`). ci-split refuses .gitlab-ci.yml when scan:gitleaks loses either. Each case first gives the job the
-# one it lacks (as the #141 block gives jobs their skip) so it fails only for the one fault under test; the refusal
-# names .gitlab-ci.yml and scan:gitleaks (the job may come right after "<file>: ", so the pattern needs no text before it).
+# Cases p243-p246 (#143): scan:gitleaks scans only the history of the commit its pipeline is for. gitleaks' default log
+# options are `--all`, so it read every ref in the runner's git directory, other branches GitLab had fetched included; a
+# fresh clone (`GIT_STRATEGY: clone`) did not help (pipeline 3813). The command takes `--log-opts="$CI_COMMIT_SHA"` and
+# the job keeps `GIT_DEPTH: 0`. ci-split refuses .gitlab-ci.yml when the command lacks the option, passes `--all` to it,
+# or the job loses GIT_DEPTH: 0. Each case first gives the job the one it is not testing (as the #141 block gives jobs
+# their skip) so it fails only for the one fault under test; the refusal names .gitlab-ci.yml and scan:gitleaks (the job
+# may come right after "<file>: ", so the pattern needs no text before it). p243 also puts the flags in another order, so
+# its edit changes the file whether or not the committed command already has the option.
 gl_js='
   const jobRe = /\nscan:gitleaks:\n(?:[ #].*\n)*/;
   const edit = (y, f) => {
@@ -1596,12 +1599,14 @@ gl_js='
     const b = f(m[0]);
     return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
   };
-  const hasStrategy = (b) => /^    GIT_STRATEGY: clone\s*$/m.test(b);
+  const opt = "--log-opts=\"$CI_COMMIT_SHA\"";
+  const cmdRe = /^(    - gitleaks git )(.*)$/m;
+  const hasOpt = (b) => b.includes(opt);
   const hasDepth = (b) => /^    GIT_DEPTH: 0\s*$/m.test(b);
-  const ensureStrategy = (y) => edit(y, (b) => {
-    if (hasStrategy(b)) return b;
-    const r = b.replace("  variables:\n", "  variables:\n    GIT_STRATEGY: clone\n");
-    if (r === b) throw new Error("scan:gitleaks has no variables: to put GIT_STRATEGY under");
+  const ensureOpt = (y) => edit(y, (b) => {
+    if (hasOpt(b)) return b;
+    const r = b.replace(cmdRe, (all, head, rest) => head + "--no-banner --redact --verbose " + opt + " \"$CI_PROJECT_DIR\"");
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git command to put the option on");
     return r;
   });
   const ensureDepth = (y) => edit(y, (b) => {
@@ -1610,18 +1615,25 @@ gl_js='
     if (r === b) throw new Error("scan:gitleaks has no variables: to put GIT_DEPTH under");
     return r;
   });
-  const stripKey = (y, key) => edit(y, (b) => {
-    const r = b.replace(new RegExp("^    " + key + ":.*\\n", "m"), "");
-    if (new RegExp("^    " + key + ":", "m").test(r)) throw new Error(key + " is still on scan:gitleaks");
+  const setFlags = (y, flags) => edit(y, (b) => {
+    const r = b.replace(cmdRe, (all, head, rest) => head + flags + " \"$CI_PROJECT_DIR\"");
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git command to edit");
     return r;
   });
-  const withBoth = (y) => ensureDepth(ensureStrategy(y));'
+  const stripDepth = (y) => edit(y, (b) => {
+    const r = b.replace(/^    GIT_DEPTH:.*\n/m, "");
+    if (/^    GIT_DEPTH:/m.test(r)) throw new Error("GIT_DEPTH is still on scan:gitleaks");
+    return r;
+  });
+  const withBoth = (y) => ensureDepth(ensureOpt(y));'
 # scan:gitleaks names the job whole: "scan:gitleaks" must not be satisfied by a refusal naming another job
 gl_name='(^|[^:A-Za-z_-])scan:gitleaks([^:A-Za-z_-]|$)'
-split_case "p243: scan:gitleaks without GIT_STRATEGY: clone" $ci "$gl_name" "$gl_js"'
-  y = stripKey(withBoth(y), "GIT_STRATEGY");'
+split_case "p243: scan:gitleaks without --log-opts=\"\$CI_COMMIT_SHA\"" $ci "$gl_name" "$gl_js"'
+  y = setFlags(withBoth(y), "--verbose --redact --no-banner");'
 split_case "p244: scan:gitleaks without GIT_DEPTH: 0" $ci "$gl_name" "$gl_js"'
-  y = stripKey(withBoth(y), "GIT_DEPTH");'
+  y = stripDepth(withBoth(y));'
+split_case "p246: scan:gitleaks passing --all to --log-opts" $ci "$gl_name" "$gl_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose --log-opts=\"--all\"");'
 # the real file: scan:gitleaks has both (giving them again changes nothing) and ci-split passes it
 has_both=0
 Y="$(cat "$ci")" JS="$gl_js"'
@@ -1631,9 +1643,9 @@ Y="$(cat "$ci")" JS="$gl_js"'
 ' || has_both=1
 lint_to_out proxy ci-split
 if [ "$rc" -eq 0 ] && [ "$has_both" -eq 0 ]; then
-  echo "ok   p245: the committed pipeline with GIT_STRATEGY: clone and GIT_DEPTH: 0 on scan:gitleaks passes"
+  echo "ok   p245: the committed pipeline with --log-opts=\"\$CI_COMMIT_SHA\" and GIT_DEPTH: 0 on scan:gitleaks passes"
 else
-  echo "FAIL p245: the committed pipeline with GIT_STRATEGY: clone and GIT_DEPTH: 0 on scan:gitleaks passes (exit $rc, want 0; one of the two missing on scan:gitleaks: $has_both)"
+  echo "FAIL p245: the committed pipeline with --log-opts=\"\$CI_COMMIT_SHA\" and GIT_DEPTH: 0 on scan:gitleaks passes (exit $rc, want 0; one of the two missing on scan:gitleaks: $has_both)"
   sed 's/^/     /' "$out"
   failed=1
 fi
