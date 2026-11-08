@@ -138,6 +138,7 @@
       "tools/ci/door-stub.mjs",
       "tools/ci/ready-ways-bed.mjs",
       "tools/ci/fake-voyage*.mjs", "tools/ci/fake-claude*.mjs", "tools/ci/translate-fixture.mjs",
+      "tests/fixtures/docs-i18n-secret-scan-145/*",
       "tools/ci/world-spy*.mjs"
     ]
   },
