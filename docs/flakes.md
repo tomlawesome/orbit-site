@@ -18,6 +18,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 - 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
 - 2026-11-05 · 1bdc740 · pipeline 3695 live:firefox 1/2 job 47264 · Timeout 120000ms again on a slow runner; the change touches only the door's media queries, and job 47135 on the same commit passed L4
 - 2026-11-07 · 14f42ab3 · journey.mjs, Firefox headed under xvfb with software GL, agent host · Timeout 120000ms waiting for "flight world: off: frame N ms" in 3 of 4 runs on batch-b's unchanged tip; passed in the fourth
+- 2026-11-08 · 92e86a01 · pipeline 3795 live:firefox 2/2 job 48226 (dev, which does not have the quarantine yet) · Timeout 120000ms; passed on retry, job 48286
 
 ## journey L1, L2 #116, Chromium: "the gate waits for the world and the flight, then flies; nothing is stored under fit=skip" (preview): the gate's click times out
 
@@ -42,3 +43,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## Runner interrupted mid-job (host)
 
 - 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
+
+## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
+
+- 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host

@@ -8,11 +8,16 @@
  *   T3  a catalogue chunk holds at most 60 keys, only keys whose hash differs from the stored one, and every due
  *       key is in exactly one chunk
  *   T22 a second run over the written output has an empty plan: no request at all, nothing rewritten
+ *   T23 (#144) the output estimate for the first real run's plan is within 15% of what that run used
  *
  *   node tools/ci/translate-plan-test.mjs
  */
+import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startFake } from "./fake-claude.mjs";
-import { T, hash16, mkFixture, runTool, argsFor, snapshot, docsIds, siteQs } from "./translate-fixture.mjs";
+import { run as runPlan } from "./translate.mjs";
+import { T, REPO, hash16, mkFixture, runTool, argsFor, snapshot, docsIds, siteQs } from "./translate-fixture.mjs";
 
 const run = async (fx, fake, ...more) => runTool(fx, argsFor(fx, fake, ...more));
 const keysOf = (q) => (q.item && q.item.items || []).map((x) => x.id);
@@ -79,5 +84,32 @@ await T.attempt("T22", async () => {
     const st = fx.read("tools/i18n/state/de.json"), p = fx.read("assets/docs-i18n/de/guide.json");
     T.check("T22e the hashes are stored (16 lower hex) in the state and in the page's source", Object.values(st.catalogue).length === 130 && Object.values(st.catalogue).every((h) => /^[0-9a-f]{16}$/.test(h)) && Object.values(p.source.sections).every((h) => /^[0-9a-f]{16}$/.test(h)), "stored hashes");
   } finally { await fake.close(); fx.cleanup(); }
+});
+/* #144: the first real run (pipeline 3802, job 48253) translated this checkout's English, assets/docs and
+   assets/i18n/en.json, into the 8 languages of tools/i18n/languages.json with no prior translation, and used
+   2,275,267 output tokens (thinking included). A dry run sends nothing and needs no key: the plan and its estimate are
+   built from a copy of the English alone (no translated catalogue, page or state), so the plan is the empty-state one. */
+await T.attempt("T23", async () => {
+  const RECORDED_OUTPUT = 2_275_267;
+  const dir = mkdtempSync(join(tmpdir(), "orbit-plan-"));
+  try {
+    cpSync(join(REPO, "assets/docs"), join(dir, "assets/docs"), { recursive: true });
+    mkdirSync(join(dir, "assets/i18n"), { recursive: true });
+    cpSync(join(REPO, "assets/i18n/en.json"), join(dir, "assets/i18n/en.json"));
+    cpSync(join(REPO, "tools/i18n"), join(dir, "tools/i18n"), { recursive: true, filter: (f) => !/[\\/]state([\\/]|$)/.test(f) });
+    cpSync(join(REPO, "tools/docs-sources.json"), join(dir, "tools/docs-sources.json"));
+    const lines = [];
+    /* a cap above the whole run: a from-nothing run is over the default 3,000,000 once the estimate is right (#144),
+       and this case judges the estimate, not the cap */
+    const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "10000000" }, log: (l) => lines.push(l) });
+    T.check("T23a the dry run over the English alone exits 0", code === 0, `exit ${code}; ${lines.slice(-2).join(" | ").slice(0, 200)}`);
+    const m = /^estimate: ([\d,]+) input tokens \+ ([\d,]+) output tokens/m.exec(lines.join("\n"));
+    T.check("T23b the run prints its estimate", !!m, lines.filter((l) => l.startsWith("estimate")).join("") || "no estimate line");
+    const out = m ? Number(m[2].replace(/,/g, "")) : NaN;
+    const off = Math.abs(out - RECORDED_OUTPUT) / RECORDED_OUTPUT;
+    T.check("T23c the output estimate is within 15% of the recorded run's 2,275,267 output tokens", off <= 0.15, `estimate ${out}, ${(off * 100).toFixed(1)}% off`);
+    const langs = new Set(lines.filter((l) => l.startsWith("   ")).map((l) => /@([\w-]+)\s/.exec(l)?.[1]).filter(Boolean));
+    T.check("T23d the plan covers all 8 languages", langs.size === 8, [...langs].join(","));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 T.done();

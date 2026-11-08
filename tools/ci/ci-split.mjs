@@ -474,6 +474,36 @@ for (const j of SCANS) {
   for (const s of snippetRules(rulesOf(j))) bad(`.gitlab-ci.yml: ${j} takes !reference [${s}, job_rule] in its rules, which would skip the secret scan on a catch-up or batch merge request; that merge lands on a branch mirrored to GitHub, so a secret or personal detail it carried would be published unchecked. Take the line off ${SCANS.join(", ")}`);
 }
 
+// the secret scan: gitleaks git reads every ref's history by default (its log options are --all), and GitLab's fetch
+// brings other branches, fresh clone or not, so a pipeline failed on another branch's commit (#143). It scans the
+// whole history (GIT_DEPTH 0) of the commit its pipeline is for, and nothing else; each branch's own pipelines scan it.
+{
+  const gl = isObj(doc["scan:gitleaks"]) ? doc["scan:gitleaks"] : {};
+  const v = isObj(gl.variables) ? gl.variables : {};
+  const scans = lines(gl.script).filter((l) => /\bgitleaks\s+git\b/.test(l));
+  if (!scans.length || scans.some((l) => !l.includes('--log-opts="$CI_COMMIT_SHA"'))) bad('.gitlab-ci.yml: the job scan:gitleaks must run gitleaks git with --log-opts="$CI_COMMIT_SHA", or it scans every branch the fetch brought, not the commit under test (#143)');
+  if (scans.some((l) => /--all\b/.test(l))) bad(".gitlab-ci.yml: the job scan:gitleaks passes --all to gitleaks: it scans only the history of the commit under test (#143)");
+  if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
+}
+
+// the owner's hand-started translation (#141) skips the test jobs, never a secret scan: the skip is the rule
+// entry .not_translation (by alias or written out), before any entry that would run the job
+const TRANSLATION_SKIP = '$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"';
+const SKIPS_ON_TRANSLATION = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
+const isTranslationSkip = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP;
+const mentionsTranslate = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
+for (const j of SKIPS_ON_TRANSLATION) {
+  const r = rulesOf(j);
+  const list = Array.isArray(r) ? r.flat(Infinity) : [];
+  const at = list.findIndex(isTranslationSkip);
+  const runs = list.findIndex((e) => !(isObj(e) && e.when === "never") && !(isObj(e) && Object.hasOwn(e, "!reference")));
+  if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141): put - *not_translation in its rules, before any entry that runs it`);
+}
+for (const j of SCANS) {
+  const r = rulesOf(j);
+  if ((Array.isArray(r) ? r.flat(Infinity) : []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} skips on the translation pipeline ($TRANSLATE); the secret scans and the lint run on every pipeline (#141)`);
+}
+
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
 // whether the job writes it, extends it or takes it by !reference
 for (const k of Object.keys(doc)) {
