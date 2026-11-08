@@ -474,6 +474,14 @@ for (const j of SCANS) {
   for (const s of snippetRules(rulesOf(j))) bad(`.gitlab-ci.yml: ${j} takes !reference [${s}, job_rule] in its rules, which would skip the secret scan on a catch-up or batch merge request; that merge lands on a branch mirrored to GitHub, so a secret or personal detail it carried would be published unchecked. Take the line off ${SCANS.join(", ")}`);
 }
 
+// the secret scan reads every ref in its git directory, which the runner reuses between pipelines unless the job
+// clones afresh; a reused one would scan other pipelines' branches (#143). GIT_DEPTH 0: the whole history.
+{
+  const v = isObj(doc["scan:gitleaks"]) && isObj(doc["scan:gitleaks"].variables) ? doc["scan:gitleaks"].variables : {};
+  if (String(v.GIT_STRATEGY) !== "clone") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_STRATEGY: clone, or it scans the refs earlier pipelines left in the runner's git directory (#143)");
+  if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
+}
+
 // the owner's hand-started translation (#141) skips the test jobs, never a secret scan: the skip is the rule
 // entry .not_translation (by alias or written out), before any entry that would run the job
 const TRANSLATION_SKIP = '$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"';
