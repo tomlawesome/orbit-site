@@ -218,15 +218,14 @@ scan:gitleaks:
     entrypoint: [""]
   variables:
     GIT_DEPTH: 0
-    # a fresh clone: the runner reuses its git directory between pipelines, and
-    # gitleaks reads every ref there, so a reused one scans other branches (#143)
-    GIT_STRATEGY: clone
   rules:
     - *not_scheduled
     - when: on_success
   script:
     - git config --global --add safe.directory "$CI_PROJECT_DIR"
-    - gitleaks git --no-banner --redact --verbose "$CI_PROJECT_DIR"
+    # the history of the commit under test only: by default gitleaks reads
+    # every branch the fetch brought (#143)
+    - gitleaks git --no-banner --redact --verbose --log-opts="$CI_COMMIT_SHA" "$CI_PROJECT_DIR"
 
 # private-details: the job is defined by the template; the stage and the rules
 # are set here, and it blocks. The scan starts after this commit, the last on

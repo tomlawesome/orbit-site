@@ -474,11 +474,15 @@ for (const j of SCANS) {
   for (const s of snippetRules(rulesOf(j))) bad(`.gitlab-ci.yml: ${j} takes !reference [${s}, job_rule] in its rules, which would skip the secret scan on a catch-up or batch merge request; that merge lands on a branch mirrored to GitHub, so a secret or personal detail it carried would be published unchecked. Take the line off ${SCANS.join(", ")}`);
 }
 
-// the secret scan reads every ref in its git directory, which the runner reuses between pipelines unless the job
-// clones afresh; a reused one would scan other pipelines' branches (#143). GIT_DEPTH 0: the whole history.
+// the secret scan: gitleaks git reads every ref's history by default (its log options are --all), and GitLab's fetch
+// brings other branches, fresh clone or not, so a pipeline failed on another branch's commit (#143). It scans the
+// whole history (GIT_DEPTH 0) of the commit its pipeline is for, and nothing else; each branch's own pipelines scan it.
 {
-  const v = isObj(doc["scan:gitleaks"]) && isObj(doc["scan:gitleaks"].variables) ? doc["scan:gitleaks"].variables : {};
-  if (String(v.GIT_STRATEGY) !== "clone") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_STRATEGY: clone, or it scans the refs earlier pipelines left in the runner's git directory (#143)");
+  const gl = isObj(doc["scan:gitleaks"]) ? doc["scan:gitleaks"] : {};
+  const v = isObj(gl.variables) ? gl.variables : {};
+  const scans = lines(gl.script).filter((l) => /\bgitleaks\s+git\b/.test(l));
+  if (!scans.length || scans.some((l) => !l.includes('--log-opts="$CI_COMMIT_SHA"'))) bad('.gitlab-ci.yml: the job scan:gitleaks must run gitleaks git with --log-opts="$CI_COMMIT_SHA", or it scans every branch the fetch brought, not the commit under test (#143)');
+  if (scans.some((l) => /--all\b/.test(l))) bad(".gitlab-ci.yml: the job scan:gitleaks passes --all to gitleaks: it scans only the history of the commit under test (#143)");
   if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
 }
 
