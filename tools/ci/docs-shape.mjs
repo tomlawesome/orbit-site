@@ -44,7 +44,7 @@ const sameKeys = (o, want) => {
 
 /* opts (the translated folders, docs-i18n-shape.mjs): extraPageKeys, keys a page and an index entry carry besides
    the English shape's; pictures, a folder of pictures (the English img/) a section may use in place of its own;
-   noImgDir, an img/ folder of its own is refused */
+   noImgDir, an img/ folder of its own is refused; extraSectionKeys, keys each section carries besides the English shape's */
 export function checkDocs(dir, sources, opts = {}) {
   const problems = [];
   const bad = (m) => problems.push(m);
@@ -114,7 +114,7 @@ export function checkDocs(dir, sources, opts = {}) {
     /* at least one: a source with nothing to chart, search or read is an import that went wrong (an empty or
        heading-only file, or every section skipped), not a page */
     if (!Array.isArray(list) || !list.length || list.length > MAX_SECTIONS) return bad(`${f}: sections is not a list of 1 to ${MAX_SECTIONS}`);
-    const keys = withHtml ? ["id", "title", "html", "summary", "text", "subs"] : ["id", "title", "summary", "text", "subs"];
+    const keys = [...(withHtml ? ["id", "title", "html", "summary", "text", "subs"] : ["id", "title", "summary", "text", "subs"]), ...(opts.extraSectionKeys || [])];
     list.forEach((s, k) => {
       const where = `sections[${k}]`;
       if (!isObj(s) || !sameKeys(s, keys)) return bad(`${f}: ${where} does not have exactly ${keys.join(", ")}`);

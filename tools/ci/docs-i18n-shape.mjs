@@ -1,11 +1,13 @@
 /*
  * The shape of a translated docs folder, assets/docs-i18n/<lang>/, as tools/ci/translate.mjs writes it (#125 stage
  * 2, spec 1 and 4): the English folder's shape (docs-shape.mjs's checkDocs) with one more key on each page and each
- * index entry, source, and no pictures of its own:
+ * index entry, source, one more on each section, en, and no pictures of its own:
  *
- *   source is exactly {generated, sections, kept}: generated the English index's date the page was made from (an ISO
- *   date), sections the hash16 (16 lower-case hex) of each section's English, one per section of the page and no
- *   other, kept the ids of the sections left in English, each a section of the page, once;
+ *   en, each section's first key (of a page and of an index entry), is the hash16 (16 lower-case hex) of the English
+ *   section it was made from (#145; the layout before it kept these in a table, source.sections, keyed by section id,
+ *   which the secret scan took for leaked keys); an index entry's sections have their page's en;
+ *   source is exactly {generated, kept}: generated the English index's date the page was made from (an ISO
+ *   date), kept the ids of the sections left in English, each a section of the page, once;
  *   an index entry's source is its page's;
  *   no img/ folder: every <img src> is one of the English folder's pictures (assets/docs/img/) or the mark.
  *
@@ -35,20 +37,28 @@ import { checkDocs } from "./docs-shape.mjs";
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const HASH = /^[0-9a-f]{16}$/, ISO = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/;
 
+/* the problems of the en of each section of the page or entry `where` (#145): the first key, 16 lower-case hex; and,
+   given the page's sections for an index entry, its page's */
+function enProblems(where, sections, page = null) {
+  const out = [];
+  sections.forEach((x, k) => {
+    if (!isObj(x)) return; /* checkDocs named it */
+    const at = `${where} sections[${k}]`;
+    if (!Object.hasOwn(x, "en")) return out.push(`${at}: no en, the hash16 of the English it was made from`);
+    if (typeof x.en !== "string" || !HASH.test(x.en)) return out.push(`${at}: en is not 16 lower-case hex`);
+    if (Object.keys(x)[0] !== "en") out.push(`${at}: en is not the section's first key`);
+    if (page && isObj(page[k]) && page[k].id === x.id && page[k].en !== x.en) out.push(`${at}: en is not its page's for section ${x.id}`);
+  });
+  return out;
+}
+
 /* the problems of one source object, for the page or entry `where` whose section ids are ids */
 function sourceProblems(where, src, ids) {
   if (!isObj(src)) return [`${where}: source is not an object`];
-  if (Object.keys(src).sort().join(",") !== "generated,kept,sections") return [`${where}: source does not have exactly generated, sections, kept`];
+  if (Object.hasOwn(src, "sections")) return [`${where}: source.sections is the layout before #145: each section carries its own en instead`];
+  if (Object.keys(src).sort().join(",") !== "generated,kept") return [`${where}: source does not have exactly generated, kept`];
   const out = [];
   if (typeof src.generated !== "string" || !ISO.test(src.generated) || Number.isNaN(Date.parse(src.generated))) out.push(`${where}: source.generated is not an ISO date`);
-  if (!isObj(src.sections)) out.push(`${where}: source.sections is not an object of section id to hash`);
-  else {
-    for (const [id, h] of Object.entries(src.sections)) {
-      if (!ids.includes(id)) out.push(`${where}: source.sections names ${JSON.stringify(id).slice(0, 60)}, which no section has`);
-      else if (typeof h !== "string" || !HASH.test(h)) out.push(`${where}: source.sections ${id}: the hash is not 16 lower-case hex`);
-    }
-    for (const id of ids) if (!Object.hasOwn(src.sections, id)) out.push(`${where}: source.sections has no hash for section ${id}`);
-  }
   if (!Array.isArray(src.kept)) out.push(`${where}: source.kept is not a list`);
   else {
     const seen = new Set();
@@ -62,7 +72,7 @@ function sourceProblems(where, src, ids) {
 }
 
 export function checkTranslated(dir, sources, englishDir, { sameEnglish = false } = {}) {
-  const problems = checkDocs(dir, sources, { extraPageKeys: ["source"], pictures: join(englishDir, "img"), noImgDir: true });
+  const problems = checkDocs(dir, sources, { extraPageKeys: ["source"], extraSectionKeys: ["en"], pictures: join(englishDir, "img"), noImgDir: true });
   if (!Array.isArray(sources)) return problems;
   const read = (f) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
   let english = null;
@@ -80,16 +90,19 @@ export function checkTranslated(dir, sources, englishDir, { sameEnglish = false 
     if (!isObj(p) || !Array.isArray(p.sections)) continue;
     pages[s.slug] = p;
     if (!Object.hasOwn(p, "source")) continue; /* checkDocs named it */
+    problems.push(...enProblems(f, p.sections));
     problems.push(...sourceProblems(f, p.source, p.sections.map((x) => isObj(x) ? x.id : null)));
     later(f, p.source);
   }
   const idx = existsSync(join(dir, "index.json")) ? read("index.json") : null;
   if (isObj(idx) && Array.isArray(idx.sources)) idx.sources.forEach((e, k) => {
     const where = `index.json sources[${k}]`;
-    if (!isObj(e) || !Object.hasOwn(e, "source")) return; /* checkDocs named it */
+    if (!isObj(e)) return; /* checkDocs named it */
     const p = pages[e.slug];
+    if (Array.isArray(e.sections)) problems.push(...enProblems(where, e.sections, p ? p.sections : null));
+    if (!Object.hasOwn(e, "source")) return; /* checkDocs named it */
     if (p && JSON.stringify(e.source) !== JSON.stringify(p.source)) problems.push(`${where}: source is not its page's (${e.slug}.json)`);
-    else if (!p) problems.push(...sourceProblems(where, e.source, Array.isArray(e.sections) ? e.sections.map((x) => isObj(x) ? x.id : null) : []));
+    if (!p || JSON.stringify(e.source) !== JSON.stringify(p.source)) problems.push(...sourceProblems(where, e.source, Array.isArray(e.sections) ? e.sections.map((x) => isObj(x) ? x.id : null) : []));
   });
   return problems;
 }
