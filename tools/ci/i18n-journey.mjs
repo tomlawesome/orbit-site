@@ -10,9 +10,13 @@
  *   J5  the root with locale de-DE and stored "en" stays at the root
  *   J6  de/ with an English browser never redirects (one navigation only)
  *   J7  the root shows no AI notice
- *   J9  (#138, ALL-S1) a German browser that keeps nothing (site data blocked) and sends no referrer: the root sends it to
+ *   J9  a translated docs page older than the English shows the stale banner, with a link to the English
+ *   J9c a page with sections left in English (source.kept) and nothing else wrong shows a banner that does not say the English has changed
+ *   J10 the de/ reader reads assets/docs-i18n/de/; a translated page shows no untranslated line, a page with no German file is read in
+ *       English with that line shown (decision 11a: page-level, never per section); the root never asks for it
+ *   J11 (#138, ALL-S1) a German browser that keeps nothing (site data blocked) and sends no referrer: the root sends it to
  *       de/; the notice's English link there opens the English page and it stays (it is not sent back to de/)
- *   J10 (#138, ALL-F6) the notice's English link, opened in a new tab with a modifier-click, a middle click or copied from
+ *   J12 (#138, ALL-F6) the notice's English link, opened in a new tab with a modifier-click, a middle click or copied from
  *       the context menu, points at the address the visitor is at now (the site moves its hash without a hashchange), not
  *       the one the page loaded with
  *
@@ -28,6 +32,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { freePort, openBrowser } from "./live-lib.mjs";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
@@ -176,9 +181,94 @@ try {
     const shown = await page.locator(".ai-notice:visible").count();
     check("J7 the root shows no AI notice", shown === 0, `${shown} visible`);
   });
-  /* J9 (#138, ALL-S1): site data blocked and the referrer stripped, as a privacy setting does: nothing is left to remember
+
+  /* J9, J10 (#125 stage 2): fake German docs served by route, so no built translation is needed in the tree. The
+     page "readme" is translated (its second section kept in English, its hash not the English's: the stale banner says
+     so, J9); every other page has no German file (404: the whole English page is read, and the untranslated line shown). With fresh, every
+     section's hash matches the English and none is kept: spec 3 shows the stale banner when "any [hash] differs from
+     source.sections, or source.kept is non-empty", so only such a page can show none (J9b). The German page is known
+     to be shown by its title in the reader's heading: the reader sets a page's title and its sections' html, never the
+     first ("top") section's title, so the fake's "Orbit auf Deutsch" is in no element. */
+  const h16 = (x) => createHash("sha256").update(x, "utf8").digest("hex").slice(0, 16);
+  const eIndex = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8"));
+  const eReadme = JSON.parse(readFileSync(join(ROOT, "assets/docs/readme.json"), "utf8"));
+  const fakeDocs = async (page, generated, fresh = false, keptOnly = false) => {
+    const asked = [];
+    const first = eReadme.sections[0], second = eReadme.sections[1];
+    const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
+      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second && (!fresh || keptOnly) ? [second.id] : [] } };
+    const dIndex = { generated, sources: eIndex.sources.filter((x) => x.slug === "readme").map((x) => ({ ...x, title: "Orbit (de)" })) };
+    await page.route("**/assets/docs-i18n/**", (route) => {
+      const u = new URL(route.request().url()); asked.push(u.pathname);
+      const f = u.pathname.split("/").pop();
+      if (f === "index.json") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dIndex) });
+      if (f === "readme.json") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dPage) });
+      return route.fulfill({ status: 404, body: "" });
+    });
+    return { asked, first };
+  };
+  await run("J9", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    const fake = await fakeDocs(page, "2000-01-01T00:00:00Z");
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const link = await banner.first().locator("a[hreflang='en']").count();
+    check("J9a an older translation shows the stale banner (.docs-stale) with a link to the English (hreflang en)", link >= 1, `${link} link(s), asked ${JSON.stringify(fake.asked)}`);
+  });
+  await run("J9b", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated, true);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
+    const n = await page.locator("#docspad .docs-stale:visible").count();
+    check("J9b a translation as new as the English shows no stale banner", n === 0, `${n} visible`);
+  });
+  /* fix review 4: a banner that shows only because a section was left in English (source.kept: two failed tries, a RETRY_HASH)
+     while every hash matches the English and the stamp is the English's must not say the English has changed since. */
+  await run("J9c", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated, true, true);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const text = (await banner.first().textContent()) || "";
+    const de = JSON.parse(readFileSync(join(ROOT, "assets/i18n/de.json"), "utf8"));
+    const changed = String(de["docs-stale"]).split("{date}").pop().replace(/^[\s;,.]+/, "").replace(/[\s.]+$/, ""); /* "das Englische hat sich seitdem geändert" */
+    const link = await banner.first().locator("a[hreflang='en']").count();
+    check("J9c a page with sections left in English and nothing else wrong shows a banner with a link to the English", link >= 1 && text.trim().length > 0, `${link} link(s), "${text.trim()}"`);
+    check("J9c and that banner does not say the English has changed since", changed.length > 5 && !text.includes(changed), `banner "${text.trim()}", the changed-since line ends "${changed}"`);
+  });
+  await run("J10", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    const fake = await fakeDocs(page, eIndex.generated);
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction(() => document.querySelector("#docspad .readhead h1")?.textContent === "Orbit (de)", null, { timeout: 8000 });
+    check("J10a the de/ reader asks for assets/docs-i18n/de/", fake.asked.some((u) => u.endsWith("/assets/docs-i18n/de/readme.json") || u.endsWith("/assets/docs-i18n/de/index.json")), JSON.stringify(fake.asked));
+    /* the line is in the page's markup (de/index.html) without a hidden attribute, so a count of the elements proves nothing:
+       what matters is whether the visitor sees it (decision 11a: it stands over an English page, never a translated one) */
+    const un = await page.locator("#docspad .reader .untranslated:visible").count();
+    check("J10b a translated page shows no untranslated line (#docspad .reader .untranslated is not visible)", un === 0, `${un} visible`);
+    const gone = eIndex.sources.find((x) => x.slug !== "readme");
+    await page.goto(`${SITE}de/${Q}#docs/${gone.slug}`, { waitUntil: "load" });
+    await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), gone.sections[0].title, { timeout: 8000 });
+    const shownGone = await page.locator("#docspad .reader .untranslated:visible").count();
+    const h1 = (await page.locator("#docspad .readhead h1").textContent()) || "";
+    const asked404 = fake.asked.some((u) => u.endsWith(`/assets/docs-i18n/de/${gone.slug}.json`));
+    check("J10c a page with no German file is read in English, with the untranslated line shown", asked404 && shownGone === 1 && h1 !== "Orbit (de)" && h1.length > 0,
+      `asked the German file: ${asked404}; ${shownGone} visible line(s); heading "${h1}"`);
+  });
+  await run("J10d", { context: { locale: "en-US" } }, async (page) => {
+    const fake = await fakeDocs(page, eIndex.generated);
+    await page.goto(`${SITE}${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction((t) => document.getElementById("docspad").textContent.includes(t), eReadme.sections[0].title, { timeout: 8000 });
+    check("J10d the root (English) never asks for assets/docs-i18n/", fake.asked.length === 0, JSON.stringify(fake.asked));
+  });
+
+  /* J11 (#138, ALL-S1): site data blocked and the referrer stripped, as a privacy setting does: nothing is left to remember
      the visitor's choice by but the address the English link opens */
-  await run("J9", { context: { locale: "de-DE" } }, async (page) => {
+  await run("J11", { context: { locale: "de-DE" } }, async (page) => {
     const navs = [];
     page.on("framenavigated", (f) => { if (f === page.mainFrame()) navs.push(f.url()); });
     await page.addInitScript(() => {
@@ -196,12 +286,12 @@ try {
     await page.waitForLoadState("load");
     await page.evaluate(() => document.fonts.ready).catch(() => {});
     const after = navs.slice(mark);
-    check("J9 a German browser that keeps nothing and sends no referrer reaches the English page from the notice's link, and stays", !inDe(page.url()) && after.every((u) => !inDe(u)) && (await page.evaluate(() => document.documentElement.lang).catch(() => "")).startsWith("en"), JSON.stringify(after));
+    check("J11 a German browser that keeps nothing and sends no referrer reaches the English page from the notice's link, and stays", !inDe(page.url()) && after.every((u) => !inDe(u)) && (await page.evaluate(() => document.documentElement.lang).catch(() => "")).startsWith("en"), JSON.stringify(after));
   });
 
-  /* J10 (#138, ALL-F6): the site moves its hash with history.pushState (no hashchange), so the notice's English link must be
+  /* J12 (#138, ALL-F6): the site moves its hash with history.pushState (no hashchange), so the notice's English link must be
      aimed at the address now, whichever way the visitor takes it: modifier-click or middle click (a new tab), or the context menu */
-  await run("J10", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+  await run("J12", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
     await page.goto(`${SITE}de/${Q}#docs`, { waitUntil: "load" });
     await docsOpen(page);
     await page.locator("#docspad .entry").first().waitFor({ state: "attached", timeout: 30000 });
@@ -218,12 +308,12 @@ try {
       return at;
     };
     const ctrl = await opened({ modifiers: ["Control"] });
-    check("J10a a modifier-click on the notice's English link opens the English page at the address the visitor is at now", !inDe(ctrl.href) && ctrl.hash === here, `${ctrl.href} (want ${here})`);
+    check("J12a a modifier-click on the notice's English link opens the English page at the address the visitor is at now", !inDe(ctrl.href) && ctrl.hash === here, `${ctrl.href} (want ${here})`);
     const middle = await opened({ button: "middle" });
-    check("J10b a middle click opens it there too", !inDe(middle.href) && middle.hash === here, `${middle.href} (want ${here})`);
+    check("J12b a middle click opens it there too", !inDe(middle.href) && middle.hash === here, `${middle.href} (want ${here})`);
     await link.first().click({ button: "right" });
     const copied = new URL(await link.first().evaluate((a) => a.href));
-    check("J10c the link the context menu copies is aimed there too", copied.hash === here, `${copied.href} (want ${here})`);
+    check("J12c the link the context menu copies is aimed there too", copied.hash === here, `${copied.href} (want ${here})`);
   });
 } catch (e) {
   check("harness", false, String(e && e.stack || e));

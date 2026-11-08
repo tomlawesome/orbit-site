@@ -212,6 +212,8 @@ export default {
  "copy-done": "copied",
  "copy-failed": "not copied",
  "docs-stamp": "charted from the repositories · {date}",
+ "docs-stale": "Translated from the English of {date}; the English has changed since.",
+ "docs-kept": "Translated from the English of {date}; some sections of this page are still in English.",
  "docs-missing-title": "nothing here yet",
  "docs-missing": "The docs have not been imported. They are on {link}.",
  "docs-missing-link": "the repository",

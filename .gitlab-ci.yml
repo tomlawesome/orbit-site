@@ -55,8 +55,8 @@ workflow:
     - if: $CI_COMMIT_TAG
       when: never
     # A scheduled pipeline is the docs-import lane, the Renovate lane or the
-    # daily Trivy scan. `import_docs`, `publish_docs`, `renovate` and
-    # `scan:trivy` are the only jobs that opt in, so a schedule without its
+    # daily Trivy scan. `import_docs`, `publish_docs`, `translate_docs`,
+    # `publish_translations`, `renovate` and `scan:trivy` are the only jobs that opt in, so a schedule without its
     # variable would make a pipeline with no jobs; refusing it here says why.
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true"
     - if: $CI_PIPELINE_SOURCE == "schedule" && $RENOVATE == "true"
@@ -64,6 +64,10 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # The owner's hand-started translation (TRANSLATE=true, #125) runs even on a
+    # batch branch with an open merge request: its translate_docs and
+    # publish_translations need this pipeline, and the other jobs in it are harmless.
+    - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
@@ -433,13 +437,14 @@ coverage:
 # that job's secrets and rewrite its scripts (#18). `import_docs` has no token,
 # makes no push and no API call, and hands on assets/docs/ alone as an
 # artifact. `publish_docs` runs no third-party code, treats the artifact as
-# untrusted, checks it, and is the only job in the `docs-import` environment
-# (the lint refuses any other).
+# untrusted, checks it, and with `publish_translations` (#125, below) is the
+# only job in the `docs-import` environment (the lint refuses any other).
 #
 # ORBIT_SITE_IMPORT_TOKEN is a service account's personal access token (role
 # Developer, which can merge into `dev`; scopes api and write_repository,
 # Masked + Protected) the owner created, with its
-# environment scope set to `docs-import`, which only `publish_docs` joins.
+# environment scope set to `docs-import`, which only `publish_docs` and
+# `publish_translations` join.
 # Nothing here sets it. The schedule runs on `dev` with IMPORT_DOCS=true.
 import_docs:
   stage: maintenance
@@ -464,7 +469,7 @@ import_docs:
 # branches. A job joins the environment by a change to this file merged into
 # `dev`, which a Developer (the import's service account included) can do by
 # merge request, and into `main` only by a promotion the owner approves; the
-# lint refuses any job but `publish_docs` that names
+# lint refuses any job but `publish_docs` and `publish_translations` that names
 # `docs-import`, so such a change is also visible in review. `action` is left
 # at its default, `start`: the scope does not need it (any action matches the
 # name), it only records each run as a deployment, a record of when the token
@@ -530,3 +535,83 @@ renovate:
     LOG_LEVEL: info
   script:
     - renovate
+
+# The translation of the site (#125 stage 2, ADR in the issue): translate_docs
+# reads the committed English of the branch it runs on (never the import's
+# artifact, so nothing untrusted reaches it) and translates what changed with
+# Claude through the Message Batches API (tools/ci/translate.mjs, raw fetch, no
+# npm and so no third-party code). It runs on the nightly import schedule on dev
+# and when the owner starts a pipeline by hand with TRANSLATE=true on dev or a
+# batch branch.
+#
+# ANTHROPIC_API_KEY is Masked + Protected, set by the owner with its environment
+# scope `translate`, which only this job joins (ci-split refuses any other, and
+# refuses the key's name in any file but this one, the job's script and the
+# tool). The lint judges this job as strictly as publish_docs: its keys an
+# allowlist, no before_script or after_script, its variables exactly the two
+# below, no parallel or rule variables, and TRANSLATE_MAX_TOKENS set nowhere in
+# this file (only by hand, on a pipeline started from the web). GitLab CE cannot stop a change merged into dev from adding a job to
+# that environment; the lint, review and the key's own spend limit in the
+# Console are what stand behind it. resource_group keeps to one run at a time,
+# and the tool itself refuses to submit while a batch is in progress on the
+# key. The job prints the dry-run estimate before it spends, and
+# stops (exit 3) when the estimate is over TRANSLATE_MAX_TOKENS (3,000,000 when
+# unset). It fits the one-hour runner lane: a batch not ended after 50 minutes
+# is left running and the job fails with exit 5, printing a resume token (the
+# batch id and a digest of its requests); a pipeline started by hand with
+# TRANSLATE=true and TRANSLATE_BATCH_ID=<that token> submits nothing, waits for
+# that batch and finishes the run, and refuses it if the English has changed
+# since (#125 spec amendment 1, review finding 2). Its artifact goes to publish_translations, which
+# treats it as untrusted: en.json and en.js are never in it.
+translate_docs:
+  stage: maintenance
+  image: $NODE_IMAGE
+  interruptible: false
+  timeout: 1h
+  resource_group: translate
+  environment:
+    name: translate
+    deployment_tier: other
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
+  # no other job's artifacts (a dotenv report in them would set this job's variables)
+  needs: []
+  variables:
+    GIT_DEPTH: 1
+    GIT_STRATEGY: clone
+  script:
+    - sh tools/ci/nightly-translate.sh
+  artifacts:
+    paths:
+      - assets/docs-i18n/
+      - assets/i18n/
+      - tools/i18n/state/
+      - translate-report.json
+    exclude:
+      - assets/i18n/en.json
+      - assets/i18n/en.js
+    expire_in: 1 day
+
+# The translation's publish: as publish_docs (the same token, environment and
+# limits; see there), with the argument `translations`. It opens a merge request
+# into the branch the pipeline is on, which merges itself only into dev
+# (tools/ci/nightly-publish.sh).
+publish_translations:
+  stage: publish
+  image: $NODE_IMAGE
+  interruptible: false
+  needs:
+    - job: translate_docs
+      artifacts: false
+  environment:
+    name: docs-import
+    deployment_tier: other
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
+  variables:
+    GIT_DEPTH: 1
+    GIT_STRATEGY: clone
+  script:
+    - sh tools/ci/nightly-publish.sh translations

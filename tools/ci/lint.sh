@@ -37,7 +37,7 @@ node --experimental-vm-modules --no-warnings -e '
     console.log(`   ${f} does not parse: ${why.name}: ${why.message}`);
     process.exitCode = 1;
   }
-' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
+' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/i18n/*.mjs tools/ci/*.mjs || fail=1
 fi
 
 if on refs; then
@@ -133,6 +133,17 @@ echo "== the imported docs have the shape the import writes"
 # what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
 # (the publish job holds the artifact to the same check, #18)
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+# each translated folder (#125 stage 2): the same shape, its source record
+# (never stamped later than the committed English), the English pictures. How
+# far it lags the English is printed, never failed (#125 amendments 5 and 6):
+# the lag is the nightly schedule's state, which no merge request can break or
+# mend; publish_docs reports a page stalled 36 hours in the warnings issue.
+# --lag fails only on a page stamped later than the English, as the shape does.
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-i18n-shape.mjs "${d%/}" tools/docs-sources.json assets/docs || fail=1
+done
+node tools/ci/docs-i18n-shape.mjs --lag || fail=1
 fi
 
 if on docs-markup; then
@@ -146,6 +157,11 @@ echo "== the imported docs carry no script: only the markup the import writes"
 # allow-list, which is what the import writes (audit 5, S1). Anything else is
 # refused outright, however harmless it looks: the import never writes it.
 node tools/ci/docs-markup.mjs assets/docs || fail=1
+# the translated docs (#125 stage 2) are held to the same allow-list
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-markup.mjs "${d%/}" || fail=1
+done
 fi
 
 if on milkyway; then
@@ -196,10 +212,12 @@ fi
 fi
 
 if on ci-split; then
-echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
+echo "== the docs import is split: import_docs holds no token, exactly publish_docs and publish_translations are in the docs-import environment, translate_docs alone in translate, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
-# worth stealing; the publish holds the token, runs no third-party code, and is
-# the only job in the docs-import environment, where the token is scoped (#18).
+# worth stealing; the publish holds the token, runs no third-party code, and
+# exactly two jobs are in the docs-import environment, where the token is
+# scoped: publish_docs (#18) and publish_translations (#125), judged alike.
+# translate_docs, which holds the Anthropic API key, is alone in translate.
 # Both run from the schedule on dev alone (#129), never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
@@ -407,13 +425,16 @@ if on stray; then
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)
-for f in node_modules package.json package-lock.json .agents import-warnings.txt; do
+for f in node_modules package.json package-lock.json .agents import-warnings.txt translate-report.json; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 # the import's warnings file (#82) is written at the root of every import's
 # checkout: ignored, so it is never committed by hand
 grep -qx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore \
   || { echo "   .gitignore must list /import-warnings.txt"; fail=1; }
+# and the translation job's report (#125 stage 2): an artifact, never committed
+grep -qx -e 'translate-report.json' -e '/translate-report.json' .gitignore \
+  || { echo "   .gitignore must list /translate-report.json"; fail=1; }
 fi
 
 if on npm-pins; then

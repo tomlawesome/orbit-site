@@ -24,6 +24,7 @@
       "assets/js/lang.js",
       "assets/i18n/**",
       "de/**",
+      "tools/i18n/languages.json",
       "assets/js/ring.js",
       "assets/js/places.js",
       "assets/js/tilt.js",
@@ -47,8 +48,9 @@
     ],
     "docs": [
       "assets/js/pads.js",
+      "assets/js/hash.js",
       "assets/js/places.js",
-      "assets/docs/**",
+      "assets/docs*/**",
       "tools/docs-sources.json"
     ],
     "worlds": [
@@ -77,6 +79,10 @@
       "tools/ci/nightly-publish.sh",
       "tools/ci/docs-shape.mjs",
       "tools/ci/docs-markup.mjs",
+      "tools/ci/docs-i18n-shape.mjs",
+      "tools/ci/translate.mjs",
+      "tools/ci/nightly-translate.sh",
+      "tools/i18n/**",
       "tools/ci/nightly-import-test.sh",
       "tools/ci/import-docs-test.mjs",
       "tools/ci/raw-heading-test.mjs",
@@ -131,7 +137,7 @@
       "tools/ci/*-test.sh",
       "tools/ci/door-stub.mjs",
       "tools/ci/ready-ways-bed.mjs",
-      "tools/ci/fake-voyage*.mjs",
+      "tools/ci/fake-voyage*.mjs", "tools/ci/fake-claude*.mjs", "tools/ci/translate-fixture.mjs",
       "tools/ci/world-spy*.mjs"
     ]
   },
