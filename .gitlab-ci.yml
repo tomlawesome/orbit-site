@@ -209,7 +209,8 @@ lint:duplication:
 # [""]` because the runner starts each job's shell in the container, and these
 # images' entrypoint is the tool.
 #
-# gitleaks: the whole history (GIT_DEPTH 0), secrets redacted in the log.
+# gitleaks: the whole history (GIT_DEPTH 0) of the commit under test, not other
+# branches (#143), secrets redacted in the log.
 # .gitleaksignore holds the accepted fingerprints.
 scan:gitleaks:
   stage: lint
