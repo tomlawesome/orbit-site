@@ -1583,6 +1583,60 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
+# Cases p243-p245 (#143): scan:gitleaks scans only the history of the commit its pipeline is for. The runner keeps the
+# git directory between pipelines, so the job takes a fresh clone (`GIT_STRATEGY: clone`) of the whole history
+# (`GIT_DEPTH: 0`). ci-split refuses .gitlab-ci.yml when scan:gitleaks loses either. Each case first gives the job the
+# one it lacks (as the #141 block gives jobs their skip) so it fails only for the one fault under test; the refusal
+# names .gitlab-ci.yml and scan:gitleaks (the job may come right after "<file>: ", so the pattern needs no text before it).
+gl_js='
+  const jobRe = /\nscan:gitleaks:\n(?:[ #].*\n)*/;
+  const edit = (y, f) => {
+    const m = jobRe.exec(y);
+    if (!m) throw new Error("no job scan:gitleaks");
+    const b = f(m[0]);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const hasStrategy = (b) => /^    GIT_STRATEGY: clone\s*$/m.test(b);
+  const hasDepth = (b) => /^    GIT_DEPTH: 0\s*$/m.test(b);
+  const ensureStrategy = (y) => edit(y, (b) => {
+    if (hasStrategy(b)) return b;
+    const r = b.replace("  variables:\n", "  variables:\n    GIT_STRATEGY: clone\n");
+    if (r === b) throw new Error("scan:gitleaks has no variables: to put GIT_STRATEGY under");
+    return r;
+  });
+  const ensureDepth = (y) => edit(y, (b) => {
+    if (hasDepth(b)) return b;
+    const r = b.replace("  variables:\n", "  variables:\n    GIT_DEPTH: 0\n");
+    if (r === b) throw new Error("scan:gitleaks has no variables: to put GIT_DEPTH under");
+    return r;
+  });
+  const stripKey = (y, key) => edit(y, (b) => {
+    const r = b.replace(new RegExp("^    " + key + ":.*\\n", "m"), "");
+    if (new RegExp("^    " + key + ":", "m").test(r)) throw new Error(key + " is still on scan:gitleaks");
+    return r;
+  });
+  const withBoth = (y) => ensureDepth(ensureStrategy(y));'
+# scan:gitleaks names the job whole: "scan:gitleaks" must not be satisfied by a refusal naming another job
+gl_name='(^|[^:A-Za-z_-])scan:gitleaks([^:A-Za-z_-]|$)'
+split_case "p243: scan:gitleaks without GIT_STRATEGY: clone" $ci "$gl_name" "$gl_js"'
+  y = stripKey(withBoth(y), "GIT_STRATEGY");'
+split_case "p244: scan:gitleaks without GIT_DEPTH: 0" $ci "$gl_name" "$gl_js"'
+  y = stripKey(withBoth(y), "GIT_DEPTH");'
+# the real file: scan:gitleaks has both (giving them again changes nothing) and ci-split passes it
+has_both=0
+Y="$(cat "$ci")" JS="$gl_js"'
+  y = withBoth(y);' node -e '
+  const y = process.env.Y;
+  if (new Function("y", process.env.JS + "; return y;")(y) !== y) process.exit(3);
+' || has_both=1
+lint_to_out proxy ci-split
+if [ "$rc" -eq 0 ] && [ "$has_both" -eq 0 ]; then
+  echo "ok   p245: the committed pipeline with GIT_STRATEGY: clone and GIT_DEPTH: 0 on scan:gitleaks passes"
+else
+  echo "FAIL p245: the committed pipeline with GIT_STRATEGY: clone and GIT_DEPTH: 0 on scan:gitleaks passes (exit $rc, want 0; one of the two missing on scan:gitleaks: $has_both)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
