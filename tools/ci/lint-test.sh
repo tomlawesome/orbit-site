@@ -1507,6 +1507,82 @@ split_case "p231: lint taking the catchup-check job_rule by a YAML anchor on the
   y = swap(top(y, "  rules: &route_list\n" + CC), "lint", "  rules: *route_list\n");'
 split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the catchup-check job_rule, by !reference" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
   y = swap(y, "scan:gitleaks", "  rules:\n    - !reference [scan:trivy, rules]\n");'
+# Cases p233-p242 (#141): a pipeline started from the web with TRANSLATE=true runs no browser test, no coverage
+# and no lint test (the translation does not touch the site's code), but every secret scan still runs. ci-split
+# refuses .gitlab-ci.yml when live:firefox, live:chromium, coverage, lint:test or lint:import lack the
+# `not_translation` skip (the rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`, `when: never`,
+# shared as the alias *not_translation or written out inline), or when lint, scan:gitleaks or private-details
+# carry it. Each case first gives the five jobs the skip where one lacks it (and adds the anchor if the file has
+# none) so it fails only for the one fault under test; the removal cases then take the skip off one job, the
+# planting cases put it on one of the three scans. A refusal names .gitlab-ci.yml, the job and "translation".
+tr_js='
+  const SKIP_IF = "if: $CI_PIPELINE_SOURCE == \"web\" && $TRANSLATE == \"true\"";
+  const FIVE = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
+  const hasSkip = (b) => /^ +- (\*not_translation|if: \$CI_PIPELINE_SOURCE == "web" && \$TRANSLATE == "true")\s*$/m.test(b);
+  const edit = (y, job, f) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = f(m[0]);
+    if (b === m[0]) throw new Error("nothing changed in " + job);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const addAnchor = (y) => {
+    if (y.includes("&not_translation")) return y;
+    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: never\n");
+    if (r === y) throw new Error("no .not_scheduled anchor to put it beside");
+    return r;
+  };
+  const ensure = (y, job) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (m && hasSkip(m[0])) return y;
+    return edit(y, job, (b) => b.replace("    - *not_scheduled\n", "    - *not_translation\n    - *not_scheduled\n"));
+  };
+  const plant = (y, job, entry) => edit(y, job, (b) => b.replace("    - *not_scheduled\n", entry + "    - *not_scheduled\n"));
+  const strip = (y, job) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: never\n", "");
+    if (hasSkip(b)) throw new Error("the skip is still on " + job);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const without = (y, job) => { y = addAnchor(y); for (const j of FIVE) if (j !== job) y = ensure(y, j); return strip(y, job); };
+  const withFive = (y) => { y = addAnchor(y); for (const j of FIVE) y = ensure(y, j); return y; };'
+# <job> names the job whole: "lint" must not be satisfied by a refusal naming lint:test
+tr_name() { echo "((^|[^:A-Za-z_-])$1([^:A-Za-z_-]|\$).*translation|translation.*(^|[^:A-Za-z_-])$1([^:A-Za-z_-]|\$))"; }
+split_case "p233: live:firefox without the translation skip" $ci "$(tr_name 'live:firefox')" "$tr_js"'
+  y = without(y, "live:firefox");'
+split_case "p234: live:chromium without the translation skip" $ci "$(tr_name 'live:chromium')" "$tr_js"'
+  y = without(y, "live:chromium");'
+split_case "p235: coverage without the translation skip" $ci "$(tr_name 'coverage')" "$tr_js"'
+  y = without(y, "coverage");'
+split_case "p236: lint:test without the translation skip" $ci "$(tr_name 'lint:test')" "$tr_js"'
+  y = without(y, "lint:test");'
+split_case "p237: lint:import without the translation skip" $ci "$(tr_name 'lint:import')" "$tr_js"'
+  y = without(y, "lint:import");'
+split_case "p238: lint carrying the translation skip" $ci "$(tr_name 'lint')" "$tr_js"'
+  y = plant(withFive(y), "lint", "    - *not_translation\n");'
+split_case "p239: scan:gitleaks carrying the translation skip" $ci "$(tr_name 'scan:gitleaks')" "$tr_js"'
+  y = plant(withFive(y), "scan:gitleaks", "    - *not_translation\n");'
+split_case "p240: private-details carrying the translation skip" $ci "$(tr_name 'private-details')" "$tr_js"'
+  y = plant(withFive(y), "private-details", "    - *not_translation\n");'
+# the entry written out in the job (not the alias) counts as the skip too
+split_case "p241: lint carrying the translation skip written out inline" $ci "$(tr_name 'lint')" "$tr_js"'
+  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: never\n");'
+# the real file: the skip is on all five (giving it to them again changes nothing) and ci-split passes it
+has_five=0
+Y="$(cat "$ci")" JS="$tr_js"'
+  y = withFive(y);' node -e '
+  const y = process.env.Y;
+  if (new Function("y", process.env.JS + "; return y;")(y) !== y) process.exit(3);
+' || has_five=1
+lint_to_out proxy ci-split
+if [ "$rc" -eq 0 ] && [ "$has_five" -eq 0 ]; then
+  echo "ok   p242: the committed pipeline with the translation skip on all five passes"
+else
+  echo "FAIL p242: the committed pipeline with the translation skip on all five passes (exit $rc, want 0; skip missing on one of the five: $has_five)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
