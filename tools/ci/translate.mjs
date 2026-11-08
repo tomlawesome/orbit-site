@@ -272,13 +272,15 @@ async function planLanguage(root, lang, L, eng, only) {
   if (only !== "site") {
     for (const src of eng.sources) {
       const old = tryJson(join(root, `assets/docs-i18n/${lang}/${src.slug}.json`));
-      const prev = isObj(old) && isObj(old.source) && isObj(old.source.sections) && Array.isArray(old.sections) ? old : null;
+      /* each section's en is the hash16 of the English it was made from (#145); a page in the layout before it (a
+         source.sections table) is no previous translation, so all of it is sent again */
+      const prev = isObj(old) && isObj(old.source) && !Object.hasOwn(old.source, "sections") && Array.isArray(old.source.kept) && Array.isArray(old.sections) ? old : null;
       const page = { prev, hashes: {} };
       plan.pages[src.slug] = page;
       for (const s of eng.pages[src.slug].sections) {
         const h = page.hashes[s.id] = await hash16(sectionText(s));
         const had = prev && prev.sections.find((x) => isObj(x) && x.id === s.id);
-        if (had && prev.source.sections[s.id] === h) { plan.unchanged++; continue; }
+        if (had && had.en === h) { plan.unchanged++; continue; }
         const id = `docs/${src.slug}/${s.id}`;
         const payload = { slug: src.slug, id: s.id, title: s.title, html: s.html, subs: s.subs };
         plan.items.push({ kind: "section", id, lang, L, customId: `${id}@${lang}`, slug: src.slug, eng: s, payload, chars: JSON.stringify(payload).length });
@@ -801,17 +803,20 @@ export async function run(opts) {
           for (const s of engPage.sections) {
             const res = outcome.get(`docs/${src.slug}/${s.id}@${p.lang}`);
             const due = p.items.some((it) => it.kind === "section" && it.slug === src.slug && it.eng.id === s.id);
+            /* en first: the hash beside the section, never in a table keyed by id, which the secret scan takes
+               for keys (#145) */
+            const put = (x) => { const { en: _en, ...rest } = x; sections.push({ en: hashes[s.id], ...rest }); };
             if (!due) {
-              sections.push(prev.sections.find((x) => isObj(x) && x.id === s.id));
+              put(prev.sections.find((x) => isObj(x) && x.id === s.id));
               if (prev.source.kept.includes(s.id)) keptIds.push(s.id);
-            } else if (res && res.section) { sections.push(res.section); R.translated++; }
+            } else if (res && res.section) { put(res.section); R.translated++; }
             else {
-              sections.push(structuredClone(s)); keptIds.push(s.id); keep(`docs/${src.slug}/${s.id}`, res ? res.kept : ["errored: no result"]);
               if (!res || res.retry) hashes[s.id] = RETRY_HASH; /* the API failed it: sent again next run */
+              put(structuredClone(s)); keptIds.push(s.id); keep(`docs/${src.slug}/${s.id}`, res ? res.kept : ["errored: no result"]);
             }
           }
           const { sections: _drop, ...head } = engPage;
-          const page = { ...head, sections, source: { generated: eng.generated, sections: hashes, kept: keptIds } };
+          const page = { ...head, sections, source: { generated: eng.generated, kept: keptIds } };
           files.set(join(out, `assets/docs-i18n/${p.lang}/${src.slug}.json`), JSON.stringify(page));
           entries.push({ ...head, sections: sections.map(({ html, ...rest }) => rest), source: page.source });
         }

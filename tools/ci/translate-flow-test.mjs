@@ -5,7 +5,7 @@
  *
  *   T13 retry: a failed item is in a second batch exactly once with the failed rules in its user message; a passing
  *       second answer is written; an item that passed is never sent twice; never a third batch
- *   T14 keep English: a twice-failed section is copied from English with its hash in source.sections and its id in
+ *   T14 keep English: a twice-failed section is copied from English with its hash in its own `en` and its id in
  *       source.kept; a twice-failed key equals en.json and is in state.kept; both are in the report with the rule;
  *       a kept item is not sent again while the English is unchanged
  *   T15 an errored, an expired and a refused result are kept English and reported, exit 0, the rest written
@@ -83,7 +83,7 @@ await T.attempt("T14", async () => {
     T.exit("T14a a run where two items fail twice exits 0", r, 0);
     T.check("T14b never a third batch; each failing item sent exactly twice", fake.batches.length === 2 && fake.sent.filter((q) => q.customId === `${TOP}@de`).length === 2, `${fake.batches.length} batches`);
     const p = fx.read("assets/docs-i18n/de/readme.json"), s = p.sections.find((x) => x.id === "top"), eng = fx.pages.readme.sections.find((x) => x.id === "top");
-    T.check("T14c the section is copied from English, its hash in source.sections, its id in source.kept", !!s && JSON.stringify(s) === JSON.stringify(eng) && p.source.sections.top === sectionHash(eng) && p.source.kept.includes("top"), s ? `kept ${JSON.stringify(p.source.kept)}` : "section missing");
+    T.check("T14c the section is copied from English with its hash first, as `en`, no source.sections, its id in source.kept", !!s && JSON.stringify(s) === JSON.stringify({ en: sectionHash(eng), ...eng }) && !("sections" in p.source) && p.source.kept.includes("top"), s ? `kept ${JSON.stringify(p.source.kept)}` : "section missing");
     const cat = fx.read("assets/i18n/de.json"), st = fx.read("tools/i18n/state/de.json");
     T.check("T14d the key is copied from en.json and is in state.kept, its hash recorded", cat.k003 === fx.en.k003 && st.kept.includes("k003") && st.catalogue.k003 === hash16(fx.en.k003), `k003 = ${JSON.stringify(cat.k003)}`);
     const rep = fx.readReport();
@@ -141,10 +141,10 @@ await T.attempt("T16", async () => {
       let derived = 0, cut = 0, copied = 0;
       for (const src of fx.sources) {
         const p = fx.read(`${d}/${src.slug}.json`), eng = fx.pages[src.slug];
-        T.check(`T16e ${lang}/${src.slug}: page keys are the English page's plus source; source is {generated, sections, kept}`, key(p) === pageKeys && key(p.source) === "generated,kept,sections" && p.source.generated === fx.generated && JSON.stringify(Object.keys(p.source.sections)) === JSON.stringify(eng.sections.map((s) => s.id)) && Object.values(p.source.sections).every((h) => /^[0-9a-f]{16}$/.test(h)), key(p));
-        T.check(`T16f ${lang}/${src.slug}: sections in English's order, with exactly id, title, html, summary, text, subs`, JSON.stringify(p.sections.map((s) => s.id)) === JSON.stringify(eng.sections.map((s) => s.id)) && p.sections.every((s) => key(s) === "html,id,subs,summary,text,title"), "section keys");
+        T.check(`T16e ${lang}/${src.slug}: page keys are the English page's plus source; source is {generated, kept}, each section's English hash is its own en (16 lower hex), and there is no source.sections`, key(p) === pageKeys && key(p.source) === "generated,kept" && p.source.generated === fx.generated && p.sections.every((s) => /^[0-9a-f]{16}$/.test(s.en)), key(p));
+        T.check(`T16f ${lang}/${src.slug}: sections in English's order, with exactly en (the first field), id, title, html, summary, text, subs`, JSON.stringify(p.sections.map((s) => s.id)) === JSON.stringify(eng.sections.map((s) => s.id)) && p.sections.every((s) => key(s) === "en,html,id,subs,summary,text,title" && Object.keys(s)[0] === "en"), "section keys");
         for (const [k, s] of p.sections.entries()) {
-          if (s.text === textOf(s.html) && s.summary === summaryOf(s.html) && p.source.sections[s.id] === sectionHash(eng.sections[k])) derived++;
+          if (s.text === textOf(s.html) && s.summary === summaryOf(s.html) && s.en === sectionHash(eng.sections[k])) derived++;
           if (s.summary.endsWith("…") && s.summary.length <= 171) cut++;
           if (s.text === eng.sections[k].text) copied++;
         }
@@ -154,6 +154,7 @@ await T.attempt("T16", async () => {
       T.check(`T16i ${lang}: the English text is not copied into a translated section`, copied === 0, `${copied} sections kept the English text`);
       const idx = fx.read(`${d}/index.json`);
       T.check(`T16j ${lang}: index.json is {generated: English's, sources: each page without html, with its source} in English's order`, key(idx) === "generated,sources" && idx.generated === fx.generated && JSON.stringify(idx.sources.map((s) => s.slug)) === JSON.stringify(fx.sources.map((s) => s.slug)) && idx.sources.every((s) => s.source && s.sections.every((x) => !("html" in x))), key(idx));
+      T.check(`T16l ${lang}: each index entry's source is {generated, kept}, and its sections carry en first: the English section's hash, 16 lower hex`, idx.sources.every((s) => { const eng = fx.pages[s.slug]; return key(s.source) === "generated,kept" && s.sections.length === eng.sections.length && s.sections.every((x, k) => Object.keys(x)[0] === "en" && x.en === sectionHash(eng.sections[k]) && /^[0-9a-f]{16}$/.test(x.en)); }), JSON.stringify(idx.sources.map((s) => Object.keys(s.source))));
       const cat = fx.read(`assets/i18n/${lang}.json`), st = fx.read(`tools/i18n/state/${lang}.json`);
       T.check(`T16k ${lang}: the catalogue has en.json's keys, the state the same keys and an empty kept`, JSON.stringify(Object.keys(cat)) === JSON.stringify(Object.keys(fx.en)) && JSON.stringify(Object.keys(st.catalogue)) === JSON.stringify(Object.keys(fx.en)) && st.kept.length === 0, `${Object.keys(cat).length} keys`);
     }
@@ -318,7 +319,7 @@ await T.attempt("T34", async () => {
     const posts = fake.posts, before = snapshot(fx.dir);
     const r = await runTool(fx, argsFor(fx, fake, "--langs", "de"), { env: { TRANSLATE_BATCH_ID: id } });
     const written = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null;
-    const stamped = written && written.source.sections.top === sectionHash(fx.pages.readme.sections.find((x) => x.id === "top")) && written.sections.find((x) => x.id === "top").html.includes("tidy");
+    const stamped = written && written.sections.find((x) => x.id === "top").en === sectionHash(fx.pages.readme.sections.find((x) => x.id === "top")) && written.sections.find((x) => x.id === "top").html.includes("tidy");
     T.exit("T34b a resume whose English changed in place (same count, same ids): exit 4", r, 4);
     T.check("T34c nothing submitted, nothing written", !r.notBuilt && fake.posts === posts && snapshot(fx.dir) === before, stamped ? "the translation of the old English was stamped with the new English's hash" : `${fake.posts - posts} new posts`);
   } finally { await fake.close(); fx.cleanup(); }

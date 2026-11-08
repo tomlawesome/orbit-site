@@ -390,17 +390,19 @@ export function createDocs(pad) {
   const RETRY_HASH = "0000000000000000";
   async function stale(slug, doc) {
     const src = doc && doc.source;
-    if (!src || typeof src !== "object" || !src.sections || typeof src.sections !== "object") return false;
+    if (!src || typeof src !== "object" || !Array.isArray(doc.sections)) return false;
+    /* each section's en: the hash16 of the English it was made from (#145) */
+    const made = new Map(doc.sections.filter((x) => x && typeof x.en === "string").map((x) => [x.id, x.en]));
+    if (made.size !== doc.sections.length) return false;
     let kept = Array.isArray(src.kept) && src.kept.length > 0;
     let secs;
     try {
       const en = await englishPage(slug);
       secs = Array.isArray(en && en.sections) ? en.sections : [];
-      const ids = Object.keys(src.sections);
-      if (ids.length !== secs.length || secs.some((x) => !Object.hasOwn(src.sections, x.id))) return "changed";
+      if (made.size !== secs.length || secs.some((x) => !made.has(x.id))) return "changed";
       for (const x of secs) {
-        if (src.sections[x.id] === RETRY_HASH) { kept = true; continue; }
-        if ((await hash16(sectionText(x))) !== src.sections[x.id]) return "changed";
+        if (made.get(x.id) === RETRY_HASH) { kept = true; continue; }
+        if ((await hash16(sectionText(x))) !== made.get(x.id)) return "changed";
       }
     } catch (e) { if (!kept) throw e; }
     return kept ? "kept" : false;

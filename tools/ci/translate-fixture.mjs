@@ -96,6 +96,13 @@ export const stateFor = (en, kept = []) => ({ catalogue: Object.fromEntries(Obje
 
 const put = (dir, p, v) => { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), typeof v === "string" ? v : JSON.stringify(v)); };
 
+/* a translated page (or index) rewritten in the layout before #145: no `en` in the sections, the hashes in a table,
+   source.sections, keyed by section id */
+export function oldLayout(j) {
+  const fix = (o) => { const sections = o.sections.map(({ en, ...rest }) => rest); return { ...o, sections, source: { generated: o.source.generated, sections: Object.fromEntries(o.sections.map((x) => [x.id, x.en])), kept: o.source.kept } }; };
+  return Array.isArray(j.sources) ? { ...j, sources: j.sources.map(fix) } : fix(j);
+}
+
 export function mkFixture({ keys = 130 } = {}) {
   const tmp = mkdtempSync(join(tmpdir(), "translate-"));
   const dir = join(tmp, "checkout");
@@ -128,7 +135,7 @@ export function mkFixture({ keys = 130 } = {}) {
     addSection(slug, s) { fx.pages[slug].sections.push(section(s)); fx.write(); },
     removeSection(slug, id) { fx.pages[slug].sections = fx.pages[slug].sections.filter((x) => x.id !== id); fx.write(); },
     setKey(k, v) { fx.en[k] = v; fx.write(); },
-    /* a whole translated language in the shape of spec section 1, for the tests of the checks that read it */
+    /* a whole translated language in the layout of #145: each section carries its English's fingerprint as its first field, `en`, and source is {generated, kept} (the layout before it kept a table, source.sections), for the tests of the checks that read it */
     translated(lang, { generated = fx.generated, kept = [] } = {}) {
       const keptKeys = kept.filter((k) => k in fx.en);
       put(dir, `assets/i18n/${lang}.json`, Object.fromEntries(Object.entries(fx.en).map(([k, v]) => [k, keptKeys.includes(k) ? v : swap(v)])));
@@ -138,9 +145,9 @@ export function mkFixture({ keys = 130 } = {}) {
         const eng = fx.pages[src.slug];
         const secs = eng.sections.map((s) => { const keep = kept.includes(`${src.slug}/${s.id}`);
           const html = keep ? s.html : translateHtml(s.html);
-          return { id: s.id, title: keep ? s.title : swap(s.title), html, summary: summaryOf(html), text: textOf(html), subs: keep ? s.subs : s.subs.map((u) => ({ id: u.id, title: swap(u.title) })) }; });
+          return { en: sectionHash(s), id: s.id, title: keep ? s.title : swap(s.title), html, summary: summaryOf(html), text: textOf(html), subs: keep ? s.subs : s.subs.map((u) => ({ id: u.id, title: swap(u.title) })) }; });
         const p = { ...eng, title: swap(eng.title), sections: secs,
-          source: { generated, sections: Object.fromEntries(eng.sections.map((s) => [s.id, sectionHash(s)])), kept: kept.filter((k) => k.startsWith(`${src.slug}/`)).map((k) => k.split("/")[1]) } };
+          source: { generated, kept: kept.filter((k) => k.startsWith(`${src.slug}/`)).map((k) => k.split("/")[1]) } };
         put(dir, `assets/docs-i18n/${lang}/${src.slug}.json`, p);
         out.push({ ...noHtml(p) });
       }
