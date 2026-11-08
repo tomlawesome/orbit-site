@@ -288,13 +288,17 @@ async function planLanguage(root, lang, L, eng, only) {
   return plan;
 }
 
+/* output tokens per estimated answer token, measured (#144): the first real run (pipeline 3802, job 48253,
+   2026-11-08, all 8 languages from nothing) was estimated at 831,414 output tokens and used 2,275,267 (thinking at
+   effort high is billed as output). Check it against the next full run's report. */
+export const OUTPUT_MEASURED = 2.74;
 export function estimate(items, system) {
   const sys = system.length / 3.5;
   let input = 0, output = 0, itemIn = 0;
   for (const it of items) {
     input += sys + it.chars / 3.5;
     itemIn += it.chars / 3.5;
-    output += (it.chars * 1.3) / (it.L.script === "cjk" ? 2 : 3.5);
+    output += (OUTPUT_MEASURED * it.chars * 1.3) / (it.L.script === "cjk" ? 2 : 3.5);
   }
   input = Math.ceil(input); output = Math.ceil(output);
   const most = (input * PRICES.input + output * PRICES.output) / 1e6;

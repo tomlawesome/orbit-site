@@ -99,7 +99,9 @@ await T.attempt("T23", async () => {
     cpSync(join(REPO, "tools/i18n"), join(dir, "tools/i18n"), { recursive: true, filter: (f) => !/[\\/]state([\\/]|$)/.test(f) });
     cpSync(join(REPO, "tools/docs-sources.json"), join(dir, "tools/docs-sources.json"));
     const lines = [];
-    const code = await runPlan({ root: dir, args: ["--dry-run"], env: {}, log: (l) => lines.push(l) });
+    /* a cap above the whole run: a from-nothing run is over the default 3,000,000 once the estimate is right (#144),
+       and this case judges the estimate, not the cap */
+    const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "10000000" }, log: (l) => lines.push(l) });
     T.check("T23a the dry run over the English alone exits 0", code === 0, `exit ${code}; ${lines.slice(-2).join(" | ").slice(0, 200)}`);
     const m = /^estimate: ([\d,]+) input tokens \+ ([\d,]+) output tokens/m.exec(lines.join("\n"));
     T.check("T23b the run prints its estimate", !!m, lines.filter((l) => l.startsWith("estimate")).join("") || "no estimate line");
