@@ -66,7 +66,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     # The owner's hand-started translation (TRANSLATE=true, #125) runs even on a
     # batch branch with an open merge request: its translate_docs and
-    # publish_translations need this pipeline, and the other jobs in it are harmless.
+    # publish_translations need this pipeline; its test jobs skip (*not_translation, #141).
     - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -81,6 +81,14 @@ workflow:
 
 .not_scheduled: &not_scheduled
   if: $CI_PIPELINE_SOURCE == "schedule"
+  when: never
+
+# A pipeline the owner starts by hand for the translation (TRANSLATE=true,
+# #125) runs no browser test, no coverage and no lint test (#141): it
+# translates committed English, which its merge request already tested.
+# The secret scans and the lint still run (ci-split refuses this skip on them).
+.not_translation: &not_translation
+  if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"
   when: never
 
 variables:
@@ -149,6 +157,7 @@ lint:test:
   rules:
     - !reference [.catchup-check, job_rule]
     - !reference [.batch-intake, job_rule]
+    - *not_translation
     - *not_scheduled
     - when: on_success
   variables:
@@ -167,6 +176,7 @@ lint:import:
   rules:
     - !reference [.catchup-check, job_rule]
     - !reference [.batch-intake, job_rule]
+    - *not_translation
     - *not_scheduled
     - when: on_success
   variables:
@@ -361,6 +371,7 @@ live:firefox:
   rules:
     - !reference [.catchup-check, job_rule]
     - !reference [.batch-intake, job_rule]
+    - *not_translation
     - *not_scheduled
     - when: on_success
   variables:
@@ -379,6 +390,7 @@ live:chromium:
   rules:
     - !reference [.catchup-check, job_rule]
     - !reference [.batch-intake, job_rule]
+    - *not_translation
     - *not_scheduled
     - when: on_success
   variables:
@@ -409,6 +421,7 @@ coverage:
   rules:
     - !reference [.catchup-check, job_rule]
     - !reference [.batch-intake, job_rule]
+    - *not_translation
     - *not_scheduled
     - when: on_success
   variables:
