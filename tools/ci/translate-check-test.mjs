@@ -42,7 +42,7 @@ async function refused(label, id, rule, mutate, lang = "de") {
   try {
     if (r.code !== 0) return T.check(label, false, r.notBuilt ? r.err : `exit ${r.code}`);
     const p = fx.read(`assets/docs-i18n/${lang}/${slug}.json`), s = p.sections.find((x) => x.id === sid), eng = fx.pages[slug].sections.find((x) => x.id === sid);
-    T.check(`${label}: refused, so the section is the English one, its hash recorded and its id in source.kept`, !!s && s.html === eng.html && p.source.sections[sid] === sectionHash(eng) && p.source.kept.includes(sid), s ? `html ${s.html === eng.html ? "English" : "NOT English"}, kept ${JSON.stringify(p.source.kept)}` : "section missing");
+    T.check(`${label}: refused, so the section is the English one, its hash in its own en and its id in source.kept`, !!s && s.html === eng.html && s.en === sectionHash(eng) && !("sections" in p.source) && p.source.kept.includes(sid), s ? `html ${s.html === eng.html ? "English" : "NOT English"}, kept ${JSON.stringify(p.source.kept)}` : "section missing");
     T.check(`${label}: the report names ${id} and the rule`, reportNames(fx.readReport(), id, rule), `no report entry for ${id} matching ${rule}`);
   } catch (e) { T.check(label, false, String(e && e.message || e)); } finally { done(); }
 }

@@ -12,6 +12,8 @@
  *   J7  the root shows no AI notice
  *   J9  a translated docs page older than the English shows the stale banner, with a link to the English
  *   J9c a page with sections left in English (source.kept) and nothing else wrong shows a banner that does not say the English has changed
+ *   J9d (#145) a page whose section carries an `en` that is not the English section's hash16 shows the banner that says the English has changed
+ *   J9e (#145) a page whose sections are not the English page's sections (one missing) shows the banner that says the English has changed
  *   J10 the de/ reader reads assets/docs-i18n/de/; a translated page shows no untranslated line, a page with no German file is read in
  *       English with that line shown (decision 11a: page-level, never per section); the root never asks for it
  *   J11 (#138, ALL-S1) a German browser that keeps nothing (site data blocked) and sends no referrer: the root sends it to
@@ -186,17 +188,18 @@ try {
      page "readme" is translated (its second section kept in English, its hash not the English's: the stale banner says
      so, J9); every other page has no German file (404: the whole English page is read, and the untranslated line shown). With fresh, every
      section's hash matches the English and none is kept: spec 3 shows the stale banner when "any [hash] differs from
-     source.sections, or source.kept is non-empty", so only such a page can show none (J9b). The German page is known
+     source.sections, or source.kept is non-empty", so only such a page can show none (J9b). Since #145 the hash is each section's own first field, en (source is {generated, kept}). The German page is known
      to be shown by its title in the reader's heading: the reader sets a page's title and its sections' html, never the
      first ("top") section's title, so the fake's "Orbit auf Deutsch" is in no element. */
   const h16 = (x) => createHash("sha256").update(x, "utf8").digest("hex").slice(0, 16);
   const eIndex = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8"));
   const eReadme = JSON.parse(readFileSync(join(ROOT, "assets/docs/readme.json"), "utf8"));
-  const fakeDocs = async (page, generated, fresh = false, keptOnly = false) => {
+  const fakeDocs = async (page, generated, fresh = false, keptOnly = false, tweak = null) => {
     const asked = [];
     const first = eReadme.sections[0], second = eReadme.sections[1];
-    const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
-      source: { generated, sections: Object.fromEntries(eReadme.sections.map((x, i) => [x.id, i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs]))])), kept: second && (!fresh || keptOnly) ? [second.id] : [] } };
+    const dPage = { ...eReadme, title: "Orbit (de)", sections: eReadme.sections.map((x, i) => ({ en: i === 1 && !fresh ? "0000000000000000" : h16(JSON.stringify([x.title, x.html, x.subs])), ...x, title: i === 0 ? "Orbit auf Deutsch" : x.title })),
+      source: { generated, kept: second && (!fresh || keptOnly) ? [second.id] : [] } };
+    if (tweak) tweak(dPage);
     const dIndex = { generated, sources: eIndex.sources.filter((x) => x.slug === "readme").map((x) => ({ ...x, title: "Orbit (de)" })) };
     await page.route("**/assets/docs-i18n/**", (route) => {
       const u = new URL(route.request().url()); asked.push(u.pathname);
@@ -238,6 +241,27 @@ try {
     const link = await banner.first().locator("a[hreflang='en']").count();
     check("J9c a page with sections left in English and nothing else wrong shows a banner with a link to the English", link >= 1 && text.trim().length > 0, `${link} link(s), "${text.trim()}"`);
     check("J9c and that banner does not say the English has changed since", changed.length > 5 && !text.includes(changed), `banner "${text.trim()}", the changed-since line ends "${changed}"`);
+  });
+  /* #145: a section's own en is what the reader compares. Every other en is the English's hash, none is the retry hash and
+     source.kept is empty, so the only thing that can make the banner is the change under test, and it must say the English changed. */
+  const changedLine = () => { const de = JSON.parse(readFileSync(join(ROOT, "assets/i18n/de.json"), "utf8")); return String(de["docs-stale"]).split("{date}").pop().replace(/^[\s;,.]+/, "").replace(/[\s.]+$/, ""); };
+  await run("J9d", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated, true, false, (d) => { d.sections[0].en = "0123456789abcdef"; });
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const text = (await banner.first().textContent()) || "", changed = changedLine();
+    check("J9d a section whose en is not the English's hash16 shows the banner that says the English has changed", changed.length > 5 && text.includes(changed), `banner "${text.trim()}", the changed-since line ends "${changed}"`);
+  });
+  await run("J9e", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
+    await fakeDocs(page, eIndex.generated, true, false, (d) => { d.sections = d.sections.slice(0, -1); });
+    await page.goto(`${SITE}de/${Q}#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const text = (await banner.first().textContent()) || "", changed = changedLine();
+    check("J9e a page with a section fewer than the English shows the banner that says the English has changed", changed.length > 5 && text.includes(changed), `banner "${text.trim()}", the changed-since line ends "${changed}"`);
   });
   await run("J10", { context: { locale: "de-DE" }, stored: "de" }, async (page) => {
     const fake = await fakeDocs(page, eIndex.generated);
