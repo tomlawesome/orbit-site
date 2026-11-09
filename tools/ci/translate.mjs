@@ -37,7 +37,7 @@
  *
  * One batch at a time is paid for: a run with no token takes up a batch its machine's record holds for the same
  * request list, running or ended with its results unread; failing that, it lists the key's batches and submits
- * nothing while one is in progress (exit 5), and takes up the newest ended one when it holds exactly this many
+ * nothing while one is in progress (exit 5), and takes up the newest of the last 20 ended ones (within 29 days) that holds exactly this many
  * requests, all succeeded, made after this English (a CI runner keeps no record). A create whose answer was lost
  * looks for the batch it made before trying again. The retry round counts against the same cap as the first (exit
  * 3 before it is submitted, nothing written); a retry batch already made and taken up is never stopped by it.
@@ -521,6 +521,7 @@ function api(o) {
  * RECORD_MAX is refused, not read (nor written over): the run goes on as with no record.
  */
 export const RECORD_DAYS = 29, RECORD_MAX = MiB;
+const ADOPT_LOOK = 20; /* #140: how many ended batches adopting looks through */
 function records(o, log = () => {}) {
   const file = join(o.env.HOME || homedir(), ".cache/orbit-translate/batches.json");
   let refused = false;
@@ -570,20 +571,22 @@ async function runBatch(o, client, requests, deadline, log, job) {
       const c = isObj(b.request_counts) ? b.request_counts : {}, n = (k) => (Number.isFinite(c[k]) ? c[k] : 0);
       const total = ["processing", "succeeded", "errored", "canceled", "expired"].reduce((t, k) => t + n(k), 0);
       const notOurs = (why) => Object.assign(new Exit(4, why), { notOurs: true });
+      /* #140: malformed results are exit 4, except in a batch being adopted, which may be another run's: not ours, skipped */
+      const foreign = (why) => (job.adopt ? notOurs(why) : new Exit(4, why));
       if (job.adopt && total !== requests.length) throw notOurs(`it holds ${total} requests, not ${requests.length}`);
       if (resumeId && total !== requests.length) throw new Exit(4, `batch ${id} holds ${total} requests but this commit's sources make ${requests.length}: it is not this run's batch; nothing written`);
       /* one errored, expired or canceled request is kept in English (and sent again next run); none succeeded is the batch's failure */
       if (requests.length && n("succeeded") === 0) throw new Exit(4, `batch ${id} ended with no request succeeded (errored ${n("errored")}, canceled ${n("canceled")}, expired ${n("expired")}); nothing written`);
-      if (typeof b.results_url !== "string") throw new Exit(4, `batch ${id} ended with no results_url`);
+      if (typeof b.results_url !== "string") throw foreign(`batch ${id} ended with no results_url`);
       const out = new Map();
       for (const line of (await client.results(b.results_url)).split("\n")) {
         if (!line.trim()) continue;
-        let r; try { r = JSON.parse(line); } catch { throw new Exit(4, `batch ${id}: a results line is not JSON`); }
-        if (!isObj(r) || typeof r.custom_id !== "string") throw new Exit(4, `batch ${id}: a results line has no custom_id`);
+        let r; try { r = JSON.parse(line); } catch { throw foreign(`batch ${id}: a results line is not JSON`); }
+        if (!isObj(r) || typeof r.custom_id !== "string") throw foreign(`batch ${id}: a results line has no custom_id`);
         const k = index.get(r.custom_id);
         if (k === undefined && job.adopt) throw notOurs(`its results hold a custom_id without this run's key (${JSON.stringify(r.custom_id.slice(0, 70))})`);
         if (k === undefined) throw new Exit(4, `batch ${id}: the results hold a custom_id this run never sent (${JSON.stringify(r.custom_id.slice(0, 70))})${resumeId ? ": it is not this run's batch" : ""}; nothing written`);
-        if (out.has(k)) throw new Exit(4, `batch ${id}: the results hold custom_id ${r.custom_id} twice; nothing written`);
+        if (out.has(k)) throw foreign(`batch ${id}: the results hold custom_id ${r.custom_id} twice; nothing written`);
         out.set(k, r.result);
       }
       if (job.adopt && out.size !== requests.length) throw notOurs(`it returned ${out.size} results for ${requests.length} requests`);
@@ -693,17 +696,20 @@ export async function run(opts) {
           const all = await client.list(), running = all.filter((b) => b.processing_status === "in_progress");
           if (running.length) throw new Exit(5, `batch ${String(running[0].id).slice(0, 80)} is still in progress on this key${running.length > 1 ? ` (and ${running.length - 1} more)` : ""}: nothing submitted, so no second batch is paid for. Resume it with the TRANSLATE_BATCH_ID its run printed, or run again once it has ended`);
           /*
-           * with no record (a CI runner keeps none), the key's newest ended batch is a candidate for this run's unread
-           * one when it holds exactly this many requests, every one succeeded, made after the English it would
+           * with no record (a CI runner keeps none), the key's newest ended batches are candidates for this run's unread
+           * one, the first that holds exactly this many requests, every one succeeded, made after the English it would
            * translate (created_at after its generated) and within RECORD_DAYS. It is taken up only if every result's
            * custom_id carries this run's key (runBatch, job.adopt); otherwise a new batch is made and none of the
            * other batch's text is used.
            */
           const n = (b, k) => (isObj(b.request_counts) && Number.isFinite(b.request_counts[k]) ? b.request_counts[k] : 0);
-          const ended = all.find((b) => b.processing_status === "ended");
-          const made = ended && typeof ended.created_at === "string" ? Date.parse(ended.created_at) : null;
-          if (ended && BATCH_ID.test(String(ended.id)) && n(ended, "succeeded") === first.length && ["errored", "canceled", "expired", "processing"].every((k) => n(ended, k) === 0)
-            && (made === null || (Number.isFinite(made) && made > Date.parse(eng.generated) && made >= Date.now() - RECORD_DAYS * 86400e3))) {
+          /* #140: the newest ended batch may be another run's (a retry round that never ended leaves a smaller one above
+             round 1's), so the ended batches within RECORD_DAYS, at most ADOPT_LOOK, newest first, are looked through */
+          const madeOf = (b) => (typeof b.created_at === "string" ? Date.parse(b.created_at) : null);
+          const ended = all.filter((b) => b.processing_status === "ended" && (madeOf(b) === null || madeOf(b) >= Date.now() - RECORD_DAYS * 86400e3)).slice(0, ADOPT_LOOK)
+            .find((b) => BATCH_ID.test(String(b.id)) && n(b, "succeeded") === first.length && ["errored", "canceled", "expired", "processing"].every((k) => n(b, k) === 0)
+              && (madeOf(b) === null || madeOf(b) > Date.parse(eng.generated)));
+          if (ended) {
             resume = [ended.id]; adopt = true;
             log(`batch ${ended.id} on this key ended with ${first.length} requests, all succeeded, made after this English: taking it up if its ids carry this run's key (${key})`);
           }

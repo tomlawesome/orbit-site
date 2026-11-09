@@ -10,7 +10,7 @@
  *   GET  /v1/messages/batches            -> {data: [every batch, newest first], has_more: false} (the list call)
  *
  * The Batches API only accepts custom_id matching ^[a-zA-Z0-9_-]{1,64}$: a batch with any other custom_id is a 400
- * and nothing is made (spec amendment 1). The tool names requests r0000, r0001, ... by index, so the fake derives
+ * and nothing is made (spec amendment 1). The tool names requests r0000-<key>, r0001-<key>, ... by index and the run's key (#140: they were bare r0000, ...), so the fake derives
  * each request's LOGICAL id from its content: q.customId is "docs/<slug>/<id>@<lang>" for a section and
  * "site/<lang>/<n>@<lang>" for a catalogue chunk (n counts the chunks of that language in the batch from 1, as the
  * tool does, and a retry request, which says "previous answer broke", keeps the id of the chunk its keys came from,

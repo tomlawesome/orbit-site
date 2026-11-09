@@ -113,7 +113,9 @@ export const LAG_STALE_HOURS = 36;
 const LAG_NOW_FORMAT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z$/;
 export function lagClock(env = process.env) {
   const v = typeof env.LAG_NOW === "string" ? env.LAG_NOW : "";
-  const t = LAG_NOW_FORMAT.test(v) ? Date.parse(v) : NaN;
+  let t = LAG_NOW_FORMAT.test(v) ? Date.parse(v) : NaN;
+  /* #140: Date.parse rolls an impossible date over (02-30 becomes 03-02): only one that reads back as written counts */
+  if (Number.isFinite(t) && new Date(t).toISOString().slice(0, 19) !== v.slice(0, 19)) t = NaN;
   if (Number.isFinite(t)) return { now: t, note: null };
   return { now: Date.now(), note: v ? "(LAG_NOW is not a date in the format of generated; the clock is used)" : null };
 }
