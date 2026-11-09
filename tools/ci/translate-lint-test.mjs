@@ -137,6 +137,15 @@ await T.attempt("T26", async () => {
   const bad = lint(at(E, -24), "2000-01-01");
   T.check("T26h a LAG_NOW that is not in the format of generated: --lag exits 0 and says the clock is used", bad.lag.status === 0 && /LAG_NOW/.test(bad.lag.text) && /clock/i.test(bad.lag.text), `exit ${bad.lag.status}: ${tail(bad.lag.text)}`);
   T.check("T26i and the page is judged by the clock (stalled), not by the bad value", /stalled/i.test(bad.lag.text), tail(bad.lag.text));
+  /* #140: a LAG_NOW in the right format that is not a real date-time is refused like any other bad one (node would roll
+     02-30 over to 03-02 and T24:00 to the next day; the python reading of it in nightly-publish.sh refuses both). The clock is
+     used and the note says so. A real leap day is still honoured (no note). */
+  for (const [id, v] of [["m", "2026-02-30T00:00:00Z"], ["n", "2026-11-08T24:00:00Z"]]) {
+    const imp = lint(at(E, -24), v);
+    T.check(`T26${id} an impossible LAG_NOW (${v}): --lag exits 0 and says the clock is used`, imp.lag.status === 0 && /LAG_NOW/.test(imp.lag.text) && /clock/i.test(imp.lag.text), `exit ${imp.lag.status}: ${tail(imp.lag.text)}`);
+  }
+  const leap = lint(at(E, -24), "2028-02-29T00:00:00Z");
+  T.check("T26o control: a real leap day as LAG_NOW is honoured, no note", leap.lag.status === 0 && !/LAG_NOW/.test(leap.lag.text), `exit ${leap.lag.status}: ${tail(leap.lag.text)}`);
   /* fix review 5: --same-english must not pass when the checkout's English index.json is missing or not JSON (the stamp
      cannot be compared, which is what the flag is for) */
   const sameRun = (breakIt) => {

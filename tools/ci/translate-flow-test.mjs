@@ -42,6 +42,10 @@
  *       if its ids carry this run's digest: its own is adopted, another run's of the same size is not and none of
  *       its text is written
  *   T43 (15) the fake's ids for a retried chunk are the tool's, and its attempt counts go on
+ *   T47 (#140) with no record, the list path looks past the newest ended batch: after an exit 5 in the retry round the
+ *       newest is the smaller retry batch, and round 1's unread batch is still taken up, no second full batch
+ *   T48 (#140) adopting: a foreign batch with malformed results (not JSON, no custom_id, a repeated custom_id, no
+ *       results_url) is not ours, skipped, exit 0; the same faults in the run's own batch stay exit 4
  *
  * Assumption (the spec leaves it open): --poll-seconds and --timeout-minutes take fractions (0.05, 0.02).
  *
@@ -553,5 +557,53 @@ await T.attempt("T43", async () => {
     T.check("T43b the ids the fake gives the first batch are the ids the tool plans", planned.length === 3 && JSON.stringify(planned) === JSON.stringify(sent1), `tool ${planned.join(",")}; fake ${sent1.join(",")}`);
     T.check("T43c the retry of the chunk is that chunk's attempt 2", calls.includes("site/de/1@de#1") && calls.includes("site/de/1@de#2"), calls.filter((c) => c.startsWith("site/de/1@")).join(" "));
   } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T47", async () => {
+  /* #140: with no record, the list path must not look only at the newest ended batch. Round 1 is made and paid for, its
+     retry batch does not end in time (exit 5); both end afterwards, the retry batch (one request) being the newest. The
+     next run, with no record, must take up round 1's batch (full size) and not pay for a second full batch. */
+  const fx = mkFixture(), fake = await startFake({ never: 1, script: (cid, n, q, ans) => (cid === `${TOP}@de` && n === 1 ? { answer: dropStrong(ans) } : undefined) });
+  try {
+    const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+    T.exit("T47a round 1 ends with one item broken, the retry batch does not end: exit 5", r1, 5);
+    const full = fake.batches[0] ? fake.batches[0].requests.length : 0;
+    T.check("T47b two batches exist, the retry (the newest) smaller than round 1", fake.batches.length === 2 && fake.batches[1].requests.length < full, `${fake.batches.map((b) => b.requests.length).join(" then ")} requests`);
+    rmSync(join(fx.tmp, ".cache"), { recursive: true, force: true });
+    fake.never = false;   /* both batches have ended by now, the newest being the retry batch */
+    const r2 = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+    T.exit("T47c the next run, no record: exit 0", r2, 0);
+    const fulls = fake.batches.filter((b) => b.requests.length === full).length;
+    T.check("T47d round 1's unread batch is taken up: no second full-size batch is submitted", !r2.notBuilt && fulls === 1, `${fulls} full-size batches of ${fake.batches.length}: ${fake.batches.map((b) => b.requests.length).join(", ")}`);
+    const p = fx.exists("assets/docs-i18n/de/readme.json") ? fx.read("assets/docs-i18n/de/readme.json") : null;
+    T.check("T47e the paid results are written (shot translated, top translated by its retry, nothing kept)", !!p && p.sections.find((x) => x.id === "shot").html.includes("é") && p.sections.find((x) => x.id === "top").html.includes("é") && !p.source.kept.includes("top"), p ? `kept ${JSON.stringify(p.source.kept)}` : "no page");
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T48", async () => {
+  /* #140: while adopting an ended batch found on the key's list (no record), a batch whose results are malformed is not
+     this run's: skipped, a batch is made, exit 0. The same malformed results in a batch this run made (or resumed) stay exit 4. */
+  const HOW = { notjson: "a line that is not JSON", nocustomid: "a line with no custom_id", duplicate: "a repeated custom_id", nourl: "no results_url" };
+  for (const [how, what] of Object.entries(HOW)) {
+    /* adopting: a foreign (or unread) batch of the right size, malformed, found on the list */
+    const fx = mkFixture(), fake = await startFake({ never: true, corrupt: how });
+    try {
+      const r1 = await runTool(fx, argsFor(fx, fake, "--langs", "de", "--timeout-minutes", "0.02"));
+      T.exit(`T48 (${how}) the malformed batch is made and left running: exit 5`, r1, 5);
+      rmSync(join(fx.tmp, ".cache"), { recursive: true, force: true });
+      fake.never = false; fake.corrupt = "";   /* it has ended, malformed; batches made from now on are sound */
+      const r2 = await runTool(fx, argsFor(fx, fake, "--langs", "de"));
+      T.exit(`T48 (${how}) adopting a batch with ${what} is treated as not ours, not exit 4: exit 0`, r2, 0);
+      T.check(`T48 (${how}) a batch of this run's own is made (2 submitted) and its page written`, !r2.notBuilt && fake.posts === 2 && fx.exists("assets/docs-i18n/de/readme.json"), `${fake.posts} batches submitted`);
+    } finally { await fake.close(); fx.cleanup(); }
+    /* not adopting: the run's own batch with the same fault is still exit 4, nothing written */
+    const fy = mkFixture(), fakeY = await startFake({ corrupt: how });
+    try {
+      const before = snapshot(fy.dir);
+      const r = await runTool(fy, argsFor(fy, fakeY, "--langs", "de"));
+      T.exit(`T48 (${how}, control) the run's own batch with ${what}: exit 4`, r, 4);
+      T.check(`T48 (${how}, control) nothing written`, !r.notBuilt && snapshot(fy.dir) === before, "files changed");
+    } finally { await fakeY.close(); fy.cleanup(); }
+  }
 });
 T.done();

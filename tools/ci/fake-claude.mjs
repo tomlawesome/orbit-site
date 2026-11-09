@@ -10,7 +10,7 @@
  *   GET  /v1/messages/batches            -> {data: [every batch, newest first], has_more: false} (the list call)
  *
  * The Batches API only accepts custom_id matching ^[a-zA-Z0-9_-]{1,64}$: a batch with any other custom_id is a 400
- * and nothing is made (spec amendment 1). The tool names requests r0000, r0001, ... by index, so the fake derives
+ * and nothing is made (spec amendment 1). The tool names requests r0000-<key>, r0001-<key>, ... by index and the run's key (#140: they were bare r0000, ...), so the fake derives
  * each request's LOGICAL id from its content: q.customId is "docs/<slug>/<id>@<lang>" for a section and
  * "site/<lang>/<n>@<lang>" for a catalogue chunk (n counts the chunks of that language in the batch from 1, as the
  * tool does, and a retry request, which says "previous answer broke", keeps the id of the chunk its keys came from,
@@ -91,7 +91,9 @@ function resultLine(customId, how, answer) {
  *   status  answer every POST /v1/messages/batches with this HTTP status (e.g. 401)
  *   drop    destroy the connection of the first `drop` POSTs (a network failure)
  *   corrupt how the results are mangled: "shuffle" (reverse order), "unknown" (one custom_id the batch never had),
- *           "duplicate" (one custom_id twice)
+ *           "duplicate" (one custom_id twice), "notjson" (a line that is not JSON), "nocustomid" (a line with no
+ *           custom_id), "nourl" (the batch ends with no results_url). fake.corrupt is settable: it is read when a
+ *           batch is made, so a test can make one malformed batch and then flip it off for the next (#140)
  *   endAs   the batch ends with every request "errored" | "expired" | "canceled" (results lines of that type)
  *   lose    the first `lose` POSTs of a batch are done (the batch exists) but the connection is destroyed before the
  *           answer: a lost response
@@ -105,7 +107,7 @@ function resultLine(customId, how, answer) {
  * Returns { url, requests, batches, posts, cancels, close() }. url is the --api-base.
  */
 export async function startFake({ key = FAKE_KEY, script = () => undefined, polls = 1, never = false, status = 0, drop = 0, corrupt = "", endAs = "", lose = 0, redirectResults = "", flood = "", hang = "" } = {}) {
-  const state = { never, flooded: { sent: 0, aborted: false } };
+  const state = { never, corrupt, flooded: { sent: 0, aborted: false } };
   let lost = 0;
   const keyChunk = {};
   const requests = [], batches = [];
@@ -114,7 +116,7 @@ export async function startFake({ key = FAKE_KEY, script = () => undefined, poll
   const batchView = (b, origin) => {
     const ended = !neverFor(batches.indexOf(b)) && b.gets >= polls && !b.cancelled;
     return { id: b.id, type: "message_batch", processing_status: ended ? "ended" : b.cancelled ? "canceling" : "in_progress",
-      request_counts: ended ? { succeeded: 0, errored: 0, canceled: 0, expired: 0, ...b.counts } : { processing: b.lines.length }, results_url: ended ? `${origin}/v1/messages/batches/${b.id}/results` : null };
+      request_counts: ended ? { succeeded: 0, errored: 0, canceled: 0, expired: 0, ...b.counts } : { processing: b.lines.length }, results_url: ended && !b.noUrl ? `${origin}/v1/messages/batches/${b.id}/results` : null };
   };
   /* a body that does not end: 1 MiB at a time up to 256 MiB, waiting for each chunk to be taken; records whether the
      reader hung up before the end */
@@ -183,10 +185,13 @@ export async function startFake({ key = FAKE_KEY, script = () => undefined, poll
         /* the counts the real API reports, from what each request ended as (before any scripted corruption of the file) */
         const counts = { succeeded: 0, errored: 0, canceled: 0, expired: 0 };
         for (const l of lines) counts[l.result.type] = (counts[l.result.type] || 0) + 1;
+        const corrupt = state.corrupt;   /* read when the batch is made, so a test can flip it between batches */
         if (corrupt === "shuffle") lines.reverse();
         if (corrupt === "unknown" && lines.length) lines[0] = { ...lines[0], custom_id: "r9999" };
         if (corrupt === "duplicate" && lines.length > 1) lines.push({ ...lines[0] });
-        batches.push({ id, requests: sent, lines, counts, gets: 0, cancelled: false });
+        if (corrupt === "notjson" && lines.length) lines[0] = "{this line is not json";
+        if (corrupt === "nocustomid" && lines.length) { const { custom_id, ...rest } = lines[0]; lines[0] = rest; }
+        batches.push({ id, requests: sent, lines, counts, gets: 0, cancelled: false, noUrl: corrupt === "nourl" });
         if (lost < lose) { lost++; req.socket.destroy(); return; }
         return send(200, { id, type: "message_batch", processing_status: "in_progress", request_counts: { processing: sent.length }, results_url: null });
       }
@@ -207,7 +212,7 @@ export async function startFake({ key = FAKE_KEY, script = () => undefined, poll
         if (!b) return send(404, { type: "error", error: { type: "not_found_error", message: "no such batch" } });
         if (redirectResults) { res.writeHead(302, { location: redirectResults }); return res.end(); }
         if (flood === "results") return streamFlood(res, "application/x-jsonl", "");
-        return send(200, b.lines.map((l) => JSON.stringify(l)).join("\n") + "\n", "application/x-jsonl");
+        return send(200, b.lines.map((l) => (typeof l === "string" ? l : JSON.stringify(l))).join("\n") + "\n", "application/x-jsonl");
       }
       if (req.method === "POST" && (m = /^\/v1\/messages\/batches\/([\w-]+)\/cancel$/.exec(path))) {
         const b = batches.find((x) => x.id === m[1]);
@@ -222,6 +227,7 @@ export async function startFake({ key = FAKE_KEY, script = () => undefined, poll
   return {
     url, requests, batches,
     get never() { return state.never; }, set never(v) { state.never = v; },
+    get corrupt() { return state.corrupt; }, set corrupt(v) { state.corrupt = v; },
     get flooded() { return state.flooded; },
     get posts() { return requests.filter((r) => r.method === "POST" && r.path.split("?")[0] === "/v1/messages/batches").length; },
     get cancels() { return requests.filter((r) => r.method === "POST" && r.path.endsWith("/cancel")); },
