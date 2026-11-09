@@ -338,10 +338,25 @@ const landings = async (prefix) => {
     });
   });
 
-  /* L4: the software renderer is unfit, so a load without fit=skip leaves { fit: false } under its key; the next load
-     in the same context says it remembered the off and tested again, and the gate still waits for the new verdict */
-  await quarantined("#139", ["firefox"], `L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
-    await withGL(async (p) => {
+  /* L4: the verdict is unfit, so a load without fit=skip leaves { fit: false } under its key; the next load in the same
+     context says it remembered the off and tested again, and the gate still waits for the new verdict. The unfit verdict
+     is forced, not waited for (#139: no test depends on how fast the runner draws): an init script advances the page's
+     clock 50 ms per draw call (the pattern of fit-skip-test.mjs), and frameCost (assets/door/fitness.js) reads that
+     clock around each draw, so every timed frame is over FIT_MS (30 ms) on any runner, on both loads */
+  await step(`L4 #116: an unfit verdict is remembered and tested again; the gate waits for the new verdict${prefix ? " (preview)" : ""}`, async () => {
+    await withGL(async (p, octx) => {
+      await octx.addInitScript(() => {
+        let skew = 0;
+        const realNow = performance.now.bind(performance);
+        Object.defineProperty(performance, "now", { configurable: true, writable: true, value: () => realNow() + skew });
+        const slow = (f) => function (...a) { skew += 50; return f.apply(this, a); };
+        for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
+          if (!C) continue;
+          for (const m of ["drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced", "drawRangeElements"]) {
+            if (C.prototype[m]) C.prototype[m] = slow(C.prototype[m]);
+          }
+        }
+      });
       await p.goto(flags(""), { waitUntil: "load" });
       await waitLine(p, /flight world: off: frame \d+ ms/);
       await waitGate(p);
