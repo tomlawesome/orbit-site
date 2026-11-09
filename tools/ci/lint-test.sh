@@ -1044,7 +1044,7 @@ split_case "p42: a !ruby tag on a value" $ci "the explicit tag !ruby" '
 split_case "p43: a !!str tag on a key" $ci "the explicit tag !!str" '
   y = y + "\nfine12:\n  stage: lint\n  !!str script:\n    - \"true\"\n";'
 split_case "p44: a !!int tag on a value in publish_docs" $ci "the explicit tag !!int" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: !!int 1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: !!int 1\n    GIT_STRATEGY: clone\n");'
 yaml_pass_case "p45: a harmless !reference passes" '
   y = y + "\n.refd:\n  script:\n    - \"true\"\n\nfine13:\n  stage: lint\n  script: [ !reference [.refd, script] ]\n";'
 # An environment name holding a %NAME% variable.
@@ -1281,19 +1281,19 @@ split_case "p133: GIT_STRATEGY: fetch in publish_docs" $ci "(publish_docs.*GIT_S
 split_case "p134: GIT_STRATEGY: none in publish_docs" $ci "(publish_docs.*GIT_STRATEGY|GIT_STRATEGY.*publish_docs)" '
   y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: none\n");'
 split_case "p135: GIT_DEPTH: 2 in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 2\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 2\n    GIT_STRATEGY: clone\n");'
 split_case "p136: GIT_DEPTH missing from publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n");'
 split_case "p137: GIT_DEPTH written as the string \"1\" in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: \"1\"\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: \"1\"\n    GIT_STRATEGY: clone\n");'
 split_case "p138: a CI debug variable added to publish_docs" $ci "(publish_docs.*variables|variables.*publish_docs)" '
   y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    CI_DEBUG_TRACE: \"true\"\n");'
 split_case "p139: a variable in publish_docs written in flow style" $ci "(publish_docs.*variables|variables.*publish_docs)" '
-  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone, HARMLESS: one }\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone, HARMLESS: one }\n");'
 yaml_pass_case "p140: the same two variables in flow style on publish_docs pass" '
-  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone }\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone }\n");'
 yaml_pass_case "p141: the two variables in the other order on publish_docs pass" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    GIT_DEPTH: 1\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    GIT_DEPTH: 1\n");'
 yaml_pass_case "p142: other variables on another job pass" '
   y = y + "\nfine15:\n  stage: lint\n  variables:\n    GIT_STRATEGY: none\n    HARMLESS: one\n  script:\n    - \"true\"\n";'
 # Round 5 (#60): publish_docs's own keys are an allowlist (stage, image, interruptible, needs, environment, rules,
@@ -1349,17 +1349,17 @@ split_case "p165: publish_docs interruptible: \"false\" as text" $ci "publish_do
 split_case "p166: publish_docs with its image as a mapping" $ci "publish_docs must set its own image" '
   y = y.replace("  image: $NODE_IMAGE\n  interruptible: false\n  needs:", "  image:\n    name: $NODE_IMAGE\n  interruptible: false\n  needs:");'
 split_case "p167: GIT_DEPTH: 1.0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
 split_case "p168: GIT_DEPTH: 1. in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1.\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.\n    GIT_STRATEGY: clone\n");'
 split_case "p169: GIT_DEPTH: 1e0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1e0\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1e0\n    GIT_STRATEGY: clone\n");'
 split_case "p170: GIT_DEPTH: 0o1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 0o1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 0o1\n    GIT_STRATEGY: clone\n");'
 split_case "p171: GIT_DEPTH: 0x1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 0x1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 0x1\n    GIT_STRATEGY: clone\n");'
 split_case "p172: GIT_DEPTH: +1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: +1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: +1\n    GIT_STRATEGY: clone\n");'
 split_case "p173: a rule of publish_docs setting a harmless variable (any rules variables, not only GIT_STRATEGY)" $ci "publish_docs has rules that set variables" '
   y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"dev\"\n", "    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"dev\"\n      variables:\n        HARMLESS: one\n");'
 yaml_pass_case "p174: GIT_STRATEGY: \"clone\" quoted in publish_docs" '
@@ -1649,6 +1649,75 @@ else
   sed 's/^/     /' "$out"
   failed=1
 fi
+# Cases p247-p258 (#142): the #141 checks follow every route a rule entry can take into a job, not only a literal
+# entry. A secret scan or the lint (lint, scan:gitleaks, private-details) reaching a `when: never` entry that names
+# $TRANSLATE is refused by any route: through extends, through !reference to a key of the file (the whole key, or its
+# rules), or through a chain of them; and on the five jobs that skip the translation pipeline, an entry reached by
+# !reference that can run the job (anything but `when: never`) before `*not_translation` counts as running it. The
+# route is built in hidden keys at the end of the file, so the committed jobs stay as they are but for the one edit.
+# p247 puts the route through extends, which the check already followed: it must keep refusing.
+rt_js="$tr_js"'
+  const hidden = (y, name, body) => y + "\n" + name + ":\n" + body;
+  const swapRules = (y, job, repl) => edit(y, job, (b) => b.replace(/  rules:\n(?: {4}.*\n)+/, repl));
+  const RT = "    - !reference [.not_translation]\n";
+  const before = (y, job, entry) => edit(y, job, (b) => b.replace("    - *not_translation\n", entry + "    - *not_translation\n"));'
+split_case "p247: lint taking the translation skip by extends" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "lint", "  extends: .route_rules\n");'
+split_case "p248: lint taking the translation skip by !reference to the entry itself" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = plant(withFive(y), "lint", RT);'
+split_case "p249: scan:gitleaks taking the translation skip by !reference to the rules of a hidden job" $ci "$(tr_name 'scan:gitleaks')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "scan:gitleaks", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+split_case "p250: private-details taking the translation skip by !reference to a hidden list" $ci "$(tr_name 'private-details')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_list", "  - *not_translation\n"), "private-details", "  rules:\n    - !reference [.route_list]\n    - when: on_success\n");'
+split_case "p251: lint taking the translation skip by !reference to a hidden job whole" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "lint", "  rules:\n    - !reference [.route_rules]\n    - when: on_success\n");'
+split_case "p252: scan:gitleaks taking the translation skip by a chain of two !reference" $ci "$(tr_name 'scan:gitleaks')" "$rt_js"'
+  y = hidden(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), ".route_outer", "  rules:\n    - !reference [.route_rules, rules]\n");
+  y = swapRules(y, "scan:gitleaks", "  rules:\n    - !reference [.route_outer, rules]\n    - when: on_success\n");'
+split_case "p253: live:firefox with a !reference to a rules list that runs it before the translation skip" $ci "$(tr_name 'live:firefox')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - when: on_success\n"), "live:firefox", "    - !reference [.route_runs, rules]\n");'
+split_case "p254: coverage with a !reference to a hidden list that runs it before the translation skip" $ci "$(tr_name 'coverage')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  - if: $CI_COMMIT_BRANCH\n"), "coverage", "    - !reference [.route_runs]\n");'
+split_case "p255: lint:test with a !reference to a rules list that runs it before the translation skip, after one that does not" $ci "$(tr_name 'lint:test')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n    - when: always\n"), "lint:test", "    - !reference [.route_runs, rules]\n");'
+split_case "p256: lint:import with a chain of two !reference to a rules list that runs it before the translation skip" $ci "$(tr_name 'lint:import')" "$rt_js"'
+  y = before(hidden(hidden(withFive(y), ".route_runs", "  rules:\n    - when: on_success\n"), ".route_outer", "  rules:\n    - !reference [.route_runs, rules]\n"), "lint:import", "    - !reference [.route_outer, rules]\n");'
+split_case "p257: live:chromium with a !reference to an entry that sets no when before the translation skip" $ci "$(tr_name 'live:chromium')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - if: $CI_COMMIT_BRANCH\n"), "live:chromium", "    - !reference [.route_runs, rules]\n");'
+# a !reference to entries that can never run the job, before the skip, is no fault: the committed file does this
+# with the catch-up and batch-intake snippets (resolved elsewhere); this one is a key of the file itself
+split_pass_case "p258: live:firefox with a !reference to a rules list of when: never entries before the translation skip" $ci "$rt_js"'
+  y = before(hidden(withFive(y), ".route_never", "  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n"), "live:firefox", "    - !reference [.route_never, rules]\n");'
+# Cases p259-p267 (#146): scan:gitleaks has exactly one script line running gitleaks, and it is exactly
+# `gitleaks git --no-banner --redact --verbose --log-opts="$CI_COMMIT_SHA" "$CI_PROJECT_DIR"`, the line translate_docs and
+# publish_translations use. Each bypass below scans less or nothing while the text --log-opts="$CI_COMMIT_SHA" is still
+# on a line with `gitleaks git`: the command only echoed, made to succeed, a config that disables the rules, or a later
+# --log-opts that wins over the right one. A refusal names .gitlab-ci.yml and scan:gitleaks.
+gx_js="$gl_js"'
+  const GL = "gitleaks git --no-banner --redact --verbose " + opt + " \"$CI_PROJECT_DIR\"";
+  const setCmd = (y, line) => edit(withBoth(y), (b) => {
+    const r = b.replace(/^    - gitleaks git .*$/m, () => line);
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git line to replace");
+    return r;
+  });'
+split_case "p259: scan:gitleaks running gitleaks only as the argument of echo" $ci "$gl_name" "$gx_js"'
+  y = setCmd(y, "    - echo gitleaks git --log-opts=\"$CI_COMMIT_SHA\"");'
+split_case "p260: scan:gitleaks with || true after the scan" $ci "$gl_name" "$gx_js"'
+  y = setCmd(y, "    - " + GL + " || true");'
+split_case "p261: scan:gitleaks with --exit-code 0" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --exit-code 0");'
+split_case "p262: scan:gitleaks with -c /dev/null" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " -c /dev/null");'
+split_case "p263: scan:gitleaks with a second --log-opts of HEAD~1 after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"HEAD~1\"");'
+split_case "p264: scan:gitleaks with a second --log-opts of --max-count=1 after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"--max-count=1\"");'
+split_case "p265: scan:gitleaks with a second --log-opts of --branches after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"--branches\"");'
+split_case "p266: scan:gitleaks with a second gitleaks line, the right one repeated" $ci "$gl_name" "$gx_js"'
+  y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + all));'
+split_case "p267: scan:gitleaks with a second gitleaks line, a scan of another path that carries the right --log-opts" $ci "$gl_name" "$gx_js"'
+  y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + "    - gitleaks git --no-banner --redact --verbose " + opt + " .\n"));'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.

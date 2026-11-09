@@ -480,9 +480,11 @@ for (const j of SCANS) {
 {
   const gl = isObj(doc["scan:gitleaks"]) ? doc["scan:gitleaks"] : {};
   const v = isObj(gl.variables) ? gl.variables : {};
-  const scans = lines(gl.script).filter((l) => /\bgitleaks\s+git\b/.test(l));
-  if (!scans.length || scans.some((l) => !l.includes('--log-opts="$CI_COMMIT_SHA"'))) bad('.gitlab-ci.yml: the job scan:gitleaks must run gitleaks git with --log-opts="$CI_COMMIT_SHA", or it scans every branch the fetch brought, not the commit under test (#143)');
-  if (scans.some((l) => /--all\b/.test(l))) bad(".gitlab-ci.yml: the job scan:gitleaks passes --all to gitleaks: it scans only the history of the commit under test (#143)");
+  // the script is exactly these two lines: a text check of one option let an echo, `|| true`, --exit-code 0 or a
+  // later --log-opts through (#146), as translate_docs's and the publish jobs' exact lines do not
+  const want = ['git config --global --add safe.directory "$CI_PROJECT_DIR"', 'gitleaks git --no-banner --redact --verbose --log-opts="$CI_COMMIT_SHA" "$CI_PROJECT_DIR"'];
+  const have = lines(gl.script);
+  if (have.length !== want.length || have.some((l, i) => l !== want[i])) bad(`.gitlab-ci.yml: the job scan:gitleaks script must be exactly ${JSON.stringify(want)}, the whole history of the commit under test and nothing else (#143, #146), found: ${JSON.stringify(gl.script ?? null).slice(0, 300)}`);
   if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
 }
 
@@ -490,18 +492,35 @@ for (const j of SCANS) {
 // entry .not_translation (by alias or written out), before any entry that would run the job
 const TRANSLATION_SKIP = '$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"';
 const SKIPS_ON_TRANSLATION = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
+// a rules list as GitLab runs it: each !reference to a key of the file replaced by the entries it names ([key, rules],
+// or [key], what it holds or a job's rules through extends), so no route around the checks below (#142). A reference to a
+// shared snippet's rule stays out (it only takes a job off a catch-up or batch merge request: judged above); one that
+// cannot be followed here counts as an entry that runs the job, failing closed.
+const UNFOLLOWED = Object.freeze({ "!unfollowed": true });
+const ruleEntries = (v, seen = new Set(), depth = 0) => {
+  if (Array.isArray(v)) return v.flatMap((x) => ruleEntries(x, seen, depth));
+  if (!isObj(v) || !Object.hasOwn(v, "!reference")) return [v];
+  const path = v["!reference"];
+  if (!Array.isArray(path) || !path.length || !path.every((p) => typeof p === "string") || depth >= 10) return [UNFOLLOWED];
+  if (Object.hasOwn(SNIPPETS, path[0]) && !Object.hasOwn(doc, path[0])) return [];
+  const key = path.join("\n");
+  if (!Object.hasOwn(doc, path[0]) || seen.has(key)) return [UNFOLLOWED];
+  // [key] alone is what the key holds: a rule entry or a list as written, a job's rules (its own or by extends)
+  const job = path.length === 1 && isObj(doc[path[0]]) && (Object.hasOwn(doc[path[0]], "rules") || Object.hasOwn(doc[path[0]], "extends"));
+  let at = job || path[1] === "rules" ? rulesOf(path[0]) : doc[path[0]];
+  for (const p of path.slice(path[1] === "rules" ? 2 : 1)) at = isObj(at) && Object.hasOwn(at, p) ? at[p] : (Array.isArray(at) && /^\d+$/.test(p) ? at[Number(p)] : undefined);
+  return at === undefined ? [UNFOLLOWED] : ruleEntries(at, new Set([...seen, key]), depth + 1);
+};
 const isTranslationSkip = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP;
 const mentionsTranslate = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
 for (const j of SKIPS_ON_TRANSLATION) {
-  const r = rulesOf(j);
-  const list = Array.isArray(r) ? r.flat(Infinity) : [];
+  const list = ruleEntries(rulesOf(j) ?? []);
   const at = list.findIndex(isTranslationSkip);
-  const runs = list.findIndex((e) => !(isObj(e) && e.when === "never") && !(isObj(e) && Object.hasOwn(e, "!reference")));
+  const runs = list.findIndex((e) => !(isObj(e) && e.when === "never"));
   if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141): put - *not_translation in its rules, before any entry that runs it`);
 }
 for (const j of SCANS) {
-  const r = rulesOf(j);
-  if ((Array.isArray(r) ? r.flat(Infinity) : []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} skips on the translation pipeline ($TRANSLATE); the secret scans and the lint run on every pipeline (#141)`);
+  if (ruleEntries(rulesOf(j) ?? []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} skips on the translation pipeline ($TRANSLATE); the secret scans and the lint run on every pipeline (#141)`);
 }
 
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
