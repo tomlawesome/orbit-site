@@ -10,10 +10,11 @@
  * ONE FALLBACK for every failure (the worker's error event, `up` not ok, `dead`, and under the automatic rule no `up`
  * within WORKER_WAIT): #warp replaced by a fresh canvas with its attributes (a handed-over one never gives the page a
  * context again), #warpgl removed, the worker terminated, a page engine made on the new canvas, the pending asks asked
- * of it, and a flight under way picked up where it was (skip: its time so far). From then on everything is the page
+ * of it, and a flight under way picked up where it was (skip: its flight time so far, engine.js: flownAt, the pace
+ * its own engine keeps too). From then on everything is the page
  * engine's, and the worker is told nothing more.
  */
-import { createFlight, wireProfile, EARTH_PICTURE } from "./engine.js";
+import { createFlight, wireProfile, flownAt, EARTH_PICTURE } from "./engine.js";
 import { PICTURE_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
 import { decodeAside, rememberedFit } from "./fitness.js";
@@ -139,7 +140,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       const { P, at, since } = live;
       if (typeof at === "number") mine.start(P, { at });
       else {
-        const t = (now() - since) * (P.rate || 1) + (P.skip || 0);
+        const t = flownAt(P, now() - since);
         if (t < (P.dur ?? Infinity) + 400) mine.start({ ...P, skip: t });
       }
     }
@@ -225,7 +226,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       if (engine) return engine.running;
       if (!live) return false;
       const { P, at, since } = live;
-      return typeof at !== "number" && (now() - since) * (P.rate || 1) + (P.skip || 0) < (P.dur ?? Infinity) + 400;
+      return typeof at !== "number" && flownAt(P, now() - since) < (P.dur ?? Infinity) + 400;
     },
   };
 }

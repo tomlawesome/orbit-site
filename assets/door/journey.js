@@ -5,7 +5,7 @@
  * named points. The flights themselves (the profiles) are the host's too: the climb and the descent are here (UP,
  * DOWN, DOWN_DAWN), and a host makes its own from them (the site: assets/js/journeys.js).
  */
-import { createFlight, wireProfile, UP, DOWN, UPDUR, DOWNDUR, REV, SWEEP, DEEP_SKIP, homeProps } from "./engine.js";
+import { createFlight, wireProfile, UP, DOWN, UPDUR, DOWNDUR, UPTIME, DOWNTIME, REV, SWEEP, DEEP_SKIP, homeProps, clockAt, flownAt } from "./engine.js";
 import { createRemoteFlight } from "./remote-flight.js";
 import { drawnAside } from "./fitness.js";
 import { flag } from "./settings.js";
@@ -56,10 +56,12 @@ export const DOWN_DAWN = { ...DOWN, palTo: undefined, duskMix: undefined };
    ending undone first, so a ring leaves as a ring and a sweep as a sweep */
 /** @param {Prop[]} props @returns {Prop[]} */
 export const mirrored = (props) => props.map((g) => ({ ...g, spin: -(g.spin || 0), dur: g.dur * REV * SWEEP, t0: Math.max(0, (UPDUR - (g.t0 + g.dur)) * REV) }));
-/* out of the docs' galaxy it starts past its still first part (engine.js: DEEP_SKIP) */
+/* out of the docs' galaxy it starts past its still first part (engine.js: DEEP_SKIP): the descent's flight time */
 const DEEP_SKIP_T = (DOWNDUR * DEEP_SKIP) / UPDUR;
+/* a descent from a quickened climb is played a second shorter too: of the descent's length on the clock (the pace) */
+const DOWN_QUICK = DOWNTIME / (DOWNTIME - 1000);
 /** @param {Profile} P */
-export const descentFrom = (P) => ({ ...DOWN_DAWN, rate: P.rate ? DOWNDUR / (DOWNDUR - 1000) : undefined, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props),
+export const descentFrom = (P) => ({ ...DOWN_DAWN, rate: P.rate ? DOWN_QUICK : undefined, vpX: P.vpX, vpY: P.vpY, a0: P.a0, a1: P.a1, ending: P.ending, chart: P.chart, tint: P.tint, props: mirrored(P.props),
   ...(P.ending === "chart" ? { skip: DEEP_SKIP_T, skipTu: DEEP_SKIP } : {}) });
 
 /* the profile descend() starts the engine with (pure, so a test in Node can read it). Without `homes` it is the descent
@@ -75,7 +77,8 @@ export function descentProfile({ onto = "dusk", from = null, homes = [] } = {}) 
 
 const CLASSES = ["arming", "showdawn", "showwarp", "launching", "bare", "instrument", "withdrawing", "dispersing", "showdusk", "farewell"];
 
-/* a flight played faster keeps every beat in step: those inside it scale with it, those after it come sooner by what it saved */
+/* a flight played faster keeps every beat in step: those inside it scale with it, those after it come sooner by what it saved
+   (beats are on the clock, so `dur` is the flight's length on the clock: UPTIME or DOWNTIME, the pace) */
 /** @param {Beat[]} beats @param {number} dur @param {number} rate @returns {Beat[]} */
 const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ ...b, at: b.at <= dur ? b.at / rate : b.at - (dur - dur / rate) })));
 
@@ -131,11 +134,11 @@ function journeyClock() {
 }
 
 /* where in a pinned flight's own time the journey's `at` falls: the flight began at its warp beat (in the journey's own,
-   already transformed, time), runs at its profile's rate, and may start a little way into itself (P.skip); a live
-   flight is left to its clock (the empty options) */
+   already transformed, time), runs at its profile's rate, may start a little way into itself (P.skip), and is paced
+   (engine.js: flownAt), as the live flight is; a live flight is left to its clock (the empty options) */
 /** @param {Profile} P @param {number | undefined} at @param {number} warpAt */
 const pinnedFlight = (P, at, warpAt) => (typeof at === "number"
-  ? { at: Math.min(Math.max(0, (at - warpAt) * (P.rate || 1) + (P.skip || 0)), P.dur ?? Infinity) } : {});
+  ? { at: Math.min(Math.max(0, flownAt(P, at - warpAt)), P.dur ?? Infinity) } : {});
 /* a pin at or after the beat that takes the canvas off the screen: there is nothing of the flight to see, and stepping
    it frame by frame to draw it (slow where the GPU is software) would only hold up every beat after it */
 /** @param {Beat[]} beats @param {number | undefined} at @param {string} act */
@@ -249,7 +252,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     flight = { profile, on: hooks, at, gone: false };
     write(title, subtitle);
     body.classList.add("showdawn", "launching");
-    let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPDUR, profile.rate || 1);
+    let beats = reduced ? ascentBeatsReduced() : quicken(ascentBeats(), UPTIME, profile.rate || 1);
     /* not yet ready: the journey still starts at once, and the clock holds just before the flight's canvas comes up
        until what it draws is ready */
     if (ready && !reduced && !pinned) {
@@ -277,17 +280,17 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
        drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
     clock.stalls(false); clock.release();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching", "holding");
-    descent = { onto, from, homes, on: hooks, at, rate: from?.rate ? DOWNDUR / (DOWNDUR - 1000) : 1 };
+    descent = { onto, from, homes, on: hooks, at, rate: from?.rate ? DOWN_QUICK : 1 };
     write(title, subtitle);
     let beats = descentBeats();
     /* out of the docs' galaxy: under way at once. The page lets go as the flight comes up beneath it (the same sky,
        so the one becomes the other), and the flight starts past its still first part, the camera already drawing
-       back; everything after comes sooner by as much */
+       back; everything after comes sooner by as much (the warp's 400 ms, and the clock the skipped part takes) */
     if (from?.ending === "chart") {
-      const warp = 300, shift = D.warp - warp + DEEP_SKIP_T;
+      const warp = 300, shift = D.warp - warp + clockAt(DEEP_SKIP_T, true);
       beats = beats.map((b) => (b.act === "withdraw" ? b : b.act === "disperse" ? { ...b, at: 240 } : b.act === "warp" ? { ...b, at: warp } : { ...b, at: Math.max(warp + 60, b.at - shift) }));
     }
-    beats = reduced ? descentBeatsReduced() : quicken(beats, DOWNDUR, /** @type {number} */ (descent.rate));
+    beats = reduced ? descentBeatsReduced() : quicken(beats, DOWNTIME, /** @type {number} */ (descent.rate));
     descent.gone = gone(beats, at, "warpOut");
     /* not yet ready (ADR-0002 6.8, #116): held as the climb is, but at its first beat, before the landing withdraws, so
        the landing stays as it is while it waits (nothing has dispersed to leave a blank); not under reduced motion (no

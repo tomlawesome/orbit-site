@@ -202,7 +202,8 @@ it was given (the worker's fallback, below), so a host keeps no reference to it
 `at` (both): pin the journey at a moment, in milliseconds into the journey
 as it plays (its own time, after a profile's `rate` has quickened it and the
 chart descent has moved its beats). The beats at or before `at` are applied at
-once, in order, with their hooks, and the flight is drawn as it stands then;
+once, in order, with their hooks, and the flight is drawn as it stands then
+(at the flight time a live flight shows at that moment: the pace, below);
 nothing after them is scheduled, so a pinned journey stands still (for a
 screenshot or a test). Left out, the journey plays live. A pinned `fly()` does
 not wait for `ready`. A pinned journey never asks for the world either: it is
@@ -426,7 +427,7 @@ a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the 
 (`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
-`homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
+`homeProps(homes)`, `docsRest`) and its pace (`UPTIME`, `DOWNTIME`, `clockAt`, `paced`: below) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
 For a host's own worker, which must answer for the page and run its queue
 unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
 answers replaced by the worker's), `pace("none")` (`chores.js`: the rests
@@ -467,6 +468,24 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 (`dawn.js`); `createJourney` is likewise `door.journey`. They read the settings
 `createDoor` has given, so call `createDoor` first.
 
+### The pace (`engine.js`, ADR-0007)
+
+The flight's choreography (`UPDUR` 4800, `DOWNDUR` 4100, `REV`, `mirror`, the
+curves, every prop's `t0` and `dur`, `P.dur`, `P.skip`, the engine's pinned
+`at`) is written in flight time and does not change. It is seen on the clock
+through one map: `clockAt(f, rev = false)`, the clock (ms since the flight
+began, times the profile's `rate`) at which flight time `f` is shown, and its
+inverse `paced(c, rev = false)`. The climb lingers over the Earth and as the moon
+passes and is quicker through the dark: `UPTIME` (5300) on the clock for its
+4800 of flight time. With `rev` they are the descent's, in its own flight time:
+the climb's pace run backwards, `DOWNTIME = UPTIME * REV` (about 4527) long.
+Below 0 each is the identity; past the end each is shifted by the extra length.
+The beats (`timeline.js`) are on the clock: one at or after the warp is at
+`warp + clockAt(beat - warp)` (the landing about 5308, the farewell about 5777),
+and a flight played "a second shorter" is a second shorter than `UPTIME` or
+`DOWNTIME`. The worker draws with the same module, so nothing on the wire
+changed (additive interface change, 2026-11, #151).
+
 ## Files
 
 | File | What |
@@ -475,7 +494,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `settings.js` | The settings store the modules read |
 | `dawn.js` | The dawn and the dusk mounted on their markup; first light |
 | `journey.js` | The journey's clock and `createJourney` |
-| `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine, its beats, its WebGL world |
+| `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine and its pace, its beats, its WebGL world |
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
 | `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |

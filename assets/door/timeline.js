@@ -34,6 +34,17 @@
  *     4150   the flight is over and the canvas is released
  *     5100   the mark hands back to the lockup's own glyph
  *     5350   the farewell speaks
+ *
+ * THE PACE (#151, ADR-0007). Those are the mockup's figures and they stay
+ * here as written, in FLIGHT TIME: the choreography's own. The flight is seen
+ * on a bent clock (engine.js: clockAt, paced), so a beat at or after the
+ * flight's warp moves to where its moment falls on that clock:
+ * `warp + clockAt(beat - warp)`, on the descent `D.warp + clockAt(beat -
+ * D.warp, true)`. A beat before the warp does not move, and neither does a
+ * length that is not a beat (dwell, instrument, tourGap, the settle). So the
+ * landing is about 5308 (was 4800), the bare sky 6900, and the descent's dusk
+ * about 3336, its canvas released about 4240, the mark home about 5527 and the
+ * farewell about 5777 (was 5350). The reduced-motion beats do not change.
  */
 
 /*
@@ -58,27 +69,42 @@ const ASCENT_BASE = {
 /* THE SITE'S OWN AMENDMENT (owner, 2026-10): on the site the bare sky's dwell read as a wait, not a breath. The
    instrument now arrives as the dial finishes settling (its condense runs 1.3s from the landing), not two seconds
    after the settle: the land and the draw-in are untouched, the dead air between them is gone. The settle is the
-   host's setting (settings.js: settle, 1100 ms unless the host says otherwise), so instrumentAt is 5900 here */
+   host's setting (settings.js: settle, 1100 ms unless the host says otherwise), a length after the paced landing, so
+   instrumentAt is about 6408 here (5900 before the pace) */
 import { settings } from "./settings.js";
+import { clockAt } from "./engine.js";
+
+/* a beat written in flight time, on the clock: one at or after the flight's warp moves with the pace (above) */
+/** @param {number} warp @param {boolean} rev @param {number} beat */
+const onClock = (warp, rev, beat) => (beat < warp ? beat : warp + clockAt(beat - warp, rev));
+/** @template {Record<string, number>} B @param {B} beats @param {number} warp @param {boolean} rev @returns {B} */
+const paceAll = (beats, warp, rev) => /** @type {B} */ (Object.fromEntries(Object.entries(beats).map(([k, b]) => [k, onClock(warp, rev, b)])));
+/* the climb's beats; the rest of ASCENT_BASE are lengths */
+const { dwell, instrument, tourGap, ...ASCENT_BEATS } = ASCENT_BASE;
+const ASCENT_PACED = paceAll(ASCENT_BEATS, ASCENT_BASE.warp, false);
 
 export const T = {
   ...ASCENT_BASE,
-  get instrumentAt() { return ASCENT_BASE.land + settings.settle; },
+  ...ASCENT_PACED,
+  /* the settle is a length after the (paced) landing */
+  get instrumentAt() { return ASCENT_PACED.land + settings.settle; },
   /** @returns {number} */
   get tourAt() { return this.instrumentAt + ASCENT_BASE.instrument + ASCENT_BASE.tourGap; },
 };
 
-/* the descent's own offsets, kept as the mockup wrote them: the flight starts
+/* the descent's own offsets, kept as the mockup wrote them (in flight time, paced as above): the flight starts
    700ms in, and the mirrored windows are quoted against that. */
-export const D = {
+const DESCENT_BASE = {
   withdraw: 0, disperse: 620, warp: 700, release: 1000,
   nameOn: 700 + 1880, nameOff: 700 + 2767, markIn: 700 + 2955,
   dusk: 3600, warpOut: 4150, markHome: 5100, farewell: 5350,
 };
+export const D = paceAll(DESCENT_BASE, DESCENT_BASE.warp, true);
 /* the mark rides 260 → 1340 out of the lockup on the climb, so on the way
-   down it rides the mirrored window: 923ms. */
-export const MARK_RIDE_UP = 1080;
-export const MARK_RIDE_DOWN = 923;
+   down it rides the mirrored window: 923ms of the descent's flight time, from
+   2955. Both are the lengths those windows take on the paced clock. */
+export const MARK_RIDE_UP = T.markOut - T.mark;
+export const MARK_RIDE_DOWN = clockAt(2955 + 923, true) - clockAt(2955, true);
 /*
  * WHERE THE MARK ARRIVES at the centre of the screen: 166.4px, the ratified
  * 2.6 × the 64px badge the sheet used to draw in the lockup. It is stated as
