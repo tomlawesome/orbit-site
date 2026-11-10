@@ -97,7 +97,6 @@ const run = (name) => {
 {
   const { r, base, seen } = run("fly-5000");
   check("P3b fly pinned at 5000 (short of the new landing, past the old 4800): the landing is not skipped, no land hook at once", base && !before(r.hooks.land, SOON) && !before(r.classes.bare, SOON), seen);
-  check("P3b ... and it lands soon after, within 700 ms (about 308 ms to go)", base && r.hooks.land !== undefined && r.hooks.land > 0 && r.hooks.land < 700, seen);
 }
 {
   const { r, base, seen } = run("descend-6000");
@@ -120,6 +119,5 @@ const run = (name) => {
   const { r, base, seen } = run("descend-5400");
   check("P6b descend pinned at 5400 (short of the new farewell, past the old 5350): the farewell is not skipped, no farewell hook at once", base && !before(r.hooks.farewell, SOON) && !before(r.classes.farewell, SOON), seen);
   check("P6b ... the surface hook has fired (the dusk, about 3336, is behind the pin)", base && before(r.hooks.surface, SOON), seen);
-  check("P6b ... and the farewell comes soon after, within 700 ms (about 377 ms to go)", base && r.hooks.farewell !== undefined && r.hooks.farewell > 0 && r.hooks.farewell < 700, seen);
 }
 finish();

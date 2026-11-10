@@ -17,7 +17,7 @@
  *   fly       fly(UP) at its warp posts `start` (seq, a profile holding no function, base "UP", no `at`); `frame` with
  *             its seq sets #warp's data-drawn, one with an old seq does not; reset() posts `clear`; descend() posts
  *             base "DOWN" with a later seq
- *   pinned    a pinned fly(UP, { at }) posts `start` with `at` the flight's own time (the journey's, less the warp beat)
+ *   pinned    a pinned fly(UP, { at }) posts `start` with `at` the flight's own time (paced(the journey's moment less the warp beat))
  *   note      a `note` from the worker prints as it was sent, "orbit · ..." (kind "note" and "verdict" alike)
  *   resize    a window resize posts `size` and restyles both canvases; visibilitychange posts `visible`
  *   destroy   destroy() calls terminate(); destroy() before any need makes no worker
@@ -138,7 +138,8 @@ async function pinnedCase() {
   const w = b.w();
   if (!w) return { none: noWorker(b.host) };
   const s = w.of("start")[0];
-  return { start: s ? { at: s.at, base: s.profile && s.profile.base, fn: findFn(s.profile) } : null, want: 2600 - warpAt };
+  /* a journey pinned at clock moment 2600 shows the flight time the clock map gives for the clock time since the warp beat */
+  return { start: s ? { at: s.at, base: s.profile && s.profile.base, fn: findFn(s.profile) } : null, want: b.door.paced(2600 - warpAt) };
 }
 
 async function noteCase() {
@@ -241,7 +242,7 @@ for (const [name, kind, prove, what] of [["warm", "warm", false, "warm({ prove: 
   chk("D2 ... its `frame` sets data-drawn to the new seq", r, (r) => [String(r.drawn[1]) === String(r.starts[1].seq), `data-drawn ${show(r.drawn[1])}, seq ${r.starts[1].seq}`]);
   chk("D2 ... a late `frame` for the old seq is dropped", r, (r) => [String(r.drawn[2]) === String(r.starts[1].seq), `data-drawn ${show(r.drawn[2])}, current seq ${r.starts[1].seq}`]);
 }
-chk("D2 a pinned fly(UP, { at: 2600 }) posts `start` with `at` the flight's own time (2600 less the warp beat)", run("pinned"), (r) => [r.start.at === r.want && r.start.base === "UP" && r.start.fn === null, `start ${show(r.start)}, want at ${r.want}`]);
+chk("D2 a pinned fly(UP, { at: 2600 }) posts `start` with `at` the flight's own time (paced(2600 less the warp beat))", run("pinned"), (r) => [r.start.at === r.want && r.start.base === "UP" && r.start.fn === null, `start ${show(r.start)}, want at ${r.want}`]);
 {
   const r = run("note");
   chk("D2 a `note` from the worker prints as it was sent (orbit · ...)", r, (r) => [r.lines.includes("orbit · flight: shaders compiled in 12 ms"), `console ${show(r.lines)}`]);
