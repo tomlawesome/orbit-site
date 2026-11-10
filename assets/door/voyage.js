@@ -1707,8 +1707,9 @@ export function createVoyage(under, { restFor }) {
       gl.uniform3f(u.uCirc, w ? w.cx : 0, w ? w.cy : 0, w ? w.R : 1); gl.uniform1f(u.uEarthA, w ? w.alpha : 0); gl.uniform1f(u.uD, D);
       gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, door?.sun || cam.S);
       gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(door?.spinM || ID3)); gl.uniform1f(u.uCloudOff, door?.cloudOff || 0);
-      /* the clouds' depth and the sunrise come in as the flight leaves the door (whose still picture has none of them) */
-      { const q = door ? 1 : Math.min(1, Math.max(0, (w ? w.c : 0) / 0.06)); gl.uniform1f(u.uLook, q * q * (3 - 2 * q)); }
+      /* the clouds' depth and the sunrise come in as the flight leaves the door, painted or live (the still picture has
+         none of them, and the live door draws none either: door3d.js) */
+      { const q = Math.min(1, Math.max(0, (w ? w.c : 0) / 0.06)); gl.uniform1f(u.uLook, q * q * (3 - 2 * q)); }
       /* the door's air at the door (its glows carry the rest), the flight's own as the world falls away */
       { const k = door ? Math.min(1, Math.max(0, (w ? w.c : 1) / 0.35)) : 1; gl.uniform1f(u.uAirK, door ? door.air + (1 - door.air) * k * k * (3 - 2 * k) : 1); }
       gl.uniform4f(u.uHas, allMaps || maps.lights ? 1 : 0, allMaps || maps.euro ? 1 : 0, allMaps || (maps.clouds && maps.day) ? 1 : 0, 0);

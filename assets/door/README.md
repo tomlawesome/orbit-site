@@ -426,8 +426,9 @@ drawn on the page or in a worker, always has two things the still has not, and n
   light is once through the air, and a brighter arc of haze along the Earth's edge either side of it. The star is sized
   by the screen's narrow side, so on a tall phone its rays do not run the height of the screen.
 
-Both are weighted by one uniform, `uLook`, 1 in the live door and, in a flight, faded in over the climb's first moments
-(`w.c` 0 to 0.06) so the first frame is the door's still and `tools/dawn.py` is unchanged.
+Both are weighted by one uniform, `uLook`: 0 in the live door (`door3d.js`), which draws what the still shows, and, in a
+flight from either door, faded in over the climb's first moments (`w.c` 0 to 0.06), so the first frame is the door's
+still and `tools/dawn.py` is unchanged.
 
 ### Also exported from `index.js`
 
