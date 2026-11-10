@@ -238,6 +238,8 @@ uniform int uPass;`],
   ["earth", `uniform vec3 uCirc; uniform float uEarthA, uD; uniform mat3 uB; uniform vec3 uSun; uniform vec4 uHas;
 /* the ground turned under the camera, and the clouds drifting over it (the live door, door3d.js; still in a flight) */
 uniform mat3 uSpinM; uniform float uCloudOff, uAirK;
+/* how far in the clouds' depth and the sunrise are (0: the Earth as the door's still has it; 1: all of it) */
+uniform float uLook;
 uniform sampler2D uLights, uDay, uClouds, uEuro; uniform vec4 uEuroBox;
 /* the finer maps about where the door looks (lights, clouds, land: which are there, uHasN), the box they cover; the
    cloud slab's strength (0: none) */
@@ -489,12 +491,44 @@ vec3 surface(vec3 P,vec3 rd,float w){
   float tw=exp(-abs(max(es,-30.0))/2.0);
   vec3 sky=vec3(0.25,0.35,0.7)*0.35*tw+vec3(1.0,0.55,0.3)*0.6*tw*tw*tw+MOONL*4.0;
   vec3 sun=SUNL*0.4*sunT(0.0,mu)*max(mu,0.0)/PI;
-  vec3 c=landAt(g,ga,gb)*(sky+sun), li=lightsAt(g,ga,gb)*0.9*(1.0-smoothstep(0.0,0.12,mu));
+  vec3 li=lightsAt(g,ga,gb)*0.9*(1.0-smoothstep(0.0,0.12,mu));
+  /* towards the sun along the ground, as degrees of (lon, lat) for one Earth radius of it (sd), and the
+     tangent of the sun's height (te): where a cloud's shadow falls from */
+  bool lit=uLook>0.0&&mu>-0.06;
+  vec2 sd=vec2(0.0); float te=0.0, sh=0.0;
+  if(lit){
+    vec3 st=uSpinM*(uSun-mu*P); float sl=max(length(st),1e-4);
+    sd=degrees(vec2(dot(st,E)/cl,dot(st,N)))/sl; te=max(mu,0.0)/sl;
+  }
 #ifndef SLAB
   /* LEAN: the clouds a flat cover over the ground, lit as the ground is (as the Earth was before the slab), and the
      cities under them dimmed */
-  float ca=smoothstep(0.22,0.85,coverAt(g,ga,gb));
-  c=mix(c,vec3(0.85)*(sky+sun),ca); li*=1.0-0.8*ca;
+  float c0=coverAt(g,ga,gb), ca=smoothstep(0.22,0.85,c0);
+  vec3 cloud=vec3(0.85)*(sky+sun);
+  if(lit){
+    /* the cover read twice towards the sun: cloud there shades the ground here, and the cloud here where it
+       is the thicker (so the flat cover has a lit side and a shaded one). The tops stand 2 to 11 km up by how thick
+       the cover is, and are lit by the sun as it reaches that height: gold, then pink, past the day's edge */
+    float dist=min(6.0/max(te,0.02),260.0)*KM;
+    float c1=coverAt(g+sd*dist,ga,gb), c2=coverAt(g+sd*dist*0.4,ga,gb);
+    sh=max(smoothstep(0.3,0.75,c1),smoothstep(0.3,0.75,c2));
+    float rel=clamp((max(c1,c2)-c0)*3.0,0.0,1.0), face=clamp((c0-c2)*2.5,0.0,1.0);
+    float mv=dot(rd,uSun), hc=(2.0+9.0*smoothstep(0.3,1.0,c0))*KM;
+    vec3 top=sunT(hc,mu)*SUNL*((0.7*hg(mv,0.6)+0.3*hg(mv,-0.2))*4.0*PI*0.08+0.02)*(1.0-0.8*rel)*(0.75+0.5*face)+0.85*sky;
+    cloud=mix(cloud,top,uLook);
+  }
+#else
+  if(lit&&uCloudK>0.0&&mu>0.0){
+    /* RICH: the slab read twice towards the sun: a top there that stands in the sun's way shades the ground */
+    float fd=degrees(w)*4.0, d1=min(3.0/max(te,0.02),260.0), d2=min(8.0/max(te,0.02),260.0);
+    vec3 f1=slabAt(g+sd*d1*KM,fd), f2=slabAt(g+sd*d2*KM,fd);
+    sh=max(smoothstep(0.05,0.5,f1.x)*smoothstep(-1.0,1.0,f1.z-d1*te),smoothstep(0.05,0.5,f2.x)*smoothstep(-1.0,1.0,f2.z-d2*te));
+  }
+#endif
+  sh*=uLook;
+  vec3 c=landAt(g,ga,gb)*(sky+sun*(1.0-0.85*sh));
+#ifndef SLAB
+  c=mix(c,cloud,ca); li*=1.0-0.8*ca;
 #endif
   return li+c;
 }
@@ -539,6 +573,9 @@ vec3 earth(vec2 css,out float cover){
     int nA=low?6:16, nB=low?int(clamp(ceil((lb-la)/((ground?8.0:6.0)*KM)),6.0,ground?24.0:64.0)):0, nC=low&&!ground?6:0;
     float j=0.5+0.6*(hash13(vec3(gl_FragCoord.xy,uTime*31.0))-0.5);
     float mv=dot(rd,uSun), pr=3.0/(16.0*PI)*(1.0+mv*mv), pm=hg(mv,0.8);
+    /* the haze's tight forward lobe, which the one lobe above leaves out: a thin bright arc along the horizon
+       either side of the rising sun */
+    pm+=0.3*hg(mv,0.93)*uLook;
     /* the air's light over the ground as it is; over the limb, as strong as asked (uAirK: the door's own) */
     float ak=ground?1.0:uAirK;
     /* the high air: on the way down, and out again (kept apart, and laid behind the low air at the end) */
@@ -576,7 +613,16 @@ vec3 earth(vec2 css,out float cover){
           /* lit by the sun through the air (their tops catch it first), by the twilight sky, from below by the
              cities' glow, and by the moon */
           float hn=clamp((hk-CL0)/(CL1-CL0),0.0,1.0), ms=dot(up,uSun);
-          vec3 cl=Ts*csunK*(0.35+0.65*hn)
+          /* the slab read twice towards the sun: a top there that stands above the sun's ray shades this */
+          float occ=0.0;
+          if(uLook>0.0&&ms>-0.06){
+            vec3 Qm=uSpinM*up, Em=normalize(vec3(-Qm.y,Qm.x,0.0)+vec3(1e-6,0.0,0.0)), Nm=cross(Qm,Em), sm=uSpinM*(uSun-ms*up);
+            float sl=max(length(sm),1e-4), tm=ms/sl, fd=degrees(t*pa)*2.0;
+            vec2 sdm=degrees(vec2(dot(sm,Em)/max(length(Qm.xy),0.01),dot(sm,Nm)))/sl;
+            vec3 fa=slabAt(g+sdm*12.0*KM,fd), fb=slabAt(g+sdm*40.0*KM,fd);
+            occ=max(smoothstep(0.05,0.5,fa.x)*smoothstep(0.0,1.5,fa.z-(hk+12.0*tm)),smoothstep(0.05,0.5,fb.x)*smoothstep(0.0,2.5,fb.z-(hk+40.0*tm)))*uLook;
+          }
+          vec3 cl=Ts*csunK*(0.35+0.65*hn)*(1.0-0.8*occ)
                  +vec3(0.22,0.32,0.6)*0.5*exp(clamp(degrees(asin(clamp(ms,-1.0,1.0))),-20.0,0.0)/2.2)
                  +glowAt(g)*vec3(1.6,1.5,1.3)*0.6*(1.0-hn)*(1.0-hn)
                  +MOONL*(0.5+0.5*hn);
@@ -597,6 +643,28 @@ vec3 earth(vec2 css,out float cover){
   }
   /* (the sun itself is the flight's own glow, which matches the door's; this lens would stretch it) */
   return L;
+}
+
+/* the sunrise in the lens: a star of rays and a level streak about the sun, as strong and as red as the sun's
+   light is once through the air at the lowest point of its way to the camera (nothing while the Earth is in the way) */
+vec3 sunStar(vec2 css){
+  if(uLook<=0.0) return vec3(0.0);
+  vec3 vs=transpose(uB)*uSun; if(vs.z<=0.0) return vec3(0.0);
+  /* (kept at the horizon, where the flight's own glow of the sun is: this lens would carry it far up the screen) */
+  vec2 ds=vs.xy*sqrt(uD*uD-1.0)/vs.z; ds*=min(1.0,1.003/max(length(ds),1e-4));
+  vec2 sc=uCirc.xy+vec2(ds.x,-ds.y)*uCirc.z;
+  float m=dot(-uB[2],uSun), hp=m<0.0?uD*sqrt(max(1.0-m*m,0.0))-1.0:1.0;
+  vec3 Ts=sunT(max(hp,0.0),0.0); Ts*=Ts*smoothstep(-8.0*KM,3.0*KM,hp);
+  vec2 q=(css-sc)*uPx/min(uRes.x,uRes.y); float r=length(q), a=atan(q.y,q.x);
+  /* three long thin spikes and three short, each as wide at its tip as at its root, and a spray of fine rays */
+  float rays=0.3*pow(max(0.5+0.5*sin(a*17.0+1.3)*sin(a*29.0+0.7),0.0),10.0)*exp(-r/0.06);
+  for(int i=0;i<6;i++){
+    float an=0.66+float(i)*0.5236, odd=mod(float(i),2.0);
+    float dp=abs(q.x*sin(an)-q.y*cos(an));
+    rays+=mix(1.0,0.45,odd)*exp(-dp/0.0022)*exp(-r/mix(0.2,0.08,odd));
+  }
+  float streak=exp(-abs(q.y)/0.004)*exp(-abs(q.x)/0.4), core=exp(-r/0.014);
+  return SUNL*Ts*(rays*0.2+streak*0.08+core*0.6)*uLook;
 }
 
 /* the Earth, its limb smoothed: the ground is there or it is not, so a pixel the limb crosses is seen twice, its
@@ -884,6 +952,7 @@ ${PASS_SWITCH}  vec2 css=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y)/uPx;
   if(uEarthA>0.0){
     float cov; vec3 e=earthAA(css,cov); float a=cov*uEarthA;
     T*=1.0-a; S=S*(1.0-a)+e*uEarthA;
+    S+=sunStar(css)*uEarthA;
   }
   vec4 mo=moon(css); T*=1.0-mo.a; S=S*(1.0-mo.a)+mo.rgb;
   S+=arrival(css);
@@ -1638,6 +1707,8 @@ export function createVoyage(under, { restFor }) {
       gl.uniform3f(u.uCirc, w ? w.cx : 0, w ? w.cy : 0, w ? w.R : 1); gl.uniform1f(u.uEarthA, w ? w.alpha : 0); gl.uniform1f(u.uD, D);
       gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, door?.sun || cam.S);
       gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(door?.spinM || ID3)); gl.uniform1f(u.uCloudOff, door?.cloudOff || 0);
+      /* the clouds' depth and the sunrise come in as the flight leaves the door (whose still picture has none of them) */
+      { const q = door ? 1 : Math.min(1, Math.max(0, (w ? w.c : 0) / 0.06)); gl.uniform1f(u.uLook, q * q * (3 - 2 * q)); }
       /* the door's air at the door (its glows carry the rest), the flight's own as the world falls away */
       { const k = door ? Math.min(1, Math.max(0, (w ? w.c : 1) / 0.35)) : 1; gl.uniform1f(u.uAirK, door ? door.air + (1 - door.air) * k * k * (3 - 2 * k) : 1); }
       gl.uniform4f(u.uHas, allMaps || maps.lights ? 1 : 0, allMaps || maps.euro ? 1 : 0, allMaps || (maps.clouds && maps.day) ? 1 : 0, 0);
