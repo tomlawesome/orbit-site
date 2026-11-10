@@ -203,7 +203,11 @@ for (const [k, old] of Object.entries({ warp: 200, mark: 260, release: 430, mark
 }
 check("5. the ascent's first beat (arming, at 0) and the warp beat (200) did not move", !asc.err && asc.v.arming === 0 && asc.v.warp === 200, asc.err ? `threw: ${asc.err}` : `arming ${asc.v.arming}, warp ${asc.v.warp}`);
 check("5. figures: T.land about 5307.65 and T.condensed 6900", near(T.land, 5307.65, 0.02) && near(T.condensed, 6900, 0.02), `${T.land}, ${T.condensed}`);
-check("5. the instrument beat comes after the land beat (its exact rule is not given in the specification)", !asc.err && asc.v.instrument > asc.v.land, asc.err ? `threw: ${asc.err}` : `${asc.v.instrument} after ${asc.v.land}`);
+/* the settle is a length, not a beat (the host's setting, 1100 ms here): the instrument arrives that long after the
+   new landing, and the tour follows by the same unchanged lengths */
+const instrumentWant = newU(4800) + 1100;
+check(`5. the instrument beat is the new landing plus the settle (${instrumentWant.toFixed(2)}, was 5900)`, !asc.err && near(asc.v.instrument, instrumentWant, 0.1) && near(T.instrumentAt, instrumentWant, 0.1), asc.err ? `threw: ${asc.err}` : `beat ${asc.v.instrument}, T.instrumentAt ${T.instrumentAt}`);
+check(`5. T.tourAt follows by the unchanged lengths (${(instrumentWant + 1800 + 450).toFixed(2)}, was 8150)`, near(T.tourAt, instrumentWant + 1800 + 450, 0.1), `${T.tourAt}`);
 check("5. lengths that are not beats did not change: dwell 600, instrument 1800, tourGap 450", T.dwell === 600 && T.instrument === 1800 && T.tourGap === 450, `${T.dwell}, ${T.instrument}, ${T.tourGap}`);
 
 const wantD = { withdraw: 0, disperse: 620, warp: 700, release: 1000, nameOn: 2580, nameOff: 3467, markIn: 3655, dusk: 3600, warpOut: 4150, markHome: 5100, farewell: 5350 };
