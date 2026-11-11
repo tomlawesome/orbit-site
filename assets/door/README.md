@@ -393,7 +393,8 @@ first need. A host that draws its own worlds in a worker of its own reads it
 before letting the page's context go: a worker that fell back before it was up
 drew on the page, with that context.
 
-Any failure (the worker's `error`, its `up` not ok, a `dead`, and under the
+Any failure (the worker's `error`, its `up` not ok, a `dead` (which says `why`, and `at`: the first lines of the
+stack where it stopped), and under the
 automatic rule no `up` within 5000 ms; under `draw: "worker"` there is no
 limit) falls back to the page: `#warp` is replaced by a fresh canvas with the
 same attributes, `#warpgl` removed, the worker terminated, the pending warm-ups
@@ -432,6 +433,10 @@ unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
 answers replaced by the worker's), `pace("none")` (`chores.js`: the rests
 and the one-band-a-frame uploads dropped) and `askPage(post)` (`chores.js`: the worker's `decode(blob, options)`
 for `setPage`, which asks the page and falls back to decoding here, and `heard(message)` for the page's `decoded`).
+Such a worker wraps every canvas the page hands it in `askedOnce(canvas)` (`page.js`) before anything asks it for a
+context: each kind of context is then made once and given to every later ask. Firefox 159 refuses a second
+`getContext` made in a worker on a canvas handed over, whatever it asks for, and the worker stops (#154). Its `dead`
+can say where with `stoppedAt(error)` (`page.js`: the first lines of the stack, without the line repeating the message).
 All of them are optional: a host that uses none of them has the door as before.
 `page.decode(blob, options)` (`page.js`) is an additive change to the page interface (#113), and `picture`'s `loaded`
 is called once the picture's `decode()` has settled rather than at `load`. A host's own page adapter given to `setPage`
