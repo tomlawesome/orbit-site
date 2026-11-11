@@ -10,6 +10,8 @@
  *
  *   once    the canvas handed over, the worker comes up: one `up { ok: true }`, no `dead`, and the world baked and drawn
  *           (a `bake`, a `view`) does not end in one either
+ *   later   a later ask of the same canvas for the same kind, made by the test as a second module in the worker would, does
+ *           not throw and is given the very same context, and the canvas's own getContext is still called once for the kind
  *   count   the canvas's getContext was called at most once for each kind, over the whole bring-up
  *   dead    when something throws while a message is handled, `dead` carries the error's message in `why` unchanged and,
  *           in `at`, a string with the first lines of the error's stack (where it stopped)
@@ -46,7 +48,7 @@ function strict(c) {
   c.getContext = (kind, ...a) => {
     c.asked.push(kind);
     if (c.asked.length > 1) throw new DOMException("Cannot update created context to different thread", "InvalidStateError");
-    return real(kind, ...a);
+    return (c.made = real(kind, ...a));
   };
   return c;
 }
@@ -90,6 +92,19 @@ async function bringUp() {
   };
 }
 
+/* a second module in the worker asking the same canvas for the same kind, after the worker is up */
+async function later() {
+  const w = await boot();
+  strict(w.warp);
+  await w.bring();
+  await w.run(2000);
+  const upOk = w.of("up").some((m) => m.ok === true);
+  const first = w.warp.made, before = w.warp.asked.length;
+  let again = null, threw = null;
+  try { again = w.warp.getContext("webgl2"); } catch (e) { threw = `${e && e.name}: ${e && e.message}`; }
+  return { upOk, hadFirst: !!first, threw, same: again === first && again != null, realCalls: w.warp.asked.filter((k) => k === "webgl2").length, before, deads: deadsOf(w) };
+}
+
 /* a thing that throws while the canvas handed over is being taken up (in a named function, so its own frame is first in the stack) */
 async function throws() {
   const w = await boot();
@@ -102,7 +117,7 @@ async function throws() {
   return { message: MESSAGE, stack: String(made && made.stack), frame: "refuseTheListener", deads: w.of("dead").map((m) => ({ why: m.why, at: m.at, atKind: typeof m.at })), cloneErrors: w.cloneErrors };
 }
 
-const CASES = guarded({ bringUp, throws });
+const CASES = guarded({ bringUp, later, throws });
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -114,6 +129,13 @@ const run = (n) => runCase(import.meta.url, n);
   chk("C1 the canvas handed over (the second getContext of it throws InvalidStateError): one `up { ok: true }`", r, (r) => [r.ups.length === 1 && r.ups[0].ok === true, `ups ${show(r.ups)}, dead ${show(r.deads)}`]);
   chk("C1 ... and the worker never posts `dead`, not for the bring-up nor for the world baked and drawn", r, (r) => [r.deads.length === 0 && r.cloneErrors.length === 0 && show(r.baked) === show([true]) && r.drew > 0, `dead ${show(r.deads)}, baked ${show(r.baked)}, drew ${r.drew}, clone errors ${show(r.cloneErrors)}`]);
   chk("C2 the canvas was asked for each kind of context at most once, over the whole bring-up", r, (r) => [r.warp.asked.length > 0 && r.warp.most <= 1, `kinds asked of the canvas, in order: ${show(r.warp.asked)}`]);
+}
+{
+  const r = run("later");
+  chk("C4 (precondition) the worker is up on the strict canvas and made its context", r, (r) => [r.upOk && r.hadFirst && r.before === 1 && r.deads.length === 0, `up ${r.upOk}, context made ${r.hadFirst}, asks of the canvas so far ${r.before}, dead ${show(r.deads)}`]);
+  chk("C4 a later ask of the same canvas for \"webgl2\" does not throw", r, (r) => [r.threw === null, `threw ${r.threw}`]);
+  chk("C4 ... it is given the very same context object the first ask made", r, (r) => [r.same, `same object ${r.same}`]);
+  chk("C4 ... and the canvas's own getContext was still called once for that kind", r, (r) => [r.realCalls === 1, `real getContext calls for webgl2: ${r.realCalls}`]);
 }
 {
   const r = run("throws");
