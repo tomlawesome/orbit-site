@@ -76,7 +76,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       case "note": if (m.kind === "warn") console.warn(String(m.line)); else console.info(String(m.line)); break;
       /* lost: as the page's own context's loss, on the element install.js listens to; no fallback (flat, as today) */
       case "lost": if (!lost) { lost = true; el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
-      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
+      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})${m.at ? ` at ${String(m.at).split("\n")[0]}` : ""}`); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");

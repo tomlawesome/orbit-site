@@ -100,7 +100,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       case "warmed": { const ask = pending.get(m.id); if (ask) { pending.delete(m.id); ask.resolve(); } break; }
       case "frame": if (m.seq === seq) warp.dataset.drawn = String(m.seq); break;
       case "lost": page.note("orbit · flight: the world's context was lost in the worker"); break;
-      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
+      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})${m.at ? ` at ${String(m.at).split("\n")[0]}` : ""}`); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");

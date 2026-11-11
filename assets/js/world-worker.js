@@ -11,7 +11,7 @@
  * pictures are decoded by the page (6e.2): a `decode` posted up, a `decoded` back. An exception handling a message is `dead`:
  * the page falls back.
  */
-import { createDoor, setPage, pace, openChores, askPage } from "../door/index.js";
+import { createDoor, setPage, pace, openChores, askPage, askedOnce, stoppedAt } from "../door/index.js";
 import { createWorld } from "./world.js";
 
 const scope = /** @type {any} */ (self);
@@ -96,7 +96,7 @@ function tick(t) {
 function handle(m) {
   switch (m.type) {
     case "hello": hello(m); break;
-    case "canvas": bringUp(m.canvas); break;
+    case "canvas": bringUp(askedOnce(m.canvas)); break;
     case "decoded": asker?.heard(m); break;
     case "destroy": gone = true; running = false; scope.close(); break;
     default: {
@@ -116,7 +116,7 @@ function handle(m) {
 
 /* (an exception outside a frame: the worker cannot go on, and the page draws instead) */
 function guard(fn) {
-  try { fn(); } catch (e) { gone = true; running = false; post({ type: "dead", why: String(e?.message || e) }); }
+  try { fn(); } catch (e) { gone = true; running = false; post({ type: "dead", why: String(e?.message || e), at: stoppedAt(e) }); }
 }
 
 scope.onmessage = (ev) => guard(() => {
