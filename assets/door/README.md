@@ -414,6 +414,23 @@ decode again on the page's thread. A decode or wrap that fails is made the old w
 workers ask the page for it (`hello.decode`, `"page"` or `"here"`; the `decode` and `decoded` messages) and receive the
 bitmap transferred. Nothing a host does changes with this beyond the exports below.
 
+### What the flight's Earth draws (`voyage.js`)
+
+Besides the Earth the door's still shows (its limb, haze, land, cities and cloud), the flight's Earth, lean or rich,
+drawn on the page or in a worker, always has two things the still has not, and nothing in the address changes them:
+
+- **Clouds with depth.** Cloud tops stand up from the ground and are lit by the low sun, gold then pink towards the
+  day's edge, with a lit side and a shaded side. They throw shadows on the ground and, where the cover is thicker
+  behind them, on cloud. (The lean Earth's flat cover gets this from reading its own thickness twice towards the sun;
+  the rich Earth's slab reads itself twice towards the sun, for the ground and for the cloud under it.)
+- **The sunrise.** A thin star of rays and a level streak at the sun on the horizon, as strong and as red as the sun's
+  light is once through the air, and a brighter arc of haze along the Earth's edge either side of it. The star is sized
+  by the screen's narrow side, so on a tall phone its rays do not run the height of the screen.
+
+Both are weighted by one uniform, `uLook`: 0 in the live door (`door3d.js`), which draws what the still shows, and, in a
+flight from either door, faded in over the climb's first moments (`w.c` 0 to 0.06), so the first frame is the door's
+still and `tools/dawn.py` is unchanged.
+
 ### Also exported from `index.js`
 
 For a host's own worlds and skies, so their work takes its turn with the

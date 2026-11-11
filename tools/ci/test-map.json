@@ -248,6 +248,13 @@
       "gates": ["chromium"],
       "seconds": { "chromium": 40 }
     },
+    "earth-look": {
+      "file": "tools/ci/earth-look-test.mjs",
+      "groups": ["harness", "flight"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 25 }
+    },
     "draw-live": {
       "file": "tools/ci/draw-live-test.mjs",
       "groups": ["page", "flight"],
