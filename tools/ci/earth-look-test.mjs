@@ -32,6 +32,8 @@ import { dirname, join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { freePort, openBrowser } from "./live-lib.mjs";
+import { ascentBeats } from "../../assets/door/timeline.js";
+import { clockAt } from "../../assets/door/engine.js";
 
 const playwright = createRequire(import.meta.url)(process.env.PLAYWRIGHT_ROOT || "playwright");
 const DEADLINE_MS = Number(process.env.DEADLINE_MS || 15 * 60e3);
@@ -43,9 +45,14 @@ const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 const VIEW = { width: 1280, height: 800 };
 const FLAGS = "gpu=force&fit=skip";
-/* ms into the climb: the Earth fills the lower screen and the sun sits on its edge, as the climb is paced today and
-   with room for it to move by a few hundred ms (the climb's first frame, at 0, is the door's still: no new look yet) */
-const MOMENTS = [800, 1000, 1200];
+/* clock moments (ms of the journey) at which a pinned climb shows the same three places in it as the first version of
+   this test, written when the clock and the flight's own time were one: flight time 600, 800 and 1000 ms (the Earth
+   fills the lower screen and the sun sits on its edge, with room to move a few hundred ms; the climb's first frame, at
+   0, is the door's still: no new look yet). The climb's pace is its own now (#151): a pinned fly(UP, { at }) shows
+   flight time paced(at - warpAt), so the moment that shows flight time f is warpAt + clockAt(f - warpAt), by the
+   door's own map, rounded to the ms. (The numbers are 1090, 1419 and 1748 today.) */
+const WARP_AT = ascentBeats().find((b) => b.act === "warp").at;
+const MOMENTS = [800, 1000, 1200].map((was) => Math.round(WARP_AT + clockAt(was - WARP_AT)));
 /* the margins: the lowest value a good picture has at the lowest of the moments, over the highest a plain one has */
 const STREAK_MIN = 8;      /* luma levels (0..255) the streak row stands above its neighbours, each side */
 const CLOUD_SD_MIN = 3.5;  /* standard deviation of the picture less its blur over the deck */
