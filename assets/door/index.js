@@ -28,7 +28,7 @@ export { drawnAside } from "./fitness.js";
 export { decodeAside } from "./fitness.js";
 export { decodeBlob } from "./chores.js";
 /* for a host's own worker: the page answered for there (page.js), and its queue run unpaced (chores.js), as draw-worker.js does */
-export { setPage } from "./page.js";
+export { setPage, askedOnce, stoppedAt } from "./page.js";
 export { pace, askPage } from "./chores.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";

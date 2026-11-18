@@ -9,7 +9,7 @@
  *
  * What arrives before `up` waits for it, in order. An exception handling a message is `dead`: the page falls back.
  */
-import { setPage, page } from "./page.js";
+import { setPage, page, askedOnce, stoppedAt } from "./page.js";
 import { configure } from "./settings.js";
 import { createFlight, unwireProfile } from "./engine.js";
 import { fetchBitmap, askPage, openChores, pace } from "./chores.js";
@@ -155,7 +155,7 @@ function handle(m) {
 /* (an exception outside a frame: the worker cannot go on, and the page draws instead) */
 /** @param {() => void} fn */
 const guard = (fn) => {
-  try { fn(); } catch (e) { gone = true; post({ type: "dead", why: String(/** @type {Error} */ (e)?.message || e) }); }
+  try { fn(); } catch (e) { gone = true; post({ type: "dead", why: String(/** @type {Error} */ (e)?.message || e), at: stoppedAt(e) }); }
 };
 
 /** @param {MessageEvent} ev */
@@ -165,7 +165,7 @@ scope.onmessage = (ev) => guard(() => {
   backstop();
   switch (m.type) {
     case "hello": hello(m); break;
-    case "canvases": canvases = { warp: m.warp, warpgl: m.warpgl }; size = m.size || size; fontsIn.then(() => guard(bringUp), () => no("the fonts did not load")); break;
+    case "canvases": canvases = { warp: askedOnce(m.warp), warpgl: askedOnce(m.warpgl) }; size = m.size || size; fontsIn.then(() => guard(bringUp), () => no("the fonts did not load")); break;
     case "size": size = { W: m.W, H: m.H, dpr: m.dpr }; engine?.resize(); break;
     /* (an answer is heard at once: the pictures it holds are what the flight waits for) */
     case "decoded": asker?.heard(m); break;

@@ -349,7 +349,7 @@ Worker to page:
 | `warmed` | `id`, `ok` | the ask with that id has settled (whatever it settled to) |
 | `frame` | `seq`, `world` (drawn with the WebGL world or painted) | the first frame of that start is committed (a pinned start: after its one frame); the page sets `#warp`'s `data-drawn` to `seq`, which the tests wait on |
 | `lost` | none | the world's context was lost in the worker (said for the console; the worker's world handles it as the page's does today: dead, replaced by the next `warm`) |
-| `dead` | `why` | the worker cannot go on (an exception outside a frame); the page falls back (6a.4) |
+| `dead` | `why`, `at` (where it stopped, `stoppedAt`) | the worker cannot go on (an exception outside a frame); the page falls back (6a.4) |
 
 **The profile's wire form** (`engine.js`: `wireProfile(P)`, `unwireProfile(w)`, pure, tested). A profile carries
 three functions (`speed`, `atm`, `duskMix`) and structured clone drops functions, so the wire form names them:
@@ -745,7 +745,7 @@ Worker to page:
 | `measured` | `id`, `ms` (one a set) | the measure done |
 | `note` | `line`, `kind` (`note`, `verdict`, `warn`) | every console line the moved modules would have printed |
 | `lost` | none | the context lost in the worker (`webglcontextlost` on the `OffscreenCanvas`, Firefox 125, with `isContextLost()` read before every frame and message as 6a's backstop); the page dispatches `webglcontextlost` on the placeholder canvas, so `install.js`'s listener (flat, the shot ended where it is) is unchanged |
-| `dead` | `why` | an exception handling a message: the page falls back (6b.4) |
+| `dead` | `why`, `at` (where it stopped, `stoppedAt`) | an exception handling a message: the page falls back (6b.4) |
 
 **The frame feed, latest-wins.** The worker holds at most one view. Each `view` replaces it; the worker draws the
 one it holds in its next `requestAnimationFrame` callback and posts `drew`. So there is at most one draw a display
