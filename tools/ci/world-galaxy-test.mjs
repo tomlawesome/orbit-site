@@ -19,6 +19,7 @@
  *   G5   createWorld with no opts.sky on a card whose textures are wide enough: the picture fetched once, SKY never compiled
  *   G6   once baked: one KW x KH SRGB8_ALPHA8 texture, mipmapped (in a frame after the picture went in); the picture's
  *        texture and the tiny program deleted
+ *   G6b  (review) the world cannot be made, the context alive: the picture's texture and the tiny program are deleted too
  *   G7   bake() waits for a picture still coming (a held fetch), then resolves true, with no painting pass
  *   G8   fetch or decode rejects: one warn, SKY compiled, four strips and the mipmaps, true
  *   G9   a picture of the wrong size: as G8, its bitmap closed, the warning names both sizes
@@ -77,6 +78,8 @@ function rig(b, o = {}) {
   const R = { sizes: new Map(), programs: [], deleted: new Set(), scissors: 0, draws: [], mips: [], galaxyFetches: [], bitmaps: [], mode: o.galaxy ?? "ok", release: () => {} };
   gl.MAX_TEXTURE_SIZE = MAX_TEXTURE_SIZE; gl.SRGB8_ALPHA8 = SRGB8_ALPHA8;
   const getParameter = gl.getParameter;
+  /* o.linkFails: a program that cannot be linked (the world's own are made false by it, the context is alive) */
+  if (o.linkFails) { const gp = gl.getProgramParameter; gl.LINK_STATUS = 0x8b82; gl.getProgramParameter = (p, n) => (n === 0x8b82 ? false : gp(p, n)); }
   gl.getParameter = (p) => (p === MAX_TEXTURE_SIZE ? o.maxTex ?? 16384 : getParameter(p));
   const note = (w, h, internal, level = 0) => { if (level === 0 && page.boundTexture && Number.isFinite(w)) R.sizes.set(page.boundTexture, { w, h, internal }); };
   const texImage2D = gl.texImage2D, texStorage2D = gl.texStorage2D;
@@ -272,6 +275,13 @@ const CASES = guarded({
   g12late: async () => await bakeOf(await scene({ flags: { sky: "late" } })),
   g12stalls: async () => await bakeOf(await scene({ flags: { stalls: "1" } })),
   g12probe: async () => await bakeOf(await scene({ flags: { probe: "1" } })),
+  /* the world could not be made (a program that will not link) while the context is alive: the picture still comes */
+  async g6b() {
+    const s = await scene({ linkFails: true });
+    const r = await settled(s.world.bake(), s.b.clock, 60000);
+    await s.b.clock.advance(5000);
+    return { baked: r.state === "resolved" ? r.value : r.state, ...look(s) };
+  },
   async g13() {
     const s = await scene({ galaxy: "hold" });
     const out = { state: "pending" };
@@ -325,6 +335,12 @@ const painted = (r, KW) => [r.baked === true && r.skyCompiled >= 1 && r.scissors
   chk("G6 ... the picture's texture (KW x KW) was made, and is deleted", r, (r) => [r.pictures >= 1 && r.picturesDeleted === r.pictures, `${r.pictures} picture texture(s), ${r.picturesDeleted} deleted`]);
   chk("G6 ... the tiny program is deleted, and only the world's own two (render, post) are left", r, (r) => [r.deletedPrograms >= 1 && r.alive === 2, `${r.programs} program(s) made, ${r.deletedPrograms} deleted, ${r.alive} left`]);
   chk("G6 ... the mipmaps in a frame after the halves went in (a job each, a frame each)", r, (r) => [r.mipAfterDraw && r.draws >= 1, `mipmaps after the last draw: ${r.mipAfterDraw}, ${r.draws} draw(s)`]);
+}
+{
+  const r = run("g6b");
+  chk("G6b control: the world could not be made (a program will not link), the context alive: bake() gives false, nothing painted", r, (r) => [r.baked === false && r.skyCompiled === 0, `baked ${show(r.baked)}, SKY compiled ${r.skyCompiled}`]);
+  chk("G6b ... every picture texture that was made is deleted (the 4096 x 4096 one is not kept)", r, (r) => [r.picturesDeleted === r.pictures, `${r.pictures} picture texture(s), ${r.picturesDeleted} deleted`]);
+  chk("G6b ... the tiny program is deleted too (only the world's own two programs are left)", r, (r) => [r.deletedPrograms >= 1 && r.alive === 2, `${r.programs} program(s) made, ${r.deletedPrograms} deleted, ${r.alive} left`]);
 }
 {
   const r = run("g7");
