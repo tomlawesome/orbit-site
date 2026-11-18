@@ -33,12 +33,18 @@
  *   P11 worker            hello `images` has every SIZED_PATHS entry as an absolute address
  *   P12 chores            "sharp" chores run after docs/flight/info and before the untagged, and are never hurried; a map that failed
  *                         in the first pass and is retried loads its smallest, then its larger sizes
+ *   review findings (added after the build was read):
+ *   P2  retry             a map refused in the first pass and retried (by the warm itself, or by a second warm before any verdict)
+ *                         asks for no larger size until a fit verdict; none after an unfit one
+ *   P2  rich from first   with ?door3d&level=2&rich the clouds fields are made once the smallest sizes are in, before the verdict
+ *   P5  draws ease        the flight's own draw loop (flown, not driven by the test) eases MIN_LOD; the live door's draw is a source check
  *
  * Browser-only (not tested here): that a real GPU samples only from level L under MIN_LOD and so never shows an empty larger
  * level; that WebGL2's generateMipmap from BASE_LEVEL = L fills only the levels below L in a real driver; that the 1 s
  * ease looks smooth; the crop-not-honoured path (Firefox) where larger sizes go in whole; the real sizes on a real phone.
  * (sw.js MEDIA is checked by lint.sh, run last.)
  */
+import { readFileSync } from "node:fs";
 import {
   INDEX, installPage, installClock, mountLive, bootWorkerPage, hostImage, absImage, childMain, runCase, chk, finish,
 } from "./door-stub.mjs";
@@ -89,9 +95,11 @@ async function bed(o = {}) {
   const g = page.glBase, del = g.deleteTexture, bind = g.bindTexture;
   g.deleteTexture = (t) => { if (t) deleted.add(t); del(t); };
   g.bindTexture = (target, t) => { if (t && deleted.has(t)) faults.push(`bindTexture of released texture #${t.id}`); bind(target, t); };
+  g.NO_ERROR = 0;   /* (the stub answers 1 to a constant it does not know, which makes the capability probe fail) */
   process.on("uncaughtException", (e) => errors.push("uncaught: " + (e && e.message)));
   process.on("unhandledRejection", (e) => errors.push("unhandled rejection: " + (e && e.message)));
   const door = await import(INDEX);
+  if (o.gpu) door.gpu();                                   /* the capability probe, as the live door's mount does */
   const d = door.createDoor({ typingWait: 0, image: o.image ?? hostImage, flags: { decode: "blob", ...(o.flags || {}) } });
   door.openChores();
   const journey = d.journey(page.journeyOptions());
@@ -251,6 +259,77 @@ const CASES = {
     return { images: JSON.parse(JSON.stringify(w.of("hello")[0]?.images ?? null)), listed: v.SIZED_PATHS === undefined ? null : paths(v.SIZED_PATHS) };
   },
 
+    /* review: the rich Earth from the first: its cloud fields are made once the smallest sizes are in, before the verdict and before any larger size */
+  async richGate() {
+    const b = await bed({ ...PHONE, gpu: true, flags: { door3d: "1", level: "2", rich: "1" } });
+    await Promise.race([b.journey.warm({ prove: false }).catch(() => {}), b.clock.advance(60000).then(() => {})]);
+    await b.clock.advance(8000);
+    const first = firstPaths(b);
+    return { fields: fieldMips(b.page), rich: b.page.lines.some((l) => /door: weight rich/.test(l)), smallest: KEYS.filter((k) => summarise(b.page, b.exp)[k]?.completed.includes(b.exp[k].first)).length,
+      larger: b.asked.filter((a) => isMapPath(a.path) && !first.has(a.path)).map((a) => a.path), verdict: verdictAt(b), ...common(b) };
+  },
+  /* the same, every size let land (the fields are there at the end, wherever they were made: a control for the reading of them) */
+  async richEnd() {
+    const b = await bed({ ...PHONE, gpu: true, flags: { door3d: "1", level: "2", rich: "1" } });
+    await startEase(b);
+    b.journey.warm().catch(() => {});
+    await settle(b);
+    return { fields: fieldMips(b.page), landed: allLanded(b), ...common(b) };
+  },
+  /* review: a map that failed in the first pass and is retried by a second warm: its larger sizes wait for a fit verdict */
+  async retryEarly() {
+    const first = expectFor("day", PHONE.W, PHONE.dpr).first;
+    let refusing = true;
+    const b = await bed({ ...PHONE, refuse: (p) => refusing && p === first });
+    await Promise.race([b.journey.warm({ prove: false }).catch(() => {}), b.clock.advance(20000).then(() => {})]);
+    await b.clock.advance(3000);
+    const before = b.asked.filter((a) => a.path === first).length;
+    refusing = false;
+    b.journey.warm({ prove: false }).catch(() => {});                   /* no proof is asked for: there is no verdict to wait for */
+    await b.clock.advance(60000);
+    const f = new Set(firstPaths(b));
+    return { first, askedBefore: before, askedAll: b.asked.filter((a) => a.path === first).length, dayIn: !!summarise(b.page, b.exp).day?.completed.includes(first), verdict: verdictAt(b),
+      larger: b.asked.filter((a) => isMapPath(a.path) && !f.has(a.path)).map((a) => a.path), ...common(b) };
+  },
+  async retryUnfit() {
+    const first = expectFor("day", PHONE.W, PHONE.dpr).first;
+    let refusing = true;
+    const b = await bed({ ...PHONE, refuse: (p) => refusing && p === first });
+    b.page.glBase.readPixels = () => { b.page.readPixels++; b.clock.jump(40); };
+    b.journey.warm().catch(() => {});
+    await b.clock.advance(90000, () => b.page.lines.some((l) => /flight world: off/.test(l)));
+    await b.clock.advance(3000);
+    refusing = false;
+    b.journey.warm().catch(() => {});
+    await b.clock.advance(60000);
+    const f = new Set(firstPaths(b));
+    return { off: b.page.lines.some((l) => /flight world: off/.test(l)), larger: b.asked.filter((a) => isMapPath(a.path) && !f.has(a.path)).map((a) => a.path), ...common(b) };
+  },
+  async retryFit() {
+    const e = expectFor("day", PHONE.W, PHONE.dpr);
+    const b = await bed({ ...PHONE, refuse: (p, n) => p === e.first && n === 1 });   /* refused once, in the first pass */
+    await startEase(b);
+    b.journey.warm().catch(() => {});
+    await b.clock.advance(90000, () => verdictAt(b) >= 0);
+    await b.clock.advance(3000);
+    const v = verdictAt(b);
+    b.journey.warm().catch(() => {});                                   /* (the retry is the first warm's own, or this one) */
+    await b.clock.advance(150000, () => summarise(b.page, b.exp).day?.completed.includes(e.top));
+    await b.clock.advance(2000);
+    return { verdict: v, fit: b.page.lines.some((l) => /flight world: on/.test(l)), done: summarise(b.page, b.exp).day?.completed ?? [], chain: e.chain.map((c) => c.path),
+      early: b.asked.filter((a) => keyOfPath(a.path) === "day" && a.path !== e.first && a.lines <= v).map((a) => a.path), ...common(b) };
+  },
+  /* review: the ease is run by the frames' own draw (voyage.js draw, door3d.js draw), not by the test: nothing here calls easeLevels */
+  async flightFrames() {
+    const b = await bed(PHONE);
+    b.journey.warm().catch(() => {});
+    await b.clock.advance(90000, () => verdictAt(b) >= 0);
+    b.journey.fly(b.door.UP, { title: "Orbit", subtitle: "to somewhere" });
+    const d0 = b.page.draws;
+    await b.clock.advance(150000, () => allLanded(b) && b.page.draws > d0);
+    await b.clock.advance(3000);
+    return { draws: b.page.draws - d0, sum: summarise(b.page, b.exp), landed: allLanded(b), ...common(b) };
+  },
   /* P12: the queue's order, with the queue held until all are in it */
   async order() {
     installPage();
@@ -316,6 +395,12 @@ function after(b, mark) {
   const smallest = KEYS.filter((k) => sum[k]?.completed.includes(b.exp[k].first)).length;
   return { mark: !!mark, atMark: mark ? KEYS.filter((k) => mark.sum[k]?.completed.includes(b.exp[k].first)).length : null, smallest, big, uploaded, ...common(b) };
 }
+
+/* the cloud fields: textures that are not maps (no storage of their own) and were mipped (passInto, levels: true): [w, h] of each */
+const fieldMips = (page) => {
+  const stored = new Set(page.gpu.filter((e) => e.k === "store").map((e) => e.texture));
+  return page.gpu.filter((e) => e.k === "mip" && !stored.has(e.texture)).map((e) => { const im = page.gpu.find((x) => x.texture === e.texture && x.k === "img" && x.level === 0); return [im?.w, im?.h]; });
+};
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -537,6 +622,44 @@ const mapAsks = (r) => (r.asked || []).filter((a) => isMapPath(a.path));
     if (r.listed === null) return [false, "voyage.js does not export SIZED_PATHS"];
     const bad = r.listed.filter((p) => r.images?.[p] !== absImage(p));
     return [r.listed.length === 15 && bad.length === 0, `${r.listed.length} paths listed; without the right address: ${listOf(bad)}`];
+  });
+}
+
+/* review: the retry of a map that failed in the first pass (voyage.js warm: load(k).then(() => sharpen(k))) */
+{
+  const e = chainOf("day", PHONE.W, PHONE.dpr), r = runCase(import.meta.url, "retryEarly", T);
+  chk("control (retry): the refused smallest of the day map is asked for again by the second warm and lands", r, (r) => [r.askedBefore >= 1 && r.askedAll > r.askedBefore && r.dayIn === true, `${r.first} asked ${r.askedBefore}x in the first pass, ${r.askedAll}x in all; on the GPU ${r.dayIn}`]);
+  chk("P2 a map retried by a second warm before any verdict (none is said): no larger size of any map is asked for", r, (r) => [r.verdict < 0 && r.larger.length === 0, `verdict line ${r.verdict}; larger sizes asked for: ${listOf(r.larger)}`]);
+  const u = runCase(import.meta.url, "retryUnfit", T);
+  chk("P9 a map retried by a second warm after an unfit verdict: no larger size of any map is asked for", u, (r) => [r.off === true && r.larger.length === 0, `judged too slow ${r.off}; larger sizes asked for: ${listOf(r.larger)}`]);
+  const f = runCase(import.meta.url, "retryFit", T);
+  chk("control (retry): the retried map (refused once in the first pass, a fit verdict said) goes on to its larger sizes, smallest to top", f, (r) => [r.fit && r.verdict >= 0 && JSON.stringify(r.done) === JSON.stringify(r.chain), `fit ${r.fit}; verdict line ${r.verdict}; landed ${JSON.stringify((r.done || []).map((p) => p.replace(/^.*\//, "")))}`]);
+  chk("P2 a map refused once in the first pass and retried: none of its larger sizes is asked for before the verdict (the retry's own sharpen waits for it)", f, (r) => [r.early.length === 0, `asked before the verdict (line ${r.verdict}): ${listOf(r.early)}`]);
+}
+
+/* review: the rich Earth from the first (?door3d&level=2&rich, the capability probe answering): its clouds fields are made with the maps */
+{
+  const r = runCase(import.meta.url, "richGate", T), c = runCase(import.meta.url, "richEnd", T);
+  const sizeSet = (k) => new Set(chainOf(k, PHONE.W, PHONE.dpr).chain.map((x) => dimsOfPath(x.path).join("x")).concat(sizesOf(k).map((x) => `${x.w}x${x.h}`), FULL_DIMS[k].join("x")));
+  const has = (fields, k) => fields.some(([w, h]) => sizeSet(k).has(`${w}x${h}`));
+  chk("control (rich): the flight is rich from the first (the probe answered, \"door: weight rich\"), the smallest sizes are in, no verdict and no larger size yet", r, (r) => [r.rich && r.smallest === 8 && r.verdict < 0 && r.larger.length === 0, `weight rich ${r.rich}; maps with their smallest in ${r.smallest} of 8; verdict line ${r.verdict}; larger asked ${listOf(r.larger)}`]);
+  chk("control (rich): with every size landed, the clouds and near clouds fields have been made (the reading of a field: a mipped texture with no storage of its own, the size of one of that map's sizes)", c, (r) => [has(r.fields, "clouds") && has(r.fields, "cloudsN"), `fields (w x h): ${JSON.stringify(r.fields)}`]);
+  chk("P2 rich from the first: the clouds fields exist once the smallest sizes have landed, before the verdict and before any larger size (draw binds them, not the blank one)", r, (r) => [has(r.fields, "clouds") && has(r.fields, "cloudsN"), `fields (w x h) at the gate: ${JSON.stringify(r.fields)}; wanted one of the size of clouds (${[...sizeSet("clouds")].join(", ")}) and one of cloudsN (${[...sizeSet("cloudsN")].join(", ")})`]);
+}
+
+/* review: the ease is run by the draws (nothing in these two cases calls easeLevels: the flight is flown, the live door is mounted) */
+{
+  const r = runCase(import.meta.url, "flightFrames", T);
+  chk("P5 the flight's own draw loop eases each map's MIN_LOD down (values between the levels set, ending -1000) with nothing else calling easeLevels", r, (r) => {
+    const bad = KEYS.filter((k) => { const l = r.sum[k]?.lod || []; return !l.some((x) => x.v > -1000 && x.v !== Math.round(x.v)) || l[l.length - 1]?.v !== -1000; });
+    return [r.draws > 0 && r.landed === true && bad.length === 0, `${r.draws} draw call(s); sizes landed ${r.landed}; maps not eased by the draws: ${listOf(bad)}`];
+  });
+  /* a source check, not a behaviour: the live door's loop (door3d.js tick) draws too seldom on the stub page for its ease to be seen,
+     and the last value of an ease is put in by a chore whether or not anything was drawn (upload.js) */
+  chk("P5 (a source check) the live door's draw() runs easeLevels(gl) before it draws, as the flight's does", {}, () => {
+    const src = readFileSync(new URL("../../assets/door/door3d.js", import.meta.url), "utf8"), i = src.indexOf("function draw(into = null) {");
+    const body = i < 0 ? "" : src.slice(i, i + 700), call = body.indexOf("easeLevels(gl);");
+    return [call > 0 && /^\s*if \(!prog \|\| dead\) return;\s*(\/\*[^]*?\*\/\s*)?$/.test(body.slice(body.indexOf("{") + 1, call)) && !/^\s*\/\//.test(body.slice(body.lastIndexOf("\n", call) + 1, call)), call > 0 ? "the call is there, but not as a live statement at the top of draw()" : "draw() has no easeLevels(gl) call near its top"];
   });
 }
 
