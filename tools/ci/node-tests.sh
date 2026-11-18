@@ -17,7 +17,7 @@ fi
 
 for t in fetch-once dates sanitise-html comment-rules home-props goodbye-markup descent-homes \
   gpu-gate hurry dawn-destroyed-light dawn-let-go retire-after-destroy destroyed-world released-world \
-  rich-remount sharp-strip-remount fit-skip fit-memory ready-ways ready-ways-worker door-context-restore door-wordmark release-tag door-shimmer \
+  rich-remount sharp-strip-remount fit-skip fit-memory ready-ways ready-ways-worker ways door-context-restore door-wordmark release-tag door-shimmer \
   door-probe-chores door-world door-banded-upload door-sky door-rem star-cloud door-live-teardown fetch-once-limit flight-waits pin stale-prove door-live-release door-live-lost door-lows-glows door-lows-strip door-lows-probe-stored door-lows-compile-hidden door-lows-banded-fail upload-lost-and-offscreen draw-first-need draw-wire draw-pace chores-line chores-yield chores-docs-ready chores-frame draw-hello draw-rule draw-fallback draw-worker sun-worker draw-context-once decode-route decode-wire local-server \
   site-world aniso-once site-home-date site-home site-tilt site-lock site-places site-pads site-pads-sources world-page world-wire world-ring world-hello world-rule world-fallback world-worker world-context-once world-govern measure-skip docs-shape docs-sky-portrait docs-mini-hover docs-chart-sources site-data sw i18n \
   translate-hash translate-plan translate-request translate-check translate-flow translate-shape translate-lint; do
