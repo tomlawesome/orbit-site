@@ -1655,7 +1655,9 @@ for n, s in enumerate(srcs):
     gen = idx['generated']          # the English the page was made from: the checkout's, unless the scenario says other
     if sc == 'tr-stale' or (sc == 'tr-onepage' and n == 0): gen = OLD
     if sc == 'tr-newer': gen = NEW
-    p['source'] = {'generated': gen, 'sections': {x['id']: h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)) for x in p['sections']}, 'kept': [x['id'] for x in p['sections']]}
+    # the layout of #145: each section's first key is en, the hash16 of the English section; source is {generated, kept}
+    p['sections'] = [dict([('en', h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)))] + list(x.items())) for x in p['sections']]
+    p['source'] = {'generated': gen, 'kept': [x['id'] for x in p['sections']]}
     if sc == 'tr-script' and n == 0: # a script in a section the translation made (so not kept in English)
         p['source']['kept'] = [x['id'] for x in p['sections'][1:]]
         p['sections'][0]['html'] = '<p>x</p><script>alert(1)</script>'

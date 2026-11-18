@@ -64,10 +64,12 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    # The owner's hand-started translation (TRANSLATE=true, #125) runs even on a
-    # batch branch with an open merge request: its translate_docs and
-    # publish_translations need this pipeline; its test jobs skip (*not_translation, #141).
-    - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"
+    # The owner's hand-started translation (TRANSLATE=true, #125), on dev and the
+    # batches only (the two translation jobs' own rule), runs even with an open
+    # merge request: its translate_docs and publish_translations need this
+    # pipeline. Its test jobs wait unplayed (*not_translation, #141), so it shows
+    # blocked, not passed. On any other branch it has nothing to run.
+    - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
     # A branch with an open merge request is tested by that merge request.
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
@@ -86,10 +88,15 @@ workflow:
 # A pipeline the owner starts by hand for the translation (TRANSLATE=true,
 # #125) runs no browser test, no coverage and no lint test (#141): it
 # translates committed English, which its merge request already tested.
-# The secret scans and the lint still run (ci-split refuses this skip on them).
+# The five wait as blocking manual jobs rather than being skipped, so a
+# hand-started translation pipeline shows blocked, not passed: it cannot
+# count as a merge request's passing pipeline (a skipped job would leave it
+# green). They can be played if wanted. The secret scans and the lint still
+# run (ci-split refuses this entry on them).
 .not_translation: &not_translation
   if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"
-  when: never
+  when: manual
+  allow_failure: false
 
 variables:
   # The commit of the include above (private-details/v4); see the include.
@@ -506,7 +513,9 @@ import_docs:
 # cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:
   stage: publish
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   needs:
     - job: import_docs
@@ -581,7 +590,9 @@ renovate:
 # treats it as untrusted: en.json and en.js are never in it.
 translate_docs:
   stage: maintenance
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   timeout: 1h
   resource_group: translate
@@ -615,7 +626,9 @@ translate_docs:
 # (tools/ci/nightly-publish.sh).
 publish_translations:
   stage: publish
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   needs:
     - job: translate_docs

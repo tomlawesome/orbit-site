@@ -62,7 +62,12 @@ export function stateProblems(en, cat, state, file, catFile) {
 
 /* ---- derived fields (spec 2.3) ---- */
 const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
-export const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => ENT[e.toLowerCase()] ?? (e[0] === "#" ? String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : m));
+/* a numeric reference out of range or a surrogate is U+FFFD, as a browser shows it and tools/sanitise-html.mjs reads it */
+export const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+  if (e[0] !== "#") { const k = e.toLowerCase(); return Object.hasOwn(ENT, k) ? ENT[k] : m; }
+  const n = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+  return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : "\ufffd";
+});
 export const textOf = (html) => decode(String(html)
   .replace(/<a class="anchor"[^>]*>[\s\S]*?<\/a>/g, "")
   .replace(/<figure[^>]*data-mermaid[^>]*>[\s\S]*?<\/figure>/g, (f) => f.replace(/<pre[^>]*>[\s\S]*?<\/pre>/, ""))

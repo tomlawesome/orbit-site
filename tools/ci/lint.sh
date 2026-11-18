@@ -139,6 +139,9 @@ node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
 # the lag is the nightly schedule's state, which no merge request can break or
 # mend; publish_docs reports a page stalled 36 hours in the warnings issue.
 # --lag fails only on a page stamped later than the English, as the shape does.
+# A page behind may still name a picture the English has dropped: that is
+# reported with the lag, not failed; a page stamped at the English must name
+# only its pictures.
 for d in assets/docs-i18n/*/; do
   [ -d "$d" ] || continue
   node tools/ci/docs-i18n-shape.mjs "${d%/}" tools/docs-sources.json assets/docs || fail=1
