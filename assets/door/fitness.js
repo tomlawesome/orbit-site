@@ -20,6 +20,7 @@
  */
 import { flag, settings } from "./settings.js";
 import { page } from "./page.js";
+import { watch } from "./busy.js";
 
 /** a week, in milliseconds: how long a remembered verdict (rememberedFit) and the probe's (capability.js) are kept */
 export const WEEK = 7 * 24 * 3600e3;
@@ -114,6 +115,8 @@ export function gpu() {
       }
       /* asked of this same context: whether shaders are made off the page's thread (KHR_parallel_shader_compile) */
       else {
+        /* (its compiles and uploads counted, for the flight world's verdict: busy.js) */
+        watch(gl);
         const got = { canvas, gl, parallel: !!gl.getExtension("KHR_parallel_shader_compile"), renderer };
         /* A lost context can come back (Khronos, HandlingContextLost): cancelling the event is what lets the browser
            restore it. While it is lost the page stays 2D (voyage.js makes no world on a lost context); once restored

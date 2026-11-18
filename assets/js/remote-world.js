@@ -13,7 +13,7 @@
  * pending asks asked of it, and baked afresh if the worker's had baked. From then on everything is the page world's,
  * and the worker is told nothing more.
  */
-import { note, settings, gpu, decodeAside, decodeBlob, COMPILE_WAIT } from "../door/index.js";
+import { note, settings, gpu, decodeAside, decodeBlob, COMPILE_WAIT, busyPeer } from "../door/index.js";
 import { createWorld, picturesOf } from "./world.js";
 
 /* why the page draws the world: the same tells as the flight's rule (assets/door/fitness.js drawnWhy), in its order,
@@ -34,6 +34,8 @@ export function whyPage() {
   return "the flight's rule keeps the page";
 }
 
+/* each world's worker a name of its own in the page's ledger (busyPeer) */
+let worlds = 0;
 const makeWorker = () => new Worker(new URL("./world-worker.js", import.meta.url), { type: "module" });
 
 /*
@@ -51,6 +53,9 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
   const made = new Promise((r) => { madeIs = r; });
   const aside = new Promise((r) => { asideIs = r; });
   const post = (m, transfer = []) => { if (!(worker && !page && !gone)) return false; worker.postMessage(m, transfer); return true; };
+  /* the worker's compiles and uploads kept in the page's ledger, and everyone else's told to it, for the flight world's
+     verdict (#104); until unlisten */
+  let busy = null;
 
   const hear = (e) => {
     const m = e.data;
@@ -77,12 +82,14 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       /* lost: as the page's own context's loss, on the element install.js listens to; no fallback (flat, as today) */
       case "lost": if (!lost) { lost = true; el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
       case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
+      case "busy": busy?.heard(m); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");
   const unreadable = () => fallBack("a message from the worker could not be read");
   const unlisten = () => {
     clearTimeout(timer);
+    busy?.gone(); busy = null;
     worker?.removeEventListener("message", hear);
     worker?.removeEventListener("error", failed);
     worker?.removeEventListener("messageerror", unreadable);
@@ -136,6 +143,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     const off = el.transferControlToOffscreen();
     handed = true;
     post({ type: "canvas", canvas: off }, [off]);
+    busy = busyPeer(`world ${++worlds}`, post);
     if (cap) timer = setTimeout(() => { if (!up) fallBack(`no answer in ${COMPILE_WAIT} ms`); }, COMPILE_WAIT);
   } catch (e) {
     fallBack(worker ? `the canvas could not be handed over (${e?.message})` : "no worker could be made");

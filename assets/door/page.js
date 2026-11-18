@@ -136,6 +136,9 @@ export const page = {
       (fitness.js: rememberFit, which keeps only one that measured); in the worker, posted to the page to keep
       @param {{ fit: boolean, ms: number, skipped: boolean, how: string }} v */
   judged(v) { rememberFit(v); },
+  /** this thread's compiles and uploads under way (busy.js), as they change: nothing on the page, where the ledger is
+      read where it is kept; in a worker, posted to the page @param {{ n: number, gen: number }} _b */
+  busy(_b) { /* the page's own ledger is read where it is kept (busy.js) */ },
   /** whether a page shares this thread, so a compile here freezes it (chores.js: compilesAside; in the worker, no) */
   shared: () => true,
 };

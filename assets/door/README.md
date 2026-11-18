@@ -347,9 +347,31 @@ is refused or absent (nothing will compile), `false` under the `mainthread` flag
 nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
 `drawnAside()` (not exported: the journey asks it at its first need, after the gate): whether the flight is drawn
 in a worker, below.
-`FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
-(in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the
-verdict: `flight world: on (frame N ms)`, or `off: frame N ms`.
+`FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, run on the flight's first
+proving `warm()`: two frames warmed, then whole frames timed one at a time and judged on their median, stopped once
+most of 5 agree (`frameCost(gl, draw)` in `fitness.js`, imported directly by tests, is the same judgement taken back to
+back). Each timed frame is taken only while the GPU is quiet (below), else thrown away. The console says the verdict:
+`flight world: on (frame N ms)`, or `off: frame N ms`; and before it one line of how the frames went: `flight world: N
+frames timed (…), K thrown away`, with `not quiet in time` where the wait ran out.
+
+### What the GPU is busy with (`busy.js`, #104)
+
+A frame timed while another part of the site compiles a program or uploads a picture times that work too, so the
+fitness test times a frame only while nothing else runs. `watch(gl)` → `gl`: a context watched (once, however often
+asked; `null` and `undefined` pass through): a shader or program is under way from `compileShader` / `linkProgram`
+until its status is read (`COMPILE_STATUS`, `LINK_STATUS`, `COMPLETION_STATUS_KHR` answering true) or it is deleted,
+and never longer than 5000 ms; every `texImage*`, `texSubImage*`, `compressed*` and `generateMipmap` is a pulse. The
+door watches its own contexts (the gate's, the live door's); a host watches the contexts it makes itself (the site:
+its planets and its worlds). Each thread keeps its own ledger. A worker's ledger reaches the page as
+`{ type: "busy", n, gen }` posted by its page adapter's `busy({ n, gen })` (`page.js`, an additive change: the default
+does nothing; `draw-worker.js` posts it), and the page tells each worker everyone else's in the same message, never
+the worker's own back. For a host's own worker: `busyPeer(name, post)` → `{ heard(message), gone() }` (the worker's
+`busy` messages heard under a name of its own, everyone else's posted to it as they change, until `gone()`), or by
+hand `busyHeard(name, { n, gen })` and `busyGone(name)`. The test waits for nothing under way anywhere and nothing
+ended for 100 ms; a frame during which anything began, ended or pulsed is thrown away. Bounded: after 8 s of the tab
+shown with no quiet moment, or 10 frames thrown away, the rest are timed whatever runs; hidden, it waits, and the 8 s
+start again when the tab is shown. Under `fit: "skip"` nothing waits. A host that watches nothing has the door as
+before, its own work unseen.
 
 The verdict is kept a week (ADR-0002 6.4): localStorage key `<storagePrefix>-fit <renderer> <w>x<h>@<dpr>` (the
 gate's renderer, the screen and the device pixel ratio), value `{ t, fit, ms }`, valid while
@@ -424,7 +446,8 @@ a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the 
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
 (`drawnAside()`, for a host that puts its own drawing beside it), whether the pictures are decoded by the image loader
 (`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
-(`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
+(`probe`, `level`, `liveDoor`, `lateDoor`), what the GPU is busy with (`watch`, `busyHeard`, `busyGone`, `busyPeer`,
+above), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
 For a host's own worker, which must answer for the page and run its queue
@@ -478,6 +501,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine, its beats, its WebGL world |
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
 | `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
+| `busy.js` | What the GPU is busy with, for the fitness test's quiet frames (`watch`, the ledger, what workers tell the page) |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
 | `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
 | `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2); in the worker, `draw-worker.js` answers for it (`setPage`) |

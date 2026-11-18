@@ -29,6 +29,9 @@ export { decodeAside } from "./fitness.js";
 export { decodeBlob } from "./chores.js";
 /* for a host's own worker: the page answered for there (page.js), and its queue run unpaced (chores.js), as draw-worker.js does */
 export { setPage } from "./page.js";
+/* what the GPU is busy with, for the flight world's verdict (busy.js, #104): a host's own contexts watched, a host's own
+   worker's ledger heard (busyHeard, busyGone), or heard and told everyone else's (busyPeer) */
+export { watch, busyHeard, busyGone, busyPeer } from "./busy.js";
 export { pace, askPage } from "./chores.js";
 /* the seeded stream and the SVG helper the door's stars use, for a host's own sky */
 export { seededRng, el, measureTile } from "./stars.js";
