@@ -55,7 +55,7 @@ function bringUp(canvas) {
   let made = null;
   try {
     made = createWorld(canvas, {
-      small: w.small, map: w.map, rings: w.rings, moon: w.moon, sky: m.sky, tag: m.tag,
+      small: w.small, map: w.map, rings: w.rings, moon: w.moon, galaxy: w.galaxy, sky: m.sky, tag: m.tag,
       hue: m.hue, sat: m.sat, ringsOn: m.ringsOn, haze: m.haze, grade: m.grade,
       gated: true, warn: (...a) => post({ type: "note", line: text(a), kind: "warn" }),
     });

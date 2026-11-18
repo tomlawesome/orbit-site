@@ -7,12 +7,15 @@
  * planet's map (assets/img/install/planet*.webp). Here it is flattened by its
  * spin, darkens towards the limb through a thin haze, and wears rings of
  * hundreds of ringlets that shade it and are shaded by it; a gold moon beyond,
- * and the galaxy behind (drawn here, on the GPU, once). The frame is drawn in light (HDR), bloomed, and tone-mapped like film.
+ * and the galaxy behind (its picture, assets/img/install/galaxy*.webp, painted once from SKY by tools/galaxy-bake.cjs,
+ * put on the GPU; painted here where there is none to be had). The frame is drawn in light (HDR), bloomed, and
+ * tone-mapped like film.
  *
  * createWorld(canvas, opts) → null when WebGL2 is not there; otherwise
  *   { gl, canvas, lost, made, compileMs, bake(), baked, draw(view, dt), onDrew(fn), finish(), resize(w, h, scale),
  *     measure(sets), lookOf(opts), lose(), destroy() }
- * opts beside the look's and the pictures': gated (the page's gate has already judged, so gpu() is not asked: a world
+ * opts beside the look's and the pictures' (map, rings, moon, galaxy: urls): sky (the galaxy's width: painted at that
+ * size, no picture asked for), gated (the page's gate has already judged, so gpu() is not asked: a world
  * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
  * view can carry its look from wherever it is built (ADR-0004 6b.2).
  */
@@ -56,8 +59,9 @@ const float PI=3.14159265, TAU=6.28318531;
 vec3 dirOf(vec2 uv){float lon=(uv.x-0.5)*TAU, lat=(uv.y-0.5)*PI; return vec3(cos(lat)*sin(lon),sin(lat),cos(lat)*cos(lon));}
 `;
 
-/* THE GALAXY, baked: the band, its dust, its nebulae; alpha is how dense the stars are */
-const SKY = `#version 300 es
+/* THE GALAXY, baked: the band, its dust, its nebulae; alpha is how dense the stars are. Exported for
+   tools/galaxy-bake.cjs, which paints it once into the galaxy's picture */
+export const SKY = `#version 300 es
 precision highp float;
 uniform vec2 uSize;
 out vec4 o;
@@ -490,8 +494,18 @@ function ringProfile(n) {
   return px;
 }
 
-/* a world's pictures: the planet's map, its rings, the moon (the map smaller on a small screen); exported for the page
-   side of a world drawn in a worker, which resolves them on the page (remote-world.js) */
+/* the galaxy's picture put into the galaxy's texture (#119): its colour from the picture's upper half, its stars' density
+   (the texture's alpha) from the lower, texel for texel. Both halves are sRGB, so the density sampled is the painting's
+   alpha (the picture's floor 125 reads 0.205, SKY's 0.2) */
+const GALAXY_IN = `#version 300 es
+precision highp float;
+uniform highp sampler2D uT; uniform int uH; out vec4 o;
+void main(){ ivec2 p=ivec2(gl_FragCoord.xy); o=vec4(texelFetch(uT,p,0).rgb,texelFetch(uT,ivec2(p.x,p.y+uH),0).r); }`;
+
+/* a world's pictures: the planet's map, its rings, the moon, the galaxy (the map and the galaxy smaller on a small
+   screen); exported for the page side of a world drawn in a worker, which resolves them on the page (remote-world.js).
+   The galaxy's picture is two halves, each as wide as the galaxy and half as high as the picture: colour above, the
+   stars' density below */
 export function picturesOf(opts) {
   const small = opts.small ?? (matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 800);
   return {
@@ -499,14 +513,18 @@ export function picturesOf(opts) {
     MAP: opts.map ?? new URL(small ? "../img/install/planet-2k.webp" : "../img/install/planet.webp", import.meta.url).href,
     RINGS: opts.rings ?? new URL("../img/install/rings.png", import.meta.url).href,
     MOON: opts.moon ?? new URL("../door/img/flight/moon.webp", import.meta.url).href,
+    GALAXY: opts.galaxy ?? new URL(small ? "../img/install/galaxy-2k.webp" : "../img/install/galaxy.webp", import.meta.url).href,
   };
 }
+/* the galaxy is loaded as a picture, not painted (#119: on a real device the painting held the page about 0.25 s four
+   times; the picture went in in 22 ms), but where a size of its own is asked for (opts.sky): that is painted */
+const galaxyPictured = (opts) => opts.sky == null;
 /** start a world's pictures down the wire, before the world itself is made (that is a chore; the network is not) */
 export function fetchWorld(opts = {}) {
   /* none where the page may not use the GPU at all (the door's gate: gpu()): the world is not made, so its maps are not wanted */
   if (!gpu()) return;
   const p = picturesOf(opts);
-  for (const url of [p.MAP, p.RINGS, p.MOON]) fetchOnce(url).catch(() => {});
+  for (const url of [p.MAP, p.RINGS, p.MOON, ...(galaxyPictured(opts) ? [p.GALAXY] : [])]) fetchOnce(url).catch(() => {});
 }
 
 /* a world's look: the map's hue turned by o.hue degrees (about the grey axis, in linear light), a little richer by
@@ -536,7 +554,8 @@ export function createWorld(canvas, opts = {}) {
   /* the card's limit asked once, here, before anything is queued: in Firefox every getParameter waits on the GPU process
      for all the calls queued before it, 340-660 ms when it was asked per texture behind an upload (#113) */
   const anisoK = aniso ? Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 0;
-  const { small, MAP, RINGS, MOON } = picturesOf(opts);
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const { small, MAP, RINGS, MOON, GALAXY } = picturesOf(opts);
   const KW = opts.sky ?? (small ? 2048 : 4096), KH = KW / 2;
   const LOOK = lookOf(opts);
 
@@ -556,7 +575,8 @@ export function createWorld(canvas, opts = {}) {
   };
   /* in light where the GPU can draw in floats; straight to the screen where it cannot */
   const hdr = floatOK;
-  /* the galaxy's own painting (SKY) is by far the largest shader here: it is compiled in bake */
+  /* the galaxy's own painting (SKY) is by far the largest shader here: it is compiled in bake, and only where the
+     galaxy's picture cannot be had */
   const P = {
     sky: null,
     render: program(hdr ? RENDER : RENDER.replace("precision highp float;", "precision highp float;\n#define DIRECT")),
@@ -605,17 +625,17 @@ export function createWorld(canvas, opts = {}) {
   /* a picture put on the GPU a band at a time (upload.js: soft chores, which may run during the reveal), with the
      parameters tex gives it, its mipmaps after (mip's); resolves once they are made. Nothing is drawn with it before
      then: the world is drawn only once it is baked */
-  const banded = (img, name, wrapS = gl.REPEAT) => uploadBanded(gl, img, {
-    internal: gl.SRGB8_ALPHA8, tag: opts.tag, name: `${opts.tag} ${name}`, after: sharp,
+  const banded = (img, name, wrapS = gl.REPEAT, mips = true) => uploadBanded(gl, img, {
+    internal: gl.SRGB8_ALPHA8, tag: opts.tag, name: `${opts.tag} ${name}`, after: sharp, mips,
     setup: (g) => { g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, wrapS); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE); },
   });
   const fb = (t) => { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; };
 
-  /* the textures: the planet's map (loaded), the galaxy (drawn), the rings (loaded; drawn until they come) */
+  /* the textures: the planet's map (loaded), the galaxy (loaded, or painted), the rings (loaded; drawn until they come) */
   let albT = null, SW = 1, SH = 1;
   let skyT = null, skyF = null;
   /* the drawn rings, no wider than this GPU's textures can be */
-  const RN = Math.min(8192, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  const RN = Math.min(8192, maxTex);
   let ringT = tex(RN, 1, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, ringProfile(RN), gl.CLAMP_TO_EDGE);
   mip(ringT);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -630,14 +650,14 @@ export function createWorld(canvas, opts = {}) {
   };
   const bind = (unit, t, loc) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(loc, unit); };
 
-  /* the map arrives over the network; the galaxy is baked a strip a frame, so the door keeps its frames */
+  /* the map arrives over the network; the galaxy is put in (or painted a strip a frame) a job a frame, so the door keeps
+     its frames */
   /* a failed load is not kept: bake() reports it once, and the next bake() asks for the map again (as fetchOnce does for
      the fetch) */
   let mapLoad = null;
   const loadMap = () => mapLoad || (mapLoad = fetchBitmap(MAP, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => { const w = img.width, h = img.height; return banded(img, "map").then((t) => { albT = t; SW = w; SH = h; }); }));
   loadMap().catch(() => {});   /* asked for now; a failure is bake()'s to report */
-  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   const loadRings = fetchBitmap(RINGS, { colorSpaceConversion: "none", premultiplyAlpha: "none", ...(maxTex < 8192 ? { resizeWidth: maxTex, resizeHeight: 1, resizeQuality: "high" } : {}) })
     /* (in a texture of its own, the drawn rings' let go once it is in) */
     .then((img) => banded(img, "rings", gl.CLAMP_TO_EDGE).then((t) => { gl.deleteTexture(ringT); ringT = t; }),
@@ -646,10 +666,38 @@ export function createWorld(canvas, opts = {}) {
   const loadMoon = fetchBitmap(MOON, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((img) => banded(img, "moon").then((t) => { moonT = t; }),
       (e) => warn("orbit: the moon is drawn, not photographed", e));
-  /* the galaxy painted, a strip a frame */
+  /* the galaxy's picture: asked for now, with the map, where its width fits this card's textures (else the painting:
+     the smaller picture is not stretched over a wider galaxy); on the GPU as it comes, in the bytes the galaxy's texture
+     holds. null where there is none to be had, and the galaxy is painted as it was; a lost context meanwhile puts
+     nothing in. The tiny program that puts it in is asked for now too, so its build runs beside the others' */
+  const lost = () => gl.isContextLost();
+  const inProgram = galaxyPictured(opts) && maxTex >= KW ? program(GALAXY_IN) : null;
+  const galaxyLoad = inProgram
+    ? fetchBitmap(GALAXY, { colorSpaceConversion: "none", premultiplyAlpha: "none" })
+      .then((img) => {
+        if (lost()) { img.close?.(); return null; }
+        if (img.width !== KW || img.height !== KW) {
+          const w = img.width, h = img.height;
+          img.close?.();
+          throw new Error(`the picture is ${w} by ${h}, not ${KW} by ${KW}`);
+        }
+        return banded(img, "galaxy", gl.CLAMP_TO_EDGE, false);
+      })
+      .catch((e) => { if (!lost()) warn("orbit: the galaxy is painted, not loaded", e); return null; })
+    : null;
   const jobs = [];
+  /* the picture's two halves put into the galaxy's texture in one job, its mipmaps in the next, a frame each; the
+     picture's texture and the tiny program let go with the mipmaps */
+  function pictureSky(src) {
+    const pr = ready(inProgram);
+    skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
+    jobs.push(() => pass(pr, skyF, KW, KH, (u) => { bind(0, src, u.uT); gl.uniform1i(u.uH, KH); }));
+    jobs.push(() => { mip(skyT); gl.deleteTexture(src); gl.deleteProgram(pr.p); gl.deleteShader(pr.fs); });
+    skyQueued = true;
+  }
+  /* the galaxy painted, a strip a frame */
   const STRIPS = 4;
-  let skyProgram = null, skyAsked = 0;
+  let skyProgram = null, skyAsked = 0, skyQueued = false;
   function paintSky() {
     if (!skyProgram) { skyProgram = program(SKY); skyAsked = performance.now(); }
     /* the link status is not read until the program is done (as made's poll does the others); called again next frame,
@@ -659,6 +707,7 @@ export function createWorld(canvas, opts = {}) {
       return;
     }
     try { P.sky = ready(skyProgram); } catch (e) { warn(e); skyDone = true; return; }
+    skyQueued = true;
     skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
     for (let i = 0; i < STRIPS; i++) jobs.push(() => pass(P.sky, skyF, KW, KH, (u) => gl.uniform2f(u.uSize, KW, KH), [0, (KH / STRIPS) * i, KW, KH / STRIPS]));
     jobs.push(() => mip(skyT));
@@ -676,12 +725,23 @@ export function createWorld(canvas, opts = {}) {
     if (!baking) baking = new Promise((res) => {
       const step = () => {
         if (gl.isContextLost()) { baking = null; res(false); return; }
-        if (!P.sky && !skyDone) paintSky();
-        if (P.sky && !skyDone) bakeSome(1);
+        if (!skyQueued && !skyDone) paintSky();
+        if (skyQueued && !skyDone) bakeSome(1);
         if (!skyDone) requestAnimationFrame(step);
         else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
       };
-      made.then((ok) => (ok ? requestAnimationFrame(step) : res(false)));
+      /* the galaxy's picture waited for, as the map is: where it came, it is put in; where it did not, it is painted */
+      made.then((ok) => {
+        if (!ok) { res(false); return; }
+        Promise.resolve(galaxyLoad).then((src) => {
+          if (!skyQueued && !skyDone && !lost()) {
+            const letGo = () => { gl.deleteProgram(inProgram.p); gl.deleteShader(inProgram.fs); };
+            if (src) { try { pictureSky(src); } catch (e) { warn("orbit: the galaxy is painted, not loaded", e); gl.deleteTexture(src); letGo(); } }
+            else if (inProgram) letGo();
+          }
+          requestAnimationFrame(step);
+        });
+      });
     });
     return baking;
   }

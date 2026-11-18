@@ -166,8 +166,17 @@ fi
 
 if on milkyway; then
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
+# The install world's galaxy pictures (#119) are the site's own drawing, painted
+# from world.js's SKY by tools/galaxy-bake.cjs, under the names Gaia's had: a
+# galaxy picture is refused if it is one of Gaia's (their blobs as 98e1e897d
+# deleted them) or if the tool that paints it is gone.
 for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
-  [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
+  [ -e "$f" ] || continue
+  case "$(git hash-object "$f")" in
+    e283e71534d7ec5bbc8fcad8ad44317321d89c47|5a10103ca37f94141a4b02e9e11bd2c5645097f1)
+      echo "   $f is Gaia's picture (CC BY-NC): delete it, or paint it with tools/galaxy-bake.cjs"; fail=1 ;;
+  esac
+  [ -e tools/galaxy-bake.cjs ] || { echo "   $f has no tools/galaxy-bake.cjs to paint it"; fail=1; }
 done
 [ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
 for f in index.html de/index.html 404.html install.html README.md LICENSE; do

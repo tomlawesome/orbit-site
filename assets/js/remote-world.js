@@ -130,7 +130,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     const p = picturesOf(opts);
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     post({
-      type: "hello", decode: decodeAside() ? "page" : "here", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON) }, sky: opts.sky, tag: opts.tag,
+      type: "hello", decode: decodeAside() ? "page" : "here", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON), galaxy: abs(p.GALAXY) }, sky: opts.sky, tag: opts.tag,
       hue: opts.hue, sat: opts.sat, ringsOn: opts.ringsOn, haze: opts.haze, grade: opts.grade,
     });
     const off = el.transferControlToOffscreen();

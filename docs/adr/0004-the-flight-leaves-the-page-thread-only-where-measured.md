@@ -724,7 +724,7 @@ Page to worker:
 
 | Message | Fields | When |
 | --- | --- | --- |
-| `hello` | `flags` (the host's, without `door3d`), `baseURI`, `world`: `{ small, map, rings, moon }` (absolute URLs, resolved on the page as 6a.3 resolves the flight's), `sky`, `tag`, and the look's options (`hue`, `sat`, `ringsOn`, `haze`, `grade`: plain data) | first |
+| `hello` | `flags` (the host's, without `door3d`), `baseURI`, `world`: `{ small, map, rings, moon, galaxy }` (absolute URLs, resolved on the page as 6a.3 resolves the flight's), `sky`, `tag`, and the look's options (`hue`, `sat`, `ringsOn`, `haze`, `grade`: plain data) | first |
 | `canvas` | `canvas` (the transferred `OffscreenCanvas`) | after `hello`; `createWorld` runs in the worker on it at once (6b.5) |
 | `resize` | `w`, `h`, `scale` | `install.js` `size()` and `govern`: the camera's size, not the window's (`world.resize(w, h, scale)` as today) |
 | `bake` | `id` | `world.bake()`; answered by `baked` |
