@@ -30,7 +30,7 @@
  *   G14  decode "page": the worker's galaxy comes by the same decode message as the map, no new message type
  *   G15  the image files: both exist, WebP, 4096 x 4096 and 2048 x 2048, under 500 KB and 200 KB
  *   G16  tools/galaxy-bake.cjs exists; the README names it and both images; no Gaia, NASA/ESA or CC BY-NC credit returns
- *   G17  no file under assets/door/ differs from the base (batch-a), where git can say
+ *   G17  nothing under assets/door/ names a galaxy picture or the bake tool, or imports the world's modules
  *
  * NOT COVERED HERE (a browser, or the bake tool's real run, is needed):
  *   - that the baked texture's pixels are the picture's: colour in rgb and density in alpha, the halves put the right
@@ -45,7 +45,6 @@
  * the stub's constants are all 1, so SRGB8_ALPHA8 and MAX_TEXTURE_SIZE are given distinct values.
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   bootInstallPage, isProbeSrc, settled, fakeWorldWorkers, installWorldWorker, installPage, installClock, installWorkerSelf, BASE, childMain, runCase, chk, finish,
@@ -209,10 +208,10 @@ async function g3(given) {
   return { fetched: galaxyFetched(w), given, baked: w.of("baked").map((m) => m.ok), deads: w.of("dead").map((m) => m.why), sky: page_skyCount(w.page) };
 }
 const page_skyCount = (page) => page.shaders.filter((x) => isSky(x.src)).length;
-async function g14() {
+async function g14(control) {
   const w = await wboot();
   const bitmapOf = (url) => (isGalaxy(url) ? { width: 2048, height: 2048, closes: 0, close() { this.closes++; } } : { width: 64, height: 64, closes: 0, close() { this.closes++; } });
-  await w.bring({}, { decode: "page" });
+  await w.bring({}, { decode: "page", ...(control ? { sky: 1024 } : {}) });
   w.send({ type: "bake", id: 1 });
   const answered = new Set(), urls = [];
   for (let i = 0; i < 400 && !w.of("baked").some((m) => m.id === 1); i++) {
@@ -224,10 +223,9 @@ async function g14() {
     }
   }
   await w.run(500);
-  const known = ["up", "compiled", "baked", "decode", "note", "lost", "dead", "drew", "measured"];
   return {
     urls, galaxyAsks: urls.filter(isGalaxy).length, baked: w.of("baked").map((m) => m.ok), deads: w.of("dead").map((m) => m.why),
-    types: [...new Set(w.posted.map((m) => m && m.type))], strange: [...new Set(w.posted.map((m) => m && m.type))].filter((t) => !known.includes(t)), sky: page_skyCount(w.page), cloneErrors: w.cloneErrors,
+    types: [...new Set(w.posted.map((m) => m && m.type))], sky: page_skyCount(w.page), cloneErrors: w.cloneErrors,
   };
 }
 
@@ -249,7 +247,7 @@ async function g4(how) {
 /* ---------- the world's own cases (G5-G13) ---------- */
 const CASES = guarded({
   g1, g2large: () => remote(false), g2small: () => remote(true),
-  g3given: () => g3("https://site.test/app/elsewhere/hello-galaxy.webp"), g3none: () => g3(null), g14,
+  g3given: () => g3("https://site.test/app/elsewhere/hello-galaxy.webp"), g3none: () => g3(null), g14: () => g14(false), g14control: () => g14(true),
   g4all: () => g4("all"), g4sky: () => g4("sky"), g4refused: () => g4("refused"),
   async g5() {
     const s = await scene();
@@ -386,7 +384,10 @@ for (const [how, flags] of [["g12paint", "sky=paint"], ["g12late", "sky=late"], 
 {
   const r = run("g14");
   chk("G14 decode \"page\": the galaxy is asked for by a `decode` message, as the map is", r, (r) => [r.galaxyAsks === 1 && r.urls.length >= 2 && r.baked.length === 1 && r.baked[0] === true && r.deads.length === 0, `decode asks ${show(r.urls)}, baked ${show(r.baked)}, dead ${show(r.deads)}`]);
-  chk("G14 ... no new message type is posted (types: " + "up, compiled, baked, decode, note, ...)", r, (r) => [r.strange.length === 0 && r.cloneErrors.length === 0, `types ${show(r.types)}, clone errors ${show(r.cloneErrors)}`]);
+  /* (what the galaxy adds, not what the worker posts: the same worker with a painted galaxy, opts.sky 1024, posts every
+     type that other changes give it, so a message another lane adds is in both) */
+  const c = run("g14control");
+  chk("G14 ... no message type of its own: the types posted are those a worker with a painted galaxy posts", r, (r) => [!c.error && !c.none && r.types.every((t) => c.types.includes(t)) && r.cloneErrors.length === 0, `types ${show(r.types)}, with a painted galaxy ${show(c.types)}${c.error ? "; " + c.error : ""}, clone errors ${show(r.cloneErrors)}`]);
   chk("G14 ... and the worker paints no galaxy (no SKY)", r, (r) => [r.sky === 0, `SKY compiled ${r.sky} time(s)`]);
 }
 
@@ -420,14 +421,13 @@ for (const [file, side, max] of [["assets/img/install/galaxy.webp", 4096, 500], 
   chk("G16 no Gaia, NASA/ESA or CC BY-NC credit returns to the README, LICENSE or the footers (pages and their texts)", { hits }, (r) => [r.hits.length === 0, `found in ${show(r.hits)}`]);
 }
 {
-  /* the base is batch-a (the remote's, as the first ref to be found): the diff of the branch, and of its tree, under assets/door/ */
-  const git = (...a) => spawnSync("git", a, { cwd: ROOT, encoding: "utf8" });
-  const ref = ["gitlab/batch-a", "origin/batch-a", "batch-a"].find((x) => git("rev-parse", "--verify", "--quiet", x).status === 0);
-  const base = ref ? git("merge-base", ref, "HEAD").stdout.trim() : "";
-  if (!base) console.log("ok   G17 no file under assets/door/ differs from batch-a: not checked here (no batch-a ref to compare with)");
-  else {
-    const d = git("diff", "--name-only", base, "--", "assets/door");
-    chk("G17 no file under assets/door/ differs from batch-a (ADR-0001's copy)", { files: d.stdout.split("\n").filter(Boolean), status: d.status }, (r) => [r.status === 0 && r.files.length === 0, `differs: ${show(r.files)} (status ${r.status})`]);
-  }
+  /* ADR-0001's copy must not know the galaxy change: nothing in assets/door/ names a galaxy picture or the bake tool, or
+     imports the world's modules (a diff against batch-a is not a statement that stays true as other changes touch the door) */
+  const { readdirSync } = await import("node:fs");
+  const walk = (d) => readdirSync(ROOT + d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
+  const text = /\.(?:js|mjs|cjs|css|html|json|md|svg)$/;
+  const named = /galaxy[^\s"'`)]*\.webp|galaxy-bake|(?:world|remote-world|world-worker)\.js/;
+  const hits = walk("assets/door").filter((f) => text.test(f) && named.test(readFileSync(ROOT + f, "utf8")));
+  chk("G17 nothing under assets/door/ names a galaxy picture, the bake tool or the world's modules (ADR-0001's copy)", { hits }, (r) => [r.hits.length === 0, `named in ${show(r.hits)}`]);
 }
 finish();
