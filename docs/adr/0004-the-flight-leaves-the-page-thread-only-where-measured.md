@@ -366,8 +366,10 @@ site's four flights (`journeys.js`) and the demo's are all `UP`'s curves with da
 `performance.now()` from its `start`, so a flight keeps real time there. On the worker path the journey's clock
 keeps real time too (`clock.stalls(false)`; the remote engine reports `drawingWorld` false): the stall cap
 existed so a world drawing slowly on the page's thread paused the beats rather than skipping them, and a world in
-a worker cannot stall the page. The climb's 8 s hold for `ready` (`holdAt`) is unchanged: `ready` is the page's
-promise, settled by `warmed`.
+a worker cannot stall the page. The climb's hold for `ready` (`holdAt`) is unchanged: `ready` is the page's
+promise, settled by `warmed`. (Corrected, #138: the hold's 8 s let-go, `WORLD_WAIT`, is gone since ADR-0002 6.7. Its
+backstop is now `WORLD_FAILED`, 30 s of real time standing at the hold, counted from when the journey reaches it; past
+it the world counts as failed and is given up, `abandon()`, and the journey goes on painted. `journey.js`.)
 
 **Ordering and the four cases section 6 asked about.** Messages between one page and one worker arrive in order,
 so `canvases` never precedes `hello`, and a `size` posted before `canvases` is carried in it. *A lost context*: in
@@ -435,7 +437,7 @@ The page path keeps every one of these as it is. On the worker path:
 | The ring's wait for `compiledAll`, 8 s cap, at least a lap, on every visit (`ring.js` `ringWaits`, which `main.js` applies as `waitCompiled`; `dawn.js` `minLaps`) | the compiles stall the page, better under the ring | **kept** while the install/info world compiles on the page (6a.1); the flight's and the galaxy's share of it goes. It becomes the Chromium shape (a first visit only; Chromium's cap is 9 s, `ring.js` `aside && !drawnAside ? 9000 : 8000`) when nothing compiles on the page: the follow-up's |
 | The journey's stall cap while the world draws (`journeyClock` `stalls`) | a slow world on the page's thread paused the beats | **dropped** (real time, 6a.3) |
 | The leisure proof 4 s after lit, 2 s after a descent back (`proveLater`; ADR-0002 12d, question 1 answered 1a) | the fitness verdict is not taken on a busy page | **kept**: it is a timing policy about the verdict's fairness, not a compile freeze (section 2's last decision), and its revisit condition stands |
-| The climb's 8 s hold for `ready`, the hidden-tab wait, `PICTURE_WAIT`, `COMPILE_WAIT` | the world may still be readying, hidden, or lost | **kept**, unchanged |
+| The climb's hold for `ready` (its backstop `WORLD_FAILED`, 30 s, a failure that gives up the world, which replaced the 8 s let-go `WORLD_WAIT` in ADR-0002 6.7; corrected, #138), the hidden-tab wait, `PICTURE_WAIT`, `COMPILE_WAIT` | the world may still be readying, hidden, or lost | **kept**, unchanged |
 
 Expected on the owner's machine, said as an expectation and not a promise: page-thread compiles fall from 3.0 s to
 about 1.0 s (the install/info world), the chores' held and resting time by the flight's share, and the ring's wait
@@ -821,7 +823,7 @@ The page path keeps every one as it is. On the worker path:
 | The reveal hold for the world's GPU work (its uploads, its bake, `touch` and `calibrate` wait for `openChores`) | they touch the page's thread and the GPU under a reveal still being painted | **dropped for what moved**: the worker's queue is open from `hello`, the maps go on whole, the galaxy bakes a strip a frame from `up`. `touch` (60) and the `"measure"` chore (200) stay on the page's queue, because they schedule GPU work beside the page's other chores and the measure's rest is still "not the drawing's time"; their work is done in the worker |
 | The rests between chores and the one-band-a-frame uploads (`upload.js`) | whatever moves on the page keeps moving | **dropped** in the worker (`pace("none")`, 6a.5); the page's queue keeps them for what stays |
 | The ring's wait for `compiledAll`, 8 s cap, at least a lap, on every visit where compiles stall the page (`main.js` `waitCompiled`, `asideHere`; `dawn.js` `minLaps`) | the compiles stall the page, better under the ring | **becomes the Chromium shape** when nothing compiles on the page: `asideHere = MAINTENANCE || saveData() || compilesAside() || (drawnAside() && !DOOR3D)`, so `waitCompiled` is a first visit only, and keeps the 8 s cap (not Chromium's 9 s: `main.js` gives 9000 wherever `asideHere`, so the worker path names its own 8000; owner, 6b-4a), and `openCompiles()` and `compileFirst()` are not called. `compiledAll` still carries the remote worlds' `compiled` (the message) and the flight's, so a first visit's ring runs until both workers have compiled or 8 s. Said through `note`, for the tests: `first light: compiles aside` / `first light: the ring waits for the compiles`. Under `?door3d` today's shape stands: the live door and `planets3d.js` compile on the page's context (`capability.js` `level()` gives level 1 where `background` is false; the worker path does not force level 0) |
-| The leisure proof (`proveLater`), the climb's 8 s hold, `WAIT` (6 s for the bake at `form`) | timing policies, not compile freezes | **kept**, unchanged |
+| The leisure proof (`proveLater`), the climb's hold for `ready` (its 30 s `WORLD_FAILED` backstop, not the 8 s let-go ADR-0002 6.7 replaced; corrected, #138), `WAIT` (6 s for the bake at `form`) | timing policies, not compile freezes | **kept**, unchanged |
 
 Expected on the owner's machine, said as an expectation and not a promise: no shader compiles on the page's thread
 on a Firefox visit (the gate's context creation remains, under the ring); the worlds' share of `chores at … held,
