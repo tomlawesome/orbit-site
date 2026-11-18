@@ -889,14 +889,13 @@ export const plainOf = (v) => JSON.stringify(v, (k, x) => (ArrayBuffer.isView(x)
  *   up        after `canvas`: { ok, why } (null: says nothing)         default { ok: true }
  *   compiled  after that `up` when ok: { ok, ms } (null: nothing)       default { ok: true, ms: 40 }
  *   baked     to each `bake`: true / { ok: false } (null: nothing)      default true
- *   measured  to each `measure`: the ms of each set, in order (the last for any more) (null: nothing)   default [10, 20]
  *   drew      to each `view`: { dt, ms } (dt a number, or a function of the view message); null: nothing   default { dt: 16.7, ms: 1 }
  * host.auto may be changed by a case at any time.
  */
 export function fakeWorldWorkers(auto = {}) {
   const host = {
     made: 0, list: [], args: [],
-    auto: { up: { ok: true }, compiled: { ok: true, ms: 40 }, baked: true, measured: [10, 20], drew: { dt: 16.7, ms: 1 }, ...auto },
+    auto: { up: { ok: true }, compiled: { ok: true, ms: 40 }, baked: true, drew: { dt: 16.7, ms: 1 }, ...auto },
   };
   class FakeWorld {
     constructor() {
@@ -919,10 +918,9 @@ export function fakeWorldWorkers(auto = {}) {
     }
     answer(msg) {
       const a = host.auto;
-      if (!msg || !["bake", "measure", "view"].includes(msg.type)) return;
+      if (!msg || !["bake", "view"].includes(msg.type)) return;
       if (!this.upSaid) { this.waiting.push(msg); return; }
       if (msg.type === "bake" && a.baked) setTimeout(() => this.say({ type: "baked", id: msg.id, ok: a.baked === true || a.baked.ok !== false }), 0);
-      if (msg.type === "measure" && a.measured) setTimeout(() => this.say({ type: "measured", id: msg.id, ms: (msg.sets || []).map((s, i) => a.measured[i] ?? a.measured[a.measured.length - 1]) }), 0);
       if (msg.type === "view" && a.drew) setTimeout(() => this.say({ type: "drew", seq: msg.seq, dt: typeof a.drew.dt === "function" ? a.drew.dt(msg) : a.drew.dt, ms: a.drew.ms ?? 1 }), 0);
     }
     terminate() { this.terminated++; }
