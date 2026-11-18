@@ -1533,8 +1533,9 @@ split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the 
 # Cases p233-p242 (#141): a pipeline started from the web with TRANSLATE=true runs no browser test, no coverage
 # and no lint test (the translation does not touch the site's code), but every secret scan still runs. ci-split
 # refuses .gitlab-ci.yml when live:firefox, live:chromium, coverage, lint:test or lint:import lack the
-# `not_translation` skip (the rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`, `when: never`,
-# shared as the alias *not_translation or written out inline), or when lint, scan:gitleaks or private-details
+# `not_translation` entry (the blocking manual rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`,
+# `when: manual`, `allow_failure: false`, shared as the alias *not_translation or written out inline; #158 replaced
+# `when: never`, which left that pipeline green), or when lint, scan:gitleaks or private-details
 # carry it. Each case first gives the five jobs the skip where one lacks it (and adds the anchor if the file has
 # none) so it fails only for the one fault under test; the removal cases then take the skip off one job, the
 # planting cases put it on one of the three scans. A refusal names .gitlab-ci.yml, the job and "translation".
@@ -1551,7 +1552,7 @@ tr_js='
   };
   const addAnchor = (y) => {
     if (y.includes("&not_translation")) return y;
-    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: never\n");
+    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: manual\n  allow_failure: false\n");
     if (r === y) throw new Error("no .not_scheduled anchor to put it beside");
     return r;
   };
@@ -1564,7 +1565,7 @@ tr_js='
   const strip = (y, job) => {
     const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
     if (!m) throw new Error("no job " + job);
-    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: never\n", "");
+    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n", "");
     if (hasSkip(b)) throw new Error("the skip is still on " + job);
     return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
   };
@@ -1590,7 +1591,7 @@ split_case "p240: private-details carrying the translation skip" $ci "$(tr_name 
   y = plant(withFive(y), "private-details", "    - *not_translation\n");'
 # the entry written out in the job (not the alias) counts as the skip too
 split_case "p241: lint carrying the translation skip written out inline" $ci "$(tr_name 'lint')" "$tr_js"'
-  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: never\n");'
+  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n");'
 # the real file: the skip is on all five (giving it to them again changes nothing) and ci-split passes it
 has_five=0
 Y="$(cat "$ci")" JS="$tr_js"'

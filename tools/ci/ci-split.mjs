@@ -499,8 +499,10 @@ for (const j of SCANS) {
   if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
 }
 
-// the owner's hand-started translation (#141) skips the test jobs, never a secret scan: the skip is the rule
-// entry .not_translation (by alias or written out), before any entry that would run the job
+// the owner's hand-started translation (#141) leaves the test jobs unrun, never a secret scan: the entry is
+// .not_translation (by alias or written out), before any entry that would run the job. It is a blocking manual
+// entry (when: manual, allow_failure: false), never when: never: a pipeline whose test jobs were skipped is green
+// and can stand as a merge request's passing pipeline; one with a blocking manual job shows blocked
 const TRANSLATION_SKIP = '$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"';
 const SKIPS_ON_TRANSLATION = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
 // a rules list as GitLab runs it: each !reference to a key of the file replaced by the entries it names ([key, rules],
@@ -522,16 +524,24 @@ const ruleEntries = (v, seen = new Set(), depth = 0) => {
   for (const p of path.slice(path[1] === "rules" ? 2 : 1)) at = isObj(at) && Object.hasOwn(at, p) ? at[p] : (Array.isArray(at) && /^\d+$/.test(p) ? at[Number(p)] : undefined);
   return at === undefined ? [UNFOLLOWED] : ruleEntries(at, new Set([...seen, key]), depth + 1);
 };
-const isTranslationSkip = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP;
-const mentionsTranslate = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
+const isTranslationSkip = (e) => isObj(e) && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP
+  && e.when === "manual" && e.allow_failure === false && Object.keys(e).length === 3;
+const mentionsTranslate = (e) => isObj(e) && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
 for (const j of SKIPS_ON_TRANSLATION) {
   const list = ruleEntries(rulesOf(j) ?? []);
+  if (list.some((e) => mentionsTranslate(e) && e.when === "never")) bad(`.gitlab-ci.yml: the job ${j} skips the translation pipeline with when: never, which leaves that pipeline green with no test run, so it could stand as a merge request's passing pipeline; its entry is - *not_translation (when: manual, allow_failure: false)`);
   const at = list.findIndex(isTranslationSkip);
-  const runs = list.findIndex((e) => !(isObj(e) && e.when === "never"));
-  if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141): put - *not_translation in its rules, before any entry that runs it`);
+  const runs = list.findIndex((e) => !(isObj(e) && (e.when === "never" || isTranslationSkip(e))));
+  if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141) and must leave it blocked, not passed: put - *not_translation (if: ${TRANSLATION_SKIP}, when: manual, allow_failure: false, nothing else) in its rules, before any entry that runs it`);
+}
+// the workflow admits the hand-started translation on dev and the batches only, the two translation jobs' own
+// rule: on any other branch it has nothing to run, and that branch is tested by its merge request
+{
+  const admits = ruleEntries(isObj(doc.workflow) ? doc.workflow.rules ?? [] : []).filter(mentionsTranslate);
+  if (!(admits.length === 1 && admits[0].if === TRANSLATE_RULES[1])) bad(`.gitlab-ci.yml: the workflow must admit the hand-started translation pipeline ($TRANSLATE) by exactly one rule, if: ${TRANSLATE_RULES[1]}, found: ${admits.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
 }
 for (const j of SCANS) {
-  if (ruleEntries(rulesOf(j) ?? []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} skips on the translation pipeline ($TRANSLATE); the secret scans and the lint run on every pipeline (#141)`);
+  if (ruleEntries(rulesOf(j) ?? []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} has a rule entry on the translation pipeline ($TRANSLATE), manual or never; the secret scans and the lint run on every pipeline (#141)`);
 }
 
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
