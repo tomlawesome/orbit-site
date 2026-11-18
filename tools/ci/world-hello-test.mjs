@@ -8,7 +8,7 @@
  *   node tools/ci/world-hello-test.mjs
  *
  *   hello       the first message is `hello`, once: the host's flags without door3d, `baseURI`, `world` { small, map, rings,
- *               moon } (absolute urls, the planet-2k map when small), `sky`, `tag`, and the look's options as given; the
+ *               moon, galaxy } (absolute urls, the planet-2k map when small), `sky`, `tag`, and the look's options as given; the
  *               worker is assets/js/world-worker.js as a module; `install: drawn in a worker` is said, once
  *   canvas      the second is `canvas`, with one transferable (the token the placeholder gave) and no context taken on it
  *   bake        bake() posts `bake` with an id and resolves only on `baked` with that id; baked { ok: false } gives false
@@ -25,7 +25,7 @@ import { bootInstallPage, settled, infoWorld, fakeWorldWorkers, installWorldWork
 
 const INSTALL = "../../assets/js/install.js", REMOTE = "../../assets/js/remote-world.js";
 const at = (p) => new URL(`../../assets/${p}`, import.meta.url).href;
-const EXPECT = { map: at("img/install/planet.webp"), mapSmall: at("img/install/planet-2k.webp"), rings: at("img/install/rings.png"), moon: at("door/img/flight/moon.webp") };
+const EXPECT = { map: at("img/install/planet.webp"), mapSmall: at("img/install/planet-2k.webp"), rings: at("img/install/rings.png"), moon: at("door/img/flight/moon.webp"), galaxy: at("img/install/galaxy.webp"), galaxySmall: at("img/install/galaxy-2k.webp") };
 
 const plainError = (message) => Object.assign(new Error(message), { plain: true });
 const guarded = (cases) => Object.fromEntries(Object.entries(cases).map(([k, f]) => [k, async () => { try { return await f(); } catch (e) { if (e && e.plain) return { none: e.message }; throw e; } }]));
@@ -213,14 +213,14 @@ const abs = (u) => { try { new URL(u); return true; } catch { return false; } };
   chk("W2 the first message posted is `hello`, once, then `canvas`", r, (r) => [r.types[0] === "hello" && r.types.filter((t) => t === "hello").length === 1 && r.types[1] === "canvas", `types ${show(r.types)}`]);
   chk("W2 ... the worker is assets/js/world-worker.js, a module worker, and one is made", r, (r) => [/\/assets\/js\/world-worker\.js$/.test(r.workerUrl) && r.workerOpts && r.workerOpts.type === "module" && r.madeBy === 1, `url ${r.workerUrl}, options ${show(r.workerOpts)}, workers ${r.madeBy}`]);
   chk("W2 ... hello carries the host's flags without door3d (draw and fit as given)", r, (r) => { const f = r.hello.flags || {}; return [!("door3d" in f) && f.fit === "skip" && f.draw === "worker", `flags ${show(f)}`]; });
-  chk("W2 ... hello carries world.map, rings and moon as absolute urls, the full map on a large screen (small false)", r, (r) => { const w = r.hello.world || {}; return [w.small === false && w.map === EXPECT.map && w.rings === EXPECT.rings && w.moon === EXPECT.moon && [w.map, w.rings, w.moon].every(abs), `world ${show(w)}; want map ${EXPECT.map}`]; });
+  chk("W2 ... hello carries world.map, rings, moon and galaxy as absolute urls, the full map and the 4096 galaxy on a large screen (small false; #119 G2)", r, (r) => { const w = r.hello.world || {}; return [w.small === false && w.map === EXPECT.map && w.rings === EXPECT.rings && w.moon === EXPECT.moon && w.galaxy === EXPECT.galaxy && [w.map, w.rings, w.moon, w.galaxy].every(abs), `world ${show(w)}; want map ${EXPECT.map}`]; });
   chk("W2 ... hello carries the page's baseURI and the tag", r, (r) => [r.hello.baseURI === BASE && r.hello.tag === "install", `baseURI ${show(r.hello.baseURI)}, tag ${show(r.hello.tag)}`]);
   chk("W2 ... nothing posted is beyond structured clone", r, (r) => [r.cloneErrors.length === 0, show(r.cloneErrors)]);
   chk("W2 ... `install: drawn in a worker` is said, once", r, (r) => [r.said === 1, `said ${r.said} time(s)`]);
 }
 {
   const r = run("helloInfo");
-  chk("W2 the information's hello: tag info, the planet-2k map when small, the other pictures absolute", r, (r) => { const w = r.hello.world || {}; return [r.hello.tag === "info" && w.small === true && w.map === EXPECT.mapSmall && w.rings === EXPECT.rings && w.moon === EXPECT.moon, `tag ${show(r.hello.tag)}, world ${show(w)}; want map ${EXPECT.mapSmall}`]; });
+  chk("W2 the information's hello: tag info, the planet-2k map and the galaxy-2k picture when small (#119 G2), the other pictures absolute", r, (r) => { const w = r.hello.world || {}; return [r.hello.tag === "info" && w.small === true && w.map === EXPECT.mapSmall && w.rings === EXPECT.rings && w.moon === EXPECT.moon && w.galaxy === EXPECT.galaxySmall, `tag ${show(r.hello.tag)}, world ${show(w)}; want map ${EXPECT.mapSmall}`]; });
   chk("W2 ... hello carries sky as given, and the look's options (hue, sat, ringsOn, haze, grade) as given", r, (r) => {
     const h = r.hello, g = r.info;
     return [h.sky === 1024 && h.hue === g.hue && h.sat === g.sat && h.ringsOn === g.ringsOn && show(h.haze) === show(g.haze) && show(h.grade) === show(g.grade), `sky ${show(h.sky)}, hue ${show(h.hue)}, sat ${show(h.sat)}, ringsOn ${show(h.ringsOn)}, haze ${show(h.haze)}, grade ${show(h.grade)}; given ${show(g)}`];

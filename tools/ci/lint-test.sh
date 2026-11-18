@@ -2900,6 +2900,36 @@ flake_lint_case "(f-sec12k) the lint refusing a real call after other code on it
 flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
 flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
+# Section "the Milky Way is drawn" (#119; cases gal1-gal5): every galaxy*.webp the tree tracks must be one of the two
+# shipped pictures, by git blob hash (an allow-list, so a re-encoded, cropped or renamed Gaia file, or any third-party
+# galaxy picture, is refused and named); Gaia's own two blobs are refused as Gaia's. The committed tree passes.
+galaxy_case() { # galaxy_case <label> <want: 0 or 1> <text the refusal names>; the change is made, uncommitted, before
+  commit_all "$1"
+  lint_to_out milkyway
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -q -- "$3" "$out"; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming $3, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+galaxy_case "(gal1) the two shipped galaxy pictures (control)" 0 -
+printf 'not the shipped picture' > assets/img/install/galaxy-wide.webp
+galaxy_case "(gal2) a galaxy*.webp with other bytes beside the shipped ones" 1 'assets/img/install/galaxy-wide.webp'
+mkdir -p assets/img/docs
+printf 'a third-party galaxy, renamed' > assets/img/docs/milkyway-galaxy-4k.webp
+galaxy_case "(gal3) a galaxy*.webp with other bytes in another folder" 1 'assets/img/docs/milkyway-galaxy-4k.webp'
+printf 'the shipped name, other bytes' > assets/img/install/galaxy-2k.webp
+galaxy_case "(gal4) a shipped picture's name over other bytes" 1 'assets/img/install/galaxy-2k.webp'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/install/galaxy.webp
+  galaxy_case "(gal5) Gaia's picture under the shipped name" 1 "Gaia's picture"
+else
+  echo "ok   (gal5) Gaia's blob is not in this clone: not run"
+fi
+
 rm -f "$cspjs"
 
 rm -f "$out"

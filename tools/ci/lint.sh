@@ -166,8 +166,27 @@ fi
 
 if on milkyway; then
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
-for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
-  [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
+# The install world's galaxy pictures (#119) are the site's own drawing, painted
+# from world.js's SKY by tools/galaxy-bake.cjs. The rule is an allow-list: every
+# galaxy*.webp the tree tracks, under any directory, must be one of the two
+# shipped pictures, by git blob hash (galaxy.webp, then galaxy-2k.webp). So a
+# re-encoded, cropped or renamed Gaia file, or any other third-party galaxy
+# picture, is refused. Re-baking the pictures with tools/galaxy-bake.cjs means
+# updating these two hashes together with sw.js MEDIA (the media section prints
+# the new MEDIA). Gaia's own two blobs (CC BY-NC; as 98e1e897d deleted them) are
+# named in the refusal, though the allow-list already keeps them out.
+shipped_galaxy="78218df0d7cc5c4b21f650746aeea82ef9de7f87 d639bed40c9f9de01abcd4373a801b9360402521"
+for f in $(git ls-files -- '*galaxy*.webp'); do
+  [ -e "$f" ] || continue
+  h=$(git hash-object "$f")
+  case "$h" in
+    e283e71534d7ec5bbc8fcad8ad44317321d89c47|5a10103ca37f94141a4b02e9e11bd2c5645097f1)
+      echo "   $f is Gaia's picture (CC BY-NC): delete it, or paint it with tools/galaxy-bake.cjs"; fail=1; continue ;;
+  esac
+  case " $shipped_galaxy " in
+    *" $h "*) ;;
+    *) echo "   $f is not one of the two shipped galaxy pictures (blob $h): paint it with tools/galaxy-bake.cjs and update shipped_galaxy and sw.js MEDIA, or delete it"; fail=1 ;;
+  esac
 done
 [ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
 for f in index.html de/index.html 404.html install.html README.md LICENSE; do
