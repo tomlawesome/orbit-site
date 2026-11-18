@@ -97,7 +97,7 @@ await T.attempt("T9", async () => {
   try {
     if (c.r.code === 0) {
       const st = c.fx.read("tools/i18n/state/de.json");
-      T.check("T9f a catalogue three times as long is refused: its keys are English and in state.kept, the report says length", st.kept.includes("k001") && c.fx.read("assets/i18n/de.json").k001 === c.fx.en.k001 && reportNames(c.fx.readReport(), "k001", RULE.f) || reportNames(c.fx.readReport(), "site/", RULE.f), `kept ${st.kept.length} keys`);
+      T.check("T9f a catalogue three times as long is refused: its keys are English and in state.kept, the report says length", st.kept.includes("k001") && c.fx.read("assets/i18n/de.json").k001 === c.fx.en.k001 && (reportNames(c.fx.readReport(), "k001", RULE.f) || reportNames(c.fx.readReport(), "site/", RULE.f)), `kept ${st.kept.length} keys, k001 ${c.fx.read("assets/i18n/de.json").k001 === c.fx.en.k001 ? "English" : "not English"}`);
     }
   } catch (e) { T.check("T9f", false, String(e && e.message || e)); } finally { c.done(); }
 });
