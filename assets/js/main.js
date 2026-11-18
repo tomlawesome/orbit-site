@@ -10,6 +10,7 @@ import { recall, households } from "./data.js";
 import * as law from "./law.js";
 import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
+import { createWays } from "./ways.js";
 import { createInstall } from "./install.js";
 import { createLock } from "./lock.js";
 import { offPage, ringWaits } from "./ring.js";
@@ -158,23 +159,8 @@ function loseGate() {
     note("gpu: the page's context let go");
   }).catch(() => {});
 }
-/* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
-   shows once the flight is, and the backs to the dawn (id "back") fade in then (ADR-0002 6.8) */
-let planetsIn = Promise.resolve();
-function openWays(ids, gate = false) {
-  /* never before the planets themselves are in: a label that came before its planet would read as the other way round */
-  planetsIn.then(() => openNow(ids, gate));
-}
-function openNow(ids, gate) {
-  for (const id of ids) { const p = $(`#door .planet[data-section="${id}"]`); if (!p) continue; p.classList.add("ready"); p.removeAttribute("tabindex"); p.removeAttribute("aria-disabled"); }
-  if (gate) { document.body.classList.add("ready-flight"); $("#gate").disabled = false; }
-  if (ids.includes("back")) for (const b of BACKS()) {
-    if (b.getAttribute("aria-disabled") !== "true") continue;
-    b.removeAttribute("tabindex"); b.removeAttribute("aria-disabled");
-    /* (faded in on filter, not opacity: the landings' and the home's own fades are on opacity, site.css) */
-    if (!journey.reduced) b.animate?.([{ filter: "opacity(0)" }, { filter: "opacity(1)" }], { duration: 600, easing: "ease" });
-  }
-}
+/* the ways in (ways.js): a planet takes clicks once its journey is ready, and shows its label; built below, once the journey is */
+const openWays = (ids, gate) => ways.open(ids, gate);
 /* until then */
 for (const p of document.querySelectorAll("#door .planet")) { p.setAttribute("tabindex", "-1"); p.setAttribute("aria-disabled", "true"); }
 /* the descents' controls, the docs' back to the dawn and the home's two (its corner and the goodbye), closed
@@ -242,6 +228,8 @@ const journey = door.journey({
     farewell() { const h = $("#home"); h.classList.remove("shown"); h.hidden = true; },
   },
 });
+
+const ways = createWays({ $, body: document.body, BACKS, reduced: journey.reduced, raf: requestAnimationFrame, animations: () => document.getAnimations() });
 
 function hideAll() {
   $("#home").classList.remove("shown"); $("#home").hidden = true; player.hide();
@@ -317,11 +305,8 @@ function showDoor() {
       /* the journeys are readied once the ring is up and running; where the ring waits for their shaders, this is what it waits for */
       after() { warmJourneys(); return waitCompiled ? within(compiledAll, ring.ms) : null; },
       onLit() {
-        /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
-        planetsIn = new Promise((r) => requestAnimationFrame(() => {
-          const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
-          (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
-        }));
+        /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end (ways.js) */
+        ways.revealed();
         warmJourneys();
         prove(4000);
       },

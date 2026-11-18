@@ -26,6 +26,7 @@
       "de/**",
       "tools/i18n/languages.json",
       "assets/js/ring.js",
+      "assets/js/ways.js",
       "assets/js/places.js",
       "assets/js/tilt.js",
       "sw.js",
