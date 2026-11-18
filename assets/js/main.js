@@ -432,6 +432,8 @@ function leaveWorld() {
     done(token); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door"; doorFocus(id);
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     places.settle();
+    /* a link may have brought the visitor straight to this pad, so the door's reveal never came: its ways open now */
+    ways.revealed();
   });
 }
 function flyToPad(id, push = true) {
@@ -490,7 +492,7 @@ function backToDawn() {
   /* (held at its first beat until the flight's world is proved: ADR-0002 6.8) */
   journey.descend({ title: SECTIONS[current].title, subtitle: tr("flight-back-dawn"), onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); places.settle(); readyDoor(); },
+    farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); places.settle(); ways.revealed(); readyDoor(); },
   } });
 }
 
@@ -555,6 +557,7 @@ function homeToDawn() {
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door"; doorFocus("home");
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
       places.settle();
+      ways.revealed();
       readyDoor();
     },
   } });
