@@ -35,7 +35,9 @@ export function ringWaits(o) {
  * the flight's worker asks for them only at the host's word (the door's statusGo), given once the install's world is
  * baked and has drawn its first frame; and the ring does not wait for the flight's compile, which is not asked until its
  * own work is done. The page's context stands for the worker's (aside): a wrong guess only keeps the ring waiting as
- * before. Elsewhere the word is given at the bake, which nothing then waits for.
+ * before. One case costs more: a flight worker that fails after this choice falls back to the page, which compiles the
+ * flight's programs at once on the page's thread, and the ring, not waiting for them, may lift while they compile.
+ * Elsewhere the word is given at the bake, which nothing then waits for.
  */
 
 /** whether the flight's shaders are asked late @param {{ links: unknown, drawnAside: boolean, aside: boolean }} o */
