@@ -983,11 +983,11 @@ split_case "p11: a package manager in default before_script" $ci "publish_docs r
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  before_script:\n    - npm ci --prefix tools\n");'
 # M5: services and image.
 split_case "p12: publish_docs gaining services" $ci "publish_docs has services; a service container" '
-  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n  services:\n    - some/image\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a, img) => a + "  image: " + img + "\n  services:\n    - some/image\n");'
 split_case "p13: default gaining services" $ci "default has services; they would run beside the token" '
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  services:\n    - some/image\n");'
 split_case "p14: publish_docs with a different image" $ci "publish_docs must set its own image" '
-  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: some/other:1\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a) => a + "  image: some/other:1\n");'
 # M6 (#59): expire_in is a short time in hours or minutes, one day at most.
 split_case "p15: import_docs with expire_in 999 hours" $ci "import_docs artifacts need a short expire_in" '
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 999 hours\n");'
@@ -1370,7 +1370,7 @@ split_case "p164: publish_docs with no interruptible of its own (default: gives 
 split_case "p165: publish_docs interruptible: \"false\" as text" $ci "publish_docs.*[^a-z_]interruptible([^a-z_]|$)" '
   y = y.replace("  interruptible: false\n  needs:\n    - job: import_docs", "  interruptible: \"false\"\n  needs:\n    - job: import_docs");'
 split_case "p166: publish_docs with its image as a mapping" $ci "publish_docs must set its own image" '
-  y = y.replace("  image: $NODE_IMAGE\n  interruptible: false\n  needs:", "  image:\n    name: $NODE_IMAGE\n  interruptible: false\n  needs:");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a, img) => a + "  image:\n    name: " + img + "\n");'
 split_case "p167: GIT_DEPTH: 1.0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
   y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
 split_case "p168: GIT_DEPTH: 1. in publish_docs" $ci "publish_docs.*GIT_DEPTH" '

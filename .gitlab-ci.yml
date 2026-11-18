@@ -506,7 +506,9 @@ import_docs:
 # cannot list a pipeline's jobs) and downloads the archive with its job token.
 publish_docs:
   stage: publish
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   needs:
     - job: import_docs
@@ -581,7 +583,9 @@ renovate:
 # treats it as untrusted: en.json and en.js are never in it.
 translate_docs:
   stage: maintenance
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   timeout: 1h
   resource_group: translate
@@ -615,7 +619,9 @@ translate_docs:
 # (tools/ci/nightly-publish.sh).
 publish_translations:
   stage: publish
-  image: $NODE_IMAGE
+  # a pipeline variable outranks the file's variables, so the job holding a secret names its
+  # image itself: the global NODE_IMAGE's text, which ci-split holds it equal to
+  image: node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d
   interruptible: false
   needs:
     - job: translate_docs

@@ -111,10 +111,11 @@ const src = fs.readFileSync(at(".gitlab-ci.yml"), "utf8");
 // 1 or the like (a boolean, null or number to one reader or both). The variables
 // publish_docs's image reads are defined once, in the global variables.
 
-// publish_docs's image, as .gitlab-ci.yml has it. The image runs beside the
-// token, so changing it is a deliberate edit to this check, not to the CI file alone.
-const PUBLISH_IMAGE = "$NODE_IMAGE";
-const IMAGE_VARS = new Set([...PUBLISH_IMAGE.matchAll(/\$\{?(\w+)\}?/g)].map((m) => m[1]));
+// The global variable the jobs' images read, defined once and pinned. A job
+// holding a secret does not read it: a pipeline variable outranks the file's
+// own variables, so it names its image itself, the same text (secretImage).
+const IMAGE_VARS = new Set(["NODE_IMAGE"]);
+const PINNED_IMAGE = /^[a-z0-9_-]+(?:\/[a-z0-9._-]+)*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/;
 const NAME = /^\.?[A-Za-z_][A-Za-z0-9_.:/ -]*$/, NOT_NAME = /^(y|n|yes|no|on|off|true|false|null|\.inf|\.nan)$/i;
 const E = yaml.EVENT_ID, STYLE = yaml.SCALAR_STYLE;
 let events;
@@ -197,10 +198,20 @@ try {
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) stop(".gitlab-ci.yml: is not a mapping of jobs");
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+// A job holding a secret names its own image, written and as GitLab runs it: a
+// string with no variable in it, pinned to a digest, and the global NODE_IMAGE's
+// text, so Renovate's one bump moves all of them or this fails. A pipeline
+// variable outranks the file's own variables, so $NODE_IMAGE there would be the
+// starter's image, run beside the secret.
+const secretImage = (name, own, ex, what) => {
+  const want = isObj(doc.variables) ? doc.variables.NODE_IMAGE : undefined;
+  const ok = (v) => typeof v === "string" && !v.includes("$") && PINNED_IMAGE.test(v) && v === want;
+  if (!(ok(own.image) && ex.image === own.image)) bad(`.gitlab-ci.yml: ${name} must set its own image to the global NODE_IMAGE's text, written out (${JSON.stringify(want ?? null)}): no variable in it, pinned to a digest; found: ${Object.hasOwn(own, "image") ? JSON.stringify(ex.image) : "none of its own"}; a pipeline variable outranks the file's variables, and the image runs beside the ${what}`);
+};
 // the one global definition of each variable the image reads is pinned to a digest
 for (const v of IMAGE_VARS) {
   const val = isObj(doc.variables) ? doc.variables[v] : undefined;
-  if (!(typeof val === "string" && /^[a-z0-9_-]+(?:\/[a-z0-9._-]+)*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that is a plain Docker Hub name (no registry host, no variable) and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
+  if (!(typeof val === "string" && PINNED_IMAGE.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that is a plain Docker Hub name (no registry host, no variable) and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
 }
 // whether a mapping in the set (LATE or TWICE) is in v, replaced values included
 const within = (set, v, seen = new Set()) => {
@@ -572,9 +583,8 @@ const publishJob = (name, pub, need, PUBLISH_LINE) => {
     if (h === "script" && !from) bad(`.gitlab-ci.yml: ${name} runs npm or another package manager; it holds the token and runs no third-party code`);
     else bad(`.gitlab-ci.yml: ${name} runs npm or another package manager ${from ? `in the ${h} it takes from default` : `in its ${h}`}; it holds the token and runs no third-party code`);
   }
-  // the image runs beside the token, so publish_docs names its own, and it is
-  // PUBLISH_IMAGE; NODE_IMAGE itself is pinned to a digest by lint.sh
-  if (pub.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: ${name} must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
+  // the image runs beside the token, so the job names its own (secretImage)
+  secretImage(name, pub, ex, "token");
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(`.gitlab-ci.yml: ${name} sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token`);
   if (Object.hasOwn(ex, "services")) bad(`.gitlab-ci.yml: ${name} has services; a service container runs beside the token`);
   // What runs beside the token is exactly what is written (#60 round 4): the
@@ -659,7 +669,7 @@ if (trn !== null) {
   for (const [key, why] of [["hooks", "a hook runs shell commands beside the key"], ["cache", "a cache holds files other jobs, which run npm, can write"], ["services", "a service container runs beside the key"]]) {
     if (Object.hasOwn(ex, key) || Object.hasOwn(def, key)) bad(`.gitlab-ci.yml: translate_docs has ${key}${Object.hasOwn(ex, key) ? "" : " from default"}; ${why}`);
   }
-  if (trn.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: translate_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(trn, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the key`);
+  secretImage("translate_docs", trn, ex, "key");
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: translate_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the key");
   const LINE = "sh tools/ci/nightly-translate.sh";
   const script = lines(ex.script);
