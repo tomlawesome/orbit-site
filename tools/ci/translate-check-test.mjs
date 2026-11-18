@@ -14,10 +14,12 @@
  *   T10 (k) a catalogue value missing {n}, or adding <a>, is refused
  *   T11 (n) a result translating "Orbit" is refused; the pinned rendering of "the launcher" passes
  *   T12 (h)/(i) javascript:, an on*= handler or a <script> in a result is refused even with the skeleton alike
+ *   T50 a numeric character reference past U+10FFFF in a result (or the English) does not crash the job; decode() reads it as U+FFFD
  *
  *   node tools/ci/translate-check-test.mjs
  */
 import { startFake } from "./fake-claude.mjs";
+import { decode } from "../i18n/lib.mjs";
 import { T, mkFixture, runTool, argsFor, reportNames, hash16, sectionHash, swap, plainLength } from "./translate-fixture.mjs";
 
 const RULE = {
@@ -135,5 +137,18 @@ await T.attempt("T12", async () => {
   await refused("T12b an on*= handler in an alt", SHOT, new RegExp(`${RULE.h.source}|${RULE.i.source}`, "i"), html((h) => h.replace('alt="The sky screen, filled with made-up data"', 'alt="y onclick=alert(1)"')));
   await refused("T12c a <script> in an alt", SHOT, new RegExp(`${RULE.h.source}|${RULE.i.source}`, "i"), html((h) => h.replace('alt="The sky screen, filled with made-up data"', 'alt="<script>alert(1)</script>"')));
   await refused("T12d an onclick attribute added to a <strong>", TOP, new RegExp(`${RULE.h.source}|${RULE.i.source}|${RULE.a.source}`, "i"), html((h) => h.replace("<strong>", '<strong onclick="x()">')));
+});
+await T.attempt("T50", async () => {
+  await accepted("T50a a result carrying &#1114112; (past U+10FFFF) is written as translated, the job exits 0", TOP, html((h) => h.replace("</p>", " &#1114112;</p>")), (h) => h.includes("&#1114112;"));
+  await accepted("T50b a result carrying &#x110000; (the same, in hex) is written as translated, the job exits 0", TOP, html((h) => h.replace("</p>", " &#x110000;</p>")), (h) => h.includes("&#x110000;"));
+  await accepted("T50 control: a result carrying &#233; is written as translated", TOP, html((h) => h.replace("</p>", " &#233;</p>")), (h) => h.includes("&#233;"));
+  const dec = (label, got, want) => T.check(`T50 decode ${label}`, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+  const run = (label, s, want) => { try { dec(label, decode(s), want); } catch (e) { T.check(`T50 decode ${label}`, false, String(e && e.message || e)); } };
+  run("&#1114112; is U+FFFD", "&#1114112;", "\uFFFD");
+  run("&#x110000; is U+FFFD", "&#x110000;", "\uFFFD");
+  run("&constructor; is left as written (no inherited property)", "&constructor;", "&constructor;");
+  run("control: &#233; is é", "&#233;", "é");
+  run("control: &#x1F600; is the emoji", "&#x1F600;", "\u{1F600}");
+  run("control: &amp; is &", "&amp;", "&");
 });
 T.done();
