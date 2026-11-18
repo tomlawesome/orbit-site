@@ -221,8 +221,8 @@ Tests (Node, same harness):
 
 Both canvases handed over (`#warp` 2D and `#warpgl`), the engine and the world running in a module worker as the
 modules they are, behind one page adapter for what they read of the page (size, pixel ratio, hidden, animations); the
-page posts `resize`, `start(profile, at)`, `stop`, `clear`, `warm({ prove })`, `visible`; the worker posts `verdict`,
-`ready`, `firstSecond`; the journey's clock stays on the page and the beats with it. The live door (`?door3d`) is not
+page posts `resize`, `start(profile, at)`, `stop`, `clear`, `warm({ prove })`, `visible`, `busy`; the worker posts `verdict`,
+`ready`, `firstSecond`, `busy` (what each has under way on the GPU, for the verdict's quiet frames: 6a.3 and `busy.js`, #104); the journey's clock stays on the page and the beats with it. The live door (`?door3d`) is not
 carried: level 0 under the worker path. Verified pixel-identical against the page path by pinned flights
 (`tools/ci/pin-test.mjs`) in Edge first, switched on for Firefox only (`gpu().parallel === false` with the worker able),
 kept behind `?draw=worker|page`. Memory: the maps move to the worker's context, so the page's budget on a phone falls,
@@ -334,6 +334,7 @@ Page to worker, in the order they first occur:
 | `canvases` | `warp`, `warpgl` (both transferred `OffscreenCanvas`), `size` again (a resize may have landed between) | after `hello`; the page made `#warpgl` (id, `aria-hidden`), put it beneath `#warp`, and styled both to `size` |
 | `size` | `W`, `H`, `dpr` | every `resize` event (the page also restyles both canvases); the worker calls `engine.resize()`, which as today acts only mid-flight (`prime` sizes at a start) |
 | `visible` | `hidden` | every `visibilitychange` |
+| `busy` | `n`, `gen` (what the page and the other workers have under way, without this worker's own: `busy.js` `busyPeer`) | right after `canvases` if anything is under way, then whenever that sum changes; the worker keeps it as the `"page"` source in its ledger (`busyHeard`), so its verdict frame waits for quiet (#104) |
 | `warm` | `id`, `kind` (`"warm"` or `"warmDocs"`), `prove` | `journey.warm` / `warmDocs` |
 | `start` | `seq`, `profile` (the wire form, below), `at` (pins only) | the warp beat; `engine.start` |
 | `stop`, `clear` | `seq` | `engine.stop` / `clear` (a `reset`, a flight superseded) |
@@ -350,6 +351,7 @@ Worker to page:
 | `warmed` | `id`, `ok` | the ask with that id has settled (whatever it settled to); `ok` false where the worker was destroyed or its context lost and not restored meanwhile (#119) |
 | `frame` | `seq`, `world` (drawn with the WebGL world or painted) | the first frame of that start is committed (a pinned start: after its one frame); the page sets `#warp`'s `data-drawn` to `seq`, which the tests wait on |
 | `lost` | none | the world's context was lost in the worker (said for the console; the worker's world handles it as the page's does today: dead, replaced by the next `warm`) |
+| `busy` | `n`, `gen` (the worker's own ledger: compiles and links under way, picture uploads counted) | every change in it, from the page adapter's `busy` (`draw-worker.js`); the page (`remote-flight.js`) keeps it under a name of its own (`busyPeer`, `busyHeard`), tells the other workers and waits on it for its own verdict's quiet; dropped (`busyGone`) when the worker is let go (#104) |
 | `dead` | `why`, `at` (where it stopped, `stoppedAt`) | the worker cannot go on (an exception outside a frame); the page falls back (6a.4) |
 
 **The profile's wire form** (`engine.js`: `wireProfile(P)`, `unwireProfile(w)`, pure, tested). A profile carries
@@ -734,6 +736,7 @@ Page to worker:
 | `finish` | none | `install.js` `touch`: the GPU made to finish what was asked (`readPixels` 1x1), so a driver's first-draw work is done before the dive, as today; answered by `finished` (#119) |
 | `measure` | `id`, `sets` (an array of view arrays) | `install.js` `calibrate`: each set drawn in turn and timed as `calibrate` times it today (a draw and a finish, then three timed draws and a finish), one ms a set returned *(Superseded, 2026-11-18, #155, owner 59a: the dive's measure was removed. There are no `measure`/`measured` messages and no `install.js` `calibrate`; the dive starts at mq 0.6 and `govern()` keeps it to the frame rate.)* |
 | `destroy` | none | the surface has it for the tests and the fallback (`install.js` never destroys the shared world: it lives the page's life) |
+| `busy` | `n`, `gen` (what the page and the other workers have under way, without this worker's own: `busyPeer`) | right after `canvas` if anything is under way, then whenever that sum changes; heard in `world-worker.js` as in the draw worker's `busy` above (#104) |
 
 Worker to page:
 
@@ -747,6 +750,7 @@ Worker to page:
 | `finished` | none | (#119) `finish` done, after the world's `finish()` ran: `finish()` on the page settles on it (and at once on a fallback, `lost` or `destroy`), and `install.js`'s `firstDrawn` with it |
 | `note` | `line`, `kind` (`note`, `verdict`, `warn`) | every console line the moved modules would have printed |
 | `lost` | none | the context lost in the worker (`webglcontextlost` on the `OffscreenCanvas`, Firefox 125, with `isContextLost()` read before every frame and message as 6a's backstop); the page dispatches `webglcontextlost` on the placeholder canvas, so `install.js`'s listener (flat, the shot ended where it is) is unchanged |
+| `busy` | `n`, `gen` (the worker's own ledger, as the draw worker's `busy`) | every change in it, from the page adapter's `busy` (`world-worker.js`); the page (`remote-world.js`) keeps it under a name of its own and tells the others, as for the draw worker (#104) |
 | `dead` | `why`, `at` (where it stopped, `stoppedAt`) | an exception handling a message: the page falls back (6b.4) |
 
 **The frame feed, latest-wins.** The worker holds at most one view. Each `view` replaces it; the worker draws the
@@ -1318,7 +1322,7 @@ change is to the proof, not to the drawing:
   galaxy's unseen touch, then **the fitness test if no verdict is in yet**; it sets `fit` and `ready` as `warm()`'s
   proof does. One verdict a visit: the first proof to run takes the test (`fitWhenShown`, memoised), the other reads
   it; `sayVerdict` prints once; `calibrate` (the measure) stays with the flight's proof. So that the verdict does not
-  depend on which maps have landed, `fitness()` draws its frames with every map's branch taken (`uHas` and `uHasN`
+  depend on which maps have landed, `fitness()` (since 2026-11-18, #104, `quietFitness`, which times only frames taken while the GPU is quiet) draws its frames with every map's branch taken (`uHas` and `uHasN`
   all set, `blank` bound where a map is not in): the same shader work either way. The docs' proof waits for the
   Earth's picture as `settle` does (the same `earthWait`, its 20 s cap): the 2D canvas draws it in the opening, and
   it is the dawn's own photo, already on the door. Its chores are tagged `"docs"`.
@@ -1398,7 +1402,7 @@ The phone's line under this step says whether it is needed.
 - `assets/door/chores.js`: `end` and `pump` as 6d.2; `FRAME_WAIT = 50`; `moving()`; the line's two figures. `SHARE`,
   `REVEAL_SHARE`, `CAP`, `ORDER`, `chore(fn, rest, tag, options)` keep their values and shape. `index.js` re-exports `moving`.
 - `assets/door/voyage.js`: the star chore, `docsLoading`, the docs' proof and the shared verdict, `fitness()`'s map
-  branches (6d.1). `assets/door/engine.js`: `warmDocs` off `made`; `moving()` round the flight loop.
+  branches (6d.1; today's `quietFitness`, 2026-11-18, #104). `assets/door/engine.js`: `warmDocs` off `made`; `moving()` round the flight loop.
 - `assets/js/main.js`: line 121 and `flyToPad`'s `ready` for the docs. `assets/door/page.js`: nothing.
   `tools/ci/door-stub.mjs`: nothing new; a case that wants frames absent or slow replaces `requestAnimationFrame`
   itself, as `chores-yield-test.mjs` wraps it.
@@ -1570,6 +1574,7 @@ Of the options the call sites pass, `colorSpaceConversion: "none"` is **dropped*
 | `hello.decode` (page to worker) | `"page"` or `"here"` | with `hello`; `"page"` where `decodeAside()` is true on the page |
 | `decode` (worker to page) | `id`, `blob`, `options` | a picture's bytes have arrived in the worker and the page decodes |
 | `decoded` (page to worker) | `id`, `bitmap` (transferred) or `error` | the page's `decode` settled; after a fallback or `destroy` the adapter is gone and answers nothing |
+| `busy` (both ways) | `n`, `gen` | the ledger of GPU work under way, told as it changes: a worker to the page (its own), the page to each worker (everyone else's); `busy.js`, #104, in the tables of 6a.3 and 6b.3 above |
 
 #### 6e.3 Failure and the fallbacks
 

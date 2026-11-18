@@ -35,6 +35,8 @@ function hello(m) {
     note(line) { post({ type: "note", line, kind: "note" }); },
     verdict(line) { post({ type: "note", line, kind: "verdict" }); },
     shared: () => false,
+    /* (this worker's compiles and uploads, for the page's ledger: the flight world's verdict, #104) */
+    busy(b) { post({ type: "busy", n: b.n, gen: b.gen }); },
   });
   createDoor({ flags: m.flags || {}, image: (p) => p, typingWait: 0 });
   /* the worker's own queue: open from the start, a picture on whole, nothing in it waiting for the page */

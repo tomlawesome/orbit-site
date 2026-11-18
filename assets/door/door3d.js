@@ -43,6 +43,7 @@ import { sceneHead, PASS_SWITCH, pictures, EURO, NEAR, BOXED, doorCamera, follow
 import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
 import { gpu } from "./fitness.js";
 import { uploadBanded } from "./upload.js";
+import { watch } from "./busy.js";
 
 /**
  * @typedef {{ p: WebGLProgram, u: Record<string, WebGLUniformLocation | null> }} Prog a linked program and its uniforms
@@ -104,7 +105,7 @@ function context() {
   canvas.className = "wl live";
   canvas.setAttribute("aria-hidden", "true");
   /* (a context of its own, with alpha, but only where the page may use the GPU at all: fitness.js) */
-  const gl = gpu() ? canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) : null;
+  const gl = gpu() ? watch(canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "low-power" })) : null;
   return (ctx = { canvas, gl, par: gl?.getExtension("KHR_parallel_shader_compile") || null, weights: {}, richFlight: null });
 }
 /** @param {WebGL2RenderingContext} gl @param {number} type @param {string} src */

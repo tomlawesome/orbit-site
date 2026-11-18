@@ -23,7 +23,8 @@ import { chore, fetchOnce, fetchBitmap, note, linked, counted, compilesAside, co
 import { image, flag } from "./settings.js";
 import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
-import { frameCost, gpu, sayVerdict } from "./fitness.js";
+import { gpu, sayVerdict, FIT_MS, WARM_FRAMES, TIMED_FRAMES } from "./fitness.js";
+import { quiet as allQuiet, mark, own, pulse, settling, onBusy } from "./busy.js";
 import { page } from "./page.js";
 import { statusTurn } from "./status.js";
 
@@ -1118,7 +1119,10 @@ export function createVoyage(under, { restFor }) {
   let offSaid = false, madeOk = false;
   /** @param {string} why */
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; holding.abort(); sayOff("the context was lost"); };
+  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; holding.abort(); unwait?.(); sayOff("the context was lost"); };
+  /* a wait for quiet (quietFitness), ended at once by a lost context or stop() */
+  /** @type {(() => void) | null} */
+  let unwait = null;
   canvas.addEventListener("webglcontextlost", onLost);
   /* what it put on the page's one context, given back when its journey is taken down (stop: release); given: those
      already given back, so nothing is deleted twice (a late arrival, or a program that is two of P's) */
@@ -1366,14 +1370,17 @@ export function createVoyage(under, { restFor }) {
     const done = () => { unwatch(); unhide = null; resolve(); };
     unhide = done;
   })));
-  /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed
-     frames (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and asks again */
+  /* the fitness test, run only with the tab shown (quietFitness). Under the host's flag `fit: "skip"` (a tool that draws
+     pictures on software GL) no frame is timed and nothing waits for quiet: the world is taken as fit in a chore, looked
+     at again inside it (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and
+     asks again */
   /** @param {string} tag @returns {Promise<Verdict>} */
   const fitWhenShown = async (tag) => {
+    if (flag("fit") !== "skip") return quietFitness(tag);
     for (;;) {
       await whenVisible();
       if (gone) return { fit: false, ms: Infinity };
-      const verdict = await chore(() => (page.hidden() ? null : fitness()), 60, tag);
+      const verdict = await chore(() => (page.hidden() ? null : ok ? { fit: true, ms: 0, skipped: true } : { fit: false, ms: Infinity }), 60, tag);
       if (verdict) return verdict;
     }
   };
@@ -1455,8 +1462,9 @@ export function createVoyage(under, { restFor }) {
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit; the engine keeps
            the verdict a week (ADR-0002 6.4), which changes when a way in opens, never what is drawn: only this decides that */
         .then(() => judge("flight"));
-      /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
-      warming.then(() => chore(calibrate, 200, "measure"));
+      /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is (and a world
+         taken down meanwhile, its verdict's wait ended by stop(), queues none: its rest would hold the queue for nothing) */
+      warming.then(() => (gone ? undefined : chore(calibrate, 200, "measure")));
     }
     return warming;
   }
@@ -1494,25 +1502,105 @@ export function createVoyage(under, { restFor }) {
     allMaps = false;
     gl.disable(gl.SCISSOR_TEST); lastDraw = 0;
   }
-  /* the fitness test: whole frames at the heaviest point of the flight, at the smallest drawing the measure would ever
-     choose, warmed first and judged on their median (fitness.js: frameCost); fit if that leaves room for about 30
-     frames a second. Returns { fit, ms }, taken on every visit (what the engine remembers of it never reaches here); warm says the verdict */
-  /** @returns {Verdict} */
-  function fitness() {
-    if (!ok) return { fit: false, ms: Infinity };
-    /* the host's flag `fit: "skip" (a tool that draws pictures on software GL): the world is taken as fit, no frame timed */
-    if (flag("fit") === "skip") return { fit: true, ms: 0, skipped: true };
-    if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
-    const was = part;
-    part = 0.4; CW = 0; resize(W, H);
-    /* (every map's branch taken, whichever maps have landed: the same shader work either way, so the verdict is the machine's
-       and not the moment's, and the docs' proof may judge it before the maps are in) */
-    allMaps = true;
-    let cost;
-    try { cost = frameCost(gl, () => draw(ST())); } finally { allMaps = false; }
-    const { fit: fits, ms } = cost;
-    part = was; CW = 0; resize(W, H); lastDraw = 0;
-    return { fit: fits, ms };
+  /*
+   * THE FITNESS TEST, TAKEN WHILE NOTHING ELSE RUNS (#104; the standard pattern: measure in a quiet window, discard the
+   * contaminated samples, take the median of the clean ones). Whole frames at the heaviest point of the flight, at the
+   * smallest drawing the measure would ever choose, warmed first (WARM_FRAMES, again at a new size: the window resized)
+   * and judged on their median; fit if that leaves room for about 30 frames a second (FIT_MS). Each timed frame is a
+   * chore of its own, begun only once nothing is under way on any of the site's contexts, here or on another thread, and
+   * nothing has ended for SETTLE ms (busy.js: quiet; the warm-up is such work), and thrown away if anything began, ended
+   * or pulsed while it was timed (heard HEAR ms after it). It stops once most of TIMED_FRAMES agree. Bounded: past
+   * QUIET_WAIT of the tab shown without a quiet moment, or MAX_THROWN frames thrown away, the frames still to come are
+   * timed whatever runs, as they were before. Hidden, it waits, and the QUIET_WAIT starts again when it is shown. Taken on
+   * every visit (what the engine remembers of it never reaches here); one console line says how it went; warm says the
+   * verdict.
+   */
+  const QUIET_WAIT = 8000, MAX_THROWN = 10, HEAR = 20;
+  /** @param {number} ms @returns {Promise<void>} */
+  const after = (ms) => new Promise((r) => { setTimeout(r, ms); });
+  /* true once quiet; false past the deadline (moved on each time the tab is shown) or once the world is gone. No poll:
+     it looks again when the ledger changes, when the last work will have settled, at the deadline and on a show */
+  /** @param {{ at: number }} deadline @returns {Promise<boolean>} */
+  const untilQuiet = (deadline) => new Promise((resolve) => {
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    /** @param {boolean} v */
+    const end = (v) => { clearTimeout(timer); unbusy(); unshown(); unwait = null; resolve(v); };
+    const look = () => {
+      clearTimeout(timer);
+      if (gone || !ok) return end(false);
+      if (page.hidden()) return;
+      if (allQuiet()) return end(true);
+      const left = deadline.at - performance.now();
+      if (left <= 0) return end(false);
+      timer = setTimeout(look, Math.min(left, settling() || left));
+    };
+    const unbusy = onBusy(look);
+    const unshown = page.onVisible(() => { deadline.at = performance.now() + QUIET_WAIT; look(); });
+    unwait = () => end(false);
+    look();
+  });
+  /** @param {string} tag @returns {Promise<Verdict>} */
+  async function quietFitness(tag) {
+    /** @type {Verdict} */
+    const no = { fit: false, ms: Infinity };
+    /** @type {number[]} */
+    const times = [];
+    let over = 0, thrown = 0, loud = false, set = false, was = part, sizeAt = "";
+    const t0 = performance.now(), deadline = { at: t0 + QUIET_WAIT };
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    /* one turn, in its chore: the warm-up where the size is new (the frames after a new size carry its allocation), else
+       one frame timed; null where it may not be taken now (hidden, gone, or no longer quiet) */
+    /** @returns {{ warm: boolean, ms: number, m0: number } | null} */
+    const turn = () => {
+      if (gone || !ok || page.hidden() || (!loud && !allQuiet())) return null;
+      if (!set) {
+        if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
+        set = true; was = part; part = 0.4; CW = 0; resize(W, H);
+      }
+      /* (every map's branch taken, whichever maps have landed: the same shader work either way, so the verdict is the
+         machine's and not the moment's, and the docs' proof may judge it before the maps are in) */
+      allMaps = true;
+      try {
+        if (`${CW}x${CH}` !== sizeAt) {
+          sizeAt = `${CW}x${CH}`;
+          for (let i = 0; i < WARM_FRAMES; i++) { draw(ST()); sync(); }
+          pulse();
+          return { warm: true, ms: 0, m0: 0 };
+        }
+        const m0 = mark(), a = performance.now();
+        own(() => { draw(ST()); sync(); });
+        return { warm: false, ms: performance.now() - a, m0 };
+      } finally { allMaps = false; }
+    };
+    try {
+      for (;;) {
+        if (gone || !ok) return no;
+        if (page.hidden()) { await whenVisible(); deadline.at = performance.now() + QUIET_WAIT; continue; }
+        if (!loud && !(await untilQuiet(deadline))) { if (gone || !ok) return no; loud = true; }
+        const r = await chore(turn, 60, tag);
+        if (!r || r.warm) continue;
+        if (!loud) {
+          await after(HEAR);
+          if (gone || !ok) return no;
+          if (mark() !== r.m0) { if (++thrown >= MAX_THROWN) loud = true; continue; }
+        }
+        times.push(r.ms);
+        if (r.ms > FIT_MS) over++;
+        /* the median is settled once more than half lie on one side */
+        if (over > TIMED_FRAMES / 2 || times.length - over > TIMED_FRAMES / 2) break;
+      }
+      /* stopped early, the lower middle one, which always lies on the side that decided it */
+      const sorted = [...times].sort((a, b) => a - b);
+      const ms = sorted[Math.floor((sorted.length - 1) / 2)] ?? Infinity;
+      page.note(`orbit · flight world: ${times.length} frame${times.length === 1 ? "" : "s"} timed (${sorted.map(Math.round).join(", ")} ms), ${thrown} thrown away` +
+        `${loud ? ", not quiet in time: the rest timed whatever ran" : ", each while quiet"}, in ${Math.round(performance.now() - t0)} ms`);
+      return { fit: ms <= FIT_MS, ms };
+    } catch {
+      return no;
+    } finally {
+      if (set && !gone) { part = was; CW = 0; resize(W, H); lastDraw = 0; }
+    }
   }
   /* a world too slow for the machine is let go: its canvas out of the page and its context lost, the flight drawn
      without it from then on */
@@ -1748,6 +1836,7 @@ export function createVoyage(under, { restFor }) {
     holding.abort();
     canvas.removeEventListener("webglcontextlost", onLost);
     unhide?.();   /* (a warm-up waiting for the tab to be shown waits no more, and draws nothing) */
+    unwait?.();   /* (nor does a verdict waiting for quiet) */
     stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */
     richRelease();
     release();

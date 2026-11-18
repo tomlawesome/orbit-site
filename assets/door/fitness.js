@@ -11,7 +11,9 @@
  *    is kept and handed to the flight's world (voyage.js) and the probe (capability.js), so the page never makes a
  *    second one for them.
  *  - frameCost(): whole frames, timed with the GPU made to finish each, against a budget that leaves room for about
- *    30 frames a second. Asked only when a flight proves its world (voyage.js), never on the door.
+ *    30 frames a second. The back-to-back judgement the tests import; the flight world's own verdict is voyage.js
+ *    quietFitness, the same frames and budget timed one at a time while the GPU is quiet (busy.js, #104), asked only when
+ *    a flight proves its world, never on the door.
  *
  * WARM FIRST, THEN THE MEDIAN. The first frames at a new size carry the driver's last shader work, the pictures'
  * upload and the render targets' allocation; on Firefox (ANGLE, no parallel compile) that alone is past the budget on
@@ -20,6 +22,7 @@
  */
 import { flag, settings } from "./settings.js";
 import { page } from "./page.js";
+import { watch } from "./busy.js";
 
 /** a week, in milliseconds: how long a remembered verdict (rememberedFit) and the probe's (capability.js) are kept */
 export const WEEK = 7 * 24 * 3600e3;
@@ -114,6 +117,8 @@ export function gpu() {
       }
       /* asked of this same context: whether shaders are made off the page's thread (KHR_parallel_shader_compile) */
       else {
+        /* (its compiles and uploads counted, for the flight world's verdict: busy.js) */
+        watch(gl);
         const got = { canvas, gl, parallel: !!gl.getExtension("KHR_parallel_shader_compile"), renderer };
         /* A lost context can come back (Khronos, HandlingContextLost): cancelling the event is what lets the browser
            restore it. While it is lost the page stays 2D (voyage.js makes no world on a lost context); once restored

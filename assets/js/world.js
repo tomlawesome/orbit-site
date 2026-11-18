@@ -16,7 +16,7 @@
  * made in a worker), warn (where its warnings go; console.warn by default). lookOf(opts) is exported too, pure, so a
  * view can carry its look from wherever it is built (ADR-0004 6b.2).
  */
-import { fetchOnce, fetchBitmap, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT } from "../door/index.js";
+import { fetchOnce, fetchBitmap, linked, uploadBanded, gpu, compiledWithin, COMPILE_WAIT, watch } from "../door/index.js";
 
 const VERT = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
@@ -529,7 +529,7 @@ export function createWorld(canvas, opts = {}) {
   if (!opts.gated && !gpu()) return null;
   /* (read when said, so a console replaced later is the one told) */
   const warn = opts.warn || ((...a) => console.warn(...a));
-  const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "high-performance" });
+  const gl = watch(canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: "high-performance" }));
   if (!gl) return null;
   const floatOK = !!gl.getExtension("EXT_color_buffer_float");
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");

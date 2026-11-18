@@ -19,6 +19,7 @@ import { settings, image } from "./settings.js";
 import { decodeAside, rememberedFit } from "./fitness.js";
 import { page } from "./page.js";
 import { onStatusGo } from "./status.js";
+import { busyPeer } from "./busy.js";
 
 /** @import { Profile } from "./engine.js" */
 /** @typedef {ReturnType<typeof createFlight>} Engine */
@@ -30,6 +31,8 @@ import { onStatusGo } from "./status.js";
    page draws as it always has. Under draw=worker there is none, so a slow runner cannot turn a forced worker test into
    a page-path pass */
 export const WORKER_WAIT = 5000;
+/* each flight's worker a name of its own in the page's ledger (busy.js: busyPeer) */
+let flights = 0;
 
 /**
  * @param {HTMLCanvasElement} canvas #warp, handed to the worker
@@ -72,6 +75,10 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   let worker = null;
   /** @param {object} m @param {Transferable[]} [transfer] */
   const post = (m, transfer = []) => { if (!(worker && !engine)) return false; worker.postMessage(m, transfer); return true; };
+  /* the worker's compiles and uploads kept in the page's ledger, and everyone else's told to it as they change, for its
+     verdict's quiet (busy.js, #104); until unlisten */
+  /** @type {ReturnType<typeof busyPeer> | null} */
+  let busy = null;
   const style = () => { const { W, H } = page.size(); for (const c of [warp, gl]) if (c) page.css(c, W, H); };
   const sizeNow = () => { const { W, H, dpr } = page.size(); return { W, H, dpr }; };
   const onVisibility = () => post({ type: "visible", hidden: page.hidden() });
@@ -102,6 +109,8 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       case "frame": if (m.seq === seq) warp.dataset.drawn = String(m.seq); break;
       case "lost": page.note("orbit · flight: the world's context was lost in the worker"); break;
       case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})${m.at ? ` at ${String(m.at).split("\n")[0]}` : ""}`); break;
+      /* the worker's compiles and uploads, kept in the page's ledger (busy.js) */
+      case "busy": busy?.heard(m); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");
@@ -112,6 +121,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   const unlisten = () => {
     clearTimeout(timer);
     unword();
+    busy?.gone(); busy = null;
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
     worker?.removeEventListener("message", hear);
     worker?.removeEventListener("error", failed);
@@ -171,6 +181,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     handed = true;
     const b = gl.transferControlToOffscreen();
     post({ type: "canvases", warp: a, warpgl: b, size: sizeNow() }, [a, b]);
+    busy = busyPeer(`flight ${++flights}`, post);
     document.addEventListener("visibilitychange", onVisibility);
     if (cap) timer = setTimeout(() => { if (!up) fallBack(`no answer in ${WORKER_WAIT} ms`); }, WORKER_WAIT);
   } catch (e) {

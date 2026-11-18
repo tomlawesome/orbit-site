@@ -15,6 +15,7 @@ import { createFlight, unwireProfile } from "./engine.js";
 import { fetchBitmap, askPage, openChores, pace } from "./chores.js";
 import { gpu } from "./fitness.js";
 import { statusGo } from "./status.js";
+import { busyHeard } from "./busy.js";
 
 /** @typedef {{ add(face: FontFace): unknown }} FontSet */
 /**
@@ -90,6 +91,8 @@ function hello(m) {
     /* (the memory of the verdict is the page's, ADR-0002 6.12: the page keeps it, and opens its ways in on it) */
     judged(v) { post({ type: "verdict", fit: v.fit, ms: v.ms, skipped: !!v.skipped, how: v.how }); },
     shared: () => false,
+    /* (this thread's compiles and uploads, for the page's ledger: busy.js) */
+    busy(b) { post({ type: "busy", n: b.n, gen: b.gen }); },
   });
   configure({ flags: m.flags || {}, image: (p) => images[p] ?? p, typingWait: 0, settle: m.settle });
   /* the worker's own queue: open from the start, nothing in it waiting for the page */
@@ -176,6 +179,8 @@ scope.onmessage = (ev) => guard(() => {
     case "decoded": asker?.heard(m); break;
     /* the host's word that its first work is done (status.js): heard at once, made or not */
     case "status": statusGo(); break;
+    /* (what the page and the other workers have under way, for the verdict's quiet: busy.js) */
+    case "busy": busyHeard("page", m); break;
     case "visible": hidden = !!m.hidden; if (!hidden) for (const fn of [...shown]) fn(); break;
     case "destroy": gone = true; engine?.destroy(); scope.close(); break;
     default: if (gone) break; if (ready) handle(m); else waiting.push(m);
