@@ -693,8 +693,17 @@ export function createWorld(canvas, opts = {}) {
     skyT = tex(KW, KH, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE); skyF = fb(skyT);
     jobs.push(() => pass(pr, skyF, KW, KH, (u) => { bind(0, src, u.uT); gl.uniform1i(u.uH, KH); }));
     jobs.push(() => { mip(skyT); gl.deleteTexture(src); gl.deleteProgram(pr.p); gl.deleteShader(pr.fs); });
-    skyQueued = true;
+    skyQueued = true; pictureGone = true;
   }
+  /* however else a bake ends (the galaxy painted instead, or no world to be had), the picture's texture and the tiny
+     program are let go, once; a lost context has let them go already */
+  let pictureGone = !inProgram;
+  const dropPicture = (src) => {
+    if (pictureGone || lost()) return;
+    pictureGone = true;
+    if (src) gl.deleteTexture(src);
+    gl.deleteProgram(inProgram.p); gl.deleteShader(inProgram.fs);
+  };
   /* the galaxy painted, a strip a frame */
   const STRIPS = 4;
   let skyProgram = null, skyAsked = 0, skyQueued = false;
@@ -730,15 +739,15 @@ export function createWorld(canvas, opts = {}) {
         if (!skyDone) requestAnimationFrame(step);
         else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
       };
-      /* the galaxy's picture waited for, as the map is: where it came, it is put in; where it did not, it is painted */
+      /* the galaxy's picture waited for, as the map is, and its program's build as the others' are (made's: read only
+         once done, within COMPILE_WAIT): where both came, it is put in; where either did not, it is painted */
       made.then((ok) => {
-        if (!ok) { res(false); return; }
-        Promise.resolve(galaxyLoad).then((src) => {
-          if (!skyQueued && !skyDone && !lost()) {
-            const letGo = () => { gl.deleteProgram(inProgram.p); gl.deleteShader(inProgram.fs); };
-            if (src) { try { pictureSky(src); } catch (e) { warn("orbit: the galaxy is painted, not loaded", e); gl.deleteTexture(src); letGo(); } }
-            else if (inProgram) letGo();
-          }
+        if (!ok) { res(false); Promise.resolve(galaxyLoad).then(dropPicture); return; }
+        Promise.all([galaxyLoad, inProgram ? compiledWithin(gl, par, [inProgram.p]) : true]).then(([src, compiled]) => {
+          if (src && !pictureGone && !lost()) {
+            if (!compiled) { warn("orbit: the galaxy is painted, not loaded", new Error("its program did not compile in time")); dropPicture(src); }
+            else try { pictureSky(src); } catch (e) { warn("orbit: the galaxy is painted, not loaded", e); dropPicture(src); }
+          } else dropPicture(src);
           requestAnimationFrame(step);
         });
       });
