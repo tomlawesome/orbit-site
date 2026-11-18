@@ -22,10 +22,11 @@
  *   T4 next mount whole    a second journey after T2 builds its world, loses none of it, and gives it all back
  *   T5 twice is harmless   destroy() twice: no throw, no fault, nothing live
  *   T6 a lost context      webglcontextlost, then destroy: no throw, no fault
- *   T7 released mid-upload destroy at the first chore (they are run one at a time) that leaves a picture with some of
- *                          its bands in and no mipmaps; T7b: right after the first texSubImage2D. Nothing live, no fault
+ *   T7 released mid-upload destroy at the first chore (they are run one at a time) that leaves a larger size of a map with
+ *                          some of its bands in and not all (the smallest goes in whole, #148); T7b: right after the first such
+ *                          band. Nothing live, no fault
  *   T8 no link             every program fails to link: warm, quiet, destroy: nothing live, no fault, context kept
- *   T9 stopped in the gap  destroy once a picture has its last band in and not its mipmaps: no fault (no bind of a
+ *   T9 stopped in the gap  destroy once a larger size of a map is whole and the top not yet (between two sizes): no fault (no bind of a
  *                          released handle), nothing live, no mipmap or texParameter call afterwards on a texture the
  *                          stopped world did not make
  *   T10 a rich world       the flags that make the live door rich (door3d, level 2, rich) make the flight's rich Earth: at
@@ -38,6 +39,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { blobOf, unplace, dimsOfPath, installBitmaps } from "./map-sizes-lib.mjs";
 
 const INDEX = "../../assets/door/index.js";
 const KINDS = ["texture", "program", "shader", "buffer", "vertexArray", "framebuffer"];
@@ -99,8 +101,10 @@ if (process.argv[2] === "--child") {
     const b = boundTex[t];
     if (b && (b.probe || !made.includes(b))) foreign.push(`${b.kind} #${b.id}`);
   };
-  /* a picture's pixels reaching a texture: it is then a picture texture ("got"), "last" once its whole height is in,
-     until its mipmaps are made */
+  /* a picture's pixels reaching a texture: it is then a picture texture ("got"). Each level has the rows in so far and the
+     rows its picture has (h.lv[level]); the first level a picture reaches is the smallest size (h.firstLevel), the levels
+     below it are the larger sizes (#148). "last" (a whole map in one go, or a band run to the end at level 0) is the old
+     reading, kept for the pictures that are not sized. */
   const image = (t, src, band, a) => {
     const h = boundTex[t];
     if (!h) return;
@@ -109,12 +113,16 @@ if (process.argv[2] === "--child") {
     if (!band && a.length >= 9 && a[1] === 0) h.height = a[4];                        /* an allocation */
     if (!pixels) return;
     h.got = true;
+    const lvl = a[1], rows = a.length >= 9 ? a[band ? 5 : 4] : src.height, y = band ? a[3] : 0;
+    h.firstLevel ??= lvl;
+    const e = ((h.lv ||= {})[lvl] ||= { cover: 0, need: (src.path && dimsOfPath(src.path)?.[1]) || 0 });
+    e.cover = Math.max(e.cover, y + rows); e.whole = !e.need || e.cover >= e.need;
     if (!band) h.last = true;
     else if (a[1] === 0) {
       h.cover = Math.max(h.cover || 0, a[3] + (a.length >= 9 ? a[5] : src.height));
       if (h.height && h.cover >= h.height) h.last = true;
     }
-    if (band && onBand) onBand();
+    if (band && onBand && lvl < h.firstLevel && !e.whole) onBand();   /* the first band of a larger size, part-way */
   };
   for (const kind of KINDS) {
     const K = kind[0].toUpperCase() + kind.slice(1);
@@ -174,13 +182,10 @@ if (process.argv[2] === "--child") {
   globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 };
   globalThis.Path2D = class { constructor() { return any(); } };
   globalThis.ImageData = class { constructor() { this.probe = true; } };
-  globalThis.createImageBitmap = async (src, ...r) => {
-    const cut = r.length >= 4;
-    return { width: cut ? r[2] : (src.probe ? 1 : 64), height: cut ? r[3] : (src.probe ? 2 : 64), probe: !!src.probe, close() {} };
-  };
+  installBitmaps();   /* a picture has the width and height its file has (#148: the sized maps are told apart by their levels) */
   /* the pictures' fetches are held until release() (T3 holds them past the destroy) */
   let release; const gate = new Promise((r) => { release = r; });
-  globalThis.fetch = () => gate.then(() => ({ ok: true, blob: async () => ({ size: 1 }) }));
+  globalThis.fetch = (u) => gate.then(() => ({ ok: true, blob: async () => blobOf(unplace(u)) }));
   const said = [];
   console.info = (...a) => { said.push(a.join(" ")); }; console.warn = (...a) => { said.push(a.join(" ")); if (!(name === "t8" && a.length === 1 && a[0] instanceof Error && /would not link/.test(a[0].message))) swallowed.push("console.warn: " + a.join(" ").slice(0, 160)); };   /* t8: a world that cannot link warns of that one error (the fake link log says "would not link") and says so; any other warning there is a fault too */
   console.error = (...a) => { swallowed.push("console.error: " + a.join(" ").slice(0, 160)); };
@@ -197,7 +202,7 @@ if (process.argv[2] === "--child") {
     const door = await import(INDEX);
     /* T10: the flags a page sets to have the live door rich (CAPABILITIES.md: ?door3d, ?level=2, &rich) */
     const flags = name === "t10" ? { door3d: "1", level: "2", rich: "1" } : {};
-    const d = door.createDoor({ typingWait: 0, flags });
+    const d = door.createDoor({ typingWait: 0, image: (p) => "img/" + p, flags });
     const mount = () => d.journey({ canvas: hostCanvas(), name: any(), dawnGlyph: () => null, duskGlyph: () => null, on: {} });
     const quiet = async () => {
       await Promise.race([door.quiet(), sleep(6000)]); await sleep(300); await Promise.race([door.quiet(), sleep(6000)]);
@@ -211,8 +216,11 @@ if (process.argv[2] === "--child") {
       j.warm({ prove: false }).catch(() => {});
       await sleep(80);
       const texes = () => made.filter((h) => h.kind === "texture" && !h.probe && !h.released);
-      const partway = () => texes().filter((h) => h.got && !h.mip).length;   /* some band in, mipmaps not yet */
-      const gap = () => texes().filter((h) => h.last && !h.mip).length;      /* the last band in, mipmaps not yet */
+      /* #148: the smallest size goes in whole and is mipped alone, so the states to stop in are a larger size's: part-way
+         (some bands of it in, not all) and between two sizes (a larger size whole, the top not yet) */
+      const larger = (h) => Object.entries(h.lv || {}).filter(([l]) => Number(l) < h.firstLevel);
+      const partway = () => texes().filter((h) => larger(h).some(([, e]) => e.cover > 0 && !e.whole)).length;
+      const gap = () => texes().filter((h) => larger(h).some(([, e]) => e.whole) && !h.lv[0]?.whole).length;
       const here = name === "t9" ? gap : partway;
       const goDown = () => {
         if (afterDestroy) return;
@@ -334,7 +342,7 @@ const t1 = run("t1");
   const r = run("t6");
   check("T6 a lost context: webglcontextlost, then destroy", r, (r) => r.nfaults === 0 && !r.threw, "no throw, no fault");
 }
-for (const [label, name] of [["T7 released mid-upload: destroy at the first chore that leaves a picture part-way", "t7"], ["T7b released after the first band: destroy right after the first texSubImage2D", "t7b"]]) {
+for (const [label, name] of [["T7 released mid-upload: destroy at the first chore that leaves a larger size part-way", "t7"], ["T7b released after the first band: destroy right after the first band of a larger size", "t7b"]]) {
   const r = run(name);
   const ev = (r) => (r.reached ? "" : `did not reach mid-upload (pictures part-way at destroy ${r.pendingAtDestroy})`);
   check(label, r, (r) => none(r) && !ev(r), "every kind 0, no fault; a picture part-way at destroy",
@@ -350,7 +358,7 @@ for (const [label, name] of [["T7 released mid-upload: destroy at the first chor
 {
   const r = run("t9");
   const ev = (r) => (r.reached ? "" : `did not reach the gap (pictures with their last band in and no mipmaps at destroy: ${r.pendingAtDestroy})`);
-  check("T9 stopped between a picture's last band and its mipmaps", r, (r) => none(r) && !ev(r) && r.nforeign === 0,
+  check("T9 stopped between two sizes of a map (a larger size whole, the top not yet)", r, (r) => none(r) && !ev(r) && r.nforeign === 0,
     "every kind 0, no fault (no bind of a released handle), no mipmap or texParameter call after destroy on a texture the stopped world did not make",
     `; pictures in the gap at destroy ${r.pendingAtDestroy}; mipmap/texParameter calls after destroy ${r.lateTexCalls}, on a foreign texture ${r.nforeign}${r.foreign?.length ? " (" + r.foreign.join(", ") + ")" : ""}${ev(r) ? "; " + ev(r) : ""}`);
 }
