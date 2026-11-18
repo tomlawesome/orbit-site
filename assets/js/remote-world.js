@@ -44,7 +44,7 @@ const makeWorker = () => new Worker(new URL("./world-worker.js", import.meta.url
 export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker, cap = settings.flags?.draw !== "worker" } = {}) {
   let el = canvas, worker = null, page = null, up = false, handed = false, gone = false, lost = false;
   let ids = 0, seq = 0, ms = 0, baked = false, baking = null, size = null, timer;
-  /* the asks waiting for their answer: bakes, and measures (their sets kept, to be asked of a page world) */
+  /* the asks waiting for their answer: bakes */
   const pending = new Map();
   const drewFns = new Set();
   let madeIs = () => {}, asideIs = () => {};
@@ -64,11 +64,12 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
         decodeBlob(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]) || bitmap.close(),  // gone meanwhile: let it go
           (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
         break;
-      case "baked": case "measured": {
+      case "baked": {
         const ask = pending.get(m.id);
         if (!ask || ask.kind !== m.type) break;
         pending.delete(m.id);
-        if (m.type === "baked") { if (m.ok) baked = true; ask.resolve(!!m.ok); } else ask.resolve(m.ms);
+        if (m.ok) baked = true;
+        ask.resolve(!!m.ok);
         break;
       }
       case "drew": el.dataset.drawn = String(m.seq); for (const fn of [...drewFns]) fn(m.dt, m.ms); break;
@@ -102,7 +103,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     /* (on the page as it always was: the gate has judged, and the page world compiles here, the fallback's cost) */
     let w = null;
     try { w = createWorld(el, opts); } catch (e) { console.warn(e); }
-    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), measure: (s) => Promise.resolve(s.map(() => NaN)), made: Promise.resolve(false), baked: false, lost: true, compileMs: 0, onDrew() {}, destroy() {} };
+    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), made: Promise.resolve(false), baked: false, lost: true, compileMs: 0, onDrew() {}, destroy() {} };
     /* (no world on the page either: the pad goes flat, as a page world that could not be made does, inline review) */
     if (!w) el.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
     asideIs(false);
@@ -114,7 +115,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
        (a dive under way, or the next) finds it baked */
     const asks = [...pending.values()];
     pending.clear();
-    for (const a of asks) (a.kind === "baked" ? page.bake() : page.measure(a.sets)).then(a.resolve, () => a.resolve(a.kind === "baked" ? false : []));
+    for (const a of asks) page.bake().then(a.resolve, () => a.resolve(false));
     baking = null;
     if (baked) page.bake();
   }
@@ -165,11 +166,6 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     onDrew(fn) { drewFns.add(fn); return () => drewFns.delete(fn); },
     resize(w, h, scale) { size = [w, h, scale]; if (page) page.resize(w, h, scale); else post({ type: "resize", w, h, scale }); },
     finish() { if (page) page.finish(); else post({ type: "finish" }); },
-    measure(sets) {
-      if (page) return page.measure(sets);
-      if (gone) return Promise.resolve(sets.map(() => NaN));
-      return ask("measured", { type: "measure", sets }, { sets });
-    },
     /* the worker's frame loop runs while a pad is drawing */
     run(on) { post({ type: "run", on: !!on }); },
     destroy() {
@@ -179,7 +175,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       gone = true;
       unlisten();
       try { worker?.terminate(); } catch { /* gone already */ }
-      for (const a of pending.values()) a.resolve(a.kind === "baked" ? false : a.sets.map(() => NaN));
+      for (const a of pending.values()) a.resolve(false);
       pending.clear();
       madeIs(false); asideIs(false);
     },
