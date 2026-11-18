@@ -733,6 +733,29 @@ split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSL
 # marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
 split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
   y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
+# Cases t10-t13 (audit finding SEC-8, #158): the job that holds a secret names its image itself. A pipeline variable
+# outranks the file's own `variables:`, so `image: $NODE_IMAGE` on translate_docs, publish_translations or publish_docs
+# lets whoever starts a web pipeline with NODE_IMAGE run an image of their choice beside the key or the token. The three
+# jobs take the pinned literal, equal to the global NODE_IMAGE. Each refusal names .gitlab-ci.yml, the job and "image".
+# Each case edits the one job and leaves the other two as committed; t10 writes the variable form with a trailing
+# comment, so its edit changes the file whether or not the committed job already carries the literal. (t11-t13 are already refused by the old check, which wants "$NODE_IMAGE"
+# exactly; they are here so the new check, which wants the literal, keeps refusing them.)
+ti_js='
+  const GLOBAL_IMAGE = /^  NODE_IMAGE: (\S+)\s*$/m.exec(y)[1];
+  const setImage = (y, job, img) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = m[0].replace(/^  image: .*$/m, () => "  image: " + img);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };'
+split_case "t10: translate_docs on image: \$NODE_IMAGE (a pipeline variable rebinds it)" $ci "translate_docs.*image|image.*translate_docs" "$ti_js"'
+  y = setImage(y, "translate_docs", "$NODE_IMAGE # a pipeline variable outranks the file");'
+split_case "t11: publish_translations on image: \${NODE_IMAGE}" $ci "publish_translations.*image|image.*publish_translations" "$ti_js"'
+  y = setImage(y, "publish_translations", "${NODE_IMAGE}");'
+split_case "t12: publish_docs on the literal with one digit of the digest changed" $ci "publish_docs.*image|image.*publish_docs" "$ti_js"'
+  y = setImage(y, "publish_docs", GLOBAL_IMAGE.slice(0, -1) + (GLOBAL_IMAGE.endsWith("0") ? "1" : "0"));'
+split_case "t13: translate_docs on a literal with a variable inside the digest" $ci "translate_docs.*image|image.*translate_docs" "$ti_js"'
+  y = setImage(y, "translate_docs", "node:24-bookworm@\$DIGEST");'
 split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
   y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
 split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '
@@ -1718,6 +1741,43 @@ split_case "p266: scan:gitleaks with a second gitleaks line, the right one repea
   y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + all));'
 split_case "p267: scan:gitleaks with a second gitleaks line, a scan of another path that carries the right --log-opts" $ci "$gl_name" "$gx_js"'
   y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + "    - gitleaks git --no-banner --redact --verbose " + opt + " .\n"));'
+# Cases p268-p273 (audit finding SEC-2, #158; the ruling names p243-p248, taken by #143 and #142): a pipeline started
+# from the web with TRANSLATE=true must not end green with its test jobs unrun. The five jobs skip it with a blocking
+# manual entry (`when: manual`, `allow_failure: false`), never `when: never`, and the workflow admits the hand-start on
+# dev and the batches only. These cases write the fault, not the fix, so they hold whichever form the file has when
+# they run: p268 puts the `when: never` form on the five, p269 writes it inline on one job, p270 writes the blocking
+# entry without `allow_failure: false`, p271 widens the workflow admission to any branch, p272 puts the blocking entry
+# on a secret scan. p273 is the control: the admission restricted to dev and the batches passes.
+sk_js="$tr_js"'
+  const NEVER = "    - " + SKIP_IF + "\n      when: never\n";
+  const MANUAL = "    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n";
+  const MANUAL_MAY_FAIL = "    - " + SKIP_IF + "\n      when: manual\n";
+  const ANCHOR = /\n\.not_translation: &not_translation\n  if: .*\n  when: .*\n(?:  allow_failure: .*\n)?/;
+  const asNever = (y) => {
+    y = withFive(y);
+    const r = y.replace(ANCHOR, () => "\n.not_translation: &not_translation # the skip that leaves a green pipeline\n  " + SKIP_IF + "\n  when: never\n");
+    if (r === y) throw new Error("no .not_translation anchor");
+    return r;
+  };
+  const ADMIT = /^    - if: \$CI_PIPELINE_SOURCE == "web" && \$TRANSLATE == "true".*$/m;
+  const admit = (y, text) => {
+    const r = y.replace(ADMIT, () => "    - " + text);
+    if (r === y) throw new Error("no workflow admission");
+    return r;
+  };'
+split_case "p268: the five jobs skipping the translation pipeline with when: never (a green pipeline with no test)" $ci "$(tr_name 'live:firefox')" "$sk_js"'
+  y = asNever(y);'
+split_case "p269: coverage carrying the translation skip written out inline with when: never" $ci "$(tr_name 'coverage')" "$sk_js"'
+  y = plant(strip(withFive(y), "coverage"), "coverage", NEVER);'
+split_case "p270: coverage carrying the blocking translation entry without allow_failure: false" $ci "$(tr_name 'coverage')" "$sk_js"'
+  y = plant(strip(withFive(y), "coverage"), "coverage", MANUAL_MAY_FAIL);'
+split_case "p271: the workflow admitting the hand-started translation on any branch" $ci "workflow" "$sk_js"'
+  y = admit(y, "if: \$CI_PIPELINE_SOURCE == \"web\" \&\& \$TRANSLATE == \"true\" # on any branch");'
+split_case "p272: scan:gitleaks carrying the blocking translation entry" $ci "$(tr_name 'scan:gitleaks')" "$sk_js"'
+  y = plant(withFive(y), "scan:gitleaks", MANUAL);'
+# control: the owner hand-start on dev or a batch stays admitted (the same text as the two translation jobs rules)
+split_pass_case "p273: the workflow admitting the hand-started translation on dev, batch-a and batch-b only" $ci "$sk_js"'
+  y = admit(y, "if: \$CI_PIPELINE_SOURCE == \"web\" \&\& \$TRANSLATE == \"true\" \&\& \$CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)\$/ # dev and the batches");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
