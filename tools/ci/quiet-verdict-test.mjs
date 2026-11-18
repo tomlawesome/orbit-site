@@ -48,7 +48,7 @@
  *   Q16 fit: "skip" still skips: no frame timed, no waiting; FIT_MS is still 30
  *   Q17 the world retired or destroyed while waiting: the wait ends, no frame timed afterwards
  *   Q18 a size change between frames warms again at the new size; after the test the size is as before it
- *   Q19 index.js exports watch, busyHeard, busyGone; assets/door/README.md lists them
+ *   Q19 index.js exports watch, busyHeard, busyGone, busyPeer; assets/door/README.md lists them
  *
  * Statements about the machine that cannot be tested without a browser (listed, not tested here): that a real browser's
  * COMPLETION_STATUS_KHR and LINK_STATUS reads track the real compile; that a real upload's cost shows in the
@@ -699,7 +699,7 @@ async function q19() {
   const door = await import(INDEX);
   const { readFileSync } = await import("node:fs");
   const readme = readFileSync(new URL("../../assets/door/README.md", import.meta.url), "utf8");
-  return { exported: ["watch", "busyHeard", "busyGone"].map((n) => typeof door[n]), listed: ["watch", "busyHeard", "busyGone"].map((n) => new RegExp(`\\b${n}\\b`).test(readme)) };
+  return { exported: ["watch", "busyHeard", "busyGone", "busyPeer"].map((n) => typeof door[n]), listed: ["watch", "busyHeard", "busyGone", "busyPeer"].map((n) => new RegExp(`\\b${n}\\b`).test(readme)) };
 }
 
 const CASES = guarded({
@@ -846,7 +846,7 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 }
 {
   const r = run("Q19");
-  chk("Q19 index.js exports watch, busyHeard and busyGone", r, (r) => [eq(r.exported, ["function", "function", "function"]), `typeof ${show(r.exported)}`]);
-  chk("Q19 assets/door/README.md lists them", r, (r) => [eq(r.listed, [true, true, true]), `watch, busyHeard, busyGone listed: ${show(r.listed)}`]);
+  chk("Q19 index.js exports watch, busyHeard, busyGone and busyPeer", r, (r) => [eq(r.exported, ["function", "function", "function", "function"]), `typeof ${show(r.exported)}`]);
+  chk("Q19 assets/door/README.md lists them", r, (r) => [eq(r.listed, [true, true, true, true]), `watch, busyHeard, busyGone, busyPeer listed: ${show(r.listed)}`]);
 }
 finish();
