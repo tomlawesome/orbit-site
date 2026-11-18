@@ -750,6 +750,7 @@ mklag() {
   lagiso=; [ -z "$2" ] || lagiso=$(isoplus "$english" "$2")
   [ -z "${lagraw:-}" ] || lagiso=$lagraw   # a LAG_NOW given as it is, to be refused
   "$realgit" add -A assets/docs-i18n
+  [ -z "${lagold:-}" ] || "$realgit" add assets/docs/index.json   # the aged English kept past the reset
   only=$("$realgit" -c user.name=t -c user.email=t@t commit-tree "$("$realgit" write-tree)" -m "one commit")
   "$realgit" reset -q --hard "$only"
 }
