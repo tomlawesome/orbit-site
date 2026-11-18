@@ -500,7 +500,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `journey.js` | The journey's clock and `createJourney` |
 | `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine, its beats, its WebGL world |
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
-| `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
+| `fitness.js` | The GPU gate (`gpu()`), the fitness budget and `frameCost`, the back-to-back judgement tests import (the flight world's own verdict is `voyage.js` `quietFitness`), the software renderers refused |
 | `busy.js` | What the GPU is busy with, for the fitness test's quiet frames (`watch`, the ledger, what workers tell the page) |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
 | `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |

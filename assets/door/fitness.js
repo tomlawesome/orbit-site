@@ -11,7 +11,9 @@
  *    is kept and handed to the flight's world (voyage.js) and the probe (capability.js), so the page never makes a
  *    second one for them.
  *  - frameCost(): whole frames, timed with the GPU made to finish each, against a budget that leaves room for about
- *    30 frames a second. Asked only when a flight proves its world (voyage.js), never on the door.
+ *    30 frames a second. The back-to-back judgement the tests import; the flight world's own verdict is voyage.js
+ *    quietFitness, the same frames and budget timed one at a time while the GPU is quiet (busy.js, #104), asked only when
+ *    a flight proves its world, never on the door.
  *
  * WARM FIRST, THEN THE MEDIAN. The first frames at a new size carry the driver's last shader work, the pictures'
  * upload and the render targets' allocation; on Firefox (ANGLE, no parallel compile) that alone is past the budget on
