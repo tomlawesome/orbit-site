@@ -46,11 +46,12 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded), `sun` (`"page"`: the sun is painted on the page, never in the `sunWorker`; the control). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
 | `drawWorker` | `() => Worker \| null`: makes a **module** worker running `draw-worker.js`, the flight drawn there where the rule says (below). Absent (the default), no worker is ever made | `() => new Worker("assets/door/draw-worker.js", { type: "module" })` | none yet; when taken up, `() => new Worker(new URL("./draw-worker.js", import.meta.url), { type: "module" })` from its own code |
+| `sunWorker` | `() => Worker \| null`: makes a **module** worker running `sun-worker.js`, in which the dawn's sun is painted and PNG-encoded off the page's thread (the same pixels as the page paints, from `sun.js`). Absent (the default), null, or failing (an error, no picture, no answer in 20 s), the page paints it. No `fonts` needed | `() => new Worker("assets/door/sun-worker.js", { type: "module" })` | none yet; when taken up, `() => new Worker(new URL("./sun-worker.js", import.meta.url), { type: "module" })` from its own code |
 | `fonts` | `[{ family, weight, url }]`: the faces the flight's pens write with, loadable from the page's own origin, the very files the page's stylesheet uses (a worker has none of the page's fonts). Required with `drawWorker`: without it the flight stays on the page | JetBrains Mono, 500, `assets/fonts/jetbrains-mono-latin.woff2` | none yet; its own file's URL through Vite, as its pictures |
 
 ### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, held, world, host }`
@@ -319,8 +320,9 @@ Found by reading what the folder loads (`fetch`, `Image`, `createObjectURL`,
   style object (`style.setProperty`, `style.width`), which a policy does not
   block, and the markup has no `style=""` attribute. A host that keeps
   `'unsafe-inline'` for its own styles loses nothing.
-- `worker-src 'self'` where the host passes `drawWorker` (the folder makes no
-  worker itself, and never from a `blob:`), and `font-src 'self'` for the font
+- `worker-src 'self'` where the host passes `drawWorker` or `sunWorker` (the
+  folder makes no worker itself, and never from a `blob:`; the sun's worker
+  needs nothing else, it fetches nothing), and `font-src 'self'` for the font
   the host names in `fonts`. The worker runs under the page's policy where the
   browser carries it into a dedicated worker (Firefox) and under none where it
   does not (Chromium, where the site sends no headers), so it needs nothing the
@@ -483,6 +485,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2); in the worker, `draw-worker.js` answers for it (`setPage`) |
 | `remote-flight.js` | The flight drawn in a worker, as the page sees it: the engine's surface, the messages, the fallback |
 | `draw-worker.js` | The worker's entry (the host's `drawWorker` runs it): the handshake, the engine on the handed-over canvases |
+| `sun-worker.js`, `sun.js` | The sun painted in the host's `sunWorker`: the worker's entry, and the DOM-free band routine (`sunBand`) it shares with the page's own path in `glows.js` |
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |
 | `markup.js`, `door.css` | The markup and the stylesheet |

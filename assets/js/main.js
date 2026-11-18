@@ -38,12 +38,16 @@ FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
 /* ?decode=img|blob: how the pictures are decoded, whatever the door's rule says (assets/door/fitness.js: decodeAside; the
    browser's image loader is Firefox's by the rule, ADR-0004 6e.1; blob is today's route, the A/B control) */
 FLAGS.decode = location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null;
+/* ?sun=page: the door's sun is painted on the page, not in the worker the host makes (sunWorker below): the A/B control (#119) */
+FLAGS.sun = /[?&]sun=page\b/.test(location.search) ? "page" : null;
 const door = createDoor({
   image: (p) => site(`assets/door/img/${p}`), flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
      it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way.
      (Every path from the site's root, so a language's folder finds the same files: lang.js) */
   drawWorker: () => new Worker(site("assets/door/draw-worker.js"), { type: "module" }),
+  /* and the one the sun is painted and encoded in, off the page's thread (assets/door/sun-worker.js; the page paints it where this fails) */
+  sunWorker: () => new Worker(site("assets/door/sun-worker.js"), { type: "module" }),
   fonts: [{ family: "JetBrains Mono", weight: 500, url: site("assets/fonts/jetbrains-mono-latin.woff2") }],
 });
 /* (the GPU is asked once, by showDoor below, before anything else needs it: assets/door/fitness.js. The capability probe,
