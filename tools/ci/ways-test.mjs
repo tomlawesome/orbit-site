@@ -21,8 +21,16 @@
  *   N8  the save-data call open(["install","docs","info","back"], true): backs at once, planets and gate at the reveal
  *   N9  after the first reveal has ended, open(...) opens within microtasks: no frame or timer is advanced
  *   N10 a second revealed() (the door shown again) holds ways asked while its fade runs, and releases at its end
- *   N11 revealed() never called (a deep link to a landing): planets and gate stay closed after 60 s of virtual time;
- *       only the backs opened
+ *   N11 (corrected after review) a way never stays closed for good. A deep link to a landing (#install, #docs, #info, a
+ *       stored "arrived", #key/#inbox) never runs showDoor, so its onLit never calls revealed(); the visitor then comes
+ *       back to the door by a route that skips dawn.light. Two parts here, one in the source checks below:
+ *       N11-closed  no door shown (revealed() never called): planets and gate stay closed after 60 s; only the backs open
+ *       N11         the door shown without the reveal (the re-entry route calls revealed(), then open()): planets and gate
+ *                   open as before the branch (ready, no tabindex, no aria-disabled, gate enabled, ready-flight), both for
+ *                   ways asked on the landing before the re-entry and for ways asked after it
+ *       N11 (source) each route in main.js that brings the visitor back to the door other than showDoor reaches
+ *                   ways.revealed() (directly, or through one shared helper such as readyDoor); the routes are listed at
+ *                   the check below
  *   N12 (source) ways.js reads no flag and imports nothing from assets/door/
  *   N13 (source) main.js imports createWays, has no `let planetsIn = Promise.resolve()`, and showDoor's onLit
  *       calls revealed()
@@ -173,13 +181,24 @@ const CASES = {
     const after = { docs: m.isOpen(m.planets.docs), install: m.isOpen(m.planets.install), gate: m.gate.disabled === false, flight: m.body.classes.has("ready-flight") };
     return { during, after };
   },
-  async N11() {
+  async "N11-closed"() {
     const m = await mount({ anims: () => [] });
     m.ways.open(["install", "docs", "info", "back"], true);
     await micro();
     const atOnce = m.snap();
     await m.clock.advance(60000);
     return { atOnce, late: m.snap(), anims1: m.backs.every(BACK_ANIM), now: m.clock.now() };
+  },
+  async N11() {
+    /* a landing page: ways asked while the visitor is away from the door, nothing revealed; then the re-entry route */
+    const m = await mount({ anims: () => [] });
+    m.ways.open(["install", "docs"], true); m.ways.open(["back"]);
+    await micro(); await m.clock.advance(5000);
+    const away = m.snap();
+    m.ways.revealed(); await micro(); await m.clock.advance(100);
+    const reentered = m.snap();
+    m.ways.open(["info"]); await micro(); await m.clock.advance(100);
+    return { away, reentered, last: m.snap(), infoOpen: m.isOpen(m.planets.info), installOpen: m.isOpen(m.planets.install), docsOpen: m.isOpen(m.planets.docs) };
   },
 };
 
@@ -250,9 +269,15 @@ for (const [name, tag, gate, reduced] of [["N6", "N6", false, false], ["N6-reduc
   check("N10 ... and are released at its end", ok(r) && r.after.docs && r.after.install && r.after.gate && r.after.flight, `${JSON.stringify(r.after)}${errOf(r)}`);
 }
 {
+  const r = run("N11-closed");
+  check("N11-closed no door shown (revealed() never called): only the backs open at once", ok(r) && r.atOnce.backsOpen && r.atOnce.planetsShut && !r.atOnce.gateOn, `${JSON.stringify(r.atOnce)}${errOf(r)}`);
+  check("N11-closed ... after 60 s of virtual time planets and gate are still closed, backs faded once", ok(r) && r.now >= 60000 && r.late.planetsShut && !r.late.gateOn && !r.late.flight && r.anims1, `${JSON.stringify(r.late)} at ${r.now} ms${errOf(r)}`);
+}
+{
   const r = run("N11");
-  check("N11 revealed() never called: only the backs open at once", ok(r) && r.atOnce.backsOpen && r.atOnce.planetsShut && !r.atOnce.gateOn, `${JSON.stringify(r.atOnce)}${errOf(r)}`);
-  check("N11 ... after 60 s of virtual time planets and gate are still closed, backs faded once", ok(r) && r.now >= 60000 && r.late.planetsShut && !r.late.gateOn && !r.late.flight && r.anims1, `${JSON.stringify(r.late)} at ${r.now} ms${errOf(r)}`);
+  check("N11 landing page, door not shown yet: planets and gate wait, backs open", ok(r) && r.away.planetsShut && !r.away.gateOn && r.away.backsOpen, `${JSON.stringify(r.away)}${errOf(r)}`);
+  check("N11 the door shown without the reveal (revealed() by the re-entry route): ways asked before it open, gate enabled, ready-flight set", ok(r) && r.installOpen && r.docsOpen && r.reentered.gateOn && r.reentered.flight, `${JSON.stringify(r.reentered)}${errOf(r)}`);
+  check("N11 ... and a way asked after the re-entry opens too (ready, no tabindex, no aria-disabled)", ok(r) && r.infoOpen && r.last.planetsOpen, `${JSON.stringify(r.last)}${errOf(r)}`);
 }
 {
   let src = null, why = "";
@@ -270,5 +295,45 @@ for (const [name, tag, gate, reduced] of [["N6", "N6", false, false], ["N6-reduc
   const end = src.indexOf("onOpen(", at);
   const onLit = at >= 0 && end > at ? src.slice(at, end) : "";
   check("N13 ... and showDoor's onLit calls revealed()", /\brevealed\(\)/.test(onLit), onLit ? "onLit body read" : "onLit not found");
+}
+{
+  /* N11 (source): the routes back to the door that skip dawn.light must reach ways.revealed(), or the planets and the gate
+     stay closed for good after a deep link to a landing (#install, #docs, #info, a stored "arrived", #key/#inbox).
+     The routes the test expects, none of them showDoor (whose onLit calls it, N13):
+       leaveWorld          the install's and the information's way back to the dawn (the function)
+       docs farewell       backToDawn's descent: the `farewell()` of its journey.descend, which calls readyDoor()
+       homeToDawn farewell the sky's way back: the `farewell()` of homeToDawn's journey.descend, which calls readyDoor()
+     A route reaches it by calling ways.revealed() itself, or a helper whose body does (readyDoor, or a new shared one),
+     followed one call at a time up to four levels; showDoor is never followed. */
+  const src = readFileSync(rootOf("../../assets/js/main.js"), "utf8");
+  const bodyOf = (name) => {
+    const m = new RegExp(`^(?:async\\s+)?function\\s+${name}\\s*\\(|^(?:const|let)\\s+${name}\\s*=`, "m").exec(src);
+    if (!m) return null;
+    const rest = src.slice(m.index);
+    const nl = rest.indexOf("\n");
+    return /\{\s*$/.test(rest.slice(0, nl)) ? rest.slice(0, rest.indexOf("\n}") + 2) : rest.slice(0, nl);
+  };
+  const reaches = (text, depth = 4, seen = new Set()) => {
+    if (/\bways\.revealed\(\)/.test(text)) return true;
+    if (depth === 0) return false;
+    for (const [, name] of text.matchAll(/(?<![.\w])([A-Za-z_$][\w$]*)\s*\(/g)) {
+      if (name === "showDoor" || seen.has(name)) continue;
+      seen.add(name);
+      const b = bodyOf(name);
+      if (b && reaches(b, depth - 1, seen)) return true;
+    }
+    return false;
+  };
+  const farewellAfter = (fn) => {
+    const at = src.indexOf("farewell()", src.indexOf(`function ${fn}(`));
+    if (at < 0) return "";
+    const eol = src.indexOf("\n", at);
+    const one = src.slice(at, eol);
+    return /\}\s*,?\s*$/.test(one) && one.includes("readyDoor") ? one : src.slice(at, src.indexOf("\n    },", at));
+  };
+  const routes = [["leaveWorld", bodyOf("leaveWorld") || ""], ["the docs farewell (backToDawn)", farewellAfter("backToDawn")], ["homeToDawn's farewell", farewellAfter("homeToDawn")]];
+  for (const [name, text] of routes) {
+    check(`N11 (source) ${name} reaches ways.revealed()`, text !== "" && reaches(text), text === "" ? "route not found in main.js" : "no ways.revealed() on this route, directly or through a helper");
+  }
 }
 finish();
