@@ -48,7 +48,7 @@ const DEADLINE_MS = 45000;   /* per child; the child's own waits add up to well 
 if (process.argv[2] === "--child") {
   const name = process.argv[3];
   const made = [], faults = [], listeners = {};
-  let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, lateTexCalls = 0, onBand = null;
+  let sharedCanvas = null, loseCalls = 0, lost = false, afterDestroy = false, touches = 0, lateTexCalls = 0, onBand = null, burn = false;
   const foreign = [], noLink = name === "t8", TEX2D = 0x0de1;
   const others = [];   /* the handles of every context after the gate's (the first made); the gate's are in `made` */
   const any = () => new Proxy(function () {}, {
@@ -122,6 +122,7 @@ if (process.argv[2] === "--child") {
       h.cover = Math.max(h.cover || 0, a[3] + (a.length >= 9 ? a[5] : src.height));
       if (h.height && h.cover >= h.height) h.last = true;
     }
+    if (burn && lvl < h.firstLevel) for (const t0 = performance.now(); performance.now() - t0 < 3;);   /* a larger size's band takes time */
     if (band && onBand && lvl < h.firstLevel && !e.whole) onBand();   /* the first band of a larger size, part-way */
   };
   for (const kind of KINDS) {
@@ -213,14 +214,15 @@ if (process.argv[2] === "--child") {
 
     if (name === "t7" || name === "t7b" || name === "t9") {
       const j = mount();
-      j.warm({ prove: false }).catch(() => {});
+      /* the proving warm: the larger sizes are asked for only after the fitness verdict (#148), which warm({ prove: false }) never says */
+      j.warm().catch(() => {});
       await sleep(80);
       const texes = () => made.filter((h) => h.kind === "texture" && !h.probe && !h.released);
       /* #148: the smallest size goes in whole and is mipped alone, so the states to stop in are a larger size's: part-way
          (some bands of it in, not all) and between two sizes (a larger size whole, the top not yet) */
       const larger = (h) => Object.entries(h.lv || {}).filter(([l]) => Number(l) < h.firstLevel);
       const partway = () => texes().filter((h) => larger(h).some(([, e]) => e.cover > 0 && !e.whole)).length;
-      const gap = () => texes().filter((h) => larger(h).some(([, e]) => e.whole) && !h.lv[0]?.whole).length;
+      const gap = () => texes().filter((h) => larger(h).some(([, e]) => e.whole) && !larger(h).some(([, e]) => e.cover > 0 && !e.whole) && !h.lv[0]?.whole).length;
       const here = name === "t9" ? gap : partway;
       const goDown = () => {
         if (afterDestroy) return;
@@ -228,16 +230,19 @@ if (process.argv[2] === "--child") {
         tryDo("destroy", () => j.destroy()); afterDestroy = true;
       };
       if (name === "t7b") onBand = () => { onBand = null; goDown(); };
-      else manual = true;
+      /* the chores no longer wait for an idle moment: a band is a soft chore and the next follows at once while an 8 ms window lasts,
+         so on a fake that takes no time every band of every size lands inside one window and none is ever left part-way. Each
+         band of a larger size here takes ~3 ms of real time, as a real upload does, so the window closes after a few bands and
+         the rest wait for the next frame: t7 and t9 look between those windows (a timer's turn) and go down at the first one
+         that leaves a larger size where they want it */
+      burn = true;
       release(); door.openChores();
-      /* t7, t9 run the idle chores one at a time and go down at the first chore that leaves a picture where they want it */
-      for (let t0 = Date.now(); !afterDestroy && Date.now() - t0 < 8000;) {
-        if (idle.length) idle.shift()();
-        await sleep(idle.length ? 0 : 2);
+      for (let t0 = Date.now(); !afterDestroy && Date.now() - t0 < 25000;) {
+        await sleep(1);
         if (name !== "t7b" && here() > 0) goDown();
       }
+      burn = false;
       out.reached = afterDestroy && out.pendingAtDestroy > 0;
-      manual = false; while (idle.length) setTimeout(idle.shift(), 5);
       await quiet();
     } else if (name === "t8") {
       const j = mount();
