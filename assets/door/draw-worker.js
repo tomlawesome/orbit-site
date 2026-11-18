@@ -14,6 +14,7 @@ import { configure } from "./settings.js";
 import { createFlight, unwireProfile } from "./engine.js";
 import { fetchBitmap, askPage, openChores, pace } from "./chores.js";
 import { gpu } from "./fitness.js";
+import { statusGo } from "./status.js";
 
 /** @typedef {{ add(face: FontFace): unknown }} FontSet */
 /**
@@ -49,6 +50,8 @@ let asker = null;
 /* a lost context where the canvas says nothing of it (OffscreenCanvas fires webglcontextlost from Firefox 125): looked
    at before every frame and every message, and told to the world as the event would have (voyage.js) */
 let lostSaid = false;
+/* the world's context lost and not restored: an ask settling meanwhile is answered not ok (as after `destroy`) */
+let dark = false;
 const backstop = () => {
   if (!glNow || lostSaid || !glNow.isContextLost()) return;
   lostSaid = true;
@@ -113,8 +116,8 @@ function bringUp() {
   const { warp, warpgl } = canvases;
   const ctx = warp.getContext("2d");
   if (!ctx || ctx.letterSpacing === undefined) return no("the 2D context has no letterSpacing");
-  warpgl.addEventListener("webglcontextlost", () => post({ type: "lost" }));
-  warpgl.addEventListener("webglcontextrestored", () => { lostSaid = false; });
+  warpgl.addEventListener("webglcontextlost", () => { dark = true; post({ type: "lost" }); });
+  warpgl.addEventListener("webglcontextrestored", () => { lostSaid = false; dark = false; });
   const mine = engine = createFlight(warp, { requestFrame: (fn) => page.frame((t) => { fn(t); drew(); }) });
   ready = true;
   post({ type: "up", ok: true, renderer: g.renderer });
@@ -136,10 +139,12 @@ function handle(m) {
   switch (m.type) {
     case "warm": {
       const { id } = m, how = { prove: m.prove !== false };
-      (m.kind === "warmDocs" ? e.warmDocs(how) : e.warm(how)).then(() => post({ type: "warmed", id, ok: true }), () => post({ type: "warmed", id, ok: false }));
+      (m.kind === "warmDocs" ? e.warmDocs(how) : e.warm(how)).then(() => post({ type: "warmed", id, ok: !gone && !dark }), () => post({ type: "warmed", id, ok: false }));
       break;
     }
     case "start": {
+      /* (a flight started is the host's first work done: its world's shaders are asked for now, status.js) */
+      statusGo();
       current = m.seq;
       const P = unwireProfile(m.profile);
       if (typeof m.at === "number") { want = 0; e.start(P, { at: m.at }); post({ type: "frame", seq: m.seq, world: e.withWorld }); }
@@ -169,6 +174,8 @@ scope.onmessage = (ev) => guard(() => {
     case "size": size = { W: m.W, H: m.H, dpr: m.dpr }; engine?.resize(); break;
     /* (an answer is heard at once: the pictures it holds are what the flight waits for) */
     case "decoded": asker?.heard(m); break;
+    /* the host's word that its first work is done (status.js): heard at once, made or not */
+    case "status": statusGo(); break;
     case "visible": hidden = !!m.hidden; if (!hidden) for (const fn of [...shown]) fn(); break;
     case "destroy": gone = true; engine?.destroy(); scope.close(); break;
     default: if (gone) break; if (ready) handle(m); else waiting.push(m);

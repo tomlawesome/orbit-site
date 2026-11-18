@@ -338,6 +338,7 @@ Page to worker, in the order they first occur:
 | `start` | `seq`, `profile` (the wire form, below), `at` (pins only) | the warp beat; `engine.start` |
 | `stop`, `clear` | `seq` | `engine.stop` / `clear` (a `reset`, a flight superseded) |
 | `destroy` | none | `journey.destroy()`: the worker closes itself; the page `terminate()`s it anyway |
+| `status` | none | (#119) the host's word (`statusGo()`, `status.js`), once, after `hello` (at once to a worker made after it); under `links: "late"` the worker's world asks for its shaders then. Never after `destroy` or a fallback |
 
 Worker to page:
 
@@ -346,7 +347,7 @@ Worker to page:
 | `up` | `ok`; `why` when not (`no WebGL2 in a worker here`, `no float colour buffers`, `the 2D context has no letterSpacing`); `renderer` | after `canvases`, once both contexts are made and the fonts loaded |
 | `note` | `line`, `kind` (`"note"` or `"verdict"`) | every console line the moved modules would have printed (`flight: shaders compiled in N ms`, `flight world: on (frame N ms)`, `flight: first second N frames, worst N ms`, `chores at …`) |
 | `compiled` | `ok` | the world's shaders done (or not): `journey.compiled()` resolves on it |
-| `warmed` | `id`, `ok` | the ask with that id has settled (whatever it settled to) |
+| `warmed` | `id`, `ok` | the ask with that id has settled (whatever it settled to); `ok` false where the worker was destroyed or its context lost and not restored meanwhile (#119) |
 | `frame` | `seq`, `world` (drawn with the WebGL world or painted) | the first frame of that start is committed (a pinned start: after its one frame); the page sets `#warp`'s `data-drawn` to `seq`, which the tests wait on |
 | `lost` | none | the world's context was lost in the worker (said for the console; the worker's world handles it as the page's does today: dead, replaced by the next `warm`) |
 | `dead` | `why`, `at` (where it stopped, `stoppedAt`) | the worker cannot go on (an exception outside a frame); the page falls back (6a.4) |
@@ -730,7 +731,7 @@ Page to worker:
 | `bake` | `id` | `world.bake()`; answered by `baked` |
 | `run` | `on` | `install.js` `start()` / `stop()`: the worker's frame loop runs while a pad is drawing (below) |
 | `view` | `seq`, `view` (the object `install.js` `draw` builds: numbers, arrays, `look.HUE` a `Float32Array`; structured clone keeps all of it, and nothing in it is a function) | every page frame the camera draws |
-| `finish` | none | `install.js` `touch`: the GPU made to finish what was asked (`readPixels` 1x1), so a driver's first-draw work is done before the dive, as today |
+| `finish` | none | `install.js` `touch`: the GPU made to finish what was asked (`readPixels` 1x1), so a driver's first-draw work is done before the dive, as today; answered by `finished` (#119) |
 | `measure` | `id`, `sets` (an array of view arrays) | `install.js` `calibrate`: each set drawn in turn and timed as `calibrate` times it today (a draw and a finish, then three timed draws and a finish), one ms a set returned *(Superseded, 2026-11-18, #155, owner 59a: the dive's measure was removed. There are no `measure`/`measured` messages and no `install.js` `calibrate`; the dive starts at mq 0.6 and `govern()` keeps it to the frame rate.)* |
 | `destroy` | none | the surface has it for the tests and the fallback (`install.js` never destroys the shared world: it lives the page's life) |
 
@@ -743,6 +744,7 @@ Worker to page:
 | `baked` | `id`, `ok` | the bake with that id settled |
 | `drew` | `seq`, `dt`, `ms` | a view drawn: `seq` the view's, `dt` the worker's time since its previous frame callback, `ms` the time `draw` took to issue. The page sets the canvas's `data-drawn` to `seq`, which the tests wait on |
 | `measured` | `id`, `ms` (one a set) | the measure done *(Superseded, 2026-11-18, #155, owner 59a: the dive's measure was removed; see the note on the `measure` row of the message table.)* |
+| `finished` | none | (#119) `finish` done, after the world's `finish()` ran: `finish()` on the page settles on it (and at once on a fallback, `lost` or `destroy`), and `install.js`'s `firstDrawn` with it |
 | `note` | `line`, `kind` (`note`, `verdict`, `warn`) | every console line the moved modules would have printed |
 | `lost` | none | the context lost in the worker (`webglcontextlost` on the `OffscreenCanvas`, Firefox 125, with `isContextLost()` read before every frame and message as 6a's backstop); the page dispatches `webglcontextlost` on the placeholder canvas, so `install.js`'s listener (flat, the shot ended where it is) is unchanged |
 | `dead` | `why`, `at` (where it stopped, `stoppedAt`) | an exception handling a message: the page falls back (6b.4) |

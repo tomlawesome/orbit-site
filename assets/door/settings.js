@@ -12,7 +12,8 @@
  *                  and the world is taken as fit: for a tool that draws pictures on software GL; it grants no GPU, which
  *                  gpu: "force" does; voyage.js), draw ("worker" | "page": where the flight is drawn, whatever the rule
                  says; fitness.js: drawnAside), decode ("img" | "blob": how the pictures are decoded, whatever the rule says;
-                 fitness.js: decodeAside), sun ("page": the sun is painted on the page, never in the host's sunWorker)
+                 fitness.js: decodeAside), sun ("page": the sun is painted on the page, never in the host's sunWorker),
+                 links ("late": the flight's shaders asked for only at the host's word, statusGo; status.js)
  *   storagePrefix  the first word of every localStorage key the folder writes ("orbit": "orbit-probe …")
  *   settle         timeline.js: ms after the landing at which the instrument arrives (the site's own amendment)
  *   typingWait     chores.js: an unhurried chore waits while someone is typing, this long after the last key (0: never)

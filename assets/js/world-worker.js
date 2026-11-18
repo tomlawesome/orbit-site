@@ -106,8 +106,8 @@ function handle(m) {
         case "bake": { const { id } = m; world.bake().then((ok) => post({ type: "baked", id, ok: !!ok }), () => post({ type: "baked", id, ok: false })); break; }
         case "run": running = !!m.on; if (running) { last = 0; ask(); } break;
         case "view": held = { seq: m.seq, view: m.view }; ask(); break;
-        /* what was asked is done: the view held drawn first */
-        case "finish": if (held) drawHeld(16); world.finish(); break;
+        /* what was asked is done: the view held drawn first; then said, so the host knows its first draw is done (#119) */
+        case "finish": if (held) drawHeld(16); world.finish(); post({ type: "finished" }); break;
       }
     }
   }

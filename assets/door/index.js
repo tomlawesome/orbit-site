@@ -27,6 +27,8 @@ export { drawnAside } from "./fitness.js";
 /* and whether the pictures are decoded by the image loader (fitness.js), which a host's worker is told, and answers a worker's ask for (chores.js) */
 export { decodeAside } from "./fitness.js";
 export { decodeBlob } from "./chores.js";
+/* the host's word that its first work is done, after which the flight's worker asks for its shaders (status.js, #119) */
+export { statusGo } from "./status.js";
 /* for a host's own worker: the page answered for there (page.js), and its queue run unpaced (chores.js), as draw-worker.js does */
 export { setPage, askedOnce, stoppedAt } from "./page.js";
 export { pace, askPage } from "./chores.js";
