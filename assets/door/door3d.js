@@ -243,8 +243,6 @@ export function liveDoor(world) {
     fieldOf("clouds"); fieldOf("cloudsN");
     if (rich && !glowT && maps.lights) glowT = cityGlow(gl, rich, maps.lights, ...dims.lights, maps.lightsN, blank);
   };
-  /* each map put on the GPU a band at a time (upload.js: soft chores), its mipmaps after; drawable from its last band
-     (its first level alone, LINEAR: the canvas is not on the page until every map is in, mipmaps and all) */
   /* a map with ready-made sizes (#148): smallest first, drawable then, and the larger ones after
      it, the door's own copy of each (the same files as the flight's: voyage.js, sizesFor); done once its last is in */
   /** @param {string} key */
@@ -262,6 +260,9 @@ export function liveDoor(world) {
       });
     }).catch(() => { delete maps[key]; delete dims[key]; failed.add(key); });
   };
+  /* a map with no sizes (or a host without them) put on the GPU a band at a time (upload.js: soft chores), its
+     mipmaps after; drawable from its last band (its first level alone, LINEAR: the canvas is not on the page until
+     every map is in, mipmaps and all) */
   /** @param {string} key */
   const loadWhole = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {

@@ -1352,11 +1352,9 @@ export function createVoyage(under, { restFor }) {
   /* the strip's sharper tier, fading in over the small one (sharpStrip; ?door3d only) */
   /** @type {SharpStrip | null} */
   let stripS = null;
-  /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
-     only once its mipmaps are made */
-  /* a map with ready-made sizes (#148): its smallest put on the GPU whole and drawn from at once
-     (resolved then), its larger sizes left for sharpen (more), which the warm-up asks for once every map has its
-     smallest; landing until its smallest is in */
+  /* a map with ready-made sizes (#148): its smallest put on the GPU whole, mipped and drawn from at once (resolved
+     then; a clouds map's field made from it then, and again once its top is in), its larger sizes left for sharpen
+     (more), which the warm-up asks for once every map has its smallest and a verdict is in; landing until its smallest is in */
   /** @type {Record<string, () => Promise<void>>} */
   const more = {};
   /** @param {string} key @returns {Promise<void>} */
@@ -1367,22 +1365,34 @@ export function createVoyage(under, { restFor }) {
     const up = uploadSized(gl, sizes, { decode: (url) => fetchBitmap(url, { colorSpaceConversion: "none", premultiplyAlpha: "none" }), tag: "flight", more: "sharp", name: key, setup: wrapOf(key), after: sharper, gone: () => gone || dead });
     more[key] = () => up.more().then(() => {
       if (gone) return;   /* (given back with the other maps: release) */
-      mipped.add(key);
-      if (key === "clouds" || key === "cloudsN") fieldsOf();
+      if (key === "clouds" || key === "cloudsN") return chore(() => fieldAgain(key), 60, "sharp");
     });
     return up.first.then((t) => {
       if (gone || !t) { landing.delete(key); if (t) giveBack("Texture", t); delete more[key]; return; }
       maps[key] = t; dims[key] = [sizes[0].w, sizes[0].h];
-      /* in maps from now, so given back with them (release); its larger sizes stop once gone (uploadSized) */
-      landing.delete(key);
+      /* in maps from now, so given back with them (release); its larger sizes stop once gone (uploadSized). Its levels
+         are whole from its smallest down (uploadSized), so a field may be made from it now */
+      landing.delete(key); mipped.add(key);
+      if (key === "clouds" || key === "cloudsN") fieldsOf();
     }).catch(() => {
       landing.delete(key); delete more[key];
       if (!gone) failed.add(key);
     });
   };
+  /* a clouds map's field made again from its top size, the one made from its smallest given back once it is replaced */
+  /** @param {string} key */
+  const fieldAgain = (key) => {
+    const old = fields[key];
+    if (gone || !old) return;
+    delete fields[key];
+    fieldsOf();
+    if (fields[key]) giveBack("Texture", old); else fields[key] = old;
+  };
   /* a map's larger sizes (a map whose smallest did not land, or with no sizes: nothing) */
   /** @param {string} key @returns {Promise<void>} */
   const sharpen = (key) => { const m = more[key]; delete more[key]; return m ? m() : Promise.resolve(); };
+  /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
+     only once its mipmaps are made */
   /** @param {string} key @returns {Promise<void>} */
   const loadWhole = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
@@ -1479,7 +1489,10 @@ export function createVoyage(under, { restFor }) {
       const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
       /* beside the proof, never in front of it: a download that hangs must not hold the verdict back. Whatever lands is
          used from then on, and the cities' glow made if it was waiting for the lights map */
-      Promise.all(again.map((k) => load(k).then(() => sharpen(k)))).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      const back = again.map(load);
+      Promise.all(back).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      /* its larger sizes, as the others', only after a fit verdict (none without one, or after an unfit one) */
+      back.forEach((p, i) => p.then(() => proved).then(() => (fit && !gone ? sharpen(again[i]) : undefined)).catch(() => {}));
     }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Each flight map's smaller sizes, made ready for the browser (#148), so it never
-makes them itself (one generateMipmap a map: a stall that cannot be split).
+Each flight map's smaller sizes, made ready for the browser (#148), so it no
+longer makes them from the full-size map: the one generateMipmap a map runs on
+its smallest size alone (a stall that cannot be split, now a small one).
 
 For every map in MAPS (assets/door/img/), each size half the last, down to the
 last one still 512 or more wide, written beside it as <name>-<width>.webp. A

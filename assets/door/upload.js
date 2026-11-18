@@ -381,7 +381,8 @@ export function uploadSized(gl, sizes, { decode, tag = "", more: moreTag = tag, 
         } else await bandsInto(gl, bm, level, bind, { format: gl.RGBA, type: gl.UNSIGNED_BYTE, tag: moreTag, name, keep: false, alive });
         if (gone()) return;
         if (say()) note(`upload: ${name} ${sizes[k].w}x${sizes[k].h} in, eased in over ${EASE / 1000} s`);
-        if (k) ease(tx, k); else await ease(tx, 0);
+        /* (a larger size's ease is not waited for; a chore of it that throws is let go, the level as it was) */
+        if (k) ease(tx, k).catch(() => {}); else await ease(tx, 0);
       }
     } catch (e) { if (!gone()) console.warn(`orbit: ${name} stays at ${sizes[k + 1]?.w ?? "its smallest"} wide`, e); }
   });
