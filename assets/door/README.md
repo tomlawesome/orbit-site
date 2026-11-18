@@ -479,7 +479,7 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
 | `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
-| `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
+| `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands, a flight map's ready-made sizes smallest first (`uploadSized`, eased in by `easeLevels`) |
 | `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2); in the worker, `draw-worker.js` answers for it (`setPage`) |
 | `remote-flight.js` | The flight drawn in a worker, as the page sees it: the engine's surface, the messages, the fallback |
 | `draw-worker.js` | The worker's entry (the host's `drawWorker` runs it): the handshake, the engine on the handed-over canvases |
@@ -489,3 +489,4 @@ functions `door.dawn(host)` and `door.dusk(host)` return, exported by name too
 | `img/dawn/` | The door's Earth (`dawn-pre`, `dawn`), its glows, the gold planet (`planet-gold`, the goodbye's under `asDawn`), and the near maps and light strips the live door draws |
 | `img/dusk/` | The dusk's glows |
 | `img/flight/` | The flight's Earth maps and the gold moon |
+| `img/{flight,dawn}/<map>-<width>.webp` | Each flight map's smaller sizes (#148; `tools/map-sizes.py`, `voyage.js` `FULL` and `SIZED_PATHS`). A host's `image()` places them as it places the full maps; one that returns these paths unchanged gets the full maps whole, as before |

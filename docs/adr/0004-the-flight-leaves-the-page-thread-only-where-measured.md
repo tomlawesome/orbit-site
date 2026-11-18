@@ -8,7 +8,8 @@ for the owner's review before any code; questions 6b-1 to 6b-4 answered 2026-10-
 of the flight's chores on the page (#101); question 101-1 answered 1a, 101-2 left moot: built in !96, then reverted
 2026-10-29 (owner 11a, #105), and kept as the record. 2026-10-30, section 6d: the docs' way in opens on its own galaxy (owner 2a) and the
 frame's share of chores runs inside the frame callback, with a backstop (#101); approved for build (owner 9a) and merged in !100; section 6d.6 the same day, after CI: a hard chore may
-start from the backstop, and `freeze.mjs` check 5 says so (owner 10a). 2026-10-30, section 6e: the maps decoded by the browser's image loader on Firefox (#113; owner 13a).
+start from the backstop, and `freeze.mjs` check 5 says so (owner 10a). 2026-10-30, section 6e: the maps decoded by the browser's image loader on Firefox (#113; owner 13a). 2026-11-18, section 6d.1: the ruled-out low-resolution copy taken up for the gate, as each
+map's ready-made smaller sizes (#148).
 **Date:** 2026-10-22
 **Relates to:** #43 (with #74 folded in: the portrait star cloud); #85 (the flight in a worker); #93 (the site's
 worlds in a worker); #101 (the flight's chores paced by the slice); ADR-0001 (the folder Orbit copies); ADR-0002
@@ -1342,6 +1343,19 @@ verdict instead of testing again.
 Ruled out: a low-resolution copy of each map uploaded whole first (the LQIP shape): it adds eight pictures to the
 folder Orbit copies and `sw.js`'s list for a second of a dark Earth that the shader already covers; reorder or add
 later if the eye asks. Holding the trip up to 8 s or flying it flat (the first draft of this section): the owner's 7a.
+
+**Amended 2026-11-18 (#148): taken up, for the gate, with another reason.** Each flight map now ships its smaller
+sizes ready-made beside it (`<map>-<width>.webp`, each half the last, exactly floor(w / 2^i) by floor(h / 2^i), down
+to the last still 512 wide: 15 files, about 1 MB, `tools/map-sizes.py`). The pattern is progressive texture streaming:
+the texture's storage is made at once for the largest size the screen fetches (the smallest at least
+2 x W x min(dpr, 2) wide, else the full size, so a phone never asks for the 4096-wide lights), the smallest size goes
+into its own level whole, and the map's one `generateMipmap` runs on that level alone (`TEXTURE_BASE_LEVEL` set to it
+for the call), so 6c.3's "stalls that remain", a mipmap pass on each full-size map, are gone. The gate waits for every
+map's smallest size only; the larger sizes come after the fitness verdict (none for a world retired) as paced chores
+tagged `"sharp"`, ranked after `"info"` and before the untagged and never hurried, each into its own level (in bands
+where the crop is honoured) and eased in over a second by `TEXTURE_MIN_LOD` (`upload.js`: `uploadSized`,
+`easeLevels`). The live door uses the same files. A map with no sizes, or a host whose `image()` does not place them,
+is loaded whole, as before; a size that fails leaves the map as sharp as it was and is warned of once.
 
 ### 6d.2 The frame's share runs inside the frame callback, before the paint, with a backstop
 
