@@ -25,6 +25,7 @@ import { uploadBanded } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
 import { frameCost, gpu, sayVerdict } from "./fitness.js";
 import { page } from "./page.js";
+import { statusTurn } from "./status.js";
 
 /** @typedef {[number, number, number, number]} Box a lon/lat box: west, east, south, north */
 /** @typedef {Record<string, string>} Pictures picture name to URL */
@@ -1110,12 +1111,14 @@ export function createVoyage(under, { restFor }) {
   /* gone: its journey was taken down (stop): it draws nothing more, judges nothing and never retires the context,
      which is the page's one and may already be a later journey's world */
   let gone = false;
+  /* (links "late", below: the wait for the host's word, ended if the world is lost or taken down meanwhile) */
+  const holding = new AbortController();
   /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
      fitness test's, said when the test has ended and the world was still there to be judged) */
   let offSaid = false, madeOk = false;
   /** @param {string} why */
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); };
+  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; holding.abort(); sayOff("the context was lost"); };
   canvas.addEventListener("webglcontextlost", onLost);
   /* what it put on the page's one context, given back when its journey is taken down (stop: release); given: those
      already given back, so nothing is deleted twice (a late arrival, or a program that is two of P's) */
@@ -1135,7 +1138,7 @@ export function createVoyage(under, { restFor }) {
      richProgram's; createVoyage itself starts on a live context) */
   const shader = (type, src) => { const s = /** @type {WebGLShader} */ (gl.createShader(type)); shaders.add(s); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   /* (when the compiles began: how long they took, to the last link status read, is said once they are done) */
-  const t0 = performance.now();
+  let t0 = performance.now();
   const vs = shader(gl.VERTEX_SHADER, VERT);
   /** @param {string} fsrc @param {WebGLShader} [vsh] @param {string} [label] @returns {Linked} */
   const program = (fsrc, vsh = vs, label = "flight") => {
@@ -1157,12 +1160,27 @@ export function createVoyage(under, { restFor }) {
      (level 0, or no ?door3d) the flight is as it always was: no strip, no sharp tier, the lean overlay */
   const live = liveDoor();
   const weight = live ? theDoorWeight() : null, richOnly = weight === "rich";
-  const P = /** @type {Programs} */ ({ scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null });
+  /* (#119, the host's flag links "late": in a worker with no background compile the three are built one at a time on
+     the GPU's queue, and the host's own first work (the install's first draw) waited behind them, so they are asked
+     for only at the host's word, or STATUS_LATE after this: status.js. The world is made meanwhile, its vertex shader
+     alone; the docs' galaxy is made as ever) */
+  const late = flag("links") === "late" && !par && !page.shared();
+  const ask = () => ({ scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST) });
+  const P = /** @type {Programs} */ ({ ...(late ? { scene: null, over: null, post: null } : ask()), gal: null, stars: null });
   /* true once they are done; false once the world is dead, or past COMPILE_WAIT (chores.js): then it goes without them */
   /** @param {Linked[]} list */
   const compiled = (list) => compiledWithin(gl, par, list.map((pr) => pr.p), 40, () => dead);
-  const core = /** @type {Linked[]} */ (Object.values(P).filter(Boolean));
-  const made = compiled(core).then((done) => {
+  let core = /** @type {Linked[]} */ (Object.values(P).filter(Boolean));
+  /* (a world lost or taken down while it waited asks for nothing: made is false) */
+  const asked = late ? statusTurn(holding.signal).then((ms) => {
+    if (dead) return false;
+    note(`flight: its shaders asked for ${Math.round(ms)} ms late, after the host's first work (links "late")`);
+    /* (a context lost and not yet said, where asking throws: not done, below) */
+    t0 = performance.now(); try { Object.assign(P, ask()); } catch { return false; }
+    core = [P.scene, P.over, P.post];
+    return compiled(core);
+  }) : compiled(core);
+  const made = asked.then((done) => {
     if (dead) return false;
     if (!done) { dead = true; page.unmount(canvas); sayOff("its shaders did not compile in time"); return false; }
     try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; page.unmount(canvas); sayOff("its shaders would not link"); }
@@ -1727,6 +1745,7 @@ export function createVoyage(under, { restFor }) {
   function stop() {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
+    holding.abort();
     canvas.removeEventListener("webglcontextlost", onLost);
     unhide?.();   /* (a warm-up waiting for the tab to be shown waits no more, and draws nothing) */
     stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */

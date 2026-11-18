@@ -47,6 +47,10 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
   /* the asks waiting for their answer: bakes, and measures (their sets kept, to be asked of a page world) */
   const pending = new Map();
   const drewFns = new Set();
+  /* the finish() calls waiting for the worker's `finished` (#119: the host asks the flight's shaders only after it), all
+     settled by the one; and at once by a fallback, `lost` or destroy, as nothing more will answer them */
+  let finishing = [];
+  const finished = () => { const f = finishing; finishing = []; for (const r of f) r(); };
   let madeIs = () => {}, asideIs = () => {};
   const made = new Promise((r) => { madeIs = r; });
   const aside = new Promise((r) => { asideIs = r; });
@@ -75,7 +79,8 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       /* (the worker's console lines, printed as they come) */
       case "note": if (m.kind === "warn") console.warn(String(m.line)); else console.info(String(m.line)); break;
       /* lost: as the page's own context's loss, on the element install.js listens to; no fallback (flat, as today) */
-      case "lost": if (!lost) { lost = true; el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
+      case "lost": if (!lost) { lost = true; finished(); el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
+      case "finished": finished(); break;
       case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
     }
   };
@@ -117,6 +122,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     for (const a of asks) (a.kind === "baked" ? page.bake() : page.measure(a.sets)).then(a.resolve, () => a.resolve(a.kind === "baked" ? false : []));
     baking = null;
     if (baked) page.bake();
+    finished();
   }
 
   try {
@@ -164,7 +170,12 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     draw(view, dt) { if (page) { page.draw(view, dt); return; } post({ type: "view", seq: ++seq, view }); },
     onDrew(fn) { drewFns.add(fn); return () => drewFns.delete(fn); },
     resize(w, h, scale) { size = [w, h, scale]; if (page) page.resize(w, h, scale); else post({ type: "resize", w, h, scale }); },
-    finish() { if (page) page.finish(); else post({ type: "finish" }); },
+    /* settled once the GPU has done what was asked: the worker's `finished`; at once on the page, or with no worker to answer */
+    finish() {
+      if (page) { page.finish(); return Promise.resolve(); }
+      if (gone) return Promise.resolve();
+      return new Promise((r) => { finishing.push(r); post({ type: "finish" }); if (lost) finished(); });
+    },
     measure(sets) {
       if (page) return page.measure(sets);
       if (gone) return Promise.resolve(sets.map(() => NaN));
@@ -181,6 +192,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       try { worker?.terminate(); } catch { /* gone already */ }
       for (const a of pending.values()) a.resolve(a.kind === "baked" ? false : a.sets.map(() => NaN));
       pending.clear();
+      finished();
       madeIs(false); asideIs(false);
     },
   };

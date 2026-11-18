@@ -18,6 +18,7 @@ import { PICTURE_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
 import { decodeAside, rememberedFit } from "./fitness.js";
 import { page } from "./page.js";
+import { onStatusGo } from "./status.js";
 
 /** @import { Profile } from "./engine.js" */
 /** @typedef {ReturnType<typeof createFlight>} Engine */
@@ -105,8 +106,12 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");
   const unreadable = () => fallBack("a message from the worker could not be read");
+  /* the host's word, told on to the worker (status.js; set after the `hello`, so a word already given reaches a
+     worker made late); stopped with the rest at a fallback or destroy */
+  let unword = () => {};
   const unlisten = () => {
     clearTimeout(timer);
+    unword();
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
     worker?.removeEventListener("message", hear);
     worker?.removeEventListener("error", failed);
@@ -157,6 +162,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     const fonts = (settings.fonts || []).map((f) => ({ family: f.family, weight: f.weight, url: abs(f.url) }));
     post({ type: "hello", decode: decodeAside() ? "page" : "here", flags, images, fonts, baseURI: base, settle: settings.settle, size: sizeNow(), hidden: page.hidden() });
+    unword = onStatusGo(() => { post({ type: "status" }); });
     /* #warpgl made and placed beneath #warp, both styled, then both handed over */
     gl = document.createElement("canvas");
     page.mount(gl, warp);

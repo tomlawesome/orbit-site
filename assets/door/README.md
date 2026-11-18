@@ -46,7 +46,7 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded), `links` (`"late"`: the flight's shaders asked for only at the host's word; see The flight in a worker). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
@@ -400,6 +400,19 @@ same attributes, `#warpgl` removed, the worker terminated, the pending warm-ups
 asked again of a page engine, and a flight under way picked up where it was.
 The console says `orbit · flight: drawn on the page: <why>`.
 
+Under the flag `links: "late"` (#119), a world made in a worker with no
+background compile (no `KHR_parallel_shader_compile`: Firefox) is made with its
+vertex shader alone, and its three programs (scene, over, post) are asked for
+only at the host's word, `statusGo()` (`status.js`), told on to the worker as
+`status` (to a worker made after it too), or `STATUS_LATE` (9000 ms) after the
+world would have asked, whichever first: built one at a time on the GPU's queue,
+they kept the host's own first work waiting behind them. A flight started gives
+the word itself, and a world lost or taken down while it waits asks for nothing
+(its `warm` is answered not ok). The host gives the word once its first work is
+done, or at once if it readies nothing; without the flag nothing waits, and on
+the page or with the extension the flag changes nothing. `journey.compiled()`
+settles only after the word.
+
 ### Where the pictures are decoded (ADR-0004 6e; Firefox)
 
 Firefox decodes a blob's picture on the page's thread, whichever thread asked, and stalls it for the decode's length.
@@ -423,7 +436,8 @@ above, in place of `createImageBitmap` of the blob), `linked`, `counted`, `note`
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
 (`drawnAside()`, for a host that puts its own drawing beside it), whether the pictures are decoded by the image loader
-(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
+(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the host's word
+that its first work is done (`statusGo()`, above: The flight in a worker), the capability probe
 (`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).

@@ -348,11 +348,21 @@ export function createInstall(pad, opts = {}) {
   }
   /* the world drawn once, unseen, as soon as it is ready: a driver finishes a shader on its first draw, and that
      first draw would otherwise be the dive's first frame, stalling it just as the door's planet gives way to it */
+  /* (#119: firstDrawn, below, settles once that draw is done (the world's finish(): in a worker, its `finished`), or at
+     once where it is skipped or throws; a world already touched by the other pad (the one shared world) leaves it to
+     that touch, still under way) */
   function touch() {
-    const w = world; if (!w || !w.baked || motion || reduced || shared?.touched || shared?.owner?.busy) return;
+    const w = world;
+    if (shared?.touched) { shared.drawn.then(drawnOnce); return; }
+    if (!w || !w.baked || motion || reduced || shared?.owner?.busy) { drawnOnce(); return; }
     shared.touched = true;
     const keep = u; u = 0.4;
-    try { draw(performance.now(), { part: mq, dustN: 18 }); draw(performance.now(), { part: 1, dustN: 30 }); w.finish(); } finally { u = keep; prev = null; }
+    let done;
+    try { draw(performance.now(), { part: mq, dustN: 18 }); draw(performance.now(), { part: 1, dustN: 30 }); done = w.finish(); } finally {
+      u = keep; prev = null;
+      shared.drawn = Promise.resolve(done).catch(() => {});
+      shared.drawn.then(drawnOnce);
+    }
   }
   /* keeping the frame rate: the drawing gets smaller when the frames come slow, and back when they don't */
   function govern(dt) {
@@ -480,7 +490,11 @@ export function createInstall(pad, opts = {}) {
   let sizing = 0;
   const onResize = () => { if (!sizing) sizing = requestAnimationFrame(() => { sizing = 0; frames = []; size(); }); };
 
+  /* the world's first draw done or skipped (touch), for main.js: the flight's shaders are asked for only after it */
+  let drawnOnce = () => {};
+  const firstDrawn = new Promise((r) => { drawnOnce = () => r(); });
   const api = {
+    firstDrawn,
     /* drawing the world now (the other page must not draw into it meanwhile) */
     get busy() { return running; },
     /* the textures are baked before they are wanted, while the door is quiet */
@@ -505,10 +519,11 @@ export function createInstall(pad, opts = {}) {
         this.compiled = made.then((w) => (w ? w.made : false));
         /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
         this.baked = made.then((w) => (w ? w.bake() : false));
+        this.baked.catch(drawnOnce);
         this.prepared = this.baked
           .then((ok) => {
             note(`${TAG}: ready`); noteChores(`${TAG} ready`);
-            if (ok) chore(touch, 60, TAG);
+            if (ok) chore(touch, 60, TAG); else drawnOnce();
             return ok ? chore(() => calibrate().then(() => true), 200, "measure") : false;
           });
         /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is

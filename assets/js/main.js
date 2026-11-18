@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu, rememberedFit } from "../door/index.js";
+import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu, rememberedFit, statusGo } from "../door/index.js";
 import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -12,7 +12,7 @@ import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
 import { createInstall } from "./install.js";
 import { createLock } from "./lock.js";
-import { offPage, ringWaits } from "./ring.js";
+import { offPage, ringWaits, flightLate, giveWord } from "./ring.js";
 import { createPlaces, plan } from "./places.js";
 import { site, tr, wireLanguages } from "./lang.js";
 
@@ -38,6 +38,9 @@ FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
 /* ?decode=img|blob: how the pictures are decoded, whatever the door's rule says (assets/door/fitness.js: decodeAside; the
    browser's image loader is Firefox's by the rule, ADR-0004 6e.1; blob is today's route, the A/B control) */
 FLAGS.decode = location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null;
+/* the flight's shaders asked only after the install's first draw where it is drawn in a worker with no background compile
+   (#119, owner 53a; assets/door/status.js, ring.js: flightLate); ?links=now: asked at once, as before, to compare */
+FLAGS.links = /[?&]links=now\b/.test(location.search) ? null : "late";
 const door = createDoor({
   image: (p) => site(`assets/door/img/${p}`), flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
@@ -105,9 +108,10 @@ const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { tim
 let warmingAll = null, compiledAll = null, doorCompiled = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
-  if (MAINTENANCE) return (warmingAll = Promise.resolve());
+  /* (nothing readied: the flight's word given at once, so a flight's worker never waits for it: ring.js giveWord) */
+  if (MAINTENANCE) { statusGo(); return (warmingAll = Promise.resolve()); }
   /* (under save-data every way in opens at once on its cheaper version, the flights painted: ADR-0002 6.9) */
-  if (saveData()) { openWays(["install", "docs", "info", "back"], true); return (warmingAll = Promise.resolve()); }
+  if (saveData()) { statusGo(); openWays(["install", "docs", "info", "back"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page; where the browser compiles on the page's own thread,
      the compiles are chores too, asked for at the first light and done under the ring: compileFirst); the work each
@@ -131,7 +135,12 @@ function warmJourneys() {
   const settled = (p) => Promise.resolve(p).catch(() => {});
   const verdictIn = journey.reduced ? null : settled(journey.verdict());
   /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
-  settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
+  const baked = settled(PADS.install.ring.baked ?? all[0]);
+  baked.then(() => openWays(["install"]));
+  /* the flight's worker told it may ask for its shaders: where they are asked late, once the install's world is baked
+     and has drawn its first frame, so that draw is not kept waiting behind them (ring.js: flightLate, giveWord, #119) */
+  const late = flightLate({ links: FLAGS.links, drawnAside: drawnAside(), aside: compilesAside() });
+  giveWord({ late, baked, drawn: PADS.install.ring.firstDrawn, go: statusGo });
   Promise.all([settled(all[1]), verdictIn]).then(() => openWays(["back"], true));
   /* (the docs' way in opens on its own galaxy, not the flight's maps: ADR-0004 6d.1) */
   Promise.all([settled(all[2]), settled(journey.warmDocs({ prove: false })), verdictIn]).then(() => openWays(["docs"]));
@@ -140,7 +149,8 @@ function warmJourneys() {
      the browser compiles on the page's own thread, every one of them, the docs' galaxy's and the live door's too
      (engine.js: compiled; compileFirst), and on every visit: the page stands still while each compiles, better behind
      the running ring than on the door's reveal */
-  compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
+  /* (where the flight's are asked late, not waited for: they are not asked until the ring's own work is done) */
+  compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, late ? null : journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
   /* (?door3d) how many programs were compiled before the door: all the ring waits for, and the live door's first
      weight and its planets' (where compiles are in the background these come after the reveal, still before the door
      is live) */
