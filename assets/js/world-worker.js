@@ -108,7 +108,6 @@ function handle(m) {
         case "view": held = { seq: m.seq, view: m.view }; ask(); break;
         /* what was asked is done: the view held drawn first */
         case "finish": if (held) drawHeld(16); world.finish(); break;
-        case "measure": { const { id } = m; world.measure(m.sets || []).then((ms) => post({ type: "measured", id, ms })); break; }
       }
     }
   }

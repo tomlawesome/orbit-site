@@ -17,12 +17,11 @@
  *               the one the page path draws for the same still (the time apart), with look.HUE still a Float32Array
  *   touch       once the world is baked, `touch` posts two views then `finish`
  *   drew        drew { seq, dt, ms } sets the canvas's data-drawn to seq and calls the onDrew callbacks with (dt, ms)
- *   measure     calibrate posts `measure` with two sets (the parts 0.4 and 0.8) and sets the measured part from `measured`
  *   aside       the remote world's aside() resolves true once the worker said `up`
  *
  * One fresh Node process a case, on the virtual clock. A missing module is said in plain words.
  */
-import { bootInstallPage, settled, infoWorld, fakeWorldWorkers, installWorldWorker, findFn, plainOf, runCaseSpied, DOT, BASE, childMain, runCase, chk, finish } from "./door-stub.mjs";
+import { bootInstallPage, settled, infoWorld, fakeWorldWorkers, installWorldWorker, findFn, plainOf, runCaseSpied, BASE, childMain, runCase, chk, finish } from "./door-stub.mjs";
 
 const INSTALL = "../../assets/js/install.js", REMOTE = "../../assets/js/remote-world.js";
 const at = (p) => new URL(`../../assets/${p}`, import.meta.url).href;
@@ -197,30 +196,10 @@ async function asideCase() {
   return { state: s.state, value: s.state === "resolved" ? s.value : null, hasAside: typeof b.world.aside === "function" };
 }
 
-/* the measured part: calibrate's own arithmetic on the ms a worker gave for its two sets, read back as the part of a view drawn at the shot's start */
-const partFor = (t1, t2) => { const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16); return Math.min(1, Math.max(0.55, Math.sqrt(Math.max(0, (18 - c) / d)))); };
-async function measureCase(ms) {
-  const b = await boot({ auto: { measured: ms } });
-  const { ring } = b.install();
-  const s = await prepared(b, ring);
-  const w = b.ww.first();
-  if (!w) return { none: noWorker };
-  const asks = w.of("measure");
-  const out = {
-    prepared: s.state, asks: asks.length, kinds: asks.map((m) => ({ id: m.id !== undefined, sets: Array.isArray(m.sets) ? m.sets.length : null })),
-    parts: asks[0] ? asks[0].sets.map((set) => [...new Set(set.map((v) => v.part))]) : null, sizes: asks[0] ? asks[0].sets.map((set) => set.length) : null,
-    fn: asks[0] ? findFn(asks[0]) : null, cloneErrors: w.cloneErrors,
-  };
-  await settled(ring.still(0.1, 0, { ...DOT }), b.clock);
-  out.part = w.of("view").at(-1)?.view?.part ?? null;
-  out.want = partFor(ms[0], ms[1]);
-  return out;
-}
-
 const CASES = guarded({
   hello: () => helloCase({}), helloInfo: () => helloCase({ info: true, small: true }), canvas: canvasCase,
   bake: () => bakeCase(true), bakeFalse: () => bakeCase(false), run: runCaseOn, viewFrame, viewWorker: () => viewStill("worker"), viewPage: () => viewStill("page"),
-  touch: touchCase, drew: drewCase, aside: asideCase, measureMid: () => measureCase([10, 20]), measureSlow: () => measureCase([40, 80]),
+  touch: touchCase, drew: drewCase, aside: asideCase,
 });
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -289,10 +268,5 @@ const abs = (u) => { try { new URL(u); return true; } catch { return false; } };
 {
   const r = run("aside");
   chk("W2 aside() resolves true once the worker said `up`", r, (r) => [r.hasAside && r.state === "resolved" && r.value === true, `aside() is ${r.state}${r.state === "resolved" ? " with " + show(r.value) : ""}`]);
-}
-for (const [how, ms] of [["measureMid", [10, 20]], ["measureSlow", [40, 80]]]) {
-  const r = run(how);
-  chk(`W2 calibrate (${ms[0]} and ${ms[1]} ms) posts one \`measure\` with an id and two sets, the parts 0.4 then 0.8, no function in it`, r, (r) => [r.asks === 1 && r.kinds[0].id && r.kinds[0].sets === 2 && show(r.parts) === show([[0.4], [0.8]]) && r.fn === null && r.sizes.every((n) => n >= 1), `asks ${r.asks}, ${show(r.kinds)}, parts ${show(r.parts)}, views a set ${show(r.sizes)}, function at ${show(r.fn)}`]);
-  chk(`W2 ... and sets the measured part from \`measured\` (want ${partFor(ms[0], ms[1]).toFixed(3)}, not the page's own timing)`, r, (r) => [r.part !== null && Math.abs(r.part - r.want) < 1e-3, `part ${show(r.part)}, want ${r.want}`]);
 }
 finish();

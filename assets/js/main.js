@@ -130,7 +130,7 @@ function warmJourneys() {
      motion the flights draw no world, so they wait for no verdict (6.10) */
   const settled = (p) => Promise.resolve(p).catch(() => {});
   const verdictIn = journey.reduced ? null : settled(journey.verdict());
-  /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
+  /* (the worlds open as soon as they are baked: their touch, queued after the bake, is not waited for) */
   settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
   Promise.all([settled(all[1]), verdictIn]).then(() => openWays(["back"], true));
   /* (the docs' way in opens on its own galaxy, not the flight's maps: ADR-0004 6d.1) */

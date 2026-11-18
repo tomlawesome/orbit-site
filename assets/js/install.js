@@ -124,8 +124,8 @@ export function createInstall(pad, opts = {}) {
   let u = 1, motion = null;
   const pointer = { x: 0, y: 0, sx: 0, sy: 0 };
   let frames = [], lastAdjust = 0, tick = 0, prev = null;
-  /* how much of the canvas's resolution the scene is drawn at while the camera moves: measured before the first
-     shot (calibrate), then kept to the frame rate; motion blur, the dolly's blur and the grain hide the difference */
+  /* how much of the canvas's resolution the scene is drawn at while the camera moves: it starts at 0.6, then is kept
+     to the frame rate (govern); motion blur, the dolly's blur and the grain hide the difference */
   let mq = 0.6, mframes = [];
 
   function ensure() {
@@ -321,30 +321,14 @@ export function createInstall(pad, opts = {}) {
     const rise = motion.cont ? easeFlare(clamp(((motion.el || 0) - (motion.el0 ?? 0)) / FLARE_T)) : 1;
     return 1 + 0.55 * rise * (1 - smooth(0.08, 0.8, motion.el || 0));
   }
-  /* the scene's resolution: the measured part while the camera rushes, rising to all of it as it slows into orbit
+  /* the scene's resolution: the governed part while the camera rushes, rising to all of it as it slows into orbit
      (the dive's second half is slow, and the eye has time there) */
   function partAt() {
     if (!motion) return 1;
     const p = mq + (1 - mq) * smooth(0.25, 0.7, u);
     /* going on from the door (or back to it), the frame at the planet is drawn as the door's planets are (doorPlanets:
-       its scale), and gives way to the measured part as the camera moves */
+       its scale), and gives way to the governed part as the camera moves */
     return motion.cont ? lerp(doorLoop?.rs ?? 1, p, smooth(0, 0.1, u)) : p;
-  }
-  /* before the first shot, a few frames timed at the heaviest point of the dive (the planet and the rings filling
-     the frame, the dust in front): two sizes, so the fixed cost (the film, at the canvas's size) is told apart from
-     the scene's, which goes with its area; the part chosen is the largest that keeps a frame inside 15 ms */
-  /* (a promise: the page's measure is done at once, a worker's when it answers, ADR-0004 6b.4. Each part a set of four
-     views, the first drawn untimed and three timed, as world.js measure times them) */
-  function calibrate() {
-    const w = world; if (!w || !w.baked || motion || reduced || shared?.owner?.busy) return Promise.resolve();
-    const keep = u; u = 0.5;
-    let sets;
-    try { sets = [0.4, 0.8].map((part) => [0, 1, 2, 3].map(() => viewAt(performance.now(), { part, dustN: 18 }))); } finally { u = keep; prev = null; }
-    return w.measure(sets).then(([t1, t2] = []) => {
-      if (!Number.isFinite(t1) || !Number.isFinite(t2)) return;
-      const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16);
-      mq = clamp(Math.sqrt(Math.max(0, (18 - c) / d)), 0.55, 1);
-    }, () => {});
   }
   /* the world drawn once, unseen, as soon as it is ready: a driver finishes a shader on its first draw, and that
      first draw would otherwise be the dive's first frame, stalling it just as the door's planet gives way to it */
@@ -484,12 +468,12 @@ export function createInstall(pad, opts = {}) {
     /* drawing the world now (the other page must not draw into it meanwhile) */
     get busy() { return running; },
     /* the textures are baked before they are wanted, while the door is quiet */
-    /* the textures are fetched and baked, and the frame rate measured, before the shot is wanted: resolves when done */
+    /* the textures are fetched and baked before the shot is wanted: resolves when done (true when baked) */
     prepare() {
       /* its pictures asked for, and its shaders set compiling, at once: both go on away from the page (the browser
          compiles in the background), so they have all of the first light and the door to be done in, and the
-         compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it, the
-         measure) waits its turn as chores (chores.js), once the door's painted reveal is over. Where the browser
+         compiling is what takes longest on a first visit. What then touches the GPU (the pictures put on it,
+         the touch) waits its turn as chores (chores.js), once the door's painted reveal is over. Where the browser
          compiles on the page's own thread (compilesAside false), making the world is itself a chore ("compile",
          queued at once and run under the first light's ring, which main.js holds until it is done; hurried with
          this journey's own). The time the compiles took is said (world.js: compileMs) */
@@ -503,13 +487,14 @@ export function createInstall(pad, opts = {}) {
         this.aside = made.then((w) => (w?.aside ? w.aside() : false));
         made.then((w) => w?.made.then((ok) => note(`${TAG}: shaders ${ok ? `compiled in ${Math.round(w.compileMs)} ms${counted("world")}` : "failed"}`)));
         this.compiled = made.then((w) => (w ? w.made : false));
-        /* baked: the world can be dived into (the way in opens on this, main.js); prepared: and measured too */
+        /* baked: the world can be dived into (the way in opens on this, main.js); prepared: the same, settling as soon as
+           the bake does (nothing is waited for after it: the touch is a chore left to run) */
         this.baked = made.then((w) => (w ? w.bake() : false));
         this.prepared = this.baked
           .then((ok) => {
             note(`${TAG}: ready`); noteChores(`${TAG} ready`);
             if (ok) chore(touch, 60, TAG);
-            return ok ? chore(() => calibrate().then(() => true), 200, "measure") : false;
+            return !!ok;
           });
         /* a failed preparing is not kept: the next prepare() starts again (world.js: bake retries the map). A page that is
            flat (no world, or its context lost) keeps the false: only a map failure is worth another try */
@@ -734,10 +719,9 @@ function startDoor(door, lead, after = null) {
   document.addEventListener("visibilitychange", watch);
   addEventListener("resize", wake);
 
-  /* the worlds baked and measured first (prepare: the measure draws at the screen's size, so it is not to be met by a
-     square), and the live door measured and shown (after: door3d.js, doorMeasured: its measure read 37 ms beside these
-     and 16 alone); planets3d.js's spheres stand in until then. A dive meanwhile goes on from the door's picture, as
-     it did before these (form: doorLoop.has is false until their first frame) */
+  /* the worlds baked first (prepare), and the live door measured and shown (after: door3d.js, doorMeasured);
+     planets3d.js's spheres stand in until then. A dive meanwhile goes on from the door's picture, as it did before
+     these (form: doorLoop.has is false until their first frame) */
   /* and the world's targets made for the square before the loop's first frame (fit), as a chore between frames, so the
      world holds both the square's and the screen's (made at prepare, drawn once by touch) from then on */
   const fit = () => {
