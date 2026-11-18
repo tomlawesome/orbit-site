@@ -442,7 +442,11 @@ const D = {
     await b.clock.advance(300);
     out.secondDestroyed = countOf(busy);
     const posted = k2.of("busy").length + k2.late.filter((m) => m && m.type === "busy").length;
-    gl.compileShader(gl.createShader(35633));
+    /* a page compile after the destroy, read at once (an unread one stays under way, Q2/Q4, and would be counted below) */
+    const s3 = gl.createShader(35633);
+    gl.compileShader(s3);
+    await b.clock.advance(300);
+    gl.getShaderParameter(s3, 35713);
     await b.clock.advance(300);
     out.forwardedAfter = k2.of("busy").length + k2.late.filter((m) => m && m.type === "busy").length - posted;
     k1.say({ type: "busy", n: 4, gen: 3 });
