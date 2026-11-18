@@ -719,9 +719,9 @@ function startDoor(door, lead, after = null) {
   document.addEventListener("visibilitychange", watch);
   addEventListener("resize", wake);
 
-  /* the worlds baked first (prepare), and the live door measured and shown (after: door3d.js, doorMeasured: its measure read 37 ms beside these
-     and 16 alone); planets3d.js's spheres stand in until then. A dive meanwhile goes on from the door's picture, as
-     it did before these (form: doorLoop.has is false until their first frame) */
+  /* the worlds baked first (prepare), and the live door measured and shown (after: door3d.js, doorMeasured);
+     planets3d.js's spheres stand in until then. A dive meanwhile goes on from the door's picture, as it did before
+     these (form: doorLoop.has is false until their first frame) */
   /* and the world's targets made for the square before the loop's first frame (fit), as a chore between frames, so the
      world holds both the square's and the screen's (made at prepare, drawn once by touch) from then on */
   const fit = () => {
