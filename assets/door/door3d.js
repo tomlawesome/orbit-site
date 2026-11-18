@@ -39,10 +39,10 @@
  */
 import { chore, fetchOnce, fetchBitmap, note, quiet, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { flag } from "./settings.js";
-import { sceneHead, PASS_SWITCH, pictures, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
+import { sceneHead, PASS_SWITCH, pictures, sizesFor, firstURL, EURO, NEAR, BOXED, doorCamera, followDoor, sunTexture, theStrip, sharpStrip, cloudField, cityGlow, wantRich, compileRich } from "./voyage.js";
 import { probe, theDoorWeight, lateDoor, BUDGET, liveDoor as doorIsLiveHere } from "./capability.js";
 import { gpu } from "./fitness.js";
-import { uploadBanded } from "./upload.js";
+import { uploadBanded, uploadSized, easeLevels } from "./upload.js";
 import { watch } from "./busy.js";
 
 /**
@@ -194,7 +194,7 @@ export function liveDoor(world) {
      own faded in over it after everything else, here and in the flight alike (sharpStrip) */
   const strip = theStrip(), stripS = sharpStrip();
   const keys = ["lights", "euro", "clouds", "day", "lightsN", "cloudsN", "dayN", "lightsS"];
-  for (const k of keys) fetchOnce(pictures()[k]).catch(() => {});
+  for (const k of keys) fetchOnce(firstURL(k)).catch(() => {});
 
   /* prog: the weight drawn ({ p, u }: the lean one, or the rich one once it is kept); mode: the weights chosen (the
      probe's: capability.js); rich: the rich program, once there is one (its passes draw the fields and the glow) */
@@ -244,10 +244,28 @@ export function liveDoor(world) {
     fieldOf("clouds"); fieldOf("cloudsN");
     if (rich && !glowT && maps.lights) glowT = cityGlow(gl, rich, maps.lights, ...dims.lights, maps.lightsN, blank);
   };
-  /* each map put on the GPU a band at a time (upload.js: soft chores), its mipmaps after; drawable from its last band
-     (its first level alone, LINEAR: the canvas is not on the page until every map is in, mipmaps and all) */
+  /* a map with ready-made sizes (#148): smallest first, drawable then, and the larger ones after
+     it, the door's own copy of each (the same files as the flight's: voyage.js, sizesFor); done once its last is in */
   /** @param {string} key */
-  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
+  const load = (key) => {
+    const sizes = sizesFor(key);
+    if (!sizes) return loadWhole(key);
+    const up = uploadSized(gl, sizes, { decode: (url) => fetchBitmap(url, { colorSpaceConversion: "none", premultiplyAlpha: "none" }), tag: "door", name: `door ${key}`, setup: wrapOf(key), after: sharper, gone: () => dead });
+    return up.first.then((t) => {
+      if (dead || !t) { if (t) gl.deleteTexture(t); return; }
+      maps[key] = t; dims[key] = [sizes[0].w, sizes[0].h];
+      return up.more().then(() => {
+        if (dead) return;
+        mipped.add(key);
+        if (key === "clouds" || key === "cloudsN") fieldOf(key);
+      });
+    }).catch(() => { delete maps[key]; delete dims[key]; failed.add(key); });
+  };
+  /* a map with no sizes (or a host without them) put on the GPU a band at a time (upload.js: soft chores), its
+     mipmaps after; drawable from its last band (its first level alone, LINEAR: the canvas is not on the page until
+     every map is in, mipmaps and all) */
+  /** @param {string} key */
+  const loadWhole = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (dead) { bm.close?.(); return; }
       const wh = /** @type {[number, number]} */ ([bm.width, bm.height]);
@@ -305,6 +323,8 @@ export function liveDoor(world) {
   /** @param {WebGLFramebuffer | null} [into] */
   function draw(into = null) {
     if (!prog || dead) return;
+    /* a map's larger size easing in (#148: upload.js) */
+    easeLevels(gl);
     /* the sun table, put on the GPU with the first frame (not with the compile, which may come before the reveal) */
     if (!sunTex) sunTex = sunTexture(gl);
     const u = prog.u;

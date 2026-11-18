@@ -21,7 +21,7 @@
 
 import { chore, fetchOnce, fetchBitmap, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { image, flag } from "./settings.js";
-import { uploadBanded } from "./upload.js";
+import { uploadBanded, uploadSized, easeLevels } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
 import { gpu, sayVerdict, FIT_MS, WARM_FRAMES, TIMED_FRAMES } from "./fitness.js";
 import { quiet as allQuiet, mark, own, pulse, settling, onBusy } from "./busy.js";
@@ -62,6 +62,46 @@ export const PICTURE_PATHS = {
 export function pictures() {
   return textures || (textures = Object.fromEntries(Object.entries(PICTURE_PATHS).map(([k, p]) => [k, image(p)])));
 }
+/* each map's full size (#148): its smaller sizes are ready-made beside it, each half the last down to the last one still
+   SMALLEST or more wide, named <name>-<width>.webp (tools/map-sizes.py, which must be run again when a map is replaced;
+   these are the GPU's own levels of the full map, floor(w / 2^i) by floor(h / 2^i)) */
+/** @type {Record<string, [number, number]>} */
+export const FULL = { lights: [4096, 2048], day: [2048, 1024], clouds: [2048, 1024], euro: [2048, 1582], moon: [1024, 512],
+  lightsN: [2625, 1425], cloudsN: [3360, 1824], dayN: [1050, 570] };
+const SMALLEST = 512;
+/** every size of a map, largest first (its path, as the host's image() is asked for it, and its size); null for a map
+    with no ready-made sizes @param {string} key @returns {{ path: string, w: number, h: number }[] | null} */
+export function mapSizes(key) {
+  const full = FULL[key];
+  if (!full) return null;
+  const all = [{ path: PICTURE_PATHS[key], w: full[0], h: full[1] }];
+  for (let i = 1; full[0] >> i >= SMALLEST; i++) all.push({ path: PICTURE_PATHS[key].replace(/\.webp$/, `-${full[0] >> i}.webp`), w: full[0] >> i, h: full[1] >> i });
+  return all;
+}
+/* every ready-made size's path (the page resolves each for the worker, remote-flight.js) */
+export const SIZED_PATHS = Object.keys(FULL).flatMap((k) => /** @type {{ path: string }[]} */ (mapSizes(k)).slice(1).map((z) => z.path));
+/* the sizes this screen fetches, from the largest wanted down: the largest is the first, from the smallest up, at least
+   twice the screen's width in device pixels (D, as lightsStrip has it: W * min(dpr, 2)), or the full size where none is.
+   A phone (390 css px at dpr 3: D 780) stops at 2048 for the 4096-wide lights. Chosen once a page view, so the door and
+   the flight ask for the same files */
+/** @type {Record<string, import("./upload.js").Size[]>} */
+const chosen = {};
+/** @param {string} key @returns {import("./upload.js").Size[] | null} */
+export function sizesFor(key) {
+  if (chosen[key]) return chosen[key];
+  const all = mapSizes(key);
+  /* (a host whose image() places its pictures but not these sizes, as a worker told of the full maps alone: whole maps) */
+  const placed = (/** @type {string} */ p) => image(p) !== p;
+  if (!all || (placed(all[0].path) && !all.every((z) => placed(z.path)))) return null;
+  const screen = page.size(), want = 2 * (screen.W || 0) * Math.min(screen.dpr || 1, 2);
+  /* (no size known yet: every size, and nothing kept) */
+  if (!screen.W) return all.map((z) => ({ url: image(z.path), w: z.w, h: z.h }));
+  let top = 0;
+  for (let i = all.length - 1; i >= 0; i--) if (all[i].w >= want) { top = i; break; }
+  return (chosen[key] = all.slice(top).map((z) => ({ url: image(z.path), w: z.w, h: z.h })));
+}
+/** where a map is first asked for: its smallest size, or (a map with no sizes, or a host without them) the full one @param {string} key */
+export const firstURL = (key) => { const z = sizesFor(key); return z ? z[z.length - 1].url : pictures()[key]; };
 /* the live door, while it is tried (?door3d: the host's flag): engine.js waits for the probe under it. Only
    where the door is live here (capability.js: liveDoor, the flag and level 1 or 2) is the strip below drawn */
 export const DOOR3D = () => !!flag("door3d");
@@ -128,7 +168,7 @@ function sharpen() {
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 /* (only where the page may use the GPU at all, fitness.js: gpu(), asked here if not yet; a refused page draws without the
    world and fetches none of its pictures) */
-export function fetchVoyage() { if (!gpu()) return; for (const url of Object.values(pictures())) fetchOnce(url).catch(() => {}); }
+export function fetchVoyage() { if (!gpu()) return; for (const key of Object.keys(pictures())) fetchOnce(firstURL(key)).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 /** @type {Box} */
 export const EURO = [2, 24, 38, 55];
@@ -1334,10 +1374,49 @@ export function createVoyage(under, { restFor }) {
   /* the strip's sharper tier, fading in over the small one (sharpStrip; ?door3d only) */
   /** @type {SharpStrip | null} */
   let stripS = null;
+  /* a map with ready-made sizes (#148): its smallest put on the GPU whole, mipped and drawn from at once (resolved
+     then; a clouds map's field made from it then, and again once its top is in), its larger sizes left for sharpen
+     (more), which the warm-up asks for once every map has its smallest and a verdict is in; landing until its smallest is in */
+  /** @type {Record<string, () => Promise<void>>} */
+  const more = {};
+  /** @param {string} key @returns {Promise<void>} */
+  const load = (key) => {
+    const sizes = sizesFor(key);
+    if (!sizes) return loadWhole(key);
+    landing.add(key);
+    const up = uploadSized(gl, sizes, { decode: (url) => fetchBitmap(url, { colorSpaceConversion: "none", premultiplyAlpha: "none" }), tag: "flight", more: "sharp", name: key, setup: wrapOf(key), after: sharper, gone: () => gone || dead });
+    more[key] = () => up.more().then(() => {
+      if (gone) return;   /* (given back with the other maps: release) */
+      if (key === "clouds" || key === "cloudsN") return chore(() => fieldAgain(key), 60, "sharp");
+    });
+    return up.first.then((t) => {
+      if (gone || !t) { landing.delete(key); if (t) giveBack("Texture", t); delete more[key]; return; }
+      maps[key] = t; dims[key] = [sizes[0].w, sizes[0].h];
+      /* in maps from now, so given back with them (release); its larger sizes stop once gone (uploadSized). Its levels
+         are whole from its smallest down (uploadSized), so a field may be made from it now */
+      landing.delete(key); mipped.add(key);
+      if (key === "clouds" || key === "cloudsN") fieldsOf();
+    }).catch(() => {
+      landing.delete(key); delete more[key];
+      if (!gone) failed.add(key);
+    });
+  };
+  /* a clouds map's field made again from its top size, the one made from its smallest given back once it is replaced */
+  /** @param {string} key */
+  const fieldAgain = (key) => {
+    const old = fields[key];
+    if (gone || !old) return;
+    delete fields[key];
+    fieldsOf();
+    if (fields[key]) giveBack("Texture", old); else fields[key] = old;
+  };
+  /* a map's larger sizes (a map whose smallest did not land, or with no sizes: nothing) */
+  /** @param {string} key @returns {Promise<void>} */
+  const sharpen = (key) => { const m = more[key]; delete more[key]; return m ? m() : Promise.resolve(); };
   /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
      only once its mipmaps are made */
   /** @param {string} key @returns {Promise<void>} */
-  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
+  const loadWhole = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       /** @type {[number, number]} */
@@ -1390,12 +1469,17 @@ export function createVoyage(under, { restFor }) {
      (ADR-0002 6.3, 6.4): resolved only when the test was taken on a world still there, before an unfit one is retired;
      a world lost or never made never resolves it (the engine hears that from `dead`) */
   let judging = /** @type {Promise<void> | null} */ (null);
+  /* the verdict in, however it went (the maps' larger sizes wait for it, #148: none for a world that is then retired) */
+  let provedIs = () => {};
+  /** @type {Promise<void>} */
+  const proved = new Promise((r) => { provedIs = r; });
   /** @type {(v: Verdict) => void} */
   let judgedIs = () => {};
   /** @type {Promise<Verdict>} */
   const judged = new Promise((r) => { judgedIs = r; });
   /** @param {string} tag @returns {Promise<void>} */
   const judge = (tag) => (judging ??= fitWhenShown(tag).then(({ fit: fits, ms, skipped }) => {
+    provedIs();
     if (gone) return;
     fit = fits;
     ready = ok && !dead && fit;
@@ -1430,7 +1514,10 @@ export function createVoyage(under, { restFor }) {
       const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
       /* beside the proof, never in front of it: a download that hangs must not hold the verdict back. Whatever lands is
          used from then on, and the cities' glow made if it was waiting for the lights map */
-      Promise.all(again.map(load)).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      const back = again.map(load);
+      Promise.all(back).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      /* its larger sizes, as the others', only after a fit verdict (none without one, or after an unfit one) */
+      back.forEach((p, i) => p.then(() => proved).then(() => (fit && !gone ? sharpen(again[i]) : undefined)).catch(() => {}));
     }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
@@ -1439,9 +1526,14 @@ export function createVoyage(under, { restFor }) {
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) /** @type {SharpStrip} */ (stripS).ready((bm) => { if (!gone) maps.lightsS2 = upload("lightsS", bm); }); else /** @type {SharpStrip} */ (stripS).fail();
       });
-      loaded = Promise.all([...["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
-        .then(() => { allIn = true; });
-      loading = Promise.all([made, loaded])
+      /* every map's first size (for a map loaded whole, its only one), all the gate waits for, and all the cities' glow needs
+         (it reads the lights a few levels down: cityGlow); their larger sizes (#148) once the verdict is in, each map's
+         cloud field made once its own are (load) */
+      const KEYS = ["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"];
+      const firsts = Promise.all([...KEYS.map(load), ...(live ? [loadStrip()] : [])]);
+      loaded = firsts.then(() => { allIn = true; });
+      firsts.then(() => proved).then(() => Promise.all(KEYS.map(sharpen))).catch(() => {});
+      loading = Promise.all([made, firsts])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
         .then(() => richOnly && chore(richMaps, 60, "flight"))
         .then(() => starsOn)
@@ -1705,6 +1797,8 @@ export function createVoyage(under, { restFor }) {
   function draw(/** @type {Frame} */ s) {
     if (!ok) return;
     if (!hdr) resize(W, H);
+    /* a map's larger size easing in (#148: upload.js) */
+    easeLevels(gl);
     /* the size is never changed mid-flight (a change reallocates every target, and that is a hitch): a slow flight
        is noted, and the next one is drawn smaller, the change made while nothing is flying */
     lastDraw = performance.now();

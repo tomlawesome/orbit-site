@@ -24,11 +24,14 @@
  * Every time is the virtual clock's; nothing reads the runner. Each case runs in a fresh Node process.
  */
 import { INDEX, installPage, installClock, childMain, runCase, chk, finish, namedUniforms } from "./door-stub.mjs";
+import { blobOf, unplace, installBitmaps } from "./map-sizes-lib.mjs";
 
 const WORLD_WAIT = 8000;
-const BLOB = { ok: true, status: 200, blob: async () => ({ size: 1, type: "image/webp" }) };
-/* the flight world's pictures: the five under flight/ and the three near ones under dawn/ (the Earth's own photo, dawn/dawn.webp, is a plain picture, not asked for with fetch) */
-const isMap = (u) => /(?:^|\/)(?:flight\/[^/]+|dawn\/(?:lights|clouds|land)-near\.webp)$/.test(String(u).split("?")[0]);
+/* a map answers with a picture of the size its file has (#148: the ready-made sizes beside each map) */
+const blobFor = (u) => ({ ok: true, status: 200, blob: async () => blobOf(unplace(u)) });
+/* the flight world's pictures: the five under flight/ and the three near ones under dawn/, each as a full map or one of its
+   ready-made sizes (`-<width>` before .webp; the Earth's own photo, dawn/dawn.webp, is a plain picture, not asked for with fetch) */
+const isMap = (u) => /(?:^|\/)(?:flight\/[^/]+|dawn\/(?:lights|clouds|land)-near(?:-\d+)?\.webp)$/.test(String(u).split("?")[0]);
 
 /* the textures a picture was put on. The stub's page.mapTextures() also counts the world's render targets and its 1x1 blank
    (texImage2D with no picture), which exist from the moment the world is made whether or not a map has landed, so a count
@@ -42,10 +45,11 @@ function bed({ hold }) {
   const fetch = (url) => {
     const u = String(url);
     b.asked.push(u);
-    if (b.hold && isMap(u)) return new Promise((resolve) => { b.held.push(() => resolve(BLOB)); });
-    return Promise.resolve(BLOB);
+    if (b.hold && isMap(u)) return new Promise((resolve) => { b.held.push(() => resolve(blobFor(u))); });
+    return Promise.resolve(blobFor(u));
   };
   b.page = installPage({ fetch });
+  installBitmaps();
   b.clock = installClock();
   b.release = () => { b.hold = false; for (const go of b.held.splice(0)) go(); };
   return b;
@@ -53,7 +57,7 @@ function bed({ hold }) {
 
 async function mount(b) {
   const door = await import(INDEX);
-  const d = door.createDoor({ typingWait: 0, flags: {} });
+  const d = door.createDoor({ typingWait: 0, image: (p) => "img/" + p, flags: {} });
   door.openChores();
   return { door, journey: d.journey(b.page.journeyOptions()) };
 }

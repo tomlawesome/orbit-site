@@ -19,7 +19,7 @@
  * sooner, from the moment the door is lit (openSoft), one a frame, during the reveal; the rest still wait for open.
  */
 /**
- * @typedef {string | string[]} Tag what a chore readies ("flight", "docs", "install", "info", "compile", "galaxy", "door", "measure", "rich"), or a list of them
+ * @typedef {string | string[]} Tag what a chore readies ("flight", "docs", "install", "info", "sharp", "compile", "galaxy", "door", "measure", "rich"), or a list of them
  * @typedef {{ fn: () => unknown, resolve(value: unknown): void, reject(reason: unknown): void, rest: number, tag: Tag, soft: boolean }} Job
  *   (resolve and reject are methods so a promise's own resolver, of any value type, fits the one queue)
  */
@@ -108,8 +108,9 @@ export function compilesAside() {
    slow device), the docs' galaxy where it compiles in the background (voyage.js:
    one chore that only starts its compiles, so it costs the door nothing, and the docs' way in opens with the others',
    #49; the docs' journey still hurries it), then the live door (door3d.js: its picture is already on screen), the
-   measures, and last of all the rich clouds, which nothing waits for */
-const ORDER = ["compile", "install", "docs", "flight", "info", "", "galaxy", "door", "measure", "rich"];
+   measures, and last of all the rich clouds, which nothing waits for. The flight's maps' larger sizes ("sharp", #148)
+   come behind every journey's readying and are never hurried: the gate opens on the smallest sizes */
+const ORDER = ["compile", "install", "docs", "flight", "info", "sharp", "", "galaxy", "door", "measure", "rich"];
 /* a chore's tag may be a list: ranked by its first ("compile"), hurried by any (the journey the compile is for) */
 /** @param {Tag} tag @returns {string[]} */
 const tags = (tag) => /** @type {string[]} */ ([]).concat(tag);

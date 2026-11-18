@@ -14,7 +14,7 @@
  * engine's, and the worker is told nothing more.
  */
 import { createFlight, wireProfile, EARTH_PICTURE } from "./engine.js";
-import { PICTURE_PATHS } from "./voyage.js";
+import { PICTURE_PATHS, SIZED_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
 import { decodeAside, rememberedFit } from "./fitness.js";
 import { page } from "./page.js";
@@ -168,7 +168,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     worker.addEventListener("messageerror", unreadable);
     /* (absolute, because a relative URL in a module worker resolves against the worker's own file, not the page) */
     const base = page.baseURI(), abs = (/** @type {string} */ u) => new URL(u, base).href;
-    const images = Object.fromEntries([...Object.values(PICTURE_PATHS), EARTH_PICTURE].map((p) => [p, abs(image(p))]));
+    const images = Object.fromEntries([...Object.values(PICTURE_PATHS), ...SIZED_PATHS, EARTH_PICTURE].map((p) => [p, abs(image(p))]));
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     const fonts = (settings.fonts || []).map((f) => ({ family: f.family, weight: f.weight, url: abs(f.url) }));
     post({ type: "hello", decode: decodeAside() ? "page" : "here", flags, images, fonts, baseURI: base, settle: settings.settle, size: sizeNow(), hidden: page.hidden() });
