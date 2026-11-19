@@ -34,6 +34,7 @@ include:
     file: scripts/batch-intake/ci-template.yml
 
 stages:
+  - ready # release_readiness, on a promotion merge request only
   - lint
   - test # the shared catchup-check job runs here
   - live
@@ -113,6 +114,30 @@ variables:
   # names the playwright version the `live` job installs; the two must agree.
   PLAYWRIGHT_IMAGE: $CI_IMAGE_CACHE_MCR/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
   PLAYWRIGHT_VERSION: "1.64.0"
+
+# ------------------------------------------------------ release readiness --
+# Release readiness (#156): first on a promotion merge request (`dev` into
+# `main`), and every other job waits for it: by stage order, and each job that
+# had `needs: []` lists it as an optional need, so a pipeline without it is
+# unchanged. The two secret scans keep starting beside it (cheap, and they
+# judge nothing the readiness depends on). It runs the four checks of
+# tools/ci/release-readiness.mjs in one go and ends with the list of every
+# failure, so nothing long runs on a promotion that was never ready. The same
+# script runs by hand before the merge request is opened (docs/releasing.md).
+# Its rule is the dev -> main rule and then `never`; ci-split holds it so.
+release_readiness:
+  stage: ready
+  image: $NODE_IMAGE
+  timeout: 10m
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "dev" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - when: never
+  needs: []
+  variables:
+    GIT_DEPTH: 0 # the containment check walks the target branch's history
+  script:
+    - git fetch origin "+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - node tools/ci/release-readiness.mjs --target "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" --source HEAD --remote origin
 
 # ---------------------------------------------------------------- lint --
 # Every module parses, every file the pages name exists, the docs index
@@ -376,7 +401,7 @@ live:firefox:
   stage: live
   image:
     name: $PLAYWRIGHT_IMAGE
-  needs: []
+  needs: [{ job: release_readiness, optional: true }]
   parallel: 2
   rules:
     - !reference [.catchup-check, job_rule]
@@ -395,7 +420,7 @@ live:chromium:
   stage: live
   image:
     name: $PLAYWRIGHT_IMAGE
-  needs: []
+  needs: [{ job: release_readiness, optional: true }]
   parallel: 3
   rules:
     - !reference [.catchup-check, job_rule]
@@ -602,7 +627,9 @@ translate_docs:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $IMPORT_DOCS == "true" && $CI_COMMIT_BRANCH == "dev"
     - if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true" && $CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)$/
-  # no other job's artifacts (a dotenv report in them would set this job's variables)
+  # no other job's artifacts (a dotenv report in them would set this job's variables).
+  # It keeps `needs: []` and does not wait for release_readiness: it never runs on a
+  # merge request, and ci-split holds the key job to this form.
   needs: []
   variables:
     GIT_DEPTH: 1
