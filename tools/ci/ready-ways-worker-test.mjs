@@ -16,6 +16,11 @@
  *       worker's `warmed` alone, how "remembered"; `hello` carries no verdict field
  *   W3  the worker falls back (no `up` within WORKER_WAIT, on the virtual clock): verdict() resolves from the page
  *       engine's judgement afterwards, and the store was read once in all, not a second time
+ *   W4  (#138, W0-R1) the worker comes up and then stalls (a GPU hang inside the world's proof: it answers nothing more) and
+ *       the climb's hold gives up at its 30 s backstop: the page does not wait on the worker for the verdict. verdict()
+ *       resolves { fit: false, how: "failed" } on the page, so the gate and the backs (which wait on the verdict) are not
+ *       left closed until a reload. Controls: before the backstop verdict() is pending (the worker is given its 30 s), and the
+ *       journey told the worker to abandon
  *
  * One fresh Node process a case.
  */
@@ -78,6 +83,24 @@ const CASES = {
     await b.clock.advance(2000);
     return { before, fell, gate: gate.state, proof: proof.state, verdict: v.state, value: v.value ?? null, stored: b.store.fit(KEY) ?? null, reads: b.store.fitGets().length };
   },
+
+  async w4() {
+    const b = await worker({ draw: "worker", auto: { warmed: false, frame: false } });
+    const j = b.journey;
+    const v = track(j.verdict());
+    const proofP = j.warm(), proof = track(proofP);
+    await b.clock.advance(1000);
+    const w = b.host.first();
+    if (!w || !w.upSaid) return { none: "the worker did not come up" };
+    const t0 = b.clock.now();
+    const at = (ms) => b.clock.advance(Math.max(0, t0 + ms - b.clock.now()));
+    j.fly(b.door.UP, { ready: proofP });
+    await at(29000);
+    const before = { verdict: v.state, proof: proof.state, abandons: w.of("abandon").length };
+    await at(31000);
+    await b.clock.advance(1000);
+    return { before, abandons: w.of("abandon").length, verdict: v.state, value: v.value ?? null, notReady: b.page.lines.filter((l) => /flight world: off: not ready in 30 s/.test(l)).length };
+  },
 };
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -101,6 +124,10 @@ chk("W3 the worker falls back: before WORKER_WAIT verdict() is pending", c("w3")
 chk("W3 after it the page engine judges: verdict() resolves how \"tested\", and the pass is stored", c("w3"),
   (r) => [r.fell.terminated >= 1 && r.verdict === "resolved" && r.value && r.value.how === "tested" && r.value.fit === true && r.stored && r.stored.ms === 15, `fell ${J(r.fell)}, ${r.verdict} ${J(r.value)}, stored ${J(r.stored)}`]);
 chk("W3 and the store was read once in all, not a second time by the page engine", c("w3"), (r) => [r.reads === 1, `fit-key reads ${r.reads}`]);
+
+chk("W4 control: before the hold's 30 s backstop verdict() is pending (the stalled worker is given its time)", c("w4"), (r) => [!r.none && r.before.verdict === "pending" && r.before.abandons === 0, r.none || J(r.before)]);
+chk("W4 control: past the backstop the journey told the worker to abandon", c("w4"), (r) => [!r.none && r.abandons >= 1, r.none || `abandon messages ${r.abandons}, not-ready lines ${r.notReady}`]);
+chk("W4 and verdict() resolves { fit: false, how: \"failed\" } on the page, though the worker never answers", c("w4"), (r) => [!r.none && r.verdict === "resolved" && r.value && r.value.fit === false && r.value.how === "failed", r.none || `${r.verdict} ${J(r.value)}`]);
 
 void brief;
 finish();

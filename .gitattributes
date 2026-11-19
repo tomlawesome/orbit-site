@@ -1,2 +1,8 @@
 assets/vendor/** gitlab-generated linguist-generated
 assets/fonts/*.woff2 gitlab-generated linguist-generated
+# translations the translate job writes (#125): not audited (owner, 2026-11-09),
+# so the audit counter leaves them out; en.json is the English, written by hand
+assets/docs-i18n/** gitlab-generated linguist-generated
+assets/i18n/*.json gitlab-generated linguist-generated
+assets/i18n/en.json -gitlab-generated -linguist-generated
+tools/i18n/state/*.json gitlab-generated linguist-generated

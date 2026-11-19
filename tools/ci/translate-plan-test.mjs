@@ -1,0 +1,163 @@
+/*
+ * Test for orbit-site #125 stage 2 (the translation job), written from the specification alone (issue #125, spec
+ * sections 2.1 "Plan" and 6, items 2, 3 and 22). The API is the fake of tools/ci/fake-claude.mjs; nothing reaches
+ * the network. What is sent is read from the requests the fake recorded, so the plan's own print is not relied on.
+ *
+ *   T2  unchanged hashes are not due; a changed section, a new section and a new language are due; a removed
+ *       section is dropped from the page: every item is sent once, none twice, none missed
+ *   T3  a catalogue chunk holds at most 60 keys, only keys whose hash differs from the stored one, and every due
+ *       key is in exactly one chunk
+ *   T22 a second run over the written output has an empty plan: no request at all, nothing rewritten
+ *   T47 (#145) the plan reads each section's English hash from the section itself (en), not from a source.sections table:
+ *       a section whose en is the English's hash16 is unchanged, any other (or none) is due; a previous file in the layout
+ *       before #145 (source.sections, no en) is not trusted for any section, as if there were no previous file
+ *   T23 (#144) the output estimate for the first real run's plan is within 15% of what that run used
+ *
+ *   node tools/ci/translate-plan-test.mjs
+ */
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { startFake } from "./fake-claude.mjs";
+import { run as runPlan } from "./translate.mjs";
+import { T, REPO, hash16, sectionHash, mkFixture, runTool, argsFor, snapshot, docsIds, siteQs, oldLayout } from "./translate-fixture.mjs";
+
+const run = async (fx, fake, ...more) => runTool(fx, argsFor(fx, fake, ...more));
+const keysOf = (q) => (q.item && q.item.items || []).map((x) => x.id);
+const ALL = ["readme/top", "readme/diagram", "readme/shot", "guide/start", "guide/long"];
+
+await T.attempt("T2", async () => {
+  const fx = mkFixture(), fake = await startFake();
+  try {
+    let r = await run(fx, fake, "--langs", "de");
+    T.exit("T2a first run for de exits 0", r, 0);
+    const first = docsIds(fake);
+    T.check("T2b the first run sends every section once (5, no duplicates)", JSON.stringify(first) === JSON.stringify(ALL.map((i) => `docs/${i}@de`).sort()), JSON.stringify(first));
+    /* English changes: one section edited, one added, one removed; and a language is added */
+    fake.requests.length = 0; fake.batches.length = 0;
+    fx.setSection("guide", "long", { html: fx.pages.guide.sections[1].html.replace("Doors are", "All doors are") });
+    fx.addSection("guide", { id: "extra", title: "Extra", subs: [], html: '<h2 id="extra"><a class="anchor" href="#docs/guide/extra" aria-label="Link to this heading">#</a>Extra</h2>\n<p>One more thing to read about the household.</p>' });
+    fx.removeSection("readme", "diagram");
+    r = await run(fx, fake, "--langs", "de,fr");
+    T.exit("T2c the second run (changed, new, removed, new language) exits 0", r, 0);
+    const want = ["guide/long@de", "guide/extra@de", ...["readme/top", "readme/shot", "guide/start", "guide/long", "guide/extra"].map((i) => `${i}@fr`)].map((i) => `docs/${i}`).sort();
+    const got = docsIds(fake);
+    T.check("T2d sent: the changed and the new section for de, every section for fr, nothing else, none twice", JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}`);
+    T.check("T2e the removed section is not sent", got.length > 0 && !got.some((i) => i.includes("readme/diagram")), "docs/readme/diagram absent");
+    const de = fx.read("assets/docs-i18n/de/readme.json");
+    T.check("T2f the removed section is dropped from the translated page", JSON.stringify(de.sections.map((s) => s.id)) === JSON.stringify(["top", "shot"]), JSON.stringify(de.sections.map((s) => s.id)));
+    T.check("T2g the unchanged catalogue of de is not sent again, fr's is sent", !siteQs(fake).some((q) => q.lang === "de") && siteQs(fake).some((q) => q.lang === "fr"), siteQs(fake).map((q) => q.customId).join(","));
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T3", async () => {
+  const fx = mkFixture({ keys: 130 }), fake = await startFake();
+  try {
+    let r = await run(fx, fake, "--langs", "fr", "--only", "site");
+    T.exit("T3a a catalogue-only run for fr exits 0", r, 0);
+    let chunks = siteQs(fake), all = chunks.flatMap(keysOf);
+    T.check("T3b no chunk holds more than 60 keys", chunks.length > 0 && chunks.every((q) => keysOf(q).length <= 60), JSON.stringify(chunks.map((q) => keysOf(q).length)));
+    T.check("T3c the chunks together hold each of the 130 keys exactly once", all.length === 130 && new Set(all).size === 130 && Object.keys(fx.en).every((k) => all.includes(k)), `${all.length} keys, ${new Set(all).size} distinct`);
+    T.check("T3d no docs item is sent under --only site", chunks.length > 0 && docsIds(fake).length === 0, docsIds(fake).join(","));
+    /* five keys edited and one added: only these are due */
+    fake.requests.length = 0; fake.batches.length = 0;
+    const changed = ["k010", "k020", "k030", "k040", "k050"];
+    for (const k of changed) fx.en[k] = `${fx.en[k]} Changed.`;
+    fx.setKey("k131", "A brand new key");
+    r = await run(fx, fake, "--langs", "fr", "--only", "site");
+    T.exit("T3e the run after the edit exits 0", r, 0);
+    chunks = siteQs(fake); all = chunks.flatMap(keysOf);
+    T.check("T3f one chunk, holding exactly the 5 changed keys and the new one", chunks.length === 1 && JSON.stringify([...all].sort()) === JSON.stringify([...changed, "k131"].sort()), JSON.stringify(all));
+    const st = fx.read("tools/i18n/state/fr.json");
+    const have = st.catalogue, want = hash16(fx.en.k010), wantNew = hash16("A brand new key");
+    T.check("T3g the state holds the hash of the changed English of a key", have.k010 === want && have.k131 === wantNew, JSON.stringify(have.k010));
+  } finally { await fake.close(); fx.cleanup(); }
+});
+
+await T.attempt("T22", async () => {
+  const fx = mkFixture(), fake = await startFake();
+  try {
+    let r = await run(fx, fake, "--langs", "de,ja");
+    T.exit("T22a the first run exits 0", r, 0);
+    const written = snapshot(fx.dir), batches = fake.batches.length;
+    r = await run(fx, fake, "--langs", "de,ja");
+    T.exit("T22b the second run exits 0", r, 0);
+    T.check("T22c the second run made no request at all", batches > 0 && fake.batches.length === batches && fake.posts === batches, `${fake.posts} posts, ${batches} batches before`);
+    T.check("T22d nothing was rewritten", batches > 0 && snapshot(fx.dir) === written, "the checkout's data changed");
+    const st = fx.read("tools/i18n/state/de.json"), p = fx.read("assets/docs-i18n/de/guide.json");
+    T.check("T22e the hashes are stored (16 lower hex) in the state and in each section of the page as its en (no source.sections)", Object.values(st.catalogue).length === 130 && Object.values(st.catalogue).every((h) => /^[0-9a-f]{16}$/.test(h)) && p.sections.length > 0 && p.sections.every((s) => /^[0-9a-f]{16}$/.test(s.en)) && !("sections" in p.source), "stored hashes");
+  } finally { await fake.close(); fx.cleanup(); }
+});
+/* #145: the fixture's translated() writes the new layout without the tool's help, so what is read back is the tool's reading of it */
+await T.attempt("T47", async () => {
+  const sent = async (mutate, lang = "de") => {
+    const fx = mkFixture(), fake = await startFake();
+    try {
+      fx.translated(lang);
+      mutate(fx);
+      const before = fake.posts, r = await run(fx, fake, "--langs", lang, "--only", "docs");
+      return { r, ids: docsIds(fake), posts: fake.posts - before, fx };
+    } finally { await fake.close(); fx.cleanup(); }
+  };
+  const editDe = (fx, file, fn) => { const f = fx.at(`assets/docs-i18n/de/${file}`), j = JSON.parse(readFileSync(f, "utf8")); fn(j); writeFileSync(f, JSON.stringify(j)); };
+  { const { r, ids, posts } = await sent(() => {});
+    T.exit("T47a a run over a previous de folder in the new layout exits 0", r, 0);
+    T.check("T47b every section's en equals the English's hash16, so nothing is sent and no request is made", ids.length === 0 && posts === 0, `sent ${JSON.stringify(ids)}, ${posts} posts`); }
+  { const { r, ids } = await sent((fx) => editDe(fx, "readme.json", (j) => { j.sections.find((x) => x.id === "top").en = "0123456789abcdef"; }));
+    T.exit("T47c a run where one section's en is not the English's exits 0", r, 0);
+    T.check("T47d only that section (readme/top) is sent", JSON.stringify(ids) === JSON.stringify(["docs/readme/top@de"]), JSON.stringify(ids)); }
+  { const { r, ids } = await sent((fx) => fx.setSection("guide", "long", { html: fx.pages.guide.sections[1].html.replace("Doors are", "All doors are") }));
+    T.exit("T47e a run after the English of one section changed exits 0", r, 0);
+    T.check("T47f only the section whose English changed (guide/long) is sent: its en no longer matches", JSON.stringify(ids) === JSON.stringify(["docs/guide/long@de"]), JSON.stringify(ids)); }
+  { const { r, ids } = await sent((fx) => editDe(fx, "readme.json", (j) => { delete j.sections.find((x) => x.id === "shot").en; }));
+    T.exit("T47g a run where one section has no en exits 0", r, 0);
+    T.check("T47h that section (readme/shot) is sent: with no en it is not known to be current", JSON.stringify(ids) === JSON.stringify(["docs/readme/shot@de"]), JSON.stringify(ids)); }
+  { const { r, ids } = await sent((fx) => editDe(fx, "guide.json", (j) => { j.sections = j.sections.filter((x) => x.id !== "start"); }));
+    T.exit("T47i a run where a previous section is missing exits 0", r, 0);
+    T.check("T47j the missing section (guide/start) is sent; the other, whose en matches, is not", JSON.stringify(ids) === JSON.stringify(["docs/guide/start@de"]), JSON.stringify(ids)); }
+  { const ALL = ["readme/top", "readme/diagram", "readme/shot", "guide/start", "guide/long"].map((i) => `docs/${i}@de`).sort();
+    const { r, ids } = await sent((fx) => {
+      for (const f of ["readme.json", "guide.json", "index.json"]) editDe(fx, f, (j) => { const o = oldLayout(j); for (const k of Object.keys(j)) delete j[k]; Object.assign(j, o); });
+    });
+    T.exit("T47k a run over a previous de folder in the old layout (source.sections, no en) exits 0", r, 0);
+    T.check("T47l no section of the old layout is trusted: every section is sent although each old hash equals the English's", JSON.stringify(ids) === JSON.stringify(ALL), JSON.stringify(ids)); }
+  { /* the written result of that run is in the new layout: translating an old-layout page rewrites it */
+    const fx = mkFixture(), fake = await startFake();
+    try {
+      fx.translated("de");
+      for (const f of ["readme.json", "guide.json", "index.json"]) { const file = fx.at(`assets/docs-i18n/de/${f}`); writeFileSync(file, JSON.stringify(oldLayout(JSON.parse(readFileSync(file, "utf8"))))); }
+      const r = await run(fx, fake, "--langs", "de", "--only", "docs");
+      T.exit("T47m the run over the old layout exits 0", r, 0);
+      const p = fx.read("assets/docs-i18n/de/readme.json");
+      T.check("T47n it rewrites the page in the new layout: each section's en is the English hash, no source.sections", p.sections.every((x) => x.en === sectionHash(fx.pages.readme.sections.find((e) => e.id === x.id))) && !("sections" in p.source), JSON.stringify(Object.keys(p.source)));
+    } finally { await fake.close(); fx.cleanup(); }
+  }
+});
+/* #144: the first real run (pipeline 3802, job 48253) translated this checkout's English, assets/docs and
+   assets/i18n/en.json, into the 8 languages of tools/i18n/languages.json with no prior translation, and used
+   2,275,267 output tokens (thinking included). A dry run sends nothing and needs no key: the plan and its estimate are
+   built from a copy of the English alone (no translated catalogue, page or state), so the plan is the empty-state one. */
+await T.attempt("T23", async () => {
+  const RECORDED_OUTPUT = 2_275_267;
+  const dir = mkdtempSync(join(tmpdir(), "orbit-plan-"));
+  try {
+    cpSync(join(REPO, "assets/docs"), join(dir, "assets/docs"), { recursive: true });
+    mkdirSync(join(dir, "assets/i18n"), { recursive: true });
+    cpSync(join(REPO, "assets/i18n/en.json"), join(dir, "assets/i18n/en.json"));
+    cpSync(join(REPO, "tools/i18n"), join(dir, "tools/i18n"), { recursive: true, filter: (f) => !/[\\/]state([\\/]|$)/.test(f) });
+    cpSync(join(REPO, "tools/docs-sources.json"), join(dir, "tools/docs-sources.json"));
+    const lines = [];
+    /* a cap above the whole run: a from-nothing run is over the default 3,000,000 once the estimate is right (#144),
+       and this case judges the estimate, not the cap */
+    const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "10000000" }, log: (l) => lines.push(l) });
+    T.check("T23a the dry run over the English alone exits 0", code === 0, `exit ${code}; ${lines.slice(-2).join(" | ").slice(0, 200)}`);
+    const m = /^estimate: ([\d,]+) input tokens \+ ([\d,]+) output tokens/m.exec(lines.join("\n"));
+    T.check("T23b the run prints its estimate", !!m, lines.filter((l) => l.startsWith("estimate")).join("") || "no estimate line");
+    const out = m ? Number(m[2].replace(/,/g, "")) : NaN;
+    const off = Math.abs(out - RECORDED_OUTPUT) / RECORDED_OUTPUT;
+    T.check("T23c the output estimate is within 15% of the recorded run's 2,275,267 output tokens", off <= 0.15, `estimate ${out}, ${(off * 100).toFixed(1)}% off`);
+    const langs = new Set(lines.filter((l) => l.startsWith("   ")).map((l) => /@([\w-]+)\s/.exec(l)?.[1]).filter(Boolean));
+    T.check("T23d the plan covers all 8 languages", langs.size === 8, [...langs].join(","));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+T.done();
