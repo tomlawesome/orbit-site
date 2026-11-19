@@ -16,9 +16,9 @@
  * world reads "pending" the moment start() returns. #26: journey.descend({ homes, at: 5400 }) still fires released, surface, farewell and sets
  * showdusk/farewell, 30 homes without a throw.
  *
- * Owner decision 3c (#25): the door's phone layout is used under 600px wide OR under 480px tall; 580x800, 844x390,
- * 599x800 and 800x479 must give it, 1280x560, 1280x800, 600x800 and 800x480 the desktop one (layoutSigns says how it
- * is told: the padding under the lockup, the hidden name, the farewell's place).
+ * Owner decision 3c (#25): the door's phone layout is used under 840px wide (#133; 600px before) OR under 480px tall;
+ * 580x800, 844x390, 600x800, 820x900 and 800x480 must give it, 1280x560, 1280x800, 840x800 and 860x900 the desktop one
+ * (layoutSigns says how it is told: the padding under the lockup, the hidden name, the farewell's place).
  *
  * Without the option the same page is measured too, as controls: the glyph is 420px, the gate sits inside the ring,
  * the farewell's bottom is 240px below the viewport's middle (desktop), the ring and name keep their plain colours
