@@ -9,7 +9,7 @@
 
 - Both are host options that Orbit turns on. The website keeps its own goodbye and descent: "the site can't just add these in - it will make no sense on the website."
 - **11a:** `duskMarkup({ asDawn: true })` also carries the dawn's Earth photo under the dusk's ember rim, as Orbit's goodbye does today ("sign out and sign in use the same photo", 2026-10-07): the dusk loads its `data-href` Earth pictures as the dawn does. This adds to the behaviours and build notes below.
-- **3c** (via ai/orbit#1371): the sign-in and the goodbye use their phone layout under 840px wide or under 480px tall, `@media (max-width:839.98px),(max-height:479.98px)` (Material 3 compact width and height), replacing the folder's `max-width:560px`; Orbit matches it.
+- **3c** (via ai/orbit#1371): the sign-in and the goodbye use their phone layout under 840px wide or under 480px tall, `@media (max-width:839.98px),(max-height:479.98px)` (Material 3's compact and medium widths, compact height), replacing the folder's `max-width:560px`; Orbit matches it.
 - The goodbye takes the sign-in's gate spacing, whatever the dawn's rule is (the owner accepted the folder's sign-in door as it is).
 
 Both are options a host turns on. Absent, nothing the site ships changes: not a byte of `duskMarkup()`, not a rule the site's dusk matches, not a number in a descent profile.
