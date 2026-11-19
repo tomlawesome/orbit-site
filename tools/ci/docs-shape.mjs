@@ -44,7 +44,9 @@ const sameKeys = (o, want) => {
 
 /* opts (the translated folders, docs-i18n-shape.mjs): extraPageKeys, keys a page and an index entry carry besides
    the English shape's; pictures, a folder of pictures (the English img/) a section may use in place of its own;
-   noImgDir, an img/ folder of its own is refused; extraSectionKeys, keys each section carries besides the English shape's */
+   noImgDir, an img/ folder of its own is refused; extraSectionKeys, keys each section carries besides the English shape's;
+   behind, the page files made from older English, and stalePicture(f, where, src), called in place of a problem for
+   a picture name (assets/docs/img/<16 hex>.<type>) on such a page that is in neither folder */
 export function checkDocs(dir, sources, opts = {}) {
   const problems = [];
   const bad = (m) => problems.push(m);
@@ -86,6 +88,9 @@ export function checkDocs(dir, sources, opts = {}) {
       const src = t.at.get("src"), name = src?.startsWith("assets/docs/img/") ? src.slice(16) : null;
       if (pictures.has(name)) used.add(name);
       else if (shared.has(name)) { /* an English picture */ }
+      /* a page behind the English may name a picture of the older English it was made from, which the import has
+         since replaced or dropped: the caller reports it with the lag; any other unknown src is still a problem */
+      else if (opts.behind && opts.behind.has(f) && opts.stalePicture && name !== null && PICTURE.test(name)) opts.stalePicture(f, where, src);
       else if (src !== undefined && src !== MARK) bad(`${f}: ${where} has a picture ${JSON.stringify(src).slice(0, 80)}, not one in img/ or the mark`);
       if (t.at.has("srcset")) bad(`${f}: ${where} has a picture with a srcset`);
     }

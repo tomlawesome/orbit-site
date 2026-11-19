@@ -21,14 +21,14 @@
  *   node tools/ci/translate-shape-test.mjs
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { T, REPO, mkFixture, oldLayout } from "./translate-fixture.mjs";
 
 const TOOL = join(REPO, "tools/ci/docs-i18n-shape.mjs");
-const shape = (fx) => {
+const shape = (fx, ...flags) => {
   if (!existsSync(TOOL)) return { status: -1, text: "not built yet: tools/ci/docs-i18n-shape.mjs" };
-  const r = spawnSync(process.execPath, [TOOL, fx.at("assets/docs-i18n/de"), fx.at("tools/docs-sources.json"), fx.at("assets/docs")], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [TOOL, fx.at("assets/docs-i18n/de"), fx.at("tools/docs-sources.json"), fx.at("assets/docs"), ...flags], { encoding: "utf8" });
   return { status: r.status, text: `${r.stdout}${r.stderr}` };
 };
 const edit = (fx, file, fn) => { const f = fx.at(`assets/docs-i18n/de/${file}`), j = JSON.parse(readFileSync(f, "utf8")); fn(j); writeFileSync(f, JSON.stringify(j)); };
@@ -94,5 +94,41 @@ await T.attempt("T48", async () => {
     let j = null; try { j = JSON.parse(readFileSync(f, "utf8")); } catch { /* checked below */ }
     const keyed = j && j.sections.filter((x) => /key$/.test(x.id));
     T.check("T48 the secret-scan fixture page is in the new layout: en first, 16 lower hex, no source.sections, a section id ending in key", !!j && keyed.length > 0 && j.sections.every((x) => Object.keys(x)[0] === "en" && /^[0-9a-f]{16}$/.test(x.en)) && !("sections" in j.source), j ? `${keyed.length} key section(s)` : "tests/fixtures/docs-i18n-secret-scan-145/de-security.json missing or not JSON"); }
+});
+/* the import of a changed or dropped English picture (audit finding ALL-S1, Refs #158): the English folder has a new picture
+   name (or none) and a later generated stamp; a translated page stamped before it is behind, and still names the old picture */
+await T.attempt("T49", async () => {
+  const NEW = "0123456789abcdef.png", NEWER = "2026-03-02T04:00:00.000Z";
+  const oldName = (fx) => /assets\/docs\/img\/([0-9a-f]{16}\.png)/.exec(fx.read("assets/docs/readme.json").sections.find((x) => x.id === "shot").html)[1];
+  /* English: the shot picture renamed to NEW, or dropped (file and <img> gone); generated bumped; assets/docs-i18n/de left as written */
+  const importPicture = (fx, drop) => {
+    const old = oldName(fx), html = (h) => (drop ? h.replace(/<img [^>]*>/, "") : h.split(old).join(NEW));
+    if (drop) rmSync(fx.at(`assets/docs/img/${old}`)); else renameSync(fx.at(`assets/docs/img/${old}`), fx.at(`assets/docs/img/${NEW}`));
+    for (const f of ["readme.json", "index.json"]) { const p = fx.at(`assets/docs/${f}`), j = JSON.parse(readFileSync(p, "utf8"));
+      if (f === "index.json") j.generated = NEWER; else j.sections.find((x) => x.id === "shot").html = html(j.sections.find((x) => x.id === "shot").html);
+      writeFileSync(p, JSON.stringify(j)); }
+    return old;
+  };
+  const stampDe = (fx, generated) => { edit(fx, "readme.json", (j) => { j.source.generated = generated; }); edit(fx, "guide.json", (j) => { j.source.generated = generated; }); edit(fx, "index.json", (j) => { for (const e of j.sources) e.source.generated = generated; }); };
+  const reported = (name, drop) => {
+    const fx = fresh();
+    try { const old = importPicture(fx, drop), r = shape(fx);
+      T.check(`T49 a page behind the English is reported, not failed, for ${name}`, r.status === 0 && r.text.includes(old) && /reported/.test(r.text), r.status === -1 ? r.text : `exit ${r.status}, want 0 naming ${old} as reported; got ${r.text.slice(0, 200).replace(/\n/g, " | ")}`);
+    } finally { fx.cleanup(); }
+  };
+  reported("a picture renamed", false);
+  reported("a picture dropped", true);
+  /* controls: still refused */
+  const refused = (name, setup, want, ...flags) => {
+    const fx = fresh();
+    try { setup(fx); const r = shape(fx, ...flags);
+      T.check(`T49 control: ${name}`, r.status === 1 && want.test(r.text), r.status === -1 ? r.text : `exit ${r.status}, want 1 naming ${want}; got ${r.text.slice(0, 200).replace(/\n/g, " | ")}`);
+    } finally { fx.cleanup(); }
+  };
+  refused("a page stamped at the new English still names the old picture", (fx) => { importPicture(fx, false); stampDe(fx, NEWER); }, /picture|img|shot/);
+  refused("--same-english refuses the old picture on a page behind", (fx) => importPicture(fx, false), /picture|img|shot/, "--same-english");
+  const behindWith = (src) => (fx) => { importPicture(fx, false); edit(fx, "readme.json", (j) => { const s = j.sections.find((x) => x.id === "shot"); s.html = s.html.replace(/assets\/docs\/img\/[0-9a-f]{16}\.png/, src); }); };
+  refused("a page behind naming an outside address", behindWith("https://example.invalid/x.png"), /picture|img|shot/);
+  refused("a page behind naming a name that is not a picture's", behindWith("assets/docs/img/not-a-hash.png"), /picture|img|shot/);
 });
 T.done();

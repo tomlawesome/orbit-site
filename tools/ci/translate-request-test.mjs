@@ -6,8 +6,8 @@
  *   T4  every request of a batch has one byte-identical system block with cache_control (ephemeral) and the whole
  *       glossary in it; the language and the item are in the user message only, which is uncached
  *   T5  request parameters: model claude-opus-5-5, max_tokens 4 x estimated English tokens (chars / 3.5) + 1,024 and
- *       at most 16,000, output_config.effort high, a strict JSON schema, fallbacks "default" and its beta header,
- *       anthropic-version 2023-06-01, no temperature, no thinking
+ *       at most 16,000, output_config.effort high, a strict JSON schema, no fallbacks field and no
+ *       server-side-fallback beta header (T5f, T5f2, T5g), anthropic-version 2023-06-01, no temperature, no thinking
  *   T31 custom_id: every request's is "r" + its zero-padded index in the run's request list + "-" + the first 12 hex
  *       of the run's request digest (r0000-<12 hex>, r0001-<12 hex>, ...: the idempotency key), the same digest in
  *       every id of the run, unique, within ^[a-zA-Z0-9_-]{1,64}$ (the fake answers 400 to any other, so a run that breaks it fails)
