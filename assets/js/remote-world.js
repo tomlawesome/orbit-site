@@ -13,7 +13,7 @@
  * pending asks asked of it, and baked afresh if the worker's had baked. From then on everything is the page world's,
  * and the worker is told nothing more.
  */
-import { note, settings, gpu, decodeAside, decodeBlob, COMPILE_WAIT } from "../door/index.js";
+import { note, settings, gpu, decodeAside, decodeBlob, COMPILE_WAIT, busyPeer } from "../door/index.js";
 import { createWorld, picturesOf } from "./world.js";
 
 /* why the page draws the world: the same tells as the flight's rule (assets/door/fitness.js drawnWhy), in its order,
@@ -34,6 +34,8 @@ export function whyPage() {
   return "the flight's rule keeps the page";
 }
 
+/* each world's worker a name of its own in the page's ledger (busyPeer) */
+let worlds = 0;
 const makeWorker = () => new Worker(new URL("./world-worker.js", import.meta.url), { type: "module" });
 
 /*
@@ -44,13 +46,20 @@ const makeWorker = () => new Worker(new URL("./world-worker.js", import.meta.url
 export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker, cap = settings.flags?.draw !== "worker" } = {}) {
   let el = canvas, worker = null, page = null, up = false, handed = false, gone = false, lost = false;
   let ids = 0, seq = 0, ms = 0, baked = false, baking = null, size = null, timer;
-  /* the asks waiting for their answer: bakes, and measures (their sets kept, to be asked of a page world) */
+  /* the asks waiting for their answer: bakes */
   const pending = new Map();
   const drewFns = new Set();
+  /* the finish() calls waiting for the worker's `finished` (#119: the host asks the flight's shaders only after it), all
+     settled by the one; and at once by a fallback, `lost` or destroy, as nothing more will answer them */
+  let finishing = [];
+  const finished = () => { const f = finishing; finishing = []; for (const r of f) r(); };
   let madeIs = () => {}, asideIs = () => {};
   const made = new Promise((r) => { madeIs = r; });
   const aside = new Promise((r) => { asideIs = r; });
   const post = (m, transfer = []) => { if (!(worker && !page && !gone)) return false; worker.postMessage(m, transfer); return true; };
+  /* the worker's compiles and uploads kept in the page's ledger, and everyone else's told to it, for the flight world's
+     verdict (#104); until unlisten */
+  let busy = null;
 
   const hear = (e) => {
     const m = e.data;
@@ -64,25 +73,29 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
         decodeBlob(m.blob, m.options).then((bitmap) => post({ type: "decoded", id: m.id, bitmap }, [bitmap]) || bitmap.close(),  // gone meanwhile: let it go
           (e) => post({ type: "decoded", id: m.id, error: String(e?.message || e) }));
         break;
-      case "baked": case "measured": {
+      case "baked": {
         const ask = pending.get(m.id);
         if (!ask || ask.kind !== m.type) break;
         pending.delete(m.id);
-        if (m.type === "baked") { if (m.ok) baked = true; ask.resolve(!!m.ok); } else ask.resolve(m.ms);
+        if (m.ok) baked = true;
+        ask.resolve(!!m.ok);
         break;
       }
       case "drew": el.dataset.drawn = String(m.seq); for (const fn of [...drewFns]) fn(m.dt, m.ms); break;
       /* (the worker's console lines, printed as they come) */
       case "note": if (m.kind === "warn") console.warn(String(m.line)); else console.info(String(m.line)); break;
       /* lost: as the page's own context's loss, on the element install.js listens to; no fallback (flat, as today) */
-      case "lost": if (!lost) { lost = true; el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
-      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
+      case "lost": if (!lost) { lost = true; finished(); el.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); } break;
+      case "finished": finished(); break;
+      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})${m.at ? ` at ${String(m.at).split("\n")[0]}` : ""}`); break;
+      case "busy": busy?.heard(m); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");
   const unreadable = () => fallBack("a message from the worker could not be read");
   const unlisten = () => {
     clearTimeout(timer);
+    busy?.gone(); busy = null;
     worker?.removeEventListener("message", hear);
     worker?.removeEventListener("error", failed);
     worker?.removeEventListener("messageerror", unreadable);
@@ -102,7 +115,7 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     /* (on the page as it always was: the gate has judged, and the page world compiles here, the fallback's cost) */
     let w = null;
     try { w = createWorld(el, opts); } catch (e) { console.warn(e); }
-    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), measure: (s) => Promise.resolve(s.map(() => NaN)), made: Promise.resolve(false), baked: false, lost: true, compileMs: 0, onDrew() {}, destroy() {} };
+    page = w || { draw() {}, resize() {}, finish() {}, bake: () => Promise.resolve(false), made: Promise.resolve(false), baked: false, lost: true, compileMs: 0, onDrew() {}, destroy() {} };
     /* (no world on the page either: the pad goes flat, as a page world that could not be made does, inline review) */
     if (!w) el.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
     asideIs(false);
@@ -114,9 +127,10 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
        (a dive under way, or the next) finds it baked */
     const asks = [...pending.values()];
     pending.clear();
-    for (const a of asks) (a.kind === "baked" ? page.bake() : page.measure(a.sets)).then(a.resolve, () => a.resolve(a.kind === "baked" ? false : []));
+    for (const a of asks) page.bake().then(a.resolve, () => a.resolve(false));
     baking = null;
     if (baked) page.bake();
+    finished();
   }
 
   try {
@@ -130,12 +144,13 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     const p = picturesOf(opts);
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     post({
-      type: "hello", decode: decodeAside() ? "page" : "here", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON) }, sky: opts.sky, tag: opts.tag,
+      type: "hello", decode: decodeAside() ? "page" : "here", flags, baseURI: base, world: { small: p.small, map: abs(p.MAP), rings: abs(p.RINGS), moon: abs(p.MOON), galaxy: abs(p.GALAXY) }, sky: opts.sky, tag: opts.tag,
       hue: opts.hue, sat: opts.sat, ringsOn: opts.ringsOn, haze: opts.haze, grade: opts.grade,
     });
     const off = el.transferControlToOffscreen();
     handed = true;
     post({ type: "canvas", canvas: off }, [off]);
+    busy = busyPeer(`world ${++worlds}`, post);
     if (cap) timer = setTimeout(() => { if (!up) fallBack(`no answer in ${COMPILE_WAIT} ms`); }, COMPILE_WAIT);
   } catch (e) {
     fallBack(worker ? `the canvas could not be handed over (${e?.message})` : "no worker could be made");
@@ -164,11 +179,11 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
     draw(view, dt) { if (page) { page.draw(view, dt); return; } post({ type: "view", seq: ++seq, view }); },
     onDrew(fn) { drewFns.add(fn); return () => drewFns.delete(fn); },
     resize(w, h, scale) { size = [w, h, scale]; if (page) page.resize(w, h, scale); else post({ type: "resize", w, h, scale }); },
-    finish() { if (page) page.finish(); else post({ type: "finish" }); },
-    measure(sets) {
-      if (page) return page.measure(sets);
-      if (gone) return Promise.resolve(sets.map(() => NaN));
-      return ask("measured", { type: "measure", sets }, { sets });
+    /* settled once the GPU has done what was asked: the worker's `finished`; at once on the page, or with no worker to answer */
+    finish() {
+      if (page) { page.finish(); return Promise.resolve(); }
+      if (gone) return Promise.resolve();
+      return new Promise((r) => { finishing.push(r); post({ type: "finish" }); if (lost) finished(); });
     },
     /* the worker's frame loop runs while a pad is drawing */
     run(on) { post({ type: "run", on: !!on }); },
@@ -179,8 +194,9 @@ export function createRemoteWorld(canvas, opts = {}, { worker: make = makeWorker
       gone = true;
       unlisten();
       try { worker?.terminate(); } catch { /* gone already */ }
-      for (const a of pending.values()) a.resolve(a.kind === "baked" ? false : a.sets.map(() => NaN));
+      for (const a of pending.values()) a.resolve(false);
       pending.clear();
+      finished();
       madeIs(false); asideIs(false);
     },
   };

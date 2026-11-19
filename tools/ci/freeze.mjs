@@ -194,9 +194,9 @@ const clickGate = (page) => page.evaluate(() => { const t = performance.now(); d
 const webgl2 = (s) => s.gl.filter((c) => c.type === "webgl2");
 /* the chores' counts (COUNT): the known starts that are not soft ("hard") in a frame; frames where a hard one other
    than a compile started with the queue not yet open */
-/* 5's floor on known non-soft starts. The code queues at least ten on ?gpu=force: the flight's stars, two touches
+/* 5's floor on known non-soft starts. The code queues at least nine on ?gpu=force: the flight's stars, two touches
    and calibrate (voyage.js), the docs' touch and the galaxy (voyage.js), the docs chart (pads.js), the install's touch
-   and calibrate (install.js), the information's world (planets3d.js); most are chained on another
+   (install.js), the information's world (planets3d.js); most are chained on another
    chore's result, so they are queued while that one still runs and wait a frame in the queue, where they are known.
    15-17 were known in six runs (#32). 8 leaves room for a few queued and started within a frame, and is well over the
    two the bound needs to be able to trip */
