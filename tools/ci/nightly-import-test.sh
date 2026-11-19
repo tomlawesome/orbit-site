@@ -60,6 +60,11 @@ aux=$(mktemp -d)          # shims, state and logs; outside the scratch repo
 trap 'rm -rf "$tmp" "$tmp.tmp" "$tmp.tmpX" "$tmp.elsewhere" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
+# Hermetic and date-free (#159, T-F3): the committed translations carry stamps of their own day, and the translation
+# lag step judges them against the clock, so a scenario would see the real pages as stalled once the committed
+# English is 36 hours old. Every scenario sees only the translation state it makes (mklag, mktr.py), and a run that
+# sets no clock gets one pinned to its own English (run_push).
+rm -rf "$tmp/assets/docs-i18n"
 # a second, untouched copy: the publish script pins its host, and the copy under
 # test is given the test's (the pin itself is tried on the untouched one)
 mkdir "$aux/pristine"; git -C "$root" archive HEAD | tar -x -C "$aux/pristine"
@@ -735,11 +740,17 @@ isoplus() { "$realnode" -e 'console.log(new Date(Date.parse(process.argv[1]) + p
 mklag() {
   slug=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("tools/docs-sources.json", "utf8"))[0].slug)')
   english=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("assets/docs/index.json", "utf8")).generated)')
+  # lagold (LAG7, LAGB: the real clock is the point): the English made in 2020, so the clock stalls it on any day
+  if [ -n "${lagold:-}" ]; then
+    "$realnode" -e 'const f = "assets/docs/index.json", j = JSON.parse(require("fs").readFileSync(f, "utf8")); j.generated = "2020-01-01T00:00:00.000Z"; require("fs").writeFileSync(f, JSON.stringify(j))'
+    english=2020-01-01T00:00:00.000Z
+  fi
   mkdir -p assets/docs-i18n/de
   printf '{"source":{"generated":"%s"}}\n' "$(isoplus "$english" "$1")" > "assets/docs-i18n/de/$slug.json"
   lagiso=; [ -z "$2" ] || lagiso=$(isoplus "$english" "$2")
   [ -z "${lagraw:-}" ] || lagiso=$lagraw   # a LAG_NOW given as it is, to be refused
   "$realgit" add -A assets/docs-i18n
+  [ -z "${lagold:-}" ] || "$realgit" add assets/docs/index.json   # the aged English kept past the reset
   only=$("$realgit" -c user.name=t -c user.email=t@t commit-tree "$("$realgit" write-tree)" -m "one commit")
   "$realgit" reset -q --hard "$only"
 }
@@ -756,6 +767,8 @@ run_push() { # run_push <outfile> <scenario>
   rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
   lagiso=; [ -z "${lag:-}" ] || mklag "$lag" "${lagnow:-}"
+  # no lag scenario: the clock is the scenario's own English, never today's date
+  [ -n "${lag:-}" ] || lagiso=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("assets/docs/index.json", "utf8")).generated)')
   headsha=$basecommit     # unless the scenario's main already holds pictures or a history
   case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
   [ -z "${lag:-}" ] || headsha=$("$realgit" rev-parse HEAD)
@@ -1655,7 +1668,9 @@ for n, s in enumerate(srcs):
     gen = idx['generated']          # the English the page was made from: the checkout's, unless the scenario says other
     if sc == 'tr-stale' or (sc == 'tr-onepage' and n == 0): gen = OLD
     if sc == 'tr-newer': gen = NEW
-    p['source'] = {'generated': gen, 'sections': {x['id']: h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)) for x in p['sections']}, 'kept': [x['id'] for x in p['sections']]}
+    # the layout of #145: each section's first key is en, the hash16 of the English section; source is {generated, kept}
+    p['sections'] = [dict([('en', h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)))] + list(x.items())) for x in p['sections']]
+    p['source'] = {'generated': gen, 'kept': [x['id'] for x in p['sections']]}
     if sc == 'tr-script' and n == 0: # a script in a section the translation made (so not kept in English)
         p['source']['kept'] = [x['id'] for x in p['sections'][1:]]
         p['sections'][0]['html'] = '<p>x</p><script>alert(1)</script>'
@@ -1835,7 +1850,9 @@ rc=0; [ "$rcx" -eq 0 ] && ! lagbody | grep -q -e "$slug" -e 'ranslations' && ! g
 check "LAG6 a page stamped the same as the English, 400 hours on: nothing (English that has not changed is never stale; exit $rcx)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
 
+lagold=1
 lag_case LAG7 -24 "" warn-none
+lagold=
 rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'could not read the translations' "$out" && lagbody | grep -q "de/$slug" || rc=1
 check "LAG7 LAG_NOW not set: the clock is used, no error, and the English (changed long ago) is stalled: the body names de/$slug (exit $rcx)" "$rc"
 [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
@@ -1852,7 +1869,9 @@ check "LAG9 a page behind but not stalled does not reopen it (exit $rcx)" "$rc"
 # takes) is not honoured, by this side as by the lint's (docs-i18n-shape.mjs): the log says the clock is used, and the clock
 # decides. Honoured, the year 2000 would put the English in the future and the page would not be stalled.
 lagraw=2000-01-01
+lagold=1
 lag_case LAGB -24 "" warn-none
+lagold=
 lagraw=
 rc=0; [ "$rcx" -eq 0 ] && grep -q 'LAG_NOW' "$out" && grep -i 'LAG_NOW' "$out" | grep -qi 'clock' || rc=1
 check "LAGB a LAG_NOW that is not in the format of generated: the log says the clock is used (exit $rcx)" "$rc"

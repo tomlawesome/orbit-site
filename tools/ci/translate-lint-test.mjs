@@ -180,6 +180,9 @@ await T.attempt("T27", async () => {
     T.check("T27c translate_docs has timeout: 1h (the one-hour runner lane; amendment 1)", /^[ \t]+timeout:\s*1h\s*$/m.test(block) && !/timeout:\s*3h/.test(block), (block.match(/timeout:[^\n]*/) || ["no timeout line"])[0]);
     /* a line put under a job's own line: the job's own key order does not matter to YAML */
     const after = (text, job, line) => { const re = new RegExp(`^${job}:[^\\n]*\\n`, "m"); if (!re.test(text)) throw new Error(`no job ${job} in .gitlab-ci.yml to change`); return text.replace(re, (m) => `${m}${line}\n`); };
+    /* a key of a job's own replaced in place: a second copy would be refused as written twice, never reaching the
+       check the case names */
+    const swap = (text, job, key, line) => { const re = new RegExp(`(^${job}:[^\\n]*\\n(?:[ \\t].*\\n|\\n)*?)  ${key}:[^\\n]*\\n`, "m"); if (!re.test(text)) throw new Error(`no ${key} of job ${job} in .gitlab-ci.yml to change`); return text.replace(re, (m, head) => `${head}${line}\n`); };
     const refused = (name, fn, want) => {
       const d = scratch();
       try {
@@ -192,8 +195,8 @@ await T.attempt("T27", async () => {
     const ed = (fn) => (d) => put(d, ".gitlab-ci.yml", fn(read(d, ".gitlab-ci.yml")));
     refused("a second job naming environment translate", ed((t) => `${t}\nextra_translate:\n  stage: maintenance\n  image: $NODE_IMAGE\n  environment: { name: translate, deployment_tier: other }\n  script: [echo hi]\n`), /translate/);
     refused("a package manager in translate_docs", ed((t) => after(t, "translate_docs", "  before_script: [npm ci --prefix tools]")), /translate_docs[^\n]*(npm|package manager)|npm[^\n]*translate_docs/i);
-    refused("needs with artifacts in translate_docs", ed((t) => after(t, "translate_docs", "  needs: [{ job: import_docs, artifacts: true }]")), /translate_docs[^\n]*needs|needs[^\n]*translate_docs/i);
-    refused("translate_docs on another image", ed((t) => after(t, "translate_docs", "  image: node:latest")), /translate_docs[^\n]*(image|NODE_IMAGE)|(image|NODE_IMAGE)[^\n]*translate_docs/i);
+    refused("needs with artifacts in translate_docs", ed((t) => swap(t, "translate_docs", "needs", "  needs: [{ job: import_docs, artifacts: true }]")), /translate_docs[^\n]*needs|needs[^\n]*translate_docs/i);
+    refused("translate_docs on another image", ed((t) => swap(t, "translate_docs", "image", "  image: node:latest")), /translate_docs[^\n]*(image|NODE_IMAGE)|(image|NODE_IMAGE)[^\n]*translate_docs/i);
     refused(`${KEY} in another file`, (d) => put(d, "tools/ci/serve.mjs", `${read(d, "tools/ci/serve.mjs")}\n// ${KEY}\n`), new RegExp(KEY));
     refused("import_docs with an environment", ed((t) => after(t, "import_docs", "  environment: { name: translate }")), /import_docs[^\n]*environment|environment[^\n]*import_docs/i);
     refused("a third job in the docs-import environment", ed((t) => `${t}\nextra_publish:\n  stage: publish\n  image: $NODE_IMAGE\n  environment: { name: docs-import }\n  script: [echo hi]\n`), /docs-import/);

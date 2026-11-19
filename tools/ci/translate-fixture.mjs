@@ -191,14 +191,21 @@ export function runTool(fx, args = [], { key = FAKE_KEY, env = {}, timeout = 600
 /* the arguments every run takes: the fake's address, the report, a quick poll */
 export const argsFor = (fx, fake, ...more) => ["--api-base", fake.url, "--report", fx.report, "--poll-seconds", "0.05", ...more];
 
-/* does the report name the item with the rule: some node (an object, or a string) names the id and matches the
-   rule's words. The report's exact shape is not fixed by the spec, so this reads any shape. */
+/* does the report name the item with the rule: one entry names the id and, apart from the id, the rule's words; an
+   entry is a line of a string or a record (an object whose values are text, numbers or lists of them, such as
+   {lang, id, key, rules}), read by its values, never its JSON (whose braces would pass a rule matching "{"). An
+   object holding other objects (the report itself, a language) is never judged whole, so the id of one entry and
+   the rule of another do not pass. The report's exact shape is not fixed by the spec, so this reads any shape. */
 export function reportNames(report, id, rule) {
   let hit = false;
+  const scalar = (x) => x === null || typeof x !== "object";
   const walk = (v) => {
-    if (typeof v === "string") { if (v.includes(id) && rule.test(v)) hit = true; }
+    if (typeof v === "string") { if (v.split("\n").some((l) => l.includes(id) && rule.test(l.split(id).join(" ")))) hit = true; }
     else if (v && typeof v === "object") {
-      if (!Array.isArray(v)) { const s = JSON.stringify(v); if (s.includes(id) && rule.test(s)) hit = true; }
+      const vals = Array.isArray(v) ? [] : Object.values(v).flat().map(String);
+      if (!Array.isArray(v) && Object.values(v).every((x) => scalar(x) || (Array.isArray(x) && x.every(scalar))) && vals.some((x) => x.includes(id))) {
+        if (vals.some((x) => !x.includes(id) && rule.test(x))) hit = true;
+      }
       for (const x of Object.values(v)) walk(x);
     }
   };
