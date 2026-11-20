@@ -18,6 +18,9 @@
 import { INDEX, isProbeSrc, installPage, sleep, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
 
 const FITNESS = "../../assets/door/fitness.js";
+const GENEROUS = 20000;                                         /* ms: the longest any wait for something that must happen may take (it returns as soon as it holds) */
+/* poll until cond() holds or `ms` have passed; asserts nothing itself, the caller's check does */
+async function until(cond, ms = GENEROUS) { for (const end = Date.now() + ms; !cond() && Date.now() < end;) await sleep(25); }
 const LOST_LINE = /flight world: off: the context was lost/;
 
 const CASES = {
@@ -32,11 +35,12 @@ async function lifeCase(restores) {
   const d = door.createDoor({ typingWait: 0, flags: {} });
   door.openChores();
   const made = () => page.shaders.filter((s) => !isProbeSrc(s.src)).length;
-  const warm = async (prove = false) => {
+  const warm = async (prove = false, expectWorld = prove) => {
     const before = made();
     const journey = d.journey(page.journeyOptions());
     journey.warm({ prove }).catch(() => {});
-    for (let i = 0; i < 20 && made() === before; i++) await sleep(25);
+    if (expectWorld) await until(() => made() !== before);
+    else for (let i = 0; i < 20 && made() === before; i++) await sleep(25);   /* B / never-C: no world must appear, so a short look is all there is to wait for */
     await sleep(150);                                           /* let a world that is going to be made, be made */
     return { journey, made: made() - before };
   };
@@ -44,7 +48,7 @@ async function lifeCase(restores) {
 
   const gpuFirst = fitness.gpu();
   const A = await warm(true);                                   /* its world proved: the speed test runs */
-  for (let i = 0; i < 60 && !page.lines.some((l) => /flight world: (on|off)/.test(l)); i++) await sleep(50);
+  await until(() => page.lines.some((l) => /flight world: (on|off)/.test(l)));
   out.aMade = A.made;
   out.aOn = page.lines.some((l) => /flight world: on/.test(l)) && !page.lines.some((l) => /flight world: off/.test(l));
   out.contextsAfterA = page.contexts;
@@ -72,8 +76,9 @@ async function lifeCase(restores) {
     out.restoredListeners = (page.canvasListeners.webglcontextrestored || []).length;
     await sleep(50);
   }
-  const C = await warm(true);                                   /* the next journey, its world proved (the speed test runs) */
-  for (let i = 0; i < 60 && !page.lines.slice(linesAtRestore).some((l) => /flight world: (on|off)/.test(l)); i++) await sleep(50);
+  const C = await warm(true, restores);                                 /* the next journey, its world proved (the speed test runs) */
+  if (restores) await until(() => page.lines.slice(linesAtRestore).some((l) => /flight world: (on|off)/.test(l)));
+  else for (let i = 0; i < 60 && !page.lines.slice(linesAtRestore).some((l) => /flight world: (on|off)/.test(l)); i++) await sleep(50);   /* never: no world must appear */
   out.cMade = C.made;
   out.cOffLines = page.lines.slice(linesAtRestore).filter((l) => /flight world: off/.test(l)).length;
   out.cOnLines = page.lines.slice(linesAtRestore).filter((l) => /flight world: on/.test(l)).length;
