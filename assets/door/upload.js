@@ -281,6 +281,8 @@ function bandsInto(gl, bitmap, level, bind, { format, type, tag, name, keep, ali
    whoever draws, before each frame), so a sharper size comes in as a sharpening, never a jump; a chore sets the last
    value when the ease is over, whether anything was drawn or not */
 const EASE = 1000;
+/* the pause before a dropped larger size is asked for once more, ms */
+const RETRY = 1500;
 /** @typedef {{ t: WebGLTexture, from: number, to: number, at: number }} Ease a texture's least level easing down */
 /** @type {WeakMap<WebGL2RenderingContext, Set<Ease>>} */
 const easing = new WeakMap();
@@ -370,7 +372,10 @@ export function uploadSized(gl, sizes, { decode, tag = "", more: moreTag = tag, 
     try {
       for (; k >= 0; k--) {
         if (gone()) return;
-        const bm = await decode(sizes[k].url);
+        /* a download that dropped is asked for once more, a moment later (the door's and the flight's retry of a smallest
+           size, voyage.js: warm); if that drops too, the size it has is kept (below) */
+        const bm = await decode(sizes[k].url).catch(async () => { await new Promise((r) => setTimeout(r, RETRY)); return gone() ? null : decode(sizes[k].url); });
+        if (!bm) return;
         if (gone()) { bm.close?.(); return; }
         fits(bm, sizes[k]);
         const level = k;

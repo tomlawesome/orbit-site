@@ -247,8 +247,8 @@ const lostCase = async () => {
       await needWebgl(page);
       await page.goto(`${SITE}?${LIVE}&lean`, { waitUntil: "load" });
       await page.waitSaid(/door: live/, 150000, "the live door");
-      await sleep(2000);
-      const before = await opacities(page);
+      /* (the pictures' 1.2 s fade out may still be running on a slow runner: wait for it, bounded) */
+      const before = await until(() => opacities(page), (o) => o.earth === 0 && o.limb === 0, 10000);
       const shareBefore = await canvasShare(page);
       want(before.live && before.canvas > 0, `control: the door's canvas is not live and shown before the loss (${JSON.stringify(before)})`);
       want(before.earth === 0 && before.limb === 0, `control: the pictures were not hidden while the door was live (earth ${before.earth}, limb ${before.limb})`);
