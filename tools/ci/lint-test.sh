@@ -2971,7 +2971,7 @@ flake_lint_case "(f-sec12k) the lint refusing a real call after other code on it
 flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
 flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
-# Section "the Milky Way is drawn" (#119; cases gal1-gal5): every galaxy*.webp the tree tracks must be one of the two
+# Section "the Milky Way is drawn" (#119; cases gal1-gal9): every galaxy*.webp the tree tracks must be one of the two
 # shipped pictures, by git blob hash (an allow-list, so a re-encoded, cropped or renamed Gaia file, or any third-party
 # galaxy picture, is refused and named); Gaia's own two blobs are refused as Gaia's. The committed tree passes.
 galaxy_case() { # galaxy_case <label> <want: 0 or 1> <text the refusal names>; the change is made, uncommitted, before
@@ -2999,6 +2999,18 @@ if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/nu
   galaxy_case "(gal5) Gaia's picture under the shipped name" 1 "Gaia's picture"
 else
   echo "ok   (gal5) Gaia's blob is not in this clone: not run"
+fi
+printf 'other bytes, a space in the name' > "assets/img/docs/my galaxy.webp"
+galaxy_case "(gal6) a galaxy*.webp with other bytes and a space in its name" 1 'assets/img/docs/my galaxy.webp'
+printf 'other bytes, a non-ASCII name' > "assets/img/docs/galáxia-galaxy.webp"
+galaxy_case "(gal7) a galaxy*.webp with other bytes and a non-ASCII name" 1 'assets/img/docs/galáxia-galaxy.webp'
+printf 'other bytes, upper-case name' > assets/img/docs/MILKY-GALAXY.WEBP
+galaxy_case "(gal8) a GALAXY*.WEBP with other bytes in upper case" 1 'assets/img/docs/MILKY-GALAXY.WEBP'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/docs/sky.png
+  galaxy_case "(gal9) Gaia's picture under a non-galaxy name and another extension" 1 "Gaia's picture"
+else
+  echo "ok   (gal9) Gaia's blob is not in this clone: not run"
 fi
 
 rm -f "$cspjs"
