@@ -60,7 +60,12 @@ const openMenu = async (page) => {
   if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
   await page.waitForFunction(() => [...document.querySelectorAll(".langs button[aria-expanded]")].some((e) => e.offsetParent && e.getAttribute("aria-expanded") === "true"));
 };
-const docsOpen = (page) => page.waitForFunction(() => { const p = document.getElementById("docspad"); return !!p && !p.hidden; });
+/* the pad un-hidden is not the docs loaded: render() returns early until the index arrives (#164), so also wait, bounded,
+   for the results list it draws from it */
+const docsOpen = async (page) => {
+  await page.waitForFunction(() => { const p = document.getElementById("docspad"); return !!p && !p.hidden; });
+  await page.waitForFunction(() => !!document.querySelector("#docspad .entry"), null, { timeout: 20000 });
+};
 
 let browser = null;
 const run = async (name, opts, fn) => {

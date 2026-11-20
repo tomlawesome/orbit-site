@@ -7,7 +7,7 @@
  * With the option, after the farewell beat (body.showdusk.farewell), at 1280x800: the dusk's ring is the dawn's
  * (centre and width within 1px, --R 368px, ring 265px across) and its gate is where the dawn's is; the farewell
  * hangs 22px under the way back in, on the ring's axis; the planet waits for the beat (opacity 0 under showdusk,
- * 1 within 1s of farewell, 1 with neither class); the farewell fades in within 1.5s; html.rich lights the ring, the
+ * 1 once farewell is added, 1 with neither class); the farewell fades in (opacity .9s after .3s, read from its CSS); html.rich lights the ring, the
  * discs and the name, and without it they are plain. At 390x844 (--R 265.2px) the name is hidden, the farewell is
  * inside the ring (the said), 26px under it (the sub), the gate 24px under the sub, and nothing overflows sideways.
  * Reduced motion turns the planet's and its spin's animations off and changes none of that. The Earth photo (11a):
@@ -101,7 +101,8 @@ const MEASURE = () => {
     dawnPad: dawn && parseFloat(cs(dawn.querySelector(".loginchrome")).paddingBottom), duskPad: parseFloat(cs(dusk.querySelector(".loginchrome")).paddingBottom),
   };
 };
-/* adds the farewell beat and says, in ms, when the planet and the farewell first read opaque (null: not within `limit`) */
+/* adds the farewell beat and says, in ms, when the planet and the farewell first read opaque (null: not within `limit`).
+   Only reported, never held to a duration: how long a transition took is the machine's, what it is meant to take is read from the CSS (BEAT_CSS). */
 const FAREWELL_BEAT = (limit) => new Promise((ok) => {
   document.body.classList.add("farewell");
   const t0 = performance.now(), got = { tr: null, fw: null };
@@ -114,6 +115,16 @@ const FAREWELL_BEAT = (limit) => new Promise((ok) => {
   };
   tick();
 });
+
+/* the transition of one property on an element, in seconds, as computed: { duration, delay } or null if it is not transitioned */
+const BEAT_CSS = (sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  const cs = getComputedStyle(el), sec = (v) => parseFloat(v), list = (v) => v.split(",").map((x) => x.trim());
+  const props = list(cs.transitionProperty), dur = list(cs.transitionDuration), del = list(cs.transitionDelay);
+  const i = props.findIndex((x) => x === "opacity" || x === "all");
+  return i < 0 ? null : { duration: sec(dur[i % dur.length]), delay: sec(del[i % del.length]) };
+};
 
 /* ---- a scenario collects what is wrong ---- */
 function scenario(name) {
@@ -253,9 +264,14 @@ try {
         const before = await page.evaluate(MEASURE);
         s.want("10. under showdusk alone the planet is opacity 0", before.trOpacity === 0, `opacity ${before.trOpacity}`);
         s.want("11. under showdusk alone the farewell is opacity 0", before.fwOpacity === 0, `opacity ${before.fwOpacity}`);
-        const got = await page.evaluate(FAREWELL_BEAT, 3000);
-        s.want("10. once farewell is added the planet reaches opacity 1 within 1s", got.tr !== null && got.tr <= 1000, `after ${got.tr === null ? "more than 3000" : got.tr} ms`);
-        s.want("11. once farewell is added the farewell reaches opacity 1 within 1.5s", got.fw !== null && got.fw <= 1500, `after ${got.fw === null ? "more than 3000" : got.fw} ms`);
+        const got = await page.evaluate(FAREWELL_BEAT, 10000);
+        s.want("10. once farewell is added the planet reaches opacity 1", got.tr !== null, "it had not within 10000 ms");
+        s.want("11. once farewell is added the farewell reaches opacity 1", got.fw !== null, "it had not within 10000 ms");
+        if (!reduced) {
+          const trCss = await page.evaluate(BEAT_CSS, "#dusk .glyph .tr"), fwCss = await page.evaluate(BEAT_CSS, "#dusk .farewell");
+          s.want("10. the planet's opacity transition is .4s with no delay (its CSS)", !!trCss && near(trCss.duration, 0.4, 0.001) && near(trCss.delay, 0, 0.001), `transition ${JSON.stringify(trCss)}`);
+          s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
+        }
         await sleep(SETTLE);
         const m = await page.evaluate(MEASURE);
         desktopAsDawn(s, m);
@@ -282,9 +298,14 @@ try {
         const before = await page.evaluate(MEASURE);
         s.want("10. under showdusk alone the planet is opacity 0", before.trOpacity === 0, `opacity ${before.trOpacity}`);
         s.want("11. under showdusk alone the farewell is opacity 0", before.fwOpacity === 0, `opacity ${before.fwOpacity}`);
-        const got = await page.evaluate(FAREWELL_BEAT, 3000);
-        s.want("10. once farewell is added the planet reaches opacity 1 within 1s", got.tr !== null && got.tr <= 1000, `after ${got.tr === null ? "more than 3000" : got.tr} ms`);
-        s.want("11. once farewell is added the farewell reaches opacity 1 within 1.5s", got.fw !== null && got.fw <= 1500, `after ${got.fw === null ? "more than 3000" : got.fw} ms`);
+        const got = await page.evaluate(FAREWELL_BEAT, 10000);
+        s.want("10. once farewell is added the planet reaches opacity 1", got.tr !== null, "it had not within 10000 ms");
+        s.want("11. once farewell is added the farewell reaches opacity 1", got.fw !== null, "it had not within 10000 ms");
+        if (!reduced) {
+          const trCss = await page.evaluate(BEAT_CSS, "#dusk .glyph .tr"), fwCss = await page.evaluate(BEAT_CSS, "#dusk .farewell");
+          s.want("10. the planet's opacity transition is .4s with no delay (its CSS)", !!trCss && near(trCss.duration, 0.4, 0.001) && near(trCss.delay, 0, 0.001), `transition ${JSON.stringify(trCss)}`);
+          s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
+        }
         await sleep(SETTLE);
         const m = await page.evaluate(MEASURE);
         phoneAsDawn(s, m);
