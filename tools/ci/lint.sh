@@ -179,18 +179,28 @@ echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
 # the new MEDIA). Gaia's own two blobs (CC BY-NC; as 98e1e897d deleted them) are
 # named in the refusal, though the allow-list already keeps them out.
 shipped_galaxy="78218df0d7cc5c4b21f650746aeea82ef9de7f87 d639bed40c9f9de01abcd4373a801b9360402521"
-for f in $(git ls-files -- '*galaxy*.webp'); do
-  [ -e "$f" ] || continue
-  h=$(git hash-object "$f")
+# Every tracked file, read NUL-separated from the index (mode, blob, stage, TAB,
+# raw name), so a name with a space or a character git would quote is judged
+# like any other. Gaia's blobs are refused under any name; a name with
+# "galaxy" and ".webp" in any letter case must be a shipped blob.
+gal_list=$(mktemp)
+git ls-files -s -z | tr '\0' '\n' > "$gal_list"
+while IFS= read -r line; do
+  # a name with a newline arrives split over two lines, the second with no TAB: refused, so no part of it slips past
+  case "$line" in *"	"*) ;; *) echo "   a tracked name holds a newline (its tail reads \"$line\"): rename it"; fail=1; continue ;; esac
+  h=${line#* }; h=${h%% *}; f=${line#*	}
   case "$h" in
     e283e71534d7ec5bbc8fcad8ad44317321d89c47|5a10103ca37f94141a4b02e9e11bd2c5645097f1)
       echo "   $f is Gaia's picture (CC BY-NC): delete it, or paint it with tools/galaxy-bake.cjs"; fail=1; continue ;;
   esac
+  lower=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in *galaxy*.webp) ;; *) continue ;; esac
   case " $shipped_galaxy " in
     *" $h "*) ;;
     *) echo "   $f is not one of the two shipped galaxy pictures (blob $h): paint it with tools/galaxy-bake.cjs and update shipped_galaxy and sw.js MEDIA, or delete it"; fail=1 ;;
   esac
-done
+done < "$gal_list"
+rm -f "$gal_list"
 [ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
 for f in index.html de/index.html 404.html install.html README.md LICENSE; do
   if grep -q -i -E 'gaia|CC BY-NC 3\.0 IGO|by-nc/3\.0/igo' "$f"; then
