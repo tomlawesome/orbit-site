@@ -55,32 +55,25 @@ let page = null;
 /* set only while the deliberate no-such-page visit runs: Chromium logs its
    404 as a console error, which is expected there and nowhere else */
 let expectNotFound = false;
+/* the step under way, so a failed request names where it happened */
+let stepName = "(before the first step)";
 const inFlight = new WeakMap();
-const sunsInFlight = new WeakMap();
 /* The door starts its sun worker a frame after it shows; leaving the page (fresh() closes it, a goto or Back leaves it) or
    the door's stop() ending the worker while its script is still downloading is reported by Firefox as a failed request
-   (NS_BINDING_ABORTED), which the global requestfailed check rightly counts (pipelines 4915, 4971, 4998). Playwright
-   emits requestfailed only for a request it first announced with "request" on the same page, so the tracker below (the
-   same page events the counter uses) does see the worker's script; what it cannot see is a request not yet made. So the
-   journey waits, twice running 250 ms apart, for both: no sun-worker.js download under way, and no door still
-   "pending" (the door sets world.dataset.rasterised = "pending" in start(), before it asks for the worker, and "ready"
-   once drawn: assets/door/README.md). A "pending" that never clears is logged, not failed: only a download still
-   under way after 20 s fails. fresh() does it for the page it is closing, so every step ends clear of the worker. */
+   (NS_BINDING_ABORTED), which the global requestfailed check rightly counts (pipelines 4915, 4971, 4998, 5013). So the
+   journey waits, twice running 250 ms apart and for at most 20 s, until no door is still "pending": the door sets
+   world.dataset.rasterised = "pending" before it asks for the worker and "ready" only once its sun is drawn, which is
+   after the worker's reply (assets/door/glows.js build()), so its script has finished downloading. Not the requests
+   themselves: Chromium never reports a dedicated worker's script as finished on the page (pipeline 5013 waited out its
+   20 s). A door still "pending" after 20 s is logged, not failed. fresh() does it for the page it is closing. */
 const sunDone = async (p, what) => {
-  const suns = sunsInFlight.get(p) ?? new Set();
   const end = Date.now() + 20000;
   const pending = () => p.locator('[data-rasterised="pending"]').count().catch(() => 0);
-  let still = 0;
   for (let quiet = 0; quiet < 2;) {
     if (p.isClosed()) return;
-    if (Date.now() > end) {
-      if (suns.size) throw new Error(`${what}: the sun worker still downloading after 20s`);
-      console.log(`     (${what}: the door still "pending" after 20s, no sun worker download under way)`);
-      return;
-    }
+    if (Date.now() > end) { console.log(`     (${what}: the door still "pending" after 20s)`); return; }
     await p.waitForTimeout(250);
-    still = await pending();
-    quiet = suns.size || still ? 0 : quiet + 1;
+    quiet = (await pending()) ? 0 : quiet + 1;
   }
 };
 
@@ -92,11 +85,6 @@ const fresh = async () => {
   inFlight.set(page, pics);
   page.on("request", (r) => { if (r.url().includes("/assets/docs/img/")) pics.add(r); });
   for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, (r) => pics.delete(r));
-  /* the door's sun worker script being downloaded now, for sunDone */
-  const suns = new Set();
-  sunsInFlight.set(page, suns);
-  page.on("request", (r) => { if (r.url().includes("/assets/door/sun-worker.js")) suns.add(r); });
-  for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, (r) => suns.delete(r));
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   /* No Gaia picture: the page must not request any galaxy*.webp, and must not
      print the old "is drawn, not Gaia's" credit note. */
@@ -107,13 +95,13 @@ const fresh = async () => {
   });
   page.on("console", (m) => { if (m.text().includes("is drawn, not Gaia's")) problems.push(`console message mentions Gaia: ${m.text()}`); });
   page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error: ${m.text()} @ ${m.location().url || "no address"}`); });
-  page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
+  page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed (${stepName}): ${r.url()} ${r.failure()?.errorText}`); });
   page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
   return page;
 };
 
 const step = async (name, fn) => {
-  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
+  try { await fresh(); stepName = name; await fn(); console.log(`ok   ${name}`); }
   catch (e) { problems.push(`${name}: ${e.message.split("\n")[0]}`); console.log(`FAIL ${name}`); }
 };
 
@@ -122,7 +110,7 @@ const step = async (name, fn) => {
    gate until its issue fixes, rewrites or deletes it (owner 22a, #107). */
 const quarantined = async (issue, browsers, name, fn) => {
   if (!browsers.includes(BROWSER)) return step(name, fn);
-  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
+  try { await fresh(); stepName = name; await fn(); console.log(`ok   ${name}`); }
   catch (e) { console.log(`QUARANTINED FAIL ${name} (${issue}, not gating): ${e.message.split("\n")[0]}`); }
 };
 
