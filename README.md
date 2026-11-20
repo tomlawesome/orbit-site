@@ -147,6 +147,8 @@ The nightly docs import reaches `dev` the same way, by a merge request
 `main` with the next promotion.
 When a promotion merges, GitLab pushes `main` to the GitHub mirror, and that push is
 the release. Nobody pushes `main` by hand.
+A promotion is opened only once `node tools/ci/release-readiness.mjs --target main` says
+ready; the steps and the release record are in `docs/releasing.md`.
 
 On GitHub, Settings → Pages → Build and deployment is set to *Deploy from a
 branch*, `main`, `/ (root)`. Published at

@@ -733,6 +733,16 @@ split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSL
 # marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
 split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
   y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
+# Cases (rr1)-(rr4) (#156): release_readiness exists, runs only on a merge request from dev into main, and no job but the
+# secret scans and translate_docs starts beside it with an empty needs. Each edit changes the shipped file.
+split_case "rr1: no release_readiness job" $ci "no release_readiness job" '
+  y = y.replace("\nrelease_readiness:\n", () => "\nrelease_readiness_x:\n");'
+split_case "rr2: release_readiness on every merge request (wider rule)" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n)    - if: [^\n]*\n/, (m, a) => a + "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
+split_case "rr3: release_readiness without the closing when: never" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n    - if: [^\n]*\n)    - when: never\n/, (m, a) => a);'
+split_case "rr4: live:firefox with needs: []" $ci "live:firefox has needs" '
+  y = y.replace(/(\nlive:firefox:[\s\S]*?)  needs: \[\{ job: release_readiness, optional: true \}\]\n/, (m, a) => a + "  needs: []\n");'
 # Cases t10-t13 (audit finding SEC-8, #158): the job that holds a secret names its image itself. A pipeline variable
 # outranks the file's own `variables:`, so `image: $NODE_IMAGE` on translate_docs, publish_translations or publish_docs
 # lets whoever starts a web pipeline with NODE_IMAGE run an image of their choice beside the key or the token. The three

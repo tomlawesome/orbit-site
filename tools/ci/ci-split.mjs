@@ -738,6 +738,27 @@ for (const t of strings(doc)) if (t.includes("TRANSLATE_MAX_TOKENS")) { bad(".gi
 if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 
 const read = (p) => (fs.existsSync(at(p)) ? fs.readFileSync(at(p), "utf8") : null);
+// Release readiness (#156): `release_readiness` runs only on a merge request from dev into main (that rule, then
+// `when: never`, so no other pipeline gets it), and every other job waits for it, by stage or by an optional need.
+// A job with an empty `needs` would start beside it, so none has one but the two secret scans' `private-details`
+// and `scan:gitleaks` (cheap; judged by nothing the readiness depends on) and translate_docs, which the check
+// above holds to `needs: []` itself (a need on another job could bring a dotenv report into the job with the key;
+// it never runs on a merge request).
+const READY_RULES = [`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "dev" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"`];
+const ready = job("release_readiness");
+if (ready === null) bad(".gitlab-ci.yml: there is no release_readiness job");
+else {
+  const rules = Array.isArray(ready.rules) ? ready.rules : ready.rules === undefined ? [] : [ready.rules];
+  const exact = rules.length === 2 && isObj(rules[0]) && Object.keys(rules[0]).length === 1 && rules[0].if === READY_RULES[0]
+    && isObj(rules[1]) && Object.keys(rules[1]).length === 1 && rules[1].when === "never";
+  if (!exact) bad(`.gitlab-ci.yml: release_readiness rules must be exactly the dev into main merge request rule (if: ${READY_RULES[0]}) followed by when: never, found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
+}
+const MAY_START_BESIDE = ["scan:gitleaks", "private-details", "release_readiness", "translate_docs"];
+for (const [name, j] of Object.entries(doc)) {
+  if (name.startsWith(".") || !isObj(j) || MAY_START_BESIDE.includes(name)) continue;
+  if (Array.isArray(j.needs) && j.needs.length === 0) bad(`.gitlab-ci.yml: ${name} has needs: [], so it would start beside release_readiness; say needs: [{ job: release_readiness, optional: true }] (only the secret scans start beside it)`);
+}
+
 const imps = read("tools/ci/nightly-import.sh"), pubs = read("tools/ci/nightly-publish.sh");
 if (imps === null) bad("tools/ci/nightly-import.sh: is missing");
 else {

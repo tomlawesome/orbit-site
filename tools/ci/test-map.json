@@ -92,6 +92,7 @@
     "tooling": [
       "tools/ci/lint.sh",
       "tools/ci/ci-split.mjs",
+      "tools/ci/release-readiness.mjs",
       "tools/ci/door-types.mjs",
       "tools/ci/tsconfig.door.json",
       "tools/ci/no-real-names.mjs",
