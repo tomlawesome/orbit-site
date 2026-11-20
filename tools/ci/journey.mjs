@@ -57,22 +57,35 @@ let page = null;
 let expectNotFound = false;
 const inFlight = new WeakMap();
 const sunsInFlight = new WeakMap();
-/* The door starts its sun worker a frame after it shows; leaving the page (or the door's stop() ending the worker) while
-   its script is still downloading is reported by Firefox as a failed request (NS_BINDING_ABORTED), which the global
-   requestfailed check rightly counts (pipelines 4915, 4971). So the journey waits, as picturesDone does, until no
-   sun-worker.js download is under way twice running, 250 ms apart, for at most 20 s, before leaving. */
+/* The door starts its sun worker a frame after it shows; leaving the page (fresh() closes it, a goto or Back leaves it) or
+   the door's stop() ending the worker while its script is still downloading is reported by Firefox as a failed request
+   (NS_BINDING_ABORTED), which the global requestfailed check rightly counts (pipelines 4915, 4971, 4998). Playwright
+   emits requestfailed only for a request it first announced with "request" on the same page, so the tracker below (the
+   same page events the counter uses) does see the worker's script; what it cannot see is a request not yet made. So the
+   journey waits, twice running 250 ms apart, for both: no sun-worker.js download under way, and no door still
+   "pending" (the door sets world.dataset.rasterised = "pending" in start(), before it asks for the worker, and "ready"
+   once drawn: assets/door/README.md). A "pending" that never clears is logged, not failed: only a download still
+   under way after 20 s fails. fresh() does it for the page it is closing, so every step ends clear of the worker. */
 const sunDone = async (p, what) => {
   const suns = sunsInFlight.get(p) ?? new Set();
   const end = Date.now() + 20000;
+  const pending = () => p.locator('[data-rasterised="pending"]').count().catch(() => 0);
+  let still = 0;
   for (let quiet = 0; quiet < 2;) {
-    if (Date.now() > end) throw new Error(`${what}: the sun worker still downloading after 20s`);
+    if (p.isClosed()) return;
+    if (Date.now() > end) {
+      if (suns.size) throw new Error(`${what}: the sun worker still downloading after 20s`);
+      console.log(`     (${what}: the door still "pending" after 20s, no sun worker download under way)`);
+      return;
+    }
     await p.waitForTimeout(250);
-    quiet = suns.size ? 0 : quiet + 1;
+    still = await pending();
+    quiet = suns.size || still ? 0 : quiet + 1;
   }
 };
 
 const fresh = async () => {
-  await page?.close();
+  if (page) { await sunDone(page, "before the page is closed").catch((e) => problems.push(e.message)); await page.close(); }
   page = await ctx.newPage();
   /* the docs pictures being downloaded now, for picturesDone */
   const pics = new Set();
