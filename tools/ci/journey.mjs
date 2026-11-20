@@ -56,6 +56,21 @@ let page = null;
    404 as a console error, which is expected there and nowhere else */
 let expectNotFound = false;
 const inFlight = new WeakMap();
+const sunsInFlight = new WeakMap();
+/* The door starts its sun worker a frame after it shows; leaving the page (or the door's stop() ending the worker) while
+   its script is still downloading is reported by Firefox as a failed request (NS_BINDING_ABORTED), which the global
+   requestfailed check rightly counts (pipelines 4915, 4971). So the journey waits, as picturesDone does, until no
+   sun-worker.js download is under way twice running, 250 ms apart, for at most 20 s, before leaving. */
+const sunDone = async (p, what) => {
+  const suns = sunsInFlight.get(p) ?? new Set();
+  const end = Date.now() + 20000;
+  for (let quiet = 0; quiet < 2;) {
+    if (Date.now() > end) throw new Error(`${what}: the sun worker still downloading after 20s`);
+    await p.waitForTimeout(250);
+    quiet = suns.size ? 0 : quiet + 1;
+  }
+};
+
 const fresh = async () => {
   await page?.close();
   page = await ctx.newPage();
@@ -64,6 +79,11 @@ const fresh = async () => {
   inFlight.set(page, pics);
   page.on("request", (r) => { if (r.url().includes("/assets/docs/img/")) pics.add(r); });
   for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, (r) => pics.delete(r));
+  /* the door's sun worker script being downloaded now, for sunDone */
+  const suns = new Set();
+  sunsInFlight.set(page, suns);
+  page.on("request", (r) => { if (r.url().includes("/assets/door/sun-worker.js")) suns.add(r); });
+  for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, (r) => suns.delete(r));
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   /* No Gaia picture: the page must not request any galaxy*.webp, and must not
      print the old "is drawn, not Gaia's" credit note. */
@@ -930,6 +950,7 @@ const landings = async (prefix) => {
     await signedOut(p);
     await p.locator("#gate-back").click({ timeout: 30000 });
     await seeing(p, '"Sign back in" did not show the door', (s) => s.door && !s.dusk && !s.home && s.hash === "");
+    await sunDone(p, "before Forward from the door");
     await pressForward(p);
     await seeing(p, "Forward from the door did not fly in to the sky", onSky);
   });
@@ -946,6 +967,7 @@ await step("404 is the site's own", async () => {
   const file = readFileSync(join(here, "..", "..", "404.html"), "utf8");
   const want = { title: /<title>([^<]+)<\/title>/.exec(file)?.[1], heading: /<h1[^>]*>([^<]+)<\/h1>/.exec(file)?.[1] };
   if (!want.title || !want.heading) throw new Error("404.html has no title or heading to compare with");
+  await sunDone(page, "before leaving for the 404");
   expectNotFound = true;
   try {
     const res = await page.goto(SITE + "no-such-page", { waitUntil: "load" });
