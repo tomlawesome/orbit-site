@@ -118,10 +118,11 @@ async function keep(key, canvas) {
 /* the sun painted and encoded by the host's worker (settings.sunWorker, running sun-worker.js), off the page's thread.
    Resolves with the PNG, or null where the page is to paint it: no sunWorker, no Worker or OffscreenCanvas, ?sun=page,
    the host's worker null or throwing, and every way a worker fails (an error, an unreadable message, a reply with no
-   picture, no reply within the backstop). The worker is ended however it ends, and what it says later is let go. */
+   picture, no reply within the backstop). The worker is ended however it ends, and what it says later is let go. `ends`,
+   if given, is handed a function that ends it at once with null (a stopped or superseded build: mountRasters). */
 const SUN_BACKSTOP_MS = 20000;
-/** @param {number} w @param {number} h @returns {Promise<Blob | null>} */
-function sunInWorker(w, h) {
+/** @param {number} w @param {number} h @param {Set<() => void>} [ends] @returns {Promise<Blob | null>} */
+function sunInWorker(w, h, ends) {
   const make = settings.sunWorker;
   if (!make || flag("sun") === "page" || typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") return Promise.resolve(null);
   /** @type {Worker | null} */ let worker = null;
@@ -134,22 +135,26 @@ function sunInWorker(w, h) {
     const end = (blob) => {
       if (over) return;
       over = true;
+      ends?.delete(abort);
       clearTimeout(timer);
       try { w1.terminate(); } catch { /* gone already */ }
       resolve(blob);
     };
-    const timer = setTimeout(() => end(null), SUN_BACKSTOP_MS);
+    const abort = () => end(null);
+    ends?.add(abort);
+    const timer = setTimeout(abort, SUN_BACKSTOP_MS);
     w1.addEventListener("message", (e) => end(e.data?.blob ?? null));
     w1.addEventListener("error", (e) => { e.preventDefault?.(); end(null); });
     w1.addEventListener("messageerror", () => end(null));
     try { w1.postMessage({ w, h }); } catch { end(null); }
   });
 }
-/** @param {string} key @param {number} w @param {number} h @param {() => boolean} [live] @returns {Promise<string | null>} */
-async function paintSun(key, w, h, live = () => true) {
+/** @param {string} key @param {number} w @param {number} h @param {() => boolean} [live] @param {Set<() => void>} [ends] @returns {Promise<string | null>} */
+async function paintSun(key, w, h, live = () => true, ends) {
   const hit = cache.get(key);
   if (hit) return hit;
-  const blob = await sunInWorker(w, h);
+  const blob = await sunInWorker(w, h, ends);
+  if (!blob && !live()) return null;   /* (its worker ended with the build: the page paints nothing for it) */
   if (blob) {
     /* a build that a newer size has superseded makes nothing; two builds of one size: the first picture kept, the second let go */
     if (!live()) return null;
@@ -206,6 +211,7 @@ export function mountRasters(world, groups, prefix, { until = () => null, drawn 
   };
   async function build() {
     const id = ++run;
+    endSun();
     origin();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const base = Math.max(innerWidth / 1600, innerHeight / 1000);
@@ -220,7 +226,7 @@ export function mountRasters(world, groups, prefix, { until = () => null, drawn 
     for (const [name, group] of Object.entries(groups)) {
       const [key, w, h] = sizes[name];
       /* the sun is painted (paintSun); the rest are drawn from their SVG */
-      const url = /** @type {string} */ (await (group === SUN ? paintSun(key, w, h, () => id === run) : rasterise(key, frame(/** @type {Group} */ (group).defs, /** @type {Group} */ (group).body, w, h), w, h)));
+      const url = /** @type {string} */ (await (group === SUN ? paintSun(key, w, h, () => id === run, sunEnds) : rasterise(key, frame(/** @type {Group} */ (group).defs, /** @type {Group} */ (group).body, w, h), w, h)));
       /* superseded: what it made for a size that is no longer current is let go (the newer build's own sizes are kept),
          unless it is a picture still on screen (a cached one it was handed): the newest build lets that go as it ends */
       if (id !== run) { if (url && !current.has(key) && ![...shown.values()].includes(key)) forget(key); return; }
@@ -237,10 +243,14 @@ export function mountRasters(world, groups, prefix, { until = () => null, drawn 
     if (id !== run) return;
     world.dataset.rasterised = "ready";
   }
+  /* the sun workers in flight, ended with the build that asked for them (a newer build, or stop) */
+  /** @type {Set<() => void>} */
+  const sunEnds = new Set();
+  const endSun = () => { for (const f of [...sunEnds]) f(); };
   const rebuild = () => { clearTimeout(timer); timer = setTimeout(build, 120); };
   const start = () => { build(); addEventListener("resize", rebuild); };
   origin(); addEventListener("resize", origin);
   /* taken down: a build under way stops at its next step, and nothing listens */
-  const stop = () => { run++; clearTimeout(timer); removeEventListener("resize", rebuild); removeEventListener("resize", origin); };
+  const stop = () => { run++; endSun(); clearTimeout(timer); removeEventListener("resize", rebuild); removeEventListener("resize", origin); };
   return { start, stop };
 }
