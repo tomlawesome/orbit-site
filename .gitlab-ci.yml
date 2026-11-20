@@ -119,8 +119,9 @@ variables:
 # Release readiness (#156): first on a promotion merge request (`dev` into
 # `main`), and every other job waits for it: by stage order, and each job that
 # had `needs: []` lists it as an optional need, so a pipeline without it is
-# unchanged. The two secret scans keep starting beside it (cheap, and they
-# judge nothing the readiness depends on). It runs the four checks of
+# unchanged. `private-details` keeps starting beside it (cheap, and it
+# judges nothing the readiness depends on); `scan:gitleaks` has no `needs`
+# and so waits by stage like the rest. It runs the four checks of
 # tools/ci/release-readiness.mjs in one go and ends with the list of every
 # failure, so nothing long runs on a promotion that was never ready. The same
 # script runs by hand before the merge request is opened (docs/releasing.md).

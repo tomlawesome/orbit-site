@@ -10,6 +10,8 @@ Before opening the merge request, run this on `dev`'s tip:
 node tools/ci/release-readiness.mjs --target main
 ```
 
+From a worktree that is not on `dev`, name it: `--source gitlab/dev --remote gitlab` (after a fetch).
+
 It checks what a machine can (steps 1, 2 and 4) and ends with `Ready:` or `Not ready:`. The
 merge request's own pipeline runs it again as the `release_readiness` job. The record
 (`docs/releases/YYYY-MM-DD.md`, or `YYYY-MM-DD-N.md` for a second on one day) is copied from
@@ -19,8 +21,10 @@ merge request's own pipeline runs it again as the `release_readiness` job. The r
 
 Who: the agent. Checked by the job.
 
-Anything that merged into `main` (the nightly docs import reaches `main` only by promotion,
-but a hotfix or an earlier release may add commits) is merged back into `dev` by merge request.
+Any change that merged into `main` alone (the nightly docs import reaches `main` only by
+promotion, but a hotfix may) is merged back into `dev` by merge request. The merge commit an
+earlier release left on `main` changes nothing and needs no merge back: the job passes when
+merging `main` into `dev` would change no file.
 
 ## Step 2: the last release reached the public mirror
 

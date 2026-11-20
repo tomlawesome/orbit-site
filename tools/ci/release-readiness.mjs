@@ -97,7 +97,7 @@ const checks = (lookups) => ({
   "contains-target": async () =>
     (await lookups.sourceHolds(await lookups.targetTip()))
       ? { ok: true, message: "dev holds everything on main" }
-      : { ok: false, message: "main has commits dev lacks (an import merged into main?): merge main into dev by merge request, then run this again" },
+      : { ok: false, message: "main has changes dev lacks (a hotfix or an import merged into main?): merge main into dev by merge request, then run this again" },
   "mirror-current": async () => {
     const [mirror, tip] = [await lookups.mirrorTip(), await lookups.targetTip()];
     return mirror === tip
@@ -147,17 +147,27 @@ function realLookups({ target, source, remote }) {
   const git = (args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120000 });
   const targetRef = `${remote}/${target}`;
   return {
-    source: () => process.env.CI_MERGE_REQUEST_SOURCE_BRANCH_NAME || git(["rev-parse", "--abbrev-ref", source]).trim(),
+    // (a remote's branch counts by its own name: `--source gitlab/dev --remote gitlab` is dev)
+    source: () => process.env.CI_MERGE_REQUEST_SOURCE_BRANCH_NAME || git(["rev-parse", "--abbrev-ref", source]).trim().replace(new RegExp(`^${remote.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/`, "u"), ""),
     target: () => target,
     targetTip: () => git(["rev-parse", "--verify", `${targetRef}^{commit}`]).trim(),
+    // Held when the commit is in the source's history, or when merging it in would change nothing: a promotion
+    // leaves its own merge commit on main, which dev never has, yet nothing in it is missing from dev.
     sourceHolds: (commit) => {
       try {
         git(["merge-base", "--is-ancestor", commit, source]);
         return true;
       } catch (error) {
-        if (error.status === 1) return false;
+        if (error.status !== 1) throw error;
+      }
+      let merged;
+      try {
+        merged = git(["merge-tree", "--write-tree", source, commit]).split("\n")[0].trim();
+      } catch (error) {
+        if (error.status === 1) return false;   /* (a conflict: main has changes dev lacks) */
         throw error;
       }
+      return merged === git(["rev-parse", `${source}^{tree}`]).trim();
     },
     mirrorTip: () => {
       const tip = git(["ls-remote", MIRROR_URL, "refs/heads/main"]).split(/\s/u)[0];
