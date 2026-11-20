@@ -2971,7 +2971,7 @@ flake_lint_case "(f-sec12k) the lint refusing a real call after other code on it
 flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
 flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 
-# Section "the Milky Way is drawn" (#119; cases gal1-gal10): every galaxy*.webp the tree tracks must be one of the two
+# Section "the Milky Way is drawn" (#119; cases gal1-gal11): every galaxy*.webp the tree tracks must be one of the two
 # shipped pictures, by git blob hash (an allow-list, so a re-encoded, cropped or renamed Gaia file, or any third-party
 # galaxy picture, is refused and named); Gaia's own two blobs are refused as Gaia's. The committed tree passes.
 galaxy_case() { # galaxy_case <label> <want: 0 or 1> <text the refusal names>; the change is made, uncommitted, before
@@ -3015,6 +3015,9 @@ fi
 name=$(printf 'assets/img/docs/galaxy\n.webp_'); name=${name%_}
 printf 'other bytes, a newline in the name' > "$name"
 galaxy_case "(gal10) a galaxy*.webp with a newline in its name" 1 'holds a newline'
+name=$(printf 'assets/img/docs/galaxy\na\t.webp_'); name=${name%_}
+printf 'other bytes, a newline and a tab in the name' > "$name"
+galaxy_case "(gal11) a galaxy*.webp with a newline and a tab in its name" 1 'holds a newline'
 
 rm -f "$cspjs"
 
