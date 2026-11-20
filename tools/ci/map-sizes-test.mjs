@@ -33,6 +33,9 @@
  *   P11 worker            hello `images` has every SIZED_PATHS entry as an absolute address
  *   P12 chores            "sharp" chores run after docs/flight/info and before the untagged, and are never hurried; a map that failed
  *                         in the first pass and is retried loads its smallest, then its larger sizes
+ *   #164 coverage:
+ *   P6  whole sizes       under ?holdreveal the larger sizes go in whole, each in one call at its own level (no bands), every size lands, every bitmap is closed
+ *   P7  whole map refused a map with no sizes (the host places the full maps only) whose download is refused is forgotten, asked for again by the next warm, and lands
  *   review findings (added after the build was read):
  *   P2  retry             a map refused in the first pass and retried (by the warm itself, or by a second warm before any verdict)
  *                         asks for no larger size until a fit verdict; none after an unfit one
@@ -329,6 +332,29 @@ const CASES = {
     await b.clock.advance(150000, () => allLanded(b) && b.page.draws > d0);
     await b.clock.advance(3000);
     return { draws: b.page.draws - d0, sum: summarise(b.page, b.exp), landed: allLanded(b), ...common(b) };
+  },
+  /* P6: ?holdreveal, the phone's flow: every larger size is put in whole, not in bands */
+  async hold() {
+    const b = await bed({ ...PHONE, flags: { holdreveal: "1" } });
+    await startEase(b);
+    b.journey.warm().catch(() => {});
+    await settle(b);
+    const calls = {};
+    for (const e of b.page.gpu) if ((e.k === "img" || e.k === "sub") && e.map && !e.probe) (calls[e.path] ||= []).push({ k: e.k, level: e.level, h: e.h, x: e.x ?? 0, y: e.y ?? 0 });
+    return { calls, sum: summarise(b.page, b.exp), landed: allLanded(b), ...common(b) };
+  },
+  /* P7: no sized paths, the day map's full file refused in the first pass, then the next warm */
+  async wholeRefused() {
+    let refusing = true;
+    const b = await bed({ image: (p) => (SIZED.has(p) ? p : hostImage(p)), refuse: (p) => refusing && p === MAPS.day });
+    await Promise.race([b.journey.warm({ prove: false }).catch(() => {}), b.clock.advance(20000).then(() => {})]);
+    await b.clock.advance(3000);
+    const before = b.asked.filter((a) => a.path === MAPS.day).length, textures = new Set(b.page.gpu.filter((e) => e.map && e.path === MAPS.day).map((e) => e.texture)).size;
+    refusing = false;
+    b.journey.warm({ prove: false }).catch(() => {});
+    await b.clock.advance(60000, () => summarise(b.page, b.exp).day?.completed.includes(MAPS.day));
+    await b.clock.advance(3000);
+    return { askedBefore: before, texturesBefore: textures, askedAll: b.asked.filter((a) => a.path === MAPS.day).length, sum: summarise(b.page, b.exp), ...common(b) };
   },
   /* P12: the queue's order, with the queue held until all are in it */
   async order() {
@@ -635,6 +661,31 @@ const mapAsks = (r) => (r.asked || []).filter((a) => isMapPath(a.path));
   const f = runCase(import.meta.url, "retryFit", T);
   chk("control (retry): the retried map (refused once in the first pass, a fit verdict said) goes on to its larger sizes, smallest to top", f, (r) => [r.fit && r.verdict >= 0 && JSON.stringify(r.done) === JSON.stringify(r.chain), `fit ${r.fit}; verdict line ${r.verdict}; landed ${JSON.stringify((r.done || []).map((p) => p.replace(/^.*\//, "")))}`]);
   chk("P2 a map refused once in the first pass and retried: none of its larger sizes is asked for before the verdict (the retry's own sharpen waits for it)", f, (r) => [r.early.length === 0, `asked before the verdict (line ${r.verdict}): ${listOf(r.early)}`]);
+}
+
+/* #164: ?holdreveal puts the larger sizes in whole (upload.js uploadSized: the unbanded path) */
+{
+  const r = runCase(import.meta.url, "hold", T);
+  chk("control (hold): with ?holdreveal every map's sizes landed, smallest to top, and nothing threw", r, (r) => [r.landed === true && r.errors.length === 0 && r.faults.length === 0, `landed ${r.landed}; errors ${JSON.stringify(r.errors)}; faults ${JSON.stringify(r.faults)}`]);
+  chk("P6 with ?holdreveal each larger size is put in whole: one texSubImage2D call at its own level, all its rows at once (no bands)", r, (r) => {
+    const bad = [];
+    for (const k of KEYS) {
+      const chain = chainOf(k, PHONE.W, PHONE.dpr).chain;
+      chain.slice(0, -1).forEach((c) => {
+        const calls = r.calls[c.path] || [], lv = level(chainOf(k, PHONE.W, PHONE.dpr), c.path);
+        if (!(calls.length === 1 && calls[0].k === "sub" && calls[0].level === lv && calls[0].h === dimsH(c.path) && calls[0].y === 0)) bad.push(c.path);
+      });
+    }
+    return [bad.length === 0, `larger sizes not put in whole, in one call: ${listOf(bad)}`];
+  });
+  chk("P6 ... and every bitmap made was closed", r, (r) => [r.bitmaps > 0 && r.unclosed === 0, `${r.unclosed} of ${r.bitmaps} bitmap(s) left open`]);
+}
+
+/* #164: a map with no sizes whose download is refused is let go and asked for again (voyage.js loadWhole's catch) */
+{
+  const r = runCase(import.meta.url, "wholeRefused", T);
+  chk("P7 a full map (no sizes) refused in the first pass is asked for again by the next warm", r, (r) => [r.askedBefore >= 1 && r.askedAll > r.askedBefore, `${MAPS.day} asked for ${r.askedBefore} time(s) in the first pass, ${r.askedAll} in all`]);
+  chk("P7 ... nothing of it was put on the GPU by the failed pass, and it lands whole on the retry, with no fault and nothing thrown", r, (r) => [r.texturesBefore === 0 && r.sum.day?.completed.length === 1 && r.sum.day.completed[0] === MAPS.day && r.faults.length === 0 && r.errors.length === 0, `textures before the retry ${r.texturesBefore}; landed ${JSON.stringify(r.sum.day?.completed)}; faults ${JSON.stringify(r.faults)}; errors ${JSON.stringify(r.errors)}`]);
 }
 
 /* review: the rich Earth from the first (?door3d&level=2&rich, the capability probe answering): its clouds fields are made with the maps */

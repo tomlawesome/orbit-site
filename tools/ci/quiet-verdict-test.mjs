@@ -49,6 +49,7 @@
  *   Q17 the world retired or destroyed while waiting: the wait ends, no frame timed afterwards
  *   Q18 a size change between frames warms again at the new size; after the test the size is as before it
  *   Q19 index.js exports watch, busyHeard, busyGone, busyPeer; assets/door/README.md lists them
+ *   Q20 a timed frame that throws (the context's readPixels fails): the world stays off ("flight world: off:" line, no "on"), warm() settles, nothing escapes
  *
  * Statements about the machine that cannot be tested without a browser (listed, not tested here): that a real browser's
  * COMPLETION_STATUS_KHR and LINK_STATUS reads track the real compile; that a real upload's cost shows in the
@@ -638,6 +639,19 @@ const B = {
     work.stop();
     return { ...facts(b), whileHidden, verdictWhileHidden, shownAt };
   },
+  /* Q20: the first timed frame throws (the context failing mid-test), the warm-up frames do not */
+  async q20() {
+    let thrown = 0;
+    const b = await bootB({ cost: (f) => { if (!f.warm) { thrown++; throw new Error("the frame failed"); } return 10; } });
+    const escaped = [];
+    const onErr = (e) => escaped.push(String(e && e.message || e));
+    process.on("unhandledRejection", onErr); process.on("uncaughtException", onErr);
+    b.warm();
+    await b.untilVerdict();
+    process.off("unhandledRejection", onErr); process.off("uncaughtException", onErr);
+    const f = facts(b);
+    return { ...f, thrown, state: b.state, escaped, onLines: b.rec.lines.filter((x) => /flight world: on/.test(x.l)).length, timedLine: lineOf(b) };
+  },
   /* Q16: skip, with constant work */
   async q16() {
     const b = await bootB({ flags: { fit: "skip" }, cost: () => 50 });
@@ -711,6 +725,7 @@ const CASES = guarded({
   B_q15: B.q15, B_q16: B.q16, B_q16fit: B.q16fit, B_q17destroy: () => B.q17("destroy"), B_q17lost: () => B.q17("lost"),
   B_q18: () => q18("during"), B_q18ref: () => q18("before"), B_q18plain: () => q18(null),
   Q19: q19,
+  B_q20: B.q20,
 });
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -843,6 +858,12 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   chk("Q18 a size change between frames warms again at the new size (the 2 frames there cost 200 ms and are not timed, the timed ones 20 ms): \"on (frame 20 ms)\"", r, (r) => [/flight world: on \(frame 20 ms\)/.test(r.verdict || ""), `lines ${show(r.lines)}`]);
   chk("Q18 after the test (when the verdict is said) the world is drawn at the size it had before it", plain, (p) => [p.sizeAtVerdict !== null && eq(p.sizeBefore, p.sizeAtVerdict), `before ${show(p.sizeBefore)}, at the verdict ${show(p.sizeAtVerdict)}`]);
   chk("Q18 ... and after a resize in the test, at the size a world made at the new window size has", r, (r) => [ref.sizeBefore !== undefined && r.sizeAtVerdict !== null && eq(r.sizeAtVerdict, ref.sizeBefore), `at the verdict ${show(r.sizeAtVerdict)}, a world made at that size ${show(ref.sizeBefore)}`]);
+}
+{
+  const r = run("B_q20");
+  chk("Q20 (precondition) a timed frame was drawn, and threw: the warm-up frames went through", r, (r) => [r.frames === 2 && r.thrown >= 1, `${r.frames} warm-up frame(s) went through, ${r.thrown} timed frame(s) threw`]);
+  chk("Q20 a timed frame that throws leaves the world off: the 'flight world: off:' line, never 'on', and no timing line", r, (r) => [/flight world: off:/.test(r.verdict || "") && r.onLines === 0 && r.timedLine === null, `line ${show(r.verdict)}, ${r.onLines} 'on' line(s), timing line ${show(r.timedLine)}`]);
+  chk("Q20 ... warm() settles and no error escapes", r, (r) => [r.state !== "pending" && r.escaped.length === 0, `warm() ${r.state}, escaped ${show(r.escaped)}`]);
 }
 {
   const r = run("Q19");
