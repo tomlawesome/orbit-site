@@ -43,10 +43,6 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 
 - 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host
 
-## door-context-restore, lint: "control: journey A (the context is fine) builds a world" (batch-a)
-
-- 2026-11-20 · batch-a 6373be896 · pipeline 4925 lint job 59095, door-context-restore-test.mjs · "7 shader(s) asked for; 'flight world: on' printed: false"; the case took about 10.7 s against under 2 s normally; the retry (job 59171) passed on the same commit
-
 ## asdawn, Firefox: the ring timing's farewell reaches opacity 1 late (390x844, motion on) (batch-a)
 
 - 2026-11-20 · batch-a 329cd4dec · pipeline 4915 Firefox job 59004, asdawn-test.mjs ring timing, 390x844 motion on · the farewell reached opacity 1 after 1844 ms (want within 1.5 s); the shard ran 905 s against 477 s planned; passed on pipeline 4945 with no change to that path
