@@ -185,9 +185,11 @@ shipped_galaxy="78218df0d7cc5c4b21f650746aeea82ef9de7f87 d639bed40c9f9de01abcd43
 # "galaxy" and ".webp" in any letter case must be a shipped blob.
 gal_list=$(mktemp)
 git ls-files -s -z | tr '\0' '\n' > "$gal_list"
+# a name with a newline would arrive split over two lines and could slip past the reads below: any such name, refused
+if [ "$(git ls-files -z | tr -cd '\n' | wc -c)" -gt 0 ]; then
+  echo "   a tracked name holds a newline: rename it (git ls-files shows it quoted)"; fail=1
+fi
 while IFS= read -r line; do
-  # a name with a newline arrives split over two lines, the second with no TAB: refused, so no part of it slips past
-  case "$line" in *"	"*) ;; *) echo "   a tracked name holds a newline (its tail reads \"$line\"): rename it"; fail=1; continue ;; esac
   h=${line#* }; h=${h%% *}; f=${line#*	}
   case "$h" in
     e283e71534d7ec5bbc8fcad8ad44317321d89c47|5a10103ca37f94141a4b02e9e11bd2c5645097f1)
