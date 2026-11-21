@@ -21,6 +21,8 @@
  *   J12 (#138, ALL-F6) the notice's English link, opened in a new tab with a modifier-click, a middle click or copied from
  *       the context menu, points at the address the visitor is at now (the site moves its hash without a hashchange), not
  *       the one the page loaded with
+ *   J13 (#164) the docs pad, one group chosen: a query that matches shows the filtered heading with a count and its clear
+ *       button; a query that matches nothing shows the empty state
  *
  * Contract the page is held to (the builder's): <html lang>, data-i18n keys, localStorage "orbit-lang", the notice
  * an element with class .ai-notice holding an <a hreflang="en"> to the English page, and the switch links
@@ -187,6 +189,26 @@ try {
     await docsOpen(page);
     const shown = await page.locator(".ai-notice:visible").count();
     check("J7 the root shows no AI notice", shown === 0, `${shown} visible`);
+  });
+
+  /* J13 (#164): the docs pad's filtered heading and its empty state, which no other step reaches (pads.js render()). Class and
+     attribute selectors only; the query is a word read from the first entry, so no localised text is typed or matched. */
+  await run("J13", { context: { locale: "en-US" } }, async (page) => {
+    await page.goto(`${SITE}${Q}#docs`, { waitUntil: "load" });
+    await docsOpen(page);
+    const pad = page.locator("#docspad");
+    await pad.locator(".skymap .chart .con .name").first().click();
+    const word = await pad.locator(".results .entry b").first().evaluate((b) => (b.textContent.match(/\p{L}{3,}/u) || [""])[0]);
+    check("J13 a word could be read from the first entry in the chosen group", word.length >= 3, `word ${JSON.stringify(word)}`);
+    await pad.locator(".search input").fill(word);
+    const head = pad.locator(".results section > h4").first();
+    await page.waitForFunction(() => /\d/.test(document.querySelector("#docspad .results section > h4")?.textContent || "") && !!document.querySelector("#docspad .results section > h4 [data-clear]"), null, { timeout: 20000 }).catch(() => {});
+    const text = (await head.textContent().catch(() => "")) || "";
+    check("J13a a query that matches shows the filtered heading with a count", /\d/.test(text) && (await pad.locator(".results .entry").count()) >= 1, `heading ${JSON.stringify(text)}`);
+    check("J13b the filtered heading has its clear button ([data-clear])", (await head.locator("[data-clear]").count()) === 1, `${await head.locator("[data-clear]").count()} button(s)`);
+    await pad.locator(".search input").fill("qzxqzxqzx");
+    await page.waitForSelector("#docspad .results .none", { timeout: 20000 }).catch(() => {});
+    check("J13c a query that matches nothing shows the empty state (.none) and no entries", (await pad.locator(".results .none").count()) === 1 && (await pad.locator(".results .entry").count()) === 0, `${await pad.locator(".results .none").count()} empty state(s), ${await pad.locator(".results .entry").count()} entries`);
   });
 
   /* J9, J10 (#125 stage 2): fake German docs served by route, so no built translation is needed in the tree. The
