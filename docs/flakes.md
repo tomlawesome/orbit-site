@@ -26,20 +26,6 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 - 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
 - 2026-11-19 · 39f9c54 · !148 pipeline 4696 live:chromium 3/3 job 56545 · the readying count saw 7 non-soft chores after the queue opened, wants 8 (tools/ci/freeze.mjs HARD_SEEN); 1.3 s long tasks in the run; the same code passed on pipeline 4673; retried (job 56717)
 
-## live PW1b, Firefox: page.goto times out
-
-- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47071 · page.goto timeout (also seen on !115); the retry passed PW1b (job 47094)
-- 2026-11-19 · 39f9c54 · !148 pipeline 4696 live:firefox 2/2 job 56542 · page.goto timeout; the same code passed on pipeline 4673; retried (job 56716)
-- 2026-11-21 · 490081a4 · !160 pipeline 5091 live:firefox 2/2 job 60877 · page.goto timeout (third sighting); navigation limit raised to 120 s
-
-## docs-planet D1 run 1: the planet tap never opens the docs
-
-- 2026-11-21 · 490081a4 · !160 pipeline 5091 job 60879 · 3 taps with a fixed 3 s start wait hit a planet that had moved on a loaded host; the message wrongly named #docspad within 240 s; tools/ci/docs-planet-test.mjs now taps until a 60 s deadline, re-reads the point before each tap, waits 15 s for the start and reports the real attempts (#164)
-
-## journey B4, Firefox: request failed for assets/door/sun-worker.js NS_BINDING_ABORTED
-
-- 2026-11-21 · 490081a4 · !160 pipeline 5091 live:firefox job 60876 · B4 pressed Back without waiting for the door's sun worker; B4 now calls sunDone before each Back from a door page (#164)
-
 ## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
 
 - 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
