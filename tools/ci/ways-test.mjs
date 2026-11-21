@@ -32,6 +32,9 @@
  *                   ways.revealed() (directly, or through one shared helper such as readyDoor); the routes are listed at
  *                   the check below
  *   N12 (source) ways.js reads no flag and imports nothing from assets/door/
+ *   N14 (source) the save-data branch of main.js opens every way, the backs and the gate through the seam (open() of all
+ *       four ids with the gate), so the names ride the reveal
+ *   N15 (source) nothing in assets/js/ outside ways.js gives a planet `ready`, sets `ready-flight`, or enables #gate
  *   N13 (source) main.js imports createWays, has no `let planetsIn = Promise.resolve()`, and showDoor's onLit
  *       calls revealed()
  *
@@ -335,5 +338,24 @@ for (const [name, tag, gate, reduced] of [["N6", "N6", false, false], ["N6-reduc
   for (const [name, text] of routes) {
     check(`N11 (source) ${name} reaches ways.revealed()`, text !== "" && reaches(text), text === "" ? "route not found in main.js" : "no ways.revealed() on this route, directly or through a helper");
   }
+}
+{
+  /* N14 / N15 (source): the call sites feed the seam and nothing opens a planet behind its back (#157) */
+  const { readdirSync } = await import("node:fs");
+  const src = readFileSync(rootOf("../../assets/js/main.js"), "utf8");
+  const sd = /if\s*\(saveData\(\)\)\s*\{[^}]*\}/.exec(src)?.[0] || "";
+  const call = /openWays\(\s*\[([^\]]*)\]\s*,\s*true\s*\)/.exec(sd);
+  const ids = call ? [...call[1].matchAll(/["'](\w+)["']/g)].map((m) => m[1]).sort().join() : "";
+  check("N14 save-data branch asks openWays for install, docs, info and back, with the gate", ids === "back,docs,info,install", sd ? `ids "${ids}"` : "save-data branch not found");
+  check("N14 ... through the seam: openWays is ways.open, with no wait of its own", /openWays\s*=\s*\(ids,\s*gate\)\s*=>\s*ways\.open\(ids,\s*gate\)/.test(src), "openWays definition");
+  const dir = rootOf("../../assets/js/");
+  const bad = [];
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "ways.js")) {
+    const t = readFileSync(new URL(f, dir), "utf8");
+    if (/ready-flight/.test(t)) bad.push(`${f}: ready-flight`);
+    if (/classList\.add\(\s*["']ready["']/.test(t)) bad.push(`${f}: ready class`);
+    if (/#gate["']\)\.disabled\s*=\s*false/.test(t)) bad.push(`${f}: gate enabled`);
+  }
+  check("N15 nothing outside ways.js gives a planet ready, sets ready-flight or enables #gate", bad.length === 0, bad.join("; ") || "none found");
 }
 finish();
