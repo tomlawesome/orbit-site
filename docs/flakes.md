@@ -42,3 +42,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
 
 - 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host
+
+## journey, Firefox: console.error NS_BINDING_ABORTED from the driver's own worker script
+
+- 2026-11-21 · 407cdcab · pipeline 5074 live:firefox 1/2 job 60756 · every step passed; the run failed on `console.error: [JavaScript Error: "NS_BINDING_ABORTED: " {file: "chrome://juggler/content/content/WorkerMain.js" line: 6}]`, logged by Playwright's Firefox driver rather than at a site address, with no failed site request; the same journey passed in Firefox on pipelines 5048 and 5062. Console errors now carry the step's name, so the next sighting names the step
