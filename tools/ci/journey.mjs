@@ -826,6 +826,7 @@ const landings = async (prefix) => {
       const before = await arriveAt(page, url, flag);
       await seeing(page, `the direct arrival at ${label} did not land`, landed);
       if (pad === "docs") await picturesDone(page, "before Back from the direct arrival");
+      await sunDone(page, "before Back from the door");
       await pressBack(page);
       await seeing(page, `Back from a direct arrival at ${label} did not leave the page`, leftSite, 15000);
       await fresh();
@@ -835,6 +836,7 @@ const landings = async (prefix) => {
       await clickDawn(page, dawn);
       const door = await seeing(page, `"— the dawn" from a direct arrival at ${label} did not show the door with the address ""`, atDoor);
       if (door.length !== before + 1) throw new Error(`${door.length} entries at the door, want ${before + 1} (the one entry rewritten, none added)`);
+      await sunDone(page, "before Back from the door");
       await pressBack(page);
       await seeing(page, `Back at the door after a direct arrival at ${label} did not leave the page (a dead press?)`, leftSite, 15000);
     });
