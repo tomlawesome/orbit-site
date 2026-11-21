@@ -74,6 +74,8 @@ const F2 = 1500;               /* D2: docs no later than this many animation fra
 const D2_WATCH_MS = 60000;     /* D2: how long the stuck page is watched (a harness limit, not a budget) */
 const PLAIN_BY_MS = 20000;     /* C: every planet no later than this after the page opens */
 const OTHERS_BY_MS = 60000;    /* controls: install and information within this */
+const TAP_DEADLINE_MS = 60000; /* keep tapping the docs planet for this long */
+const STARTED_MS = 15000;      /* each tap: the start signal within this */
 const OPEN_MS = 240000;       /* a tap: #docspad visible within this (a hang limit; the flight takes 45+ s on a host loaded with a spinner per core) */
 const COMPILE_MS = 160;        /* fast: a program's status turns true this long after it was linked */
 const FIRST_MS = Number(process.env.FIRST_MS || 503); /* fast: the first compile of a fresh context (Safari, CAPABILITIES.md) */
@@ -216,9 +218,11 @@ const observe = async (label, query, until, mode = label) => {
       v = await read();
     }
     progress(`${label}: tappable: ${["install", "info", "docs"].map((k) => `${k} ${s(v.seen.hit[k])}`).join(", ")} (page at ${s(v.now)})`);
-    const tap = { tried: 0, opened: false, at: null, openedIn: null };
+    const tap = { tried: 0, started: false, opened: false, at: null, openedIn: null };
     if (v.seen.hit.docs != null) {
-      for (let n = 0; n < 3 && !tap.opened; n++) {
+      /* keep tapping until a bounded deadline: on a loaded host the planet moves between the read and the tap, so a tap can
+         miss; each attempt re-reads the planet's point just before it taps and waits STARTED_MS for the start */
+      for (const stop = Date.now() + TAP_DEADLINE_MS; Date.now() < stop && !tap.opened;) {
         const point = await page.evaluate(() => window.__seen.point.docs);
         if (!point) { await sleep(300); continue; }
         tap.tried++;
@@ -226,11 +230,12 @@ const observe = async (label, query, until, mode = label) => {
         if (tap.at == null) tap.at = at - origin;
         progress(`${label}: tapping docs at ${point.map((x) => x.toFixed(0)).join(",")}`);
         await page.touchscreen.tap(point[0], point[1]);
-        /* something must have started within 3 s (the address, or the flight's body classes); then the landing */
+        /* something must have started within STARTED_MS (the address, or the flight's body classes); then the landing */
         const started = await page.waitForFunction(() => location.hash === "#docs" || /\b(arming|launching|showwarp|bare)\b/.test(document.body.className) ||
           !!document.querySelector("#docspad") && getComputedStyle(document.querySelector("#docspad")).display !== "none" && document.querySelector("#docspad").getBoundingClientRect().height > 0,
-        null, { timeout: 3000 }).then(() => true, () => false);
+        null, { timeout: STARTED_MS }).then(() => true, () => false);
         if (!started) continue;
+        tap.started = true;
         tap.opened = await page.locator("#docspad").waitFor({ state: "visible", timeout: OPEN_MS }).then(() => true, () => false);
         if (tap.opened) tap.openedIn = Date.now() - at;
         break;
@@ -254,7 +259,9 @@ const others = (want, o, what) => {
 };
 const opened = (want, o, run = "") => {
   want(o.tap.opened, run + (o.tap.tried
-    ? `a tap on the docs planet (${o.tap.tried} tried, the first at ${s(o.tap.at)}) did not open the docs: #docspad not visible within ${OPEN_MS / 1000} s`
+    ? `a tap on the docs planet (${o.tap.tried} tried, the first at ${s(o.tap.at)}) did not open the docs: ` + (o.tap.started
+      ? `#docspad not visible within ${OPEN_MS / 1000} s of the tap that started`
+      : `nothing started within ${STARTED_MS / 1000} s of any of the ${o.tap.tried} taps over ${TAP_DEADLINE_MS / 1000} s`)
     : "the docs planet was never tapped: it was never labelled and tappable"));
 };
 const noteRun = (want, o, run = "") => {
