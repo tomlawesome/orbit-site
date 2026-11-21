@@ -116,6 +116,15 @@ const FAREWELL_BEAT = (limit) => new Promise((ok) => {
   tick();
 });
 
+/* #164: the farewell slides up (translate 0,9px to 0) after .3s over .9s; a fixed sleep can end before it lands on a slow runner.
+   Waits for the outcome, not a duration: opacity 1 and no vertical offset left, within `limit` ms (true: it did). */
+const farewellLanded = (page, limit = 20000) => page.waitForFunction(() => {
+  const fw = document.querySelector("#dusk .farewell");
+  if (!fw) return false;
+  const cs = getComputedStyle(fw);
+  return parseFloat(cs.opacity) >= 0.99 && Math.abs(new DOMMatrix(cs.transform === "none" ? undefined : cs.transform).f) < 0.01;
+}, null, { timeout: limit, polling: 50 }).then(() => true, () => false);
+
 /* the transition of one property on an element, in seconds, as computed: { duration, delay } or null if it is not transitioned */
 const BEAT_CSS = (sel) => {
   const el = document.querySelector(sel);
@@ -273,6 +282,7 @@ try {
           s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
         }
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         const m = await page.evaluate(MEASURE);
         desktopAsDawn(s, m);
         lookAsDawn(s, m, true, "9. ");
@@ -307,6 +317,7 @@ try {
           s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
         }
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         const m = await page.evaluate(MEASURE);
         phoneAsDawn(s, m);
         lookAsDawn(s, m, true, "9. ");
@@ -322,6 +333,7 @@ try {
         await withPage(desk, "asdawn=0", s, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           desktopControl(s, m);
           for (const rich of [true, false]) {
@@ -338,6 +350,7 @@ try {
         await withPage(phone, "asdawn=0", s, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           if (process.env.DUMP) console.log(JSON.stringify(m));
           phoneControl(s, m);
@@ -364,6 +377,7 @@ try {
       await withPage(ctx, "asdawn=1", s, async (page) => {
         await page.evaluate(() => window.beat("showdusk", "farewell"));
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         layoutSigns(s, await page.evaluate(MEASURE), phone, "");
       });
       s.done();
@@ -373,6 +387,7 @@ try {
         await withPage(ctx, "asdawn=0", c, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          c.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           c.want("(control) the glyph is 420 wide", near(m.duskSvg?.w, 420, 0.6), `glyph ${f(m.duskSvg?.w)} wide`);
           c.want("(control) .name shows and there is no padding added", m.nameVisibility === "visible" && m.duskPad === 0, `visibility ${m.nameVisibility}, padding ${m.duskPad}`);
