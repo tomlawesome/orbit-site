@@ -363,7 +363,7 @@ const fetched = new Map();
 const keyOf = (url) => { try { return new URL(url, page.baseURI()).href; } catch { return url; } };
 /* the longest a picture is waited for (its answer and its body both): a download that opens and never delivers is
    given up on and forgotten like a failed one, so the flight is never held flat by it and the next ask tries again.
-   Longer than the journey's own hold (8 s), as COMPILE_WAIT, below, bounds a compile */
+   Shorter than the journey's backstop (WORLD_FAILED, 30 s, journey.js), which waits past it, as past COMPILE_WAIT, below */
 export const PICTURE_WAIT = 20000;
 /** @param {string} url @returns {Promise<Blob>} */
 export function fetchOnce(url) {
