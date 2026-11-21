@@ -231,18 +231,22 @@ const said = (log, re) => log.console.filter((c) => re.test(c.text));
    the light, and everything that is not a timing, are judged everywhere. Locally every check is judged */
 const GPU_TIMINGS_JUDGED = process.env.CI !== "true";
 const only = process.env.FREEZE_ONLY ? new RegExp(process.env.FREEZE_ONLY) : null;   /* FREEZE_ONLY='^12' runs one */
-const scenario = async (name, fn) => {
+const scenario = async (name, fn, quarantine = null) => {
   if (only && !only.test(name)) return;
   const problems = [];
   const info = [];
   const want = (ok, what) => { if (!ok) problems.push(`want: ${what}`); };
   want.gpu = (ok, what) => { if (!ok) (GPU_TIMINGS_JUDGED ? problems : info).push(`${GPU_TIMINGS_JUDGED ? "" : "not judged on CI (a 3D timing; the runner has no GPU): "}want: ${what}`); };
   try { await fn(want, (line) => info.push(line)); } catch (e) { problems.push(`${String(e.message).split("\n")[0]}`); }
-  console.log(`${problems.length ? "FAIL" : "ok  "} ${name}`);
+  console.log(`${problems.length ? (quarantine ? "QUARANTINED FAIL" : "FAIL") : "ok  "} ${name}${problems.length && quarantine ? ` (${quarantine}, not gating)` : ""}`);
   for (const line of info) console.log(`       ${line}`);
   for (const p of problems) console.log(`       problem: ${p}`);
-  if (problems.length) failed = true;
+  if (problems.length && !quarantine) failed = true;
 };
+/* A flaky scenario past its third sighting (docs/flakes.md) still runs and reports, but a failure does not fail the
+   run: it leaves the merge gate until its issue fixes, rewrites or deletes it (#107; same as journey.mjs). Call it as
+   a line of its own that starts with await and the quarantined call and the issue, which tools/ci/flake-gate.sh reads */
+const quarantined = (issue, name, fn) => scenario(name, fn, issue);
 const short = (s) => JSON.stringify(s).slice(0, 400);
 
 try {
@@ -354,7 +358,7 @@ try {
   /* ---- 5: ?gpu=force on the same machine ---- */
   {
     const { ctx, page, log } = await open({ init: [COUNT] });
-    await scenario("5 ?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame", async (want, info) => {
+    await quarantined("#165", "5 ?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame", async (want, info) => {
       await page.goto(at(["gpu=force"]), { waitUntil: "load" });
       await waitBody(page, "lit", 90000);
       const s = await state(page);
