@@ -895,6 +895,10 @@ const landings = async (prefix) => {
     await p.locator('#transport .tick[aria-label="Other households"]').first().click({ force: true, timeout: 30000 });
     try { await p.waitForFunction((own) => [...window.__skies].some((n) => n !== own), name, { timeout: 90000 }); }
     catch { throw new Error("the walk never flew to another household, so the walk's entries were not tested"); }
+    /* the dial changes when the flight lands (home.js land), 900 ms before its done callback lets the chapter go on to
+       "Tap one, and you fly there."; stopping on the dial alone cut the walk short of that line, so wait for the line (#164) */
+    try { await p.waitForFunction(() => [...document.querySelectorAll(".tourfilm-callout")].some((n) => /Tap one/.test(n.textContent || "")), null, { timeout: 20000 }); }
+    catch { throw new Error("the walk landed at another household but never said 'Tap one, and you fly there.' within 20s, so its entries after the landing were not tested"); }
     await p.locator("#tp-stop").click({ force: true, timeout: 30000 });
     const stopped = await seeing(p, "stopping the walk did not bring the visitor's own sky back", (s) => s.home && !s.flying && s.dial === name);
     if (stopped.length !== before + 1) throw new Error(`${stopped.length} entries after the walk stopped, want ${before + 1}`);
