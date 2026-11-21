@@ -34,10 +34,13 @@ export function installPage(opts = {}) {
     lines: [], shaders: [], tex: [], bufCalls: [], createdTextures: [], deletedTextures: [], readPixels: 0,
     contexts: 0, removed: 0, glCalls: 0, draws: 0, glWhileLost: 0, mipped: [], docListeners: {}, winListeners: {}, canvasListeners: {}, bodyClasses: new Set(), bodyLog: [],
     images: [], blobURLs: [], revoked: [], paints: [], lost: false, boundTexture: null,
+    gpu: [],                 /* every texture call in order, for the sized maps' tests (map-sizes-test.mjs): see below */
   };
   let sharedCanvas = null;
   const glBase = {
     RGBA: 1, UNSIGNED_BYTE: 2, RENDERER: 0x1f01, TEXTURE_2D: 0xde1,
+    /* the level controls are real values here (every other unknown constant answers 1, which would make them the same) */
+    TEXTURE_BASE_LEVEL: 0x813c, TEXTURE_MIN_LOD: 0x813a, TEXTURE_MAX_LOD: 0x813b, TEXTURE_MAX_LEVEL: 0x813d,
     isContextLost: () => page.lost,
     getError: () => 0,
     getExtension(name) {
@@ -61,11 +64,32 @@ export function installPage(opts = {}) {
     createTexture() { const t = { id: page.createdTextures.length }; page.createdTextures.push(t); return t; },
     deleteTexture(t) { page.deletedTextures.push(t); },
     bindTexture(target, t) { page.boundTexture = t; },
-    texImage2D(...a) { const src = a.length === 6 ? a[5] : null; page.tex.push({ fn: "texImage2D", probe: !!src?.probe, texture: page.boundTexture }); },
-    texSubImage2D(...a) { const src = a[a.length - 1]; page.tex.push({ fn: "texSubImage2D", probe: !!src?.probe, texture: page.boundTexture }); },
-    texStorage2D() { page.tex.push({ fn: "texStorage2D", probe: false, texture: page.boundTexture }); },
-    generateMipmap() { page.mipped.push(page.boundTexture); },
+    /* page.tex keeps its shape ({ fn, probe, texture }); page.gpu is the fuller record in call order: { k, texture, level, x, y, w, h, path, map }
+       (k: store | img | sub | param | mip; a picture's own bitmap carries .path and .map, tools/ci/map-sizes-lib.mjs) */
+    texImage2D(...a) {
+      const src = a.length === 6 ? a[5] : null;
+      page.tex.push({ fn: "texImage2D", probe: !!src?.probe, texture: page.boundTexture });
+      const pic = a[a.length - 1];
+      page.gpu.push({ k: "img", texture: page.boundTexture, level: a[1], w: a.length >= 9 ? a[3] : pic?.width, h: a.length >= 9 ? a[4] : pic?.height, probe: !!pic?.probe, path: pic?.path, map: pic?.map === true });
+    },
+    texSubImage2D(...a) {
+      const src = a[a.length - 1];
+      page.tex.push({ fn: "texSubImage2D", probe: !!src?.probe, texture: page.boundTexture });
+      page.gpu.push({ k: "sub", texture: page.boundTexture, level: a[1], x: a[2], y: a[3], w: a.length >= 9 ? a[4] : src?.width, h: a.length >= 9 ? a[5] : src?.height, probe: !!src?.probe, path: src?.path, map: src?.map === true });
+    },
+    texStorage2D(t, levels, internal, w, h) {
+      page.tex.push({ fn: "texStorage2D", probe: false, texture: page.boundTexture });
+      page.gpu.push({ k: "store", texture: page.boundTexture, levels, w, h });
+    },
+    texParameteri(t, pname, value) { param(pname, value); },
+    texParameterf(t, pname, value) { param(pname, value); },
+    generateMipmap() { page.mipped.push(page.boundTexture); page.gpu.push({ k: "mip", texture: page.boundTexture, base: page.boundTexture?.baseLevel ?? 0 }); },
     bufferData(t, data) { page.bufCalls.push({ vertex: ArrayBuffer.isView(data) }); },
+  };
+  const param = (pname, value) => {
+    const t = page.boundTexture;
+    if (t && pname === 0x813c) t.baseLevel = value;
+    page.gpu.push({ k: "param", texture: t, pname, value, at: performance.now() });
   };
   page.glBase = glBase;
   /* every call on the context is counted (page.glCalls: all; page.draws: draw calls; page.glWhileLost: any call made while the context is lost) */
@@ -889,14 +913,13 @@ export const plainOf = (v) => JSON.stringify(v, (k, x) => (ArrayBuffer.isView(x)
  *   up        after `canvas`: { ok, why } (null: says nothing)         default { ok: true }
  *   compiled  after that `up` when ok: { ok, ms } (null: nothing)       default { ok: true, ms: 40 }
  *   baked     to each `bake`: true / { ok: false } (null: nothing)      default true
- *   measured  to each `measure`: the ms of each set, in order (the last for any more) (null: nothing)   default [10, 20]
  *   drew      to each `view`: { dt, ms } (dt a number, or a function of the view message); null: nothing   default { dt: 16.7, ms: 1 }
  * host.auto may be changed by a case at any time.
  */
 export function fakeWorldWorkers(auto = {}) {
   const host = {
     made: 0, list: [], args: [],
-    auto: { up: { ok: true }, compiled: { ok: true, ms: 40 }, baked: true, measured: [10, 20], drew: { dt: 16.7, ms: 1 }, ...auto },
+    auto: { up: { ok: true }, compiled: { ok: true, ms: 40 }, baked: true, drew: { dt: 16.7, ms: 1 }, ...auto },
   };
   class FakeWorld {
     constructor() {
@@ -919,10 +942,9 @@ export function fakeWorldWorkers(auto = {}) {
     }
     answer(msg) {
       const a = host.auto;
-      if (!msg || !["bake", "measure", "view"].includes(msg.type)) return;
+      if (!msg || !["bake", "view"].includes(msg.type)) return;
       if (!this.upSaid) { this.waiting.push(msg); return; }
       if (msg.type === "bake" && a.baked) setTimeout(() => this.say({ type: "baked", id: msg.id, ok: a.baked === true || a.baked.ok !== false }), 0);
-      if (msg.type === "measure" && a.measured) setTimeout(() => this.say({ type: "measured", id: msg.id, ms: (msg.sets || []).map((s, i) => a.measured[i] ?? a.measured[a.measured.length - 1]) }), 0);
       if (msg.type === "view" && a.drew) setTimeout(() => this.say({ type: "drew", seq: msg.seq, dt: typeof a.drew.dt === "function" ? a.drew.dt(msg) : a.drew.dt, ms: a.drew.ms ?? 1 }), 0);
     }
     terminate() { this.terminated++; }

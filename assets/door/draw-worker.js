@@ -9,11 +9,13 @@
  *
  * What arrives before `up` waits for it, in order. An exception handling a message is `dead`: the page falls back.
  */
-import { setPage, page } from "./page.js";
+import { setPage, page, askedOnce, stoppedAt } from "./page.js";
 import { configure } from "./settings.js";
 import { createFlight, unwireProfile } from "./engine.js";
 import { fetchBitmap, askPage, openChores, pace } from "./chores.js";
 import { gpu } from "./fitness.js";
+import { statusGo } from "./status.js";
+import { busyHeard } from "./busy.js";
 
 /** @typedef {{ add(face: FontFace): unknown }} FontSet */
 /**
@@ -49,6 +51,8 @@ let asker = null;
 /* a lost context where the canvas says nothing of it (OffscreenCanvas fires webglcontextlost from Firefox 125): looked
    at before every frame and every message, and told to the world as the event would have (voyage.js) */
 let lostSaid = false;
+/* the world's context lost and not restored: an ask settling meanwhile is answered not ok (as after `destroy`) */
+let dark = false;
 const backstop = () => {
   if (!glNow || lostSaid || !glNow.isContextLost()) return;
   lostSaid = true;
@@ -87,6 +91,8 @@ function hello(m) {
     /* (the memory of the verdict is the page's, ADR-0002 6.12: the page keeps it, and opens its ways in on it) */
     judged(v) { post({ type: "verdict", fit: v.fit, ms: v.ms, skipped: !!v.skipped, how: v.how }); },
     shared: () => false,
+    /* (this thread's compiles and uploads, for the page's ledger: busy.js) */
+    busy(b) { post({ type: "busy", n: b.n, gen: b.gen }); },
   });
   configure({ flags: m.flags || {}, image: (p) => images[p] ?? p, typingWait: 0, settle: m.settle });
   /* the worker's own queue: open from the start, nothing in it waiting for the page */
@@ -113,8 +119,8 @@ function bringUp() {
   const { warp, warpgl } = canvases;
   const ctx = warp.getContext("2d");
   if (!ctx || ctx.letterSpacing === undefined) return no("the 2D context has no letterSpacing");
-  warpgl.addEventListener("webglcontextlost", () => post({ type: "lost" }));
-  warpgl.addEventListener("webglcontextrestored", () => { lostSaid = false; });
+  warpgl.addEventListener("webglcontextlost", () => { dark = true; post({ type: "lost" }); });
+  warpgl.addEventListener("webglcontextrestored", () => { lostSaid = false; dark = false; });
   const mine = engine = createFlight(warp, { requestFrame: (fn) => page.frame((t) => { fn(t); drew(); }) });
   ready = true;
   post({ type: "up", ok: true, renderer: g.renderer });
@@ -136,10 +142,12 @@ function handle(m) {
   switch (m.type) {
     case "warm": {
       const { id } = m, how = { prove: m.prove !== false };
-      (m.kind === "warmDocs" ? e.warmDocs(how) : e.warm(how)).then(() => post({ type: "warmed", id, ok: true }), () => post({ type: "warmed", id, ok: false }));
+      (m.kind === "warmDocs" ? e.warmDocs(how) : e.warm(how)).then(() => post({ type: "warmed", id, ok: !gone && !dark }), () => post({ type: "warmed", id, ok: false }));
       break;
     }
     case "start": {
+      /* (a flight started is the host's first work done: its world's shaders are asked for now, status.js) */
+      statusGo();
       current = m.seq;
       const P = unwireProfile(m.profile);
       if (typeof m.at === "number") { want = 0; e.start(P, { at: m.at }); post({ type: "frame", seq: m.seq, world: e.withWorld }); }
@@ -155,7 +163,7 @@ function handle(m) {
 /* (an exception outside a frame: the worker cannot go on, and the page draws instead) */
 /** @param {() => void} fn */
 const guard = (fn) => {
-  try { fn(); } catch (e) { gone = true; post({ type: "dead", why: String(/** @type {Error} */ (e)?.message || e) }); }
+  try { fn(); } catch (e) { gone = true; post({ type: "dead", why: String(/** @type {Error} */ (e)?.message || e), at: stoppedAt(e) }); }
 };
 
 /** @param {MessageEvent} ev */
@@ -165,10 +173,14 @@ scope.onmessage = (ev) => guard(() => {
   backstop();
   switch (m.type) {
     case "hello": hello(m); break;
-    case "canvases": canvases = { warp: m.warp, warpgl: m.warpgl }; size = m.size || size; fontsIn.then(() => guard(bringUp), () => no("the fonts did not load")); break;
+    case "canvases": canvases = { warp: askedOnce(m.warp), warpgl: askedOnce(m.warpgl) }; size = m.size || size; fontsIn.then(() => guard(bringUp), () => no("the fonts did not load")); break;
     case "size": size = { W: m.W, H: m.H, dpr: m.dpr }; engine?.resize(); break;
     /* (an answer is heard at once: the pictures it holds are what the flight waits for) */
     case "decoded": asker?.heard(m); break;
+    /* the host's word that its first work is done (status.js): heard at once, made or not */
+    case "status": statusGo(); break;
+    /* (what the page and the other workers have under way, for the verdict's quiet: busy.js) */
+    case "busy": busyHeard("page", m); break;
     case "visible": hidden = !!m.hidden; if (!hidden) for (const fn of [...shown]) fn(); break;
     case "destroy": gone = true; engine?.destroy(); scope.close(); break;
     default: if (gone) break; if (ready) handle(m); else waiting.push(m);

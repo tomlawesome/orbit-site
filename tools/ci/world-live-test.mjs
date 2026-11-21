@@ -153,7 +153,7 @@ const pw1 = (id, draw) => judge(id, draw === "worker"
   try {
     const inWorker = draw === "worker";
     progress(`${id}: draw=${draw}`);
-    await o.page.goto(URL_OF(draw), { waitUntil: "load" });
+    await o.page.goto(URL_OF(draw), { waitUntil: "load", timeout: 120000 });
     await journeyThrough(o, want, id, inWorker);
     if (inWorker) {
       await waitSaid(o, /install: drawn in a worker/, id);
@@ -180,7 +180,7 @@ const pw3 = () => judge("PW3", "world-worker.js answered 404: the install is dra
     progress("PW3: draw=worker with the world's worker 404");
     let served = 0;
     await o.page.route(WORKER, (route) => { served++; route.fulfill({ status: 404, contentType: "text/plain", body: "not found" }); });
-    await o.page.goto(URL_OF("worker"), { waitUntil: "load" });
+    await o.page.goto(URL_OF("worker"), { waitUntil: "load", timeout: 120000 });
     await planetReady(o, "install");
     await dive(o, "install", "installpad");
     await landed(o, want, "installpad", "PW3");

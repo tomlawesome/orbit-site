@@ -8,7 +8,7 @@
  *   node tools/ci/world-hello-test.mjs
  *
  *   hello       the first message is `hello`, once: the host's flags without door3d, `baseURI`, `world` { small, map, rings,
- *               moon } (absolute urls, the planet-2k map when small), `sky`, `tag`, and the look's options as given; the
+ *               moon, galaxy } (absolute urls, the planet-2k map when small), `sky`, `tag`, and the look's options as given; the
  *               worker is assets/js/world-worker.js as a module; `install: drawn in a worker` is said, once
  *   canvas      the second is `canvas`, with one transferable (the token the placeholder gave) and no context taken on it
  *   bake        bake() posts `bake` with an id and resolves only on `baked` with that id; baked { ok: false } gives false
@@ -17,16 +17,15 @@
  *               the one the page path draws for the same still (the time apart), with look.HUE still a Float32Array
  *   touch       once the world is baked, `touch` posts two views then `finish`
  *   drew        drew { seq, dt, ms } sets the canvas's data-drawn to seq and calls the onDrew callbacks with (dt, ms)
- *   measure     calibrate posts `measure` with two sets (the parts 0.4 and 0.8) and sets the measured part from `measured`
  *   aside       the remote world's aside() resolves true once the worker said `up`
  *
  * One fresh Node process a case, on the virtual clock. A missing module is said in plain words.
  */
-import { bootInstallPage, settled, infoWorld, fakeWorldWorkers, installWorldWorker, findFn, plainOf, runCaseSpied, DOT, BASE, childMain, runCase, chk, finish } from "./door-stub.mjs";
+import { bootInstallPage, settled, infoWorld, fakeWorldWorkers, installWorldWorker, findFn, plainOf, runCaseSpied, BASE, childMain, runCase, chk, finish } from "./door-stub.mjs";
 
 const INSTALL = "../../assets/js/install.js", REMOTE = "../../assets/js/remote-world.js";
 const at = (p) => new URL(`../../assets/${p}`, import.meta.url).href;
-const EXPECT = { map: at("img/install/planet.webp"), mapSmall: at("img/install/planet-2k.webp"), rings: at("img/install/rings.png"), moon: at("door/img/flight/moon.webp") };
+const EXPECT = { map: at("img/install/planet.webp"), mapSmall: at("img/install/planet-2k.webp"), rings: at("img/install/rings.png"), moon: at("door/img/flight/moon.webp"), galaxy: at("img/install/galaxy.webp"), galaxySmall: at("img/install/galaxy-2k.webp") };
 
 const plainError = (message) => Object.assign(new Error(message), { plain: true });
 const guarded = (cases) => Object.fromEntries(Object.entries(cases).map(([k, f]) => [k, async () => { try { return await f(); } catch (e) { if (e && e.plain) return { none: e.message }; throw e; } }]));
@@ -197,30 +196,10 @@ async function asideCase() {
   return { state: s.state, value: s.state === "resolved" ? s.value : null, hasAside: typeof b.world.aside === "function" };
 }
 
-/* the measured part: calibrate's own arithmetic on the ms a worker gave for its two sets, read back as the part of a view drawn at the shot's start */
-const partFor = (t1, t2) => { const d = Math.max(0.01, (t2 - t1) / (0.64 - 0.16)), c = Math.max(0, t1 - d * 0.16); return Math.min(1, Math.max(0.55, Math.sqrt(Math.max(0, (18 - c) / d)))); };
-async function measureCase(ms) {
-  const b = await boot({ auto: { measured: ms } });
-  const { ring } = b.install();
-  const s = await prepared(b, ring);
-  const w = b.ww.first();
-  if (!w) return { none: noWorker };
-  const asks = w.of("measure");
-  const out = {
-    prepared: s.state, asks: asks.length, kinds: asks.map((m) => ({ id: m.id !== undefined, sets: Array.isArray(m.sets) ? m.sets.length : null })),
-    parts: asks[0] ? asks[0].sets.map((set) => [...new Set(set.map((v) => v.part))]) : null, sizes: asks[0] ? asks[0].sets.map((set) => set.length) : null,
-    fn: asks[0] ? findFn(asks[0]) : null, cloneErrors: w.cloneErrors,
-  };
-  await settled(ring.still(0.1, 0, { ...DOT }), b.clock);
-  out.part = w.of("view").at(-1)?.view?.part ?? null;
-  out.want = partFor(ms[0], ms[1]);
-  return out;
-}
-
 const CASES = guarded({
   hello: () => helloCase({}), helloInfo: () => helloCase({ info: true, small: true }), canvas: canvasCase,
   bake: () => bakeCase(true), bakeFalse: () => bakeCase(false), run: runCaseOn, viewFrame, viewWorker: () => viewStill("worker"), viewPage: () => viewStill("page"),
-  touch: touchCase, drew: drewCase, aside: asideCase, measureMid: () => measureCase([10, 20]), measureSlow: () => measureCase([40, 80]),
+  touch: touchCase, drew: drewCase, aside: asideCase,
 });
 
 if (process.argv[2] === "--child") await childMain(CASES);
@@ -234,14 +213,14 @@ const abs = (u) => { try { new URL(u); return true; } catch { return false; } };
   chk("W2 the first message posted is `hello`, once, then `canvas`", r, (r) => [r.types[0] === "hello" && r.types.filter((t) => t === "hello").length === 1 && r.types[1] === "canvas", `types ${show(r.types)}`]);
   chk("W2 ... the worker is assets/js/world-worker.js, a module worker, and one is made", r, (r) => [/\/assets\/js\/world-worker\.js$/.test(r.workerUrl) && r.workerOpts && r.workerOpts.type === "module" && r.madeBy === 1, `url ${r.workerUrl}, options ${show(r.workerOpts)}, workers ${r.madeBy}`]);
   chk("W2 ... hello carries the host's flags without door3d (draw and fit as given)", r, (r) => { const f = r.hello.flags || {}; return [!("door3d" in f) && f.fit === "skip" && f.draw === "worker", `flags ${show(f)}`]; });
-  chk("W2 ... hello carries world.map, rings and moon as absolute urls, the full map on a large screen (small false)", r, (r) => { const w = r.hello.world || {}; return [w.small === false && w.map === EXPECT.map && w.rings === EXPECT.rings && w.moon === EXPECT.moon && [w.map, w.rings, w.moon].every(abs), `world ${show(w)}; want map ${EXPECT.map}`]; });
+  chk("W2 ... hello carries world.map, rings, moon and galaxy as absolute urls, the full map and the 4096 galaxy on a large screen (small false; #119 G2)", r, (r) => { const w = r.hello.world || {}; return [w.small === false && w.map === EXPECT.map && w.rings === EXPECT.rings && w.moon === EXPECT.moon && w.galaxy === EXPECT.galaxy && [w.map, w.rings, w.moon, w.galaxy].every(abs), `world ${show(w)}; want map ${EXPECT.map}`]; });
   chk("W2 ... hello carries the page's baseURI and the tag", r, (r) => [r.hello.baseURI === BASE && r.hello.tag === "install", `baseURI ${show(r.hello.baseURI)}, tag ${show(r.hello.tag)}`]);
   chk("W2 ... nothing posted is beyond structured clone", r, (r) => [r.cloneErrors.length === 0, show(r.cloneErrors)]);
   chk("W2 ... `install: drawn in a worker` is said, once", r, (r) => [r.said === 1, `said ${r.said} time(s)`]);
 }
 {
   const r = run("helloInfo");
-  chk("W2 the information's hello: tag info, the planet-2k map when small, the other pictures absolute", r, (r) => { const w = r.hello.world || {}; return [r.hello.tag === "info" && w.small === true && w.map === EXPECT.mapSmall && w.rings === EXPECT.rings && w.moon === EXPECT.moon, `tag ${show(r.hello.tag)}, world ${show(w)}; want map ${EXPECT.mapSmall}`]; });
+  chk("W2 the information's hello: tag info, the planet-2k map and the galaxy-2k picture when small (#119 G2), the other pictures absolute", r, (r) => { const w = r.hello.world || {}; return [r.hello.tag === "info" && w.small === true && w.map === EXPECT.mapSmall && w.rings === EXPECT.rings && w.moon === EXPECT.moon && w.galaxy === EXPECT.galaxySmall, `tag ${show(r.hello.tag)}, world ${show(w)}; want map ${EXPECT.mapSmall}`]; });
   chk("W2 ... hello carries sky as given, and the look's options (hue, sat, ringsOn, haze, grade) as given", r, (r) => {
     const h = r.hello, g = r.info;
     return [h.sky === 1024 && h.hue === g.hue && h.sat === g.sat && h.ringsOn === g.ringsOn && show(h.haze) === show(g.haze) && show(h.grade) === show(g.grade), `sky ${show(h.sky)}, hue ${show(h.hue)}, sat ${show(h.sat)}, ringsOn ${show(h.ringsOn)}, haze ${show(h.haze)}, grade ${show(h.grade)}; given ${show(g)}`];
@@ -289,10 +268,5 @@ const abs = (u) => { try { new URL(u); return true; } catch { return false; } };
 {
   const r = run("aside");
   chk("W2 aside() resolves true once the worker said `up`", r, (r) => [r.hasAside && r.state === "resolved" && r.value === true, `aside() is ${r.state}${r.state === "resolved" ? " with " + show(r.value) : ""}`]);
-}
-for (const [how, ms] of [["measureMid", [10, 20]], ["measureSlow", [40, 80]]]) {
-  const r = run(how);
-  chk(`W2 calibrate (${ms[0]} and ${ms[1]} ms) posts one \`measure\` with an id and two sets, the parts 0.4 then 0.8, no function in it`, r, (r) => [r.asks === 1 && r.kinds[0].id && r.kinds[0].sets === 2 && show(r.parts) === show([[0.4], [0.8]]) && r.fn === null && r.sizes.every((n) => n >= 1), `asks ${r.asks}, ${show(r.kinds)}, parts ${show(r.parts)}, views a set ${show(r.sizes)}, function at ${show(r.fn)}`]);
-  chk(`W2 ... and sets the measured part from \`measured\` (want ${partFor(ms[0], ms[1]).toFixed(3)}, not the page's own timing)`, r, (r) => [r.part !== null && Math.abs(r.part - r.want) < 1e-3, `part ${show(r.part)}, want ${r.want}`]);
 }
 finish();

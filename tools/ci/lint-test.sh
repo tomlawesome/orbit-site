@@ -733,6 +733,16 @@ split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSL
 # marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
 split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
   y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
+# Cases (rr1)-(rr4) (#156): release_readiness exists, runs only on a merge request from dev into main, and no job but the
+# secret scans and translate_docs starts beside it with an empty needs. Each edit changes the shipped file.
+split_case "rr1: no release_readiness job" $ci "no release_readiness job" '
+  y = y.replace("\nrelease_readiness:\n", () => "\nrelease_readiness_x:\n");'
+split_case "rr2: release_readiness on every merge request (wider rule)" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n)    - if: [^\n]*\n/, (m, a) => a + "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
+split_case "rr3: release_readiness without the closing when: never" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n    - if: [^\n]*\n)    - when: never\n/, (m, a) => a);'
+split_case "rr4: live:firefox with needs: []" $ci "live:firefox has needs" '
+  y = y.replace(/(\nlive:firefox:[\s\S]*?)  needs: \[\{ job: release_readiness, optional: true \}\]\n/, (m, a) => a + "  needs: []\n");'
 # Cases t10-t13 (audit finding SEC-8, #158): the job that holds a secret names its image itself. A pipeline variable
 # outranks the file's own `variables:`, so `image: $NODE_IMAGE` on translate_docs, publish_translations or publish_docs
 # lets whoever starts a web pipeline with NODE_IMAGE run an image of their choice beside the key or the token. The three
@@ -2960,6 +2970,54 @@ flake_lint_case "(f-sec12j) the lint refusing quarantined(\"#777\", in a templat
 flake_lint_case "(f-sec12k) the lint refusing a real call after other code on its line" 1 'export const re7 = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
 flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+
+# Section "the Milky Way is drawn" (#119; cases gal1-gal11): every galaxy*.webp the tree tracks must be one of the two
+# shipped pictures, by git blob hash (an allow-list, so a re-encoded, cropped or renamed Gaia file, or any third-party
+# galaxy picture, is refused and named); Gaia's own two blobs are refused as Gaia's. The committed tree passes.
+galaxy_case() { # galaxy_case <label> <want: 0 or 1> <text the refusal names>; the change is made, uncommitted, before
+  commit_all "$1"
+  lint_to_out milkyway
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -q -- "$3" "$out"; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming $3, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+galaxy_case "(gal1) the two shipped galaxy pictures (control)" 0 -
+printf 'not the shipped picture' > assets/img/install/galaxy-wide.webp
+galaxy_case "(gal2) a galaxy*.webp with other bytes beside the shipped ones" 1 'assets/img/install/galaxy-wide.webp'
+mkdir -p assets/img/docs
+printf 'a third-party galaxy, renamed' > assets/img/docs/milkyway-galaxy-4k.webp
+galaxy_case "(gal3) a galaxy*.webp with other bytes in another folder" 1 'assets/img/docs/milkyway-galaxy-4k.webp'
+printf 'the shipped name, other bytes' > assets/img/install/galaxy-2k.webp
+galaxy_case "(gal4) a shipped picture's name over other bytes" 1 'assets/img/install/galaxy-2k.webp'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/install/galaxy.webp
+  galaxy_case "(gal5) Gaia's picture under the shipped name" 1 "Gaia's picture"
+else
+  echo "ok   (gal5) Gaia's blob is not in this clone: not run"
+fi
+printf 'other bytes, a space in the name' > "assets/img/docs/my galaxy.webp"
+galaxy_case "(gal6) a galaxy*.webp with other bytes and a space in its name" 1 'assets/img/docs/my galaxy.webp'
+printf 'other bytes, a non-ASCII name' > "assets/img/docs/galáxia-galaxy.webp"
+galaxy_case "(gal7) a galaxy*.webp with other bytes and a non-ASCII name" 1 'assets/img/docs/galáxia-galaxy.webp'
+printf 'other bytes, upper-case name' > assets/img/docs/MILKY-GALAXY.WEBP
+galaxy_case "(gal8) a GALAXY*.WEBP with other bytes in upper case" 1 'assets/img/docs/MILKY-GALAXY.WEBP'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/docs/sky.png
+  galaxy_case "(gal9) Gaia's picture under a non-galaxy name and another extension" 1 "Gaia's picture"
+else
+  echo "ok   (gal9) Gaia's blob is not in this clone: not run"
+fi
+name=$(printf 'assets/img/docs/galaxy\n.webp_'); name=${name%_}
+printf 'other bytes, a newline in the name' > "$name"
+galaxy_case "(gal10) a galaxy*.webp with a newline in its name" 1 'holds a newline'
+name=$(printf 'assets/img/docs/galaxy\na\t.webp_'); name=${name%_}
+printf 'other bytes, a newline and a tab in the name' > "$name"
+galaxy_case "(gal11) a galaxy*.webp with a newline and a tab in its name" 1 'holds a newline'
 
 rm -f "$cspjs"
 

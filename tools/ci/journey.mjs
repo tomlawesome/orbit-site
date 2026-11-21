@@ -55,9 +55,30 @@ let page = null;
 /* set only while the deliberate no-such-page visit runs: Chromium logs its
    404 as a console error, which is expected there and nowhere else */
 let expectNotFound = false;
+/* the step under way, so a failed request names where it happened */
+let stepName = "(before the first step)";
 const inFlight = new WeakMap();
+/* The door starts its sun worker a frame after it shows; leaving the page (fresh() closes it, a goto or Back leaves it) or
+   the door's stop() ending the worker while its script is still downloading is reported by Firefox as a failed request
+   (NS_BINDING_ABORTED), which the global requestfailed check rightly counts (pipelines 4915, 4971, 4998, 5013). So the
+   journey waits, twice running 250 ms apart and for at most 20 s, until no door is still "pending": the door sets
+   world.dataset.rasterised = "pending" before it asks for the worker and "ready" only once its sun is drawn, which is
+   after the worker's reply (assets/door/glows.js build()), so its script has finished downloading. Not the requests
+   themselves: Chromium never reports a dedicated worker's script as finished on the page (pipeline 5013 waited out its
+   20 s). A door still "pending" after 20 s is logged, not failed. fresh() does it for the page it is closing. */
+const sunDone = async (p, what) => {
+  const end = Date.now() + 20000;
+  const pending = () => p.locator('[data-rasterised="pending"]').count().catch(() => 0);
+  for (let quiet = 0; quiet < 2;) {
+    if (p.isClosed()) return;
+    if (Date.now() > end) { console.log(`     (${what}: the door still "pending" after 20s)`); return; }
+    await p.waitForTimeout(250);
+    quiet = (await pending()) ? 0 : quiet + 1;
+  }
+};
+
 const fresh = async () => {
-  await page?.close();
+  if (page) { await sunDone(page, "before the page is closed").catch((e) => problems.push(e.message)); await page.close(); }
   page = await ctx.newPage();
   /* the docs pictures being downloaded now, for picturesDone */
   const pics = new Set();
@@ -73,14 +94,14 @@ const fresh = async () => {
     if (/^galaxy.*\.webp$/.test(name)) problems.push(`requested a galaxy picture: ${r.url()}`);
   });
   page.on("console", (m) => { if (m.text().includes("is drawn, not Gaia's")) problems.push(`console message mentions Gaia: ${m.text()}`); });
-  page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error: ${m.text()} @ ${m.location().url || "no address"}`); });
-  page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`); });
+  page.on("console", (m) => { if (m.type() === "error" && !expectNotFound) problems.push(`console.error (${stepName}): ${m.text()} @ ${m.location().url || "no address"}`); });
+  page.on("requestfailed", (r) => { if (r.url().startsWith(SITE)) problems.push(`request failed (${stepName}): ${r.url()} ${r.failure()?.errorText}`); });
   page.on("response", (r) => { if (r.url().startsWith(SITE) && r.status() >= 400 && !r.url().endsWith("/no-such-page")) problems.push(`HTTP ${r.status()}: ${r.url()}`); });
   return page;
 };
 
 const step = async (name, fn) => {
-  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
+  try { await fresh(); stepName = name; await fn(); console.log(`ok   ${name}`); }
   catch (e) { problems.push(`${name}: ${e.message.split("\n")[0]}`); console.log(`FAIL ${name}`); }
 };
 
@@ -89,7 +110,7 @@ const step = async (name, fn) => {
    gate until its issue fixes, rewrites or deletes it (owner 22a, #107). */
 const quarantined = async (issue, browsers, name, fn) => {
   if (!browsers.includes(BROWSER)) return step(name, fn);
-  try { await fresh(); await fn(); console.log(`ok   ${name}`); }
+  try { await fresh(); stepName = name; await fn(); console.log(`ok   ${name}`); }
   catch (e) { console.log(`QUARANTINED FAIL ${name} (${issue}, not gating): ${e.message.split("\n")[0]}`); }
 };
 
@@ -805,6 +826,7 @@ const landings = async (prefix) => {
       const before = await arriveAt(page, url, flag);
       await seeing(page, `the direct arrival at ${label} did not land`, landed);
       if (pad === "docs") await picturesDone(page, "before Back from the direct arrival");
+      await sunDone(page, "before Back from the door");
       await pressBack(page);
       await seeing(page, `Back from a direct arrival at ${label} did not leave the page`, leftSite, 15000);
       await fresh();
@@ -814,6 +836,7 @@ const landings = async (prefix) => {
       await clickDawn(page, dawn);
       const door = await seeing(page, `"— the dawn" from a direct arrival at ${label} did not show the door with the address ""`, atDoor);
       if (door.length !== before + 1) throw new Error(`${door.length} entries at the door, want ${before + 1} (the one entry rewritten, none added)`);
+      await sunDone(page, "before Back from the door");
       await pressBack(page);
       await seeing(page, `Back at the door after a direct arrival at ${label} did not leave the page (a dead press?)`, leftSite, 15000);
     });
@@ -874,6 +897,10 @@ const landings = async (prefix) => {
     await p.locator('#transport .tick[aria-label="Other households"]').first().click({ force: true, timeout: 30000 });
     try { await p.waitForFunction((own) => [...window.__skies].some((n) => n !== own), name, { timeout: 90000 }); }
     catch { throw new Error("the walk never flew to another household, so the walk's entries were not tested"); }
+    /* the dial changes when the flight lands (home.js land), 900 ms before its done callback lets the chapter go on to
+       "Tap one, and you fly there."; stopping on the dial alone cut the walk short of that line, so wait for the line (#164) */
+    try { await p.waitForFunction(() => [...document.querySelectorAll(".tourfilm-callout")].some((n) => /Tap one/.test(n.textContent || "")), null, { timeout: 20000 }); }
+    catch { throw new Error("the walk landed at another household but never said 'Tap one, and you fly there.' within 20s, so its entries after the landing were not tested"); }
     await p.locator("#tp-stop").click({ force: true, timeout: 30000 });
     const stopped = await seeing(p, "stopping the walk did not bring the visitor's own sky back", (s) => s.home && !s.flying && s.dial === name);
     if (stopped.length !== before + 1) throw new Error(`${stopped.length} entries after the walk stopped, want ${before + 1}`);
@@ -930,6 +957,7 @@ const landings = async (prefix) => {
     await signedOut(p);
     await p.locator("#gate-back").click({ timeout: 30000 });
     await seeing(p, '"Sign back in" did not show the door', (s) => s.door && !s.dusk && !s.home && s.hash === "");
+    await sunDone(p, "before Forward from the door");
     await pressForward(p);
     await seeing(p, "Forward from the door did not fly in to the sky", onSky);
   });
@@ -946,6 +974,7 @@ await step("404 is the site's own", async () => {
   const file = readFileSync(join(here, "..", "..", "404.html"), "utf8");
   const want = { title: /<title>([^<]+)<\/title>/.exec(file)?.[1], heading: /<h1[^>]*>([^<]+)<\/h1>/.exec(file)?.[1] };
   if (!want.title || !want.heading) throw new Error("404.html has no title or heading to compare with");
+  await sunDone(page, "before leaving for the 404");
   expectNotFound = true;
   try {
     const res = await page.goto(SITE + "no-such-page", { waitUntil: "load" });
