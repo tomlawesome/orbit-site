@@ -30,6 +30,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
 
 - 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
+- 2026-11-21 · 4f3659a4 · !175 pipeline 5171 live:firefox 2/2 job 61996 · P2a failed; passed when re-run on the same code (job 62145)
 
 ## Runner interrupted mid-job (host)
 
