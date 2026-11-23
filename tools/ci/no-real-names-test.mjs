@@ -612,6 +612,7 @@ if (setup) {
   // (b) a new commit with the same author and email still fails, committer included
   const fresh = exGit(["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Another change"], asExempt);
   exGit(["reset", "-q", "--hard", fresh]);
+  copyFileSync(new URL("./no-real-names.mjs", import.meta.url), join(ex, "tools/ci/no-real-names.mjs")); // the reset put back the tree's copy
   const b = guardIn();
   check("one-time exception #166 (b): a new commit by the exempt commit's author is refused (author)", linesFor(b, fresh, "author").length === 1, JSON.stringify(b.lines));
   check("one-time exception #166 (b): a new commit by the exempt commit's committer is refused (committer)", linesFor(b, fresh, "committer").length === 1, JSON.stringify(b.lines));
