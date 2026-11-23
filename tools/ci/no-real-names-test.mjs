@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -555,6 +555,85 @@ for (const [label, name, want] of [
   const r = pathReports([name], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
   check(`email domain end in a path: ${label} gives ${want ? "a masked report" : "no report"}`, Array.isArray(r) && r.length === want && (!want || (r[0].includes("***") && !r[0].toLowerCase().includes(E))), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
 }
+
+// #166: the commit check lets through one commit, main's 3 November merge commit, by its full id, and nothing else.
+// The commit cannot be recreated (the id is the point), so a scratch repo is built from this tree plus that commit,
+// and the guard is copied into it (it reads the repository it sits in). Every git call here is plumbing, no hooks.
+const EXEMPT = "f1c0bc3370d37e44c3bbdba3fc033908bd84392f";
+const exRoot = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "names-166-"));
+const ex = join(exRoot, "repo");
+const exGit = (args, env = {}, input) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { cwd: ex, env: { ...cleanEnv(), ...env }, encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] }).trim();
+const guardIn = (env = {}) => {
+  const r = spawnSync(process.execPath, [join(ex, "tools/ci/no-real-names.mjs")], { cwd: ex, env: { ...cleanEnv(), ...env }, encoding: "utf8" });
+  return { status: r.status, lines: String(r.stdout).split("\n").filter((l) => /^ {3}\S/u.test(l)).map((l) => l.trim()) };
+};
+const linesFor = (r, id, kind) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)) && l.slice(l.indexOf(" ") + 1).startsWith(kind));
+const guardSrc = readFileSync(new URL("./no-real-names.mjs", import.meta.url), "utf8");
+let setup = null;
+try {
+  mkdirSync(ex);
+  exGit(["init", "-q"]);
+  exGit(["fetch", "-q", repoRoot, "HEAD:refs/heads/base"]);
+  exGit(["fetch", "-q", repoRoot, EXEMPT]);
+  exGit(["checkout", "-q", "-f", "base"]);
+  const who = { GIT_AUTHOR_NAME: "Pat Nobody", GIT_AUTHOR_EMAIL: invented, GIT_COMMITTER_NAME: "Pat Nobody", GIT_COMMITTER_EMAIL: invented };
+  const merged = exGit(["commit-tree", "base^{tree}", "-p", "base", "-p", EXEMPT, "-m", "Merge main"], who);
+  exGit(["reset", "-q", "--hard", merged]);
+  copyFileSync(new URL("./no-real-names.mjs", import.meta.url), join(ex, "tools/ci/no-real-names.mjs"));
+  setup = true;
+} catch (e) {
+  check("one-time exception #166: the scratch repo holding the exempt commit builds", false, String(e.stderr || e.message).split("\n")[0]);
+}
+if (setup) {
+  const idOf = exGit(["rev-parse", EXEMPT]);
+  check("one-time exception #166: the exempt commit is in the scratch history", idOf === EXEMPT, idOf);
+  const sameAs = Object.fromEntries(["an", "ae", "cn", "ce"].map((k) => [k, exGit(["log", "-1", `--format=%${k}`, EXEMPT])]));
+  const asExempt = { GIT_AUTHOR_NAME: sameAs.an, GIT_AUTHOR_EMAIL: sameAs.ae, GIT_COMMITTER_NAME: sameAs.cn, GIT_COMMITTER_EMAIL: sameAs.ce };
+
+  // (a) the exempt commit passes its author and committer checks, and the rest of the history is clean
+  const a = guardIn();
+  check("one-time exception #166 (a): no author finding for the exempt commit", linesFor(a, EXEMPT, "author").length === 0, JSON.stringify(a.lines));
+  check("one-time exception #166 (a): no committer finding for the exempt commit", linesFor(a, EXEMPT, "committer").length === 0, JSON.stringify(a.lines));
+  check("one-time exception #166 (a): the guard exits 0 over history holding the exempt commit", a.status === 0, `exit ${a.status}: ${JSON.stringify(a.lines)}`);
+
+  // (c) its message checks and AI-attribution check still run: swap the message with a replace ref (same author,
+  // committer, tree and parents; git log still shows the original id), and plant a banned word by digest
+  const raw = exGit(["cat-file", "commit", EXEMPT]);
+  const head = raw.slice(0, raw.indexOf("\n\n"));
+  const swapped = exGit(["hash-object", "-t", "commit", "-w", "--stdin"], {}, `${head}\n\nTidy ${W}\n\nCo-authored-by: Claude <${["noreply", "anthropic.com"].join("@")}>\n`);
+  exGit(["replace", EXEMPT, swapped]);
+  const c = guardIn({ NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W) });
+  check("one-time exception #166 (c): the exempt id's message is still checked for a banned word", linesFor(c, EXEMPT, "message (").some((l) => /word/u.test(l)), JSON.stringify(c.lines));
+  check("one-time exception #166 (c): the exempt id's message is still checked for AI attribution", linesFor(c, EXEMPT, "message (AI attribution)").length === 1, JSON.stringify(c.lines));
+  check("one-time exception #166 (c): the guard exits 1 for that message", c.status === 1, `exit ${c.status}`);
+  check("one-time exception #166 (c): with a bad message the exempt commit's author and committer are still skipped", linesFor(c, EXEMPT, "author").length === 0 && linesFor(c, EXEMPT, "committer").length === 0, JSON.stringify(c.lines));
+  exGit(["replace", "-d", EXEMPT]);
+
+  // (b) a new commit with the same author and email still fails, committer included
+  const fresh = exGit(["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Another change"], asExempt);
+  exGit(["reset", "-q", "--hard", fresh]);
+  const b = guardIn();
+  check("one-time exception #166 (b): a new commit by the exempt commit's author is refused (author)", linesFor(b, fresh, "author").length === 1, JSON.stringify(b.lines));
+  check("one-time exception #166 (b): a new commit by the exempt commit's committer is refused (committer)", linesFor(b, fresh, "committer").length === 1, JSON.stringify(b.lines));
+  check("one-time exception #166 (b): the guard exits 1", b.status === 1, `exit ${b.status}`);
+  check("one-time exception #166 (b): the exempt commit itself is still skipped beside it", linesFor(b, EXEMPT, "author").length === 0 && linesFor(b, EXEMPT, "committer").length === 0, JSON.stringify(b.lines));
+
+  // (d) nothing widens it: no environment variable or file can add a commit
+  const widen = {};
+  for (const n of ["COMMIT", "COMMITS", "COMMIT_IDS", "EXEMPT", "EXEMPT_COMMITS", "ALLOW", "ALLOW_COMMITS", "ALLOWED_COMMITS", "SKIP", "SKIP_COMMITS", "EXTRA_COMMITS", "EXTRA_COMMIT_IDS", "EXTRA_COMMIT_DIGESTS", "EXTRA_EXCEPTIONS", "EXCEPTIONS"]) widen[`NO_REAL_NAMES_${n}`] = `${fresh},${EXEMPT}`;
+  Object.assign(widen, { NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(fresh) });
+  for (const k of ["COMMITS", "ALLOW", "EXEMPT"]) widen[k] = fresh;
+  for (const f of [".no-real-names-commits", "no-real-names.json", "no-real-names-exceptions.txt", "tools/ci/no-real-names-commits.txt"]) writeFileSync(join(ex, f), `${fresh}\n`);
+  const d = guardIn(widen);
+  check("one-time exception #166 (d): environment variables and files holding another id do not let it through", linesFor(d, fresh, "author").length === 1 && linesFor(d, fresh, "committer").length === 1 && d.status === 1, JSON.stringify(d.lines));
+}
+rmSync(exRoot, { recursive: true, force: true });
+// in the source: the id is one literal, and no environment or file input is read for it
+const idLiterals = guardSrc.match(/\b[0-9a-f]{40}\b/gu) || [];
+check("one-time exception #166 (d): the guard holds the exempt id once, as one 40-character literal", idLiterals.length === 1 && idLiterals[0] === EXEMPT, `${idLiterals.length} literal(s)`);
+const envLines = guardSrc.split("\n").filter((l) => l.includes("process.env"));
+check("one-time exception #166 (d): the only environment inputs are the existing digest and bot-identity ones", envLines.length > 0 && envLines.every((l) => /NO_REAL_NAMES_EXTRA_(?:\$\{kind\}_DIGESTS|BOT_IDENTITIES)/u.test(l)), JSON.stringify(envLines.map((l) => l.trim().slice(0, 60))));
+check("one-time exception #166 (d): the only file read is the tracked-file scan", (guardSrc.match(/readFileSync\(/gu) || []).length === 1, `${(guardSrc.match(/readFileSync\(/gu) || []).length} read(s)`);
 
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
