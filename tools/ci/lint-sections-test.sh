@@ -19,6 +19,9 @@ git init -q
 git add -A
 # --no-verify: the host's own commit hooks must not judge the copy's planted fixtures (as #114)
 git -c user.name=t -c user.email=t@t commit -q --no-verify -m base
+# the names section reads only commits not on main (#167): main marks this base, so it has one to compare with
+git checkout -q -B work
+git branch -f main work
 
 ids="parse refs door types docs-index docs-shape docs-markup milkyway proxy ci-split media csp loads names stray npm-pins test-map"
 failed=0
