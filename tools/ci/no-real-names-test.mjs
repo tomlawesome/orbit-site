@@ -556,85 +556,141 @@ for (const [label, name, want] of [
   check(`email domain end in a path: ${label} gives ${want ? "a masked report" : "no report"}`, Array.isArray(r) && r.length === want && (!want || (r[0].includes("***") && !r[0].toLowerCase().includes(E))), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
 }
 
-// #166: the commit check lets through one commit, main's 3 November merge commit, by its full id, and nothing else.
-// The commit cannot be recreated (the id is the point), so a scratch repo is built from this tree plus that commit,
-// and the guard is copied into it (it reads the repository it sits in). Every git call here is plumbing, no hooks.
-const EXEMPT = "f1c0bc3370d37e44c3bbdba3fc033908bd84392f";
-const exRoot = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "names-166-"));
-const ex = join(exRoot, "repo");
-const exGit = (args, env = {}, input) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { cwd: ex, env: { ...cleanEnv(), ...env }, encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] }).trim();
-const guardIn = (env = {}) => {
-  const r = spawnSync(process.execPath, [join(ex, "tools/ci/no-real-names.mjs")], { cwd: ex, env: { ...cleanEnv(), ...env }, encoding: "utf8" });
-  return { status: r.status, lines: String(r.stdout).split("\n").filter((l) => /^ {3}\S/u.test(l)).map((l) => l.trim()) };
-};
-const linesFor = (r, id, kind) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)) && l.slice(l.indexOf(" ") + 1).startsWith(kind));
-const guardSrc = readFileSync(new URL("./no-real-names.mjs", import.meta.url), "utf8");
-let setup = null;
+// #167: the commit check reads only commits a branch adds: those reachable from HEAD and not from main. Scratch repos
+// hold invented commits; the banned author is the invented address E (by digest). Every git call is plumbing, no hooks.
+const guardPath = new URL("./no-real-names.mjs", import.meta.url);
+const guardSrc = readFileSync(guardPath, "utf8");
+const bannedWho = { GIT_AUTHOR_NAME: "Pat Nobody", GIT_AUTHOR_EMAIL: E, GIT_COMMITTER_NAME: "Pat Nobody", GIT_COMMITTER_EMAIL: E };
+const cleanWho = { GIT_AUTHOR_NAME: "Sam Example", GIT_AUTHOR_EMAIL: "sam@example.invalid", GIT_COMMITTER_NAME: "Sam Example", GIT_COMMITTER_EMAIL: "sam@example.invalid" };
+const authorOnly = { ...cleanWho, GIT_AUTHOR_NAME: bannedWho.GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL: E };
+const committerOnly = { ...cleanWho, GIT_COMMITTER_NAME: bannedWho.GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL: E };
+const banEnv = { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E), NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W) };
+// Builds a repo: base (clean) <- old (banned author, on main) = main tip; then new commits on a branch off main.
+// mainRefs: the refs that point at main's tip; staleRefs: refs named main-ish that point at base (an older main).
+// `news` is a list of [message, env]. Returns { git, run, ids } with the guard copied in after the last reset.
+function scratch({ mainRefs, staleRefs = [], news = [], checkoutMain = false, oldWho = bannedWho }) {
+  const root = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "names-167-"));
+  const dir = join(root, "repo");
+  mkdirSync(dir);
+  const git = (args, env = {}, input) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { cwd: dir, env: { ...cleanEnv(), ...env }, encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] }).trim();
+  git(["init", "-q"]);
+  mkdirSync(join(dir, "tools/ci"), { recursive: true });
+  writeFileSync(join(dir, "README.md"), "A scratch project.\n");
+  copyFileSync(guardPath, join(dir, "tools/ci/no-real-names.mjs"));
+  git(["add", "-A"]);
+  const tree = git(["write-tree"]);
+  const base = git(["commit-tree", tree, "-m", "Start the scratch project"], cleanWho);
+  const old = git(["commit-tree", tree, "-p", base, "-m", "Add a page"], oldWho); // already on main, banned author and committer
+  for (const r of staleRefs) git(["update-ref", r, base]);
+  for (const r of mainRefs) git(["update-ref", r, old]);
+  let head = old;
+  const ids = { base, old };
+  news.forEach(([msg, env], i) => { head = git(["commit-tree", tree, "-p", head, "-m", msg], env); ids[`n${i}`] = head; });
+  git(["update-ref", "refs/heads/work", head]);
+  git(["symbolic-ref", "HEAD", checkoutMain ? "refs/heads/main" : "refs/heads/work"]);
+  git(["reset", "-q", "--hard"]);
+  copyFileSync(guardPath, join(dir, "tools/ci/no-real-names.mjs")); // a reset restores the tree's own copy, so copy after it
+  const run = (env = {}) => {
+    const r = spawnSync(process.execPath, [join(dir, "tools/ci/no-real-names.mjs")], { cwd: dir, env: { ...cleanEnv(), ...banEnv, ...env }, encoding: "utf8" });
+    const out = String(r.stdout) + String(r.stderr);
+    return { status: r.status, out, lines: String(r.stdout).split("\n").filter((l) => /^ {3}\S/u.test(l)).map((l) => l.trim()) };
+  };
+  return { git, run, ids, done: () => rmSync(root, { recursive: true, force: true }) };
+}
+const about = (r, id, kind) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)) && l.slice(l.indexOf(" ") + 1).startsWith(kind));
+const touches = (r, id) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)));
+const refSets = [
+  ["gitlab/main", ["refs/remotes/gitlab/main"], []],
+  ["origin/main", ["refs/remotes/origin/main"], []],
+  ["main", ["refs/heads/main"], []],
+  // lookup order: gitlab/main beats origin/main beats main, so the stale ones must be ignored
+  ["gitlab/main beats a stale origin/main and main", ["refs/remotes/gitlab/main"], ["refs/remotes/origin/main", "refs/heads/main"]],
+  ["origin/main beats a stale main", ["refs/remotes/origin/main"], ["refs/heads/main"]],
+];
 try {
-  mkdirSync(ex);
-  exGit(["init", "-q"]);
-  exGit(["fetch", "-q", repoRoot, "HEAD:refs/heads/base"]);
-  exGit(["fetch", "-q", repoRoot, EXEMPT]);
-  exGit(["checkout", "-q", "-f", "base"]);
-  const who = { GIT_AUTHOR_NAME: "Pat Nobody", GIT_AUTHOR_EMAIL: invented, GIT_COMMITTER_NAME: "Pat Nobody", GIT_COMMITTER_EMAIL: invented };
-  const merged = exGit(["commit-tree", "base^{tree}", "-p", "base", "-p", EXEMPT, "-m", "Merge main"], who);
-  exGit(["reset", "-q", "--hard", merged]);
-  copyFileSync(new URL("./no-real-names.mjs", import.meta.url), join(ex, "tools/ci/no-real-names.mjs"));
-  setup = true;
+  for (const [label, mainRefs, staleRefs] of refSets) {
+    const t = scratch({ mainRefs, staleRefs, news: [["Tidy the page", cleanWho], ["Reword the page", authorOnly], ["Move the page", committerOnly]] });
+    try {
+      const r = t.run();
+      check(`#167 (${label}): a banned author on a commit already on main passes (author)`, about(r, t.ids.old, "author").length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): a banned committer on a commit already on main passes (committer)`, about(r, t.ids.old, "committer").length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): the clean new commit is not reported`, touches(r, t.ids.n0).length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): a new commit with a banned author fails (author)`, about(r, t.ids.n1, "author").length === 1, JSON.stringify(r.lines));
+      check(`#167 (${label}): a new commit with a banned committer fails (committer)`, about(r, t.ids.n2, "committer").length === 1, JSON.stringify(r.lines));
+      check(`#167 (${label}): the guard exits 1 for the new commits`, r.status === 1, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+    } finally { t.done(); }
+  }
+
+  // the same identity on both roles of one new commit
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"], news: [["Another change", bannedWho]] });
+    try {
+      const r = t.run();
+      check("#167: one new commit by the banned identity fails for author and committer both", about(r, t.ids.n0, "author").length === 1 && about(r, t.ids.n0, "committer").length === 1 && r.status === 1, JSON.stringify(r.lines));
+      check("#167: the banned commit already on main stays unreported beside it", touches(r, t.ids.old).length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // a branch that adds nothing passes, though main's own history holds the banned identity
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"] });
+    try {
+      const r = t.run();
+      check("#167: a branch at main's tip, over a banned commit on main, exits 0", r.status === 0, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+      check("#167: a branch at main's tip prints the ok verdict", /^no-real-names: ok/mu.test(r.out), r.out);
+    } finally { t.done(); }
+  }
+
+  // main itself: checked out, with and without a remote-tracking ref
+  for (const [label, refs] of [["main checked out, remote-tracking ref too", ["refs/heads/main", "refs/remotes/gitlab/main"]], ["main checked out, no remote ref", ["refs/heads/main"]]]) {
+    const t = scratch({ mainRefs: refs, checkoutMain: true });
+    try {
+      const r = t.run();
+      check(`#167 (${label}): run at main's own tip exits 0`, r.status === 0, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+      check(`#167 (${label}): run at main's own tip reports no commit`, r.lines.length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // a banned message on a new commit still fails, and on one already on main it does not matter
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"], news: [[`Tidy ${W}`, cleanWho], [`Fine\n\nCo-authored-by: Claude <${["noreply", "anthropic.com"].join("@")}>`, cleanWho]] });
+    try {
+      const r = t.run();
+      check("#167: a banned word in a new commit's message fails", about(r, t.ids.n0, "message (").some((l) => /word/u.test(l)), JSON.stringify(r.lines));
+      check("#167: AI attribution in a new commit's message fails", about(r, t.ids.n1, "message (AI attribution)").length === 1, JSON.stringify(r.lines));
+      check("#167: a bad message on a new commit exits 1", r.status === 1, `exit ${r.status}`);
+      check("#167: a clean author on a new commit with a bad message is not reported as an author", about(r, t.ids.n0, "author").length === 0 && about(r, t.ids.n0, "committer").length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // no main anywhere: fail closed with a clear message, never pass
+  {
+    const t = scratch({ mainRefs: [], oldWho: cleanWho, news: [["Tidy the page", cleanWho]] }); // all clean: only a missing main can fail it
+    try {
+      // no ref named main exists; HEAD is on `work`
+      const r = t.run();
+      check("#167: with no main to compare against the guard exits non-zero (fails closed)", r.status !== 0 && r.status !== null, `exit ${r.status}: ${r.out}`);
+      check("#167: with no main the guard does not print the ok verdict", !/no-real-names: ok/u.test(r.out), r.out);
+      check("#167: with no main the message says main could not be found", /^no-real-names: .*\bmain\b.*(?:not found|cannot be found|could not be found|no main|missing|fetch)/imu.test(r.out), r.out);
+    } finally { t.done(); }
+  }
+  // an unrelated ref name is not taken for main
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/dev", "refs/heads/maintenance"], oldWho: cleanWho, news: [["Tidy the page", cleanWho]] });
+    try {
+      const r = t.run();
+      check("#167: refs named dev or maintenance are not taken for main (fails closed)", r.status !== 0 && !/no-real-names: ok/u.test(r.out), `exit ${r.status}: ${r.out}`);
+    } finally { t.done(); }
+  }
 } catch (e) {
-  check("one-time exception #166: the scratch repo holding the exempt commit builds", false, String(e.stderr || e.message).split("\n")[0]);
+  check("#167: the scratch repos build", false, String(e.stderr || e.message).split("\n")[0]);
 }
-if (setup) {
-  const idOf = exGit(["rev-parse", EXEMPT]);
-  check("one-time exception #166: the exempt commit is in the scratch history", idOf === EXEMPT, idOf);
-  const sameAs = Object.fromEntries(["an", "ae", "cn", "ce"].map((k) => [k, exGit(["log", "-1", `--format=%${k}`, EXEMPT])]));
-  const asExempt = { GIT_AUTHOR_NAME: sameAs.an, GIT_AUTHOR_EMAIL: sameAs.ae, GIT_COMMITTER_NAME: sameAs.cn, GIT_COMMITTER_EMAIL: sameAs.ce };
 
-  // (a) the exempt commit passes its author and committer checks, and the rest of the history is clean
-  const a = guardIn();
-  check("one-time exception #166 (a): no author finding for the exempt commit", linesFor(a, EXEMPT, "author").length === 0, JSON.stringify(a.lines));
-  check("one-time exception #166 (a): no committer finding for the exempt commit", linesFor(a, EXEMPT, "committer").length === 0, JSON.stringify(a.lines));
-  check("one-time exception #166 (a): the guard exits 0 over history holding the exempt commit", a.status === 0, `exit ${a.status}: ${JSON.stringify(a.lines)}`);
-
-  // (c) its message checks and AI-attribution check still run: swap the message with a replace ref (same author,
-  // committer, tree and parents; git log still shows the original id), and plant a banned word by digest
-  const raw = exGit(["cat-file", "commit", EXEMPT]);
-  const head = raw.slice(0, raw.indexOf("\n\n"));
-  const swapped = exGit(["hash-object", "-t", "commit", "-w", "--stdin"], {}, `${head}\n\nTidy ${W}\n\nCo-authored-by: Claude <${["noreply", "anthropic.com"].join("@")}>\n`);
-  exGit(["replace", EXEMPT, swapped]);
-  const c = guardIn({ NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W) });
-  check("one-time exception #166 (c): the exempt id's message is still checked for a banned word", linesFor(c, EXEMPT, "message (").some((l) => /word/u.test(l)), JSON.stringify(c.lines));
-  check("one-time exception #166 (c): the exempt id's message is still checked for AI attribution", linesFor(c, EXEMPT, "message (AI attribution)").length === 1, JSON.stringify(c.lines));
-  check("one-time exception #166 (c): the guard exits 1 for that message", c.status === 1, `exit ${c.status}`);
-  check("one-time exception #166 (c): with a bad message the exempt commit's author and committer are still skipped", linesFor(c, EXEMPT, "author").length === 0 && linesFor(c, EXEMPT, "committer").length === 0, JSON.stringify(c.lines));
-  exGit(["replace", "-d", EXEMPT]);
-
-  // (b) a new commit with the same author and email still fails, committer included
-  const fresh = exGit(["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Another change"], asExempt);
-  exGit(["reset", "-q", "--hard", fresh]);
-  copyFileSync(new URL("./no-real-names.mjs", import.meta.url), join(ex, "tools/ci/no-real-names.mjs")); // the reset put back the tree's copy
-  const b = guardIn();
-  check("one-time exception #166 (b): a new commit by the exempt commit's author is refused (author)", linesFor(b, fresh, "author").length === 1, JSON.stringify(b.lines));
-  check("one-time exception #166 (b): a new commit by the exempt commit's committer is refused (committer)", linesFor(b, fresh, "committer").length === 1, JSON.stringify(b.lines));
-  check("one-time exception #166 (b): the guard exits 1", b.status === 1, `exit ${b.status}`);
-  check("one-time exception #166 (b): the exempt commit itself is still skipped beside it", linesFor(b, EXEMPT, "author").length === 0 && linesFor(b, EXEMPT, "committer").length === 0, JSON.stringify(b.lines));
-
-  // (d) nothing widens it: no environment variable or file can add a commit
-  const widen = {};
-  for (const n of ["COMMIT", "COMMITS", "COMMIT_IDS", "EXEMPT", "EXEMPT_COMMITS", "ALLOW", "ALLOW_COMMITS", "ALLOWED_COMMITS", "SKIP", "SKIP_COMMITS", "EXTRA_COMMITS", "EXTRA_COMMIT_IDS", "EXTRA_COMMIT_DIGESTS", "EXTRA_EXCEPTIONS", "EXCEPTIONS"]) widen[`NO_REAL_NAMES_${n}`] = `${fresh},${EXEMPT}`;
-  Object.assign(widen, { NO_REAL_NAMES_EXTRA_LOGIN_DIGESTS: sha(fresh) });
-  for (const k of ["COMMITS", "ALLOW", "EXEMPT"]) widen[k] = fresh;
-  for (const f of [".no-real-names-commits", "no-real-names.json", "no-real-names-exceptions.txt", "tools/ci/no-real-names-commits.txt"]) writeFileSync(join(ex, f), `${fresh}\n`);
-  const d = guardIn(widen);
-  check("one-time exception #166 (d): environment variables and files holding another id do not let it through", linesFor(d, fresh, "author").length === 1 && linesFor(d, fresh, "committer").length === 1 && d.status === 1, JSON.stringify(d.lines));
-}
-rmSync(exRoot, { recursive: true, force: true });
-// in the source: the id is one literal, and no environment or file input is read for it
+// #167 removes the one-time exception of #166: no commit id literal, and no ONE_TIME_EXCEPTION, remains in the guard
+check("#167: the guard holds no ONE_TIME_EXCEPTION", !/ONE_TIME_EXCEPTION/u.test(guardSrc), "present");
+check("#167: the guard holds no f1c0bc337 literal", !/f1c0bc337/iu.test(guardSrc), "present");
 const idLiterals = guardSrc.match(/\b[0-9a-f]{40}\b/gu) || [];
-check("one-time exception #166 (d): the guard holds the exempt id once, as one 40-character literal", idLiterals.length === 1 && idLiterals[0] === EXEMPT, `${idLiterals.length} literal(s)`);
-const envLines = guardSrc.split("\n").filter((l) => l.includes("process.env"));
-check("one-time exception #166 (d): the only environment inputs are the existing digest and bot-identity ones", envLines.length > 0 && envLines.every((l) => /NO_REAL_NAMES_EXTRA_(?:\$\{kind\}_DIGESTS|BOT_IDENTITIES)/u.test(l)), JSON.stringify(envLines.map((l) => l.trim().slice(0, 60))));
-check("one-time exception #166 (d): the only file read is the tracked-file scan", (guardSrc.match(/readFileSync\(/gu) || []).length === 1, `${(guardSrc.match(/readFileSync\(/gu) || []).length} read(s)`);
+check("#167: the guard holds no 40-character commit id literal", idLiterals.length === 0, `${idLiterals.length} literal(s)`);
 
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });
