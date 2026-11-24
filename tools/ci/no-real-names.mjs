@@ -424,6 +424,11 @@ export function messageFindings(line) {
   return found;
 }
 
+/* #166, owner 2026-11-23: "let it pass this one time and never use it again". main's 3 November release merge carries
+   the owner's account name and email, and GitLab will not promote dev until dev holds it. Only its author and committer
+   are skipped; its message is still checked. One commit, by its full id: never add a second, never make this a list. */
+const ONE_TIME_EXCEPTION = "f1c0bc3370d37e44c3bbdba3fc033908bd84392f";
+
 /* `<short id> author|committer|message (<categories>)` for every commit reachable
    from HEAD with a banned login or email in the author or committer name or
    email (a login also as the email's local part), a banned word, login, email or
@@ -433,13 +438,16 @@ export function messageFindings(line) {
 function commitHits() {
   if (git("rev-parse", "--is-shallow-repository").trim() === "true") return null;
   const hits = [];
-  const fields = git("log", "-z", "--format=%h%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
+  const fields = git("log", "-z", "--format=%H%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
   for (let i = 0; i + 5 < fields.length; i += 6) {
-    const [id, ae, ce, an, cn, message] = fields.slice(i, i + 6);
-    const author = personFindings(an, ae);
-    if (author.length) hits.push(`${id} author (${author.join(", ")})`);
-    const committer = personFindings(cn, ce);
-    if (committer.length) hits.push(`${id} committer (${committer.join(", ")})`);
+    const [full, ae, ce, an, cn, message] = fields.slice(i, i + 6);
+    const id = full.slice(0, 7);
+    if (full !== ONE_TIME_EXCEPTION) {
+      const author = personFindings(an, ae);
+      if (author.length) hits.push(`${id} author (${author.join(", ")})`);
+      const committer = personFindings(cn, ce);
+      if (committer.length) hits.push(`${id} committer (${committer.join(", ")})`);
+    }
     const found = message.split("\n").flatMap(messageFindings);
     if (found.length) hits.push(`${id} message (${categories(found)})`);
     if (aiAttribution(message)) hits.push(`${id} message (AI attribution)`);
