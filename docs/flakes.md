@@ -20,6 +20,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## journey L6 #116, Chromium: "the docs' Back is closed until the flight is ready, then opens" (preview): the descent never shows the dawn
 
 - 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
+- 2026-11-24 · 3ecf0a1 · live:chromium 2/3, CI job 64233, MR !178 · failed once; the change touched only the names lint and its tests
 
 ## freeze 5 [#165](https://gitlab.tomlawson.io/ai/orbit-site/-/work_items/165), Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
 
