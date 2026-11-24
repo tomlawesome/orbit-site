@@ -52,3 +52,8 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## site-browser B1, Firefox: "a burst of 20 resizes draws the galaxy once"
 
 - 2026-11-21 · d4f224fe · !160 pipeline 5121 live:firefox 1/2 job 61241 · failed; passed when re-run on the same code
+- 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 1/2 job 63591 · failed; passed when re-run on the same code (job 63617)
+
+## asdawn, Firefox: "1280x800, asDawn, reduced motion: … the planet (10)"
+
+- 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 2/2 job 63592 · "10. under showdusk alone the planet is opacity 0" read 0.232 under reduced motion; passed when re-run on the same code (job 63616)
