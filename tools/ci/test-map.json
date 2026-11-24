@@ -1,5 +1,5 @@
 {
-  "hand": ["tools/ci/docsky-test.mjs"],
+  "hand": ["tools/ci/docsky-test.mjs", "tools/ci/private-details-allow-test.sh"],
   "groups": {
     "all": [
       "assets/door/*.js",
@@ -21,7 +21,12 @@
       "404.html",
       "assets/site.css",
       "assets/js/main.js",
+      "assets/js/lang.js",
+      "assets/i18n/**",
+      "de/**",
+      "tools/i18n/languages.json",
       "assets/js/ring.js",
+      "assets/js/ways.js",
       "assets/js/places.js",
       "assets/js/tilt.js",
       "sw.js",
@@ -44,8 +49,9 @@
     ],
     "docs": [
       "assets/js/pads.js",
+      "assets/js/hash.js",
       "assets/js/places.js",
-      "assets/docs/**",
+      "assets/docs*/**",
       "tools/docs-sources.json"
     ],
     "worlds": [
@@ -74,6 +80,10 @@
       "tools/ci/nightly-publish.sh",
       "tools/ci/docs-shape.mjs",
       "tools/ci/docs-markup.mjs",
+      "tools/ci/docs-i18n-shape.mjs",
+      "tools/ci/translate.mjs",
+      "tools/ci/nightly-translate.sh",
+      "tools/i18n/**",
       "tools/ci/nightly-import-test.sh",
       "tools/ci/import-docs-test.mjs",
       "tools/ci/raw-heading-test.mjs",
@@ -82,11 +92,14 @@
     "tooling": [
       "tools/ci/lint.sh",
       "tools/ci/ci-split.mjs",
+      "tools/ci/release-readiness.mjs",
       "tools/ci/door-types.mjs",
       "tools/ci/tsconfig.door.json",
       "tools/ci/no-real-names.mjs",
       "tools/ci/door-pow-lint.mjs",
       "tools/door-markup.mjs",
+      "tools/pages.mjs",
+      "tools/ci/i18n-check.mjs",
       "tools/ci/test-map-check.mjs",
       "tools/ci/node-tests.sh",
       "tools/ci/journey-local.sh",
@@ -94,6 +107,8 @@
       "tools/ci/door-timing.mjs",
       "tools/fonts.mjs",
       "tools/ci/lint-test.sh",
+      "tools/ci/flake-gate.sh",
+      "tools/ci/quarantine-lint.mjs",
       "index.html",
       "sw.js",
       "404.html",
@@ -103,7 +118,6 @@
     "none": [
       "docs/**",
       "tools/ci/flake-check.sh",
-      "tools/ci/flake-gate.sh",
       "*.md",
       "assets/door/README.md",
       "LICENSE",
@@ -124,8 +138,10 @@
       "tools/ci/*-test.mjs",
       "tools/ci/*-test.sh",
       "tools/ci/door-stub.mjs",
+      "tools/ci/map-sizes-lib.mjs",
       "tools/ci/ready-ways-bed.mjs",
-      "tools/ci/fake-voyage*.mjs",
+      "tools/ci/fake-voyage*.mjs", "tools/ci/fake-claude*.mjs", "tools/ci/translate-fixture.mjs",
+      "tests/fixtures/docs-i18n-secret-scan-145/*",
       "tools/ci/world-spy*.mjs"
     ]
   },
@@ -179,12 +195,26 @@
       "gates": ["chromium"],
       "seconds": { "chromium": 135 }
     },
+    "docs-img-centre": {
+      "file": "tools/ci/docs-img-centre-test.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["chromium"],
+      "gates": ["chromium"],
+      "seconds": { "chromium": 10 }
+    },
     "docs-sky-portrait-live": {
       "file": "tools/ci/docs-sky-portrait-live-test.mjs",
       "groups": ["page", "flight"],
       "browsers": ["chromium"],
       "gates": ["chromium"],
       "seconds": { "chromium": 457 }
+    },
+    "i18n-journey": {
+      "file": "tools/ci/i18n-journey.mjs",
+      "groups": ["page", "docs"],
+      "browsers": ["firefox", "chromium"],
+      "gates": ["firefox", "chromium"],
+      "seconds": { "firefox": 30, "chromium": 25 }
     },
     "door-lows": {
       "file": "tools/ci/door-lows-test.mjs",

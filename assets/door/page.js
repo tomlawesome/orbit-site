@@ -136,6 +136,9 @@ export const page = {
       (fitness.js: rememberFit, which keeps only one that measured); in the worker, posted to the page to keep
       @param {{ fit: boolean, ms: number, skipped: boolean, how: string }} v */
   judged(v) { rememberFit(v); },
+  /** this thread's compiles and uploads under way (busy.js), as they change: nothing on the page, where the ledger is
+      read where it is kept; in a worker, posted to the page @param {{ n: number, gen: number }} _b */
+  busy(_b) { /* the page's own ledger is read where it is kept (busy.js) */ },
   /** whether a page shares this thread, so a compile here freezes it (chores.js: compilesAside; in the worker, no) */
   shared: () => true,
 };
@@ -143,3 +146,34 @@ export const page = {
 /** what answers for the page on this thread, given once before anything is drawn (the worker's, draw-worker.js)
     @param {Partial<typeof page>} over */
 export function setPage(over) { Object.assign(page, over); }
+
+/**
+ * A canvas handed over to a worker, asked for each kind of context once: every later ask is given the one made first
+ * (what getContext does anyway). Firefox 159 refuses a second ask made in a worker on such a canvas ("Cannot update
+ * created context to different thread"), whatever it asks for, and that stopped the flight's worker, whose entry and
+ * engine both ask for the 2D context (#154).
+ * @template {{ getContext: (...a: any[]) => any }} C @param {C} canvas @returns {C}
+ */
+export function askedOnce(canvas) {
+  const real = canvas.getContext.bind(canvas);
+  /** @type {Map<string, unknown>} */
+  const made = new Map();
+  canvas.getContext = (/** @type {string} */ kind, /** @type {any[]} */ ...rest) => {
+    if (!made.has(kind)) made.set(kind, real(kind, ...rest));
+    return made.get(kind);
+  };
+  return canvas;
+}
+
+/**
+ * Where an exception was thrown, for a worker's `dead`: the first lines of its stack without the line that repeats
+ * its message ("" where it has none), so the page's log can say which call stopped the worker (#154).
+ * @param {unknown} e @returns {string}
+ */
+export function stoppedAt(e) {
+  const err = /** @type {{ name?: unknown, message?: unknown, stack?: unknown } | null} */ (e && typeof e === "object" ? e : null);
+  const stack = typeof err?.stack === "string" ? err.stack : "";
+  const head = `${String(err?.name ?? "")}: ${String(err?.message ?? "")}`;
+  const body = stack.startsWith(head) ? stack.slice(head.length) : stack;
+  return body.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 3).join("\n");
+}

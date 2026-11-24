@@ -40,8 +40,8 @@
 # Pictures (#72): the import copies each upstream picture into assets/docs/img/,
 # so the archive may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of
 # at most 1 MiB, each a real picture of its extension and used by a page, and nothing else under
-# it (pic and the pic* scenarios below); the entry limit allows 8 pages, the index and 128
-# pictures (pics128 accepted, pictoomany refused); and the merge request's assets/docs/img/ is
+# it (pic and the pic* scenarios below); the entry limit follows the number N of sources in
+# tools/docs-sources.json: N pages, the index and 16*N pictures (picsmax accepted, pictoomany refused); and the merge request's assets/docs/img/ is
 # exactly the archive's: a picture the import no longer writes is deleted (picgone, picswap).
 #
 # Warnings (#82): the import job also hands on import-warnings.txt (one warning per line,
@@ -60,6 +60,11 @@ aux=$(mktemp -d)          # shims, state and logs; outside the scratch repo
 trap 'rm -rf "$tmp" "$tmp.tmp" "$tmp.tmpX" "$tmp.elsewhere" "$aux"' EXIT
 
 git -C "$root" archive HEAD | tar -x -C "$tmp"
+# Hermetic and date-free (#159, T-F3): the committed translations carry stamps of their own day, and the translation
+# lag step judges them against the clock, so a scenario would see the real pages as stalled once the committed
+# English is 36 hours old. Every scenario sees only the translation state it makes (mklag, mktr.py), and a run that
+# sets no clock gets one pinned to its own English (run_push).
+rm -rf "$tmp/assets/docs-i18n"
 # a second, untouched copy: the publish script pins its host, and the copy under
 # test is given the test's (the pin itself is tried on the untouched one)
 mkdir "$aux/pristine"; git -C "$root" archive HEAD | tar -x -C "$aux/pristine"
@@ -191,10 +196,11 @@ imgdir = True
 if sc in ('pic', 'picnodir'): addpic(png(1), 'png'); imgdir = sc == 'pic'
 if sc == 'picall': addpic(png(2), 'png'); addpic(jpg(3), 'jpg'); addpic(gif(4), 'gif'); addpic(webp(5), 'webp')
 if sc == 'pic1mib': addpic(pad(b'\x89PNG\r\n\x1a\n', MIB), 'png')
-if sc == 'pics128':   # 128 in all, with the commit's own
-    for i in range(128 - len(head)): addpic(png(1000 + i), 'png')
+NSRC = len(json.load(open('tools/docs-sources.json')))   # N pages; the limit is 16*N pictures in all
+if sc == 'picsmax':   # 16*N in all, with the commit's own
+    for i in range(16 * NSRC - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'pictoomany':
-    for i in range(129 - len(head)): addpic(png(1000 + i), 'png')
+    for i in range(16 * NSRC + 1 - len(head)): addpic(png(1000 + i), 'png')
 if sc == 'picswap': addpic(png(91), 'png'); addpic(png(92), 'png')
 # the same as `pic`, with one thing wrong each
 if sc == 'picsvg': addpic(b'<svg xmlns="http://www.w3.org/2000/svg"/>', 'svg', used=False)
@@ -225,6 +231,7 @@ warnings = {
     'warn-bidi': wl(S0, 'link-cleaned', 'fine') + wl(S0, 'link-dropped', 'rtl \u202e txt'),
     'warn-badrepo': wl({'repo': 'someone/else', 'path': S0['path']}, 'link-dropped', 'x'),
     'warn-badkind': wl(S0, 'link-evil', 'x'),
+    'warn-skip': wl(S0, 'skip-unmatched', 'skip heading "Screenshots" is not a second-level heading of the file'),
     'warn-long': wl(S0, 'link-dropped', 'z' * (401 - len(wl(S0, 'link-dropped', '')) + 1)),
     'warn-many': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(201)),
     'warn-max': ''.join(wl(S0, 'link-dropped', 'n%d' % i) for i in range(200)),
@@ -486,7 +493,11 @@ route=${path%%\?*}
 code=404; body='{"message":"404 Not Found"}'; note=
 case "$method $route" in
   "GET /merge_requests") code=200; body='[]'
-    if [ -n "$OLDMR" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
+    # #129: the older import merge requests are those into dev; asked for another target, GitLab has none,
+    # asked with no target (the stale-branch listing), it lists them
+    echo "GET $path" >> "$STATE/mr-query.log"
+    case $path in *target_branch=dev*) mrdev=1 ;; *target_branch=*) mrdev= ;; *) mrdev=1 ;; esac
+    if [ -n "$OLDMR" ] && [ -n "$mrdev" ]; then body='[{"iid":7,"source_branch":"docs/import-20260101-0000","source_project_id":1,"target_project_id":1},{"iid":8,"source_branch":"docs/import-20260102-0000","source_project_id":2,"target_project_id":1}]'; fi
     # #91: the lookup of the branch's opened merge request; in mroplost the first create was made and its answer lost
     case $path in *source_branch=*) if [ "$SCENARIO" = mroplost ]; then
       sb=$(printf '%s' "$path" | sed -n 's/.*source_branch=\([^&]*\).*/\1/p; ' | sed 's,%2F,/,')
@@ -515,7 +526,7 @@ case "$method $route" in
     n=$(cat "$STATE/merge-n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$STATE/merge-n"
     ismerge=1
     okmerge=; case $SCENARIO in mropen400once|mropenconnonce|mroplost) okmerge=1; n=2 ;; esac
-    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*) okmerge=1 ;; esac
+    case $SCENARIO in second|benign|scriptel|handler|jsurl|svgel|hook|pushfail|stage|runnerlike|runnerinc|nlval|pic*|warn-*|tr-*) okmerge=1 ;; esac
     if [ -n "$okmerge" ] && [ "$n" -ge 2 ]; then
       code=200; body='{"iid":42,"merge_when_pipeline_succeeds":true}'
     elif [ "$SCENARIO" = conn ] && [ "$n" -ge 2 ]; then
@@ -527,13 +538,15 @@ case "$method $route" in
   "GET ") code=200; body='{"path_with_namespace":"ai/orbit-site"}'
     [ "$SCENARIO" != wrongproject ] || body='{"path_with_namespace":"someone/else"}' ;;
   "GET /pipelines/77/jobs") code=200
-    job='{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}'
+    job='{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}'
     case $SCENARIO in
-      nojob) body='[{"id":556,"name":"publish_docs","status":"running","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[]}]' ;;
-      failedjob) body='[{"id":555,"name":"import_docs","status":"failed","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
-      wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
-      wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      mainjob) body='[{"id":555,"name":"import_docs","status":"success","ref":"main","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      nojob) body='[{"id":556,"name":"publish_docs","status":"running","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[]}]' ;;
+      failedjob) body='[{"id":555,"name":"import_docs","status":"failed","ref":"dev","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongsha) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":77,"sha":"0000000000000000000000000000000000000000"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
+      wrongpipeline) body='[{"id":555,"name":"import_docs","status":"success","ref":"dev","pipeline":{"id":76,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       twojobs) body="[$job,$job]" ;;
+      tr-*) body='[{"id":555,"name":"translate_docs","status":"success","ref":"'$CI_COMMIT_BRANCH'","pipeline":{"id":77,"sha":"'$HEADSHA'"},"artifacts":[{"file_type":"archive","size":1}]}]' ;;
       *) body="[$job]" ;;
     esac ;;
   "GET /jobs/555/artifacts") code=200; body= ;;
@@ -560,6 +573,11 @@ case $route in /issues*) # the issue calls: their query and data, and a copy of 
   echo "$method $route query=$query data=$data" >> "$STATE/issues.log"
   printf '%s\n' "$data" | tr '|' '\n' | while IFS= read -r d; do
     case $d in description@*) f=${d#description@}; [ ! -f "$f" ] || cp "$f" "$STATE/issue-body" ;; esac
+  done ;;
+esac
+case $method:$route in POST:/merge_requests) # the merge request's description, sent from a file (#125: the report's summary)
+  printf '%s\n' "$data" | tr '|' '\n' | while IFS= read -r d; do
+    case $d in description@*) f=${d#description@}; [ ! -f "$f" ] || cp "$f" "$STATE/mr-body" ;; esac
   done ;;
 esac
 if [ -n "$ismerge" ]; then # one line per merge PUT: header ok?, timeout flags, sha sent
@@ -714,6 +732,28 @@ prepare() {
       "$realgit" -c user.name=t -c user.email=t@t commit -q -m "two pictures" ;;
   esac
 }
+# mklag <hours> <now> (#125, amendment 6): the checkout as publish_docs gets it, one commit deep: the German page of
+# the first source stamped <hours> hours after the English's generated (-24: a day before it, 0: the same), and the
+# clock $LAG_NOW <now> hours after the English's generated (empty: LAG_NOW is not set). The whole tree is made one
+# commit with no parent, which is what the job clones; the lag is read from the page's stamp and the clock alone.
+isoplus() { "$realnode" -e 'console.log(new Date(Date.parse(process.argv[1]) + process.argv[2] * 3600e3).toISOString())' "$1" "$2"; }
+mklag() {
+  slug=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("tools/docs-sources.json", "utf8"))[0].slug)')
+  english=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("assets/docs/index.json", "utf8")).generated)')
+  # lagold (LAG7, LAGB: the real clock is the point): the English made in 2020, so the clock stalls it on any day
+  if [ -n "${lagold:-}" ]; then
+    "$realnode" -e 'const f = "assets/docs/index.json", j = JSON.parse(require("fs").readFileSync(f, "utf8")); j.generated = "2020-01-01T00:00:00.000Z"; require("fs").writeFileSync(f, JSON.stringify(j))'
+    english=2020-01-01T00:00:00.000Z
+  fi
+  mkdir -p assets/docs-i18n/de
+  printf '{"source":{"generated":"%s"}}\n' "$(isoplus "$english" "$1")" > "assets/docs-i18n/de/$slug.json"
+  lagiso=; [ -z "$2" ] || lagiso=$(isoplus "$english" "$2")
+  [ -z "${lagraw:-}" ] || lagiso=$lagraw   # a LAG_NOW given as it is, to be refused
+  "$realgit" add -A assets/docs-i18n
+  [ -z "${lagold:-}" ] || "$realgit" add assets/docs/index.json   # the aged English kept past the reset
+  only=$("$realgit" -c user.name=t -c user.email=t@t commit-tree "$("$realgit" write-tree)" -m "one commit")
+  "$realgit" reset -q --hard "$only"
+}
 run_push() { # run_push <outfile> <scenario>
   outfile=$1
   # a clean scratch repository and state for every run
@@ -722,22 +762,26 @@ run_push() { # run_push <outfile> <scenario>
   rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
     "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran
   : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
-  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"
+  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"; : > "$aux/mr-query.log"
   rm -f "$aux"/tok.log; : > "$aux/tok.log"
   rm -f "$aux"/issue-body "$aux"/issues.log; : > "$aux/issues.log"
   prepare "$2"
-  headsha=$basecommit     # unless the scenario's main already holds pictures
+  lagiso=; [ -z "${lag:-}" ] || mklag "$lag" "${lagnow:-}"
+  # no lag scenario: the clock is the scenario's own English, never today's date
+  [ -n "${lag:-}" ] || lagiso=$("$realnode" -e 'console.log(JSON.parse(require("fs").readFileSync("assets/docs/index.json", "utf8")).generated)')
+  headsha=$basecommit     # unless the scenario's main already holds pictures or a history
   case $2 in picgone|picswap) headsha=$("$realgit" rev-parse HEAD) ;; esac
+  [ -z "${lag:-}" ] || headsha=$("$realgit" rev-parse HEAD)
   "$realpython" -W ignore "$aux/mkzip.py" "$aux/artifact.zip" "$aux/docs-head" "$2"
   rc=0
   env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
     FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$headsha" ZIP="$aux/artifact.zip" \
-    CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
+    CI_COMMIT_BRANCH=dev CI_PIPELINE_SOURCE=schedule GIT_STRATEGY=clone \
     PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
     REAL_GIT="$realgit" REAL_NODE="$realnode" \
     TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
     CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR="${oldmr:-}" STALE="${stale:-}" DRY_RUN="${dry:-}" \
-    sh tools/ci/nightly-publish.sh > "$outfile" 2>&1 || rc=$?
+    ${lagiso:+LAG_NOW="$lagiso"} sh tools/ci/nightly-publish.sh > "$outfile" 2>&1 || rc=$?
   merge_puts=$(grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true)
   bare_puts=$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)
   sleeps=$(grep -c '^sleep ' "$aux/shim.log" || true)
@@ -764,7 +808,7 @@ pin_run() {
       FAKE="$fake" FAKE_JOB="$fakejob" \
       ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" CI_PIPELINE_ID=77 \
       CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site \
-      CI_COMMIT_BRANCH=main CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
+      CI_COMMIT_BRANCH=dev CI_PIPELINE_SOURCE=schedule ${pin_strategy:+GIT_STRATEGY=$pin_strategy} "$@" sh tools/ci/nightly-publish.sh ) > "$out" 2>&1 || rc=$?
 }
 # The job runs with GIT_STRATEGY=clone (the CI file sets it, #60 round 4), and the script
 # refuses to run without it. So every run here has it, as the runner gives it; pin_strategy
@@ -787,7 +831,8 @@ pinned "on the real script's host (the test's is not it)" "$aux/pristine" "CI_SE
 pinned "with another API address" "$tmp" "CI_API_V4_URL is not" CI_API_V4_URL=https://evil.invalid/api/v4
 pinned "in another project" "$tmp" "CI_PROJECT_PATH is not" CI_PROJECT_PATH=evil/x
 pinned "with a project id that is not a number" "$tmp" "CI_PROJECT_ID is not a number" "CI_PROJECT_ID=1/../2"
-pinned "off main" "$tmp" "CI_COMMIT_BRANCH is not main" CI_COMMIT_BRANCH=dev
+pinned "off dev (on main, #129)" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=main
+pinned "on a feature branch" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=feature/x
 pinned "from a pipeline that is not a schedule" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=push
 for v in LD_LIBRARY_PATH=/nonexistent NODE_OPTIONS=--version GIT_EXEC_PATH=/x GIT_SSH_COMMAND=x PYTHONPATH=/x SSL_CERT_FILE=/x OPENSSL_CONF=/x BASH_ENV=/x; do
   pinned "with ${v%%=*} set" "$tmp" "refusing to run: ${v%%=*} is set" "$v"
@@ -942,6 +987,13 @@ check "job 2: it stopped retrying once GitLab accepted (saw $merge_puts attempts
 rc=0; [ "$(grep -c '^POST /merge_requests' "$aux/api.log")" -eq 1 ] || rc=1
 check "job 2: a merge request that opens on the first try is opened with exactly one POST" "$rc"
 check_merge_calls "run 7"
+# #129: the import runs on dev and everything it opens or lists is about dev
+rc=0; grep -q '^POST /merge_requests|.*target_branch=dev' "$aux/api.log" && ! grep -q 'target_branch=main' "$aux/api.log" || rc=1
+check "job 2: the merge request is opened with target_branch=dev (#129)" "$rc"
+rc=0; grep -q '^GET .*/merge_requests?.*target_branch=dev' "$aux/mr-query.log" && ! grep -q 'target_branch=main' "$aux/mr-query.log" || rc=1
+check "job 2: the older import merge requests are listed with target_branch=dev (#129)" "$rc"
+rc=0; grep -q '^== compare with dev' "$out" && ! grep -q 'compare with main' "$out" || rc=1
+check "job 2: it compares with dev, not main (#129)" "$rc"
 rc=0; changed=$("$realgit" diff --name-only "$basecommit" "$tip" 2>/dev/null || true); [ "$changed" = "$appendfile" ] || rc=1
 check "job 2: the commit changes only the page that changed" "$rc"
 [ "$rc4" -eq 0 ] || sed 's/^/     /' "$out"
@@ -1286,7 +1338,7 @@ refused badname "a name with capitals" "is not a file the import writes"
 refused unknown "a page for a source that is not listed" "is not a file the import writes"
 refused dup "the same name twice" "in the archive twice"
 refused missing "an archive without one of the pages" "missing:"
-refused pictoomany "too many entries (8 pages, the index and 129 pictures; the old limit was 64 and a test of it is gone, see pics128)" "more than"
+refused pictoomany "too many entries (N pages, the index and 16*N+1 pictures; the old limit was 64 and a test of it is gone, see picsmax)" "more than"
 refused toolarge "a file over the size cap" "is larger than"
 refused toomuch "too many bytes in all" "bytes in all"
 refused notzip "a file that is not a zip" "not a zip archive"
@@ -1297,6 +1349,7 @@ refused badid "a section id with a quote" "sections\[1\].id"
 refused extrakey "a section with an extra key" "sections\[0\] does not have exactly"
 refused tampered "a changed tracked file in the checkout" "tracked files differ from HEAD"
 refused wrongproject "an answer that names another project" "not ai/orbit-site"
+refused mainjob "an import job whose ref is main, not dev (#129)" "successful import_docs jobs"
 refused nojob "a pipeline with no successful import job" "successful import_docs jobs"
 refused failedjob "an import job that failed" "successful import_docs jobs"
 refused wrongsha "an import job at another commit" "successful import_docs jobs"
@@ -1307,7 +1360,7 @@ refused twojobs "two import jobs" "successful import_docs jobs"
 # may carry that folder and files assets/docs/img/<16 hex>.(png|jpg|webp|gif) of at most 1 MiB,
 # each a real picture of its extension and used by a page, and nothing else under it. Every
 # refusal below is paired with an accepted archive that differs in the thing refused (pic,
-# picnodir, picall, pic1mib, pics128), and each accepted archive's pictures must reach the
+# picnodir, picall, pic1mib, picsmax), and each accepted archive's pictures must reach the
 # merge request exactly (check_pics).
 check_pics() { # check_pics <label>: the pushed commit's assets/docs/img/ is exactly the archive's, each file named by its bytes
   want=$(cat "$aux/artifact.zip.imgs")
@@ -1337,8 +1390,9 @@ accepted pic "an archive with one PNG picture that a page uses" 1
 accepted picnodir "the same archive without a directory entry for img/" 1
 accepted picall "a PNG, a JPEG, a GIF and a WebP picture, each named by its bytes" 4
 accepted pic1mib "a picture of exactly 1 MiB" 1
-accepted pics128 "128 pictures in all (the most the entry limit allows with 8 pages and the index)" $((128 - nhead))
-refused pictoomany "129 pictures (more entries than 8 pages, the index and 128 pictures)" "more than"
+nsrc=$(python3 -c "import json;print(len(json.load(open('tools/docs-sources.json'))))")
+accepted picsmax "$((16 * nsrc)) pictures in all (the most the entry limit allows with $nsrc pages and the index)" $((16 * nsrc - nhead))
+refused pictoomany "$((16 * nsrc + 1)) pictures (more entries than $nsrc pages, the index and $((16 * nsrc)) pictures)" "more than"
 refused picsvg "an SVG in img/" "picsvg\|\.svg\|is not a file the import writes"
 refused picupper "a picture whose name has upper-case hex" "is not a file the import writes"
 refused picjpeg "a picture with the extension .jpeg" "is not a file the import writes"
@@ -1435,7 +1489,7 @@ in_fence() {
 }
 # fence_lines: every line inside a fence starts with a kind and two spaces; prints how many there are
 fence_lines() {
-  awk '$0 == "````" { f = !f; next } f { n++; if ($0 !~ /^(link-cleaned|link-dropped|block-lost-text|block-unclosed|picture-not-copied|more)  /) bad++ }
+  awk '$0 == "````" { f = !f; next } f { n++; if ($0 !~ /^(link-cleaned|link-dropped|block-lost-text|block-unclosed|picture-not-copied|skip-unmatched|more)  /) bad++ }
     END { if (bad) print -1; else print n + 0 }' "$body"
 }
 warn_ok() { # warn_ok <scenario> <what it is>: the job exits 0 and the merge request is set to merge
@@ -1539,6 +1593,24 @@ warn_ok warn-max "an archive with 200 warning lines (the most allowed)"
 rc=0; [ -f "$body" ] && [ "$(fence_lines)" -eq 200 ] || rc=1
 check "W6 warn-max: all 200 lines reach the issue" "$rc"
 
+# W11 (ALL-F19, ALL-F21, #138): a source with a `skip` entry whose heading upstream renamed makes the import write a
+# skip-unmatched warning (#124). That is a warning for the standing issue, never a reason to refuse the artifact: the
+# publish accepts the kind, publishes, and the line reaches the issue in a fence, kind first.
+warn_ok warn-skip "an archive with a skip-unmatched warning (a stale skip entry)"
+rc=0; [ -f "$body" ] && in_fence 'skip-unmatched  skip heading "Screenshots"' || rc=1
+check "W11 warn-skip: the skip-unmatched line reaches the issue inside a fence, prefixed by its kind" "$rc"
+[ "$rc" -eq 0 ] || show_body
+# W11b: every kind import-docs.mjs writes, by say("<kind>" or warn(src, "<kind>", is a member of the python `kinds` set in
+# the publish's check_warnings (read from that line, not found anywhere in the script); a kind added to the import alone
+# would stop the nightly publish, as skip-unmatched did
+pub_kinds=$(grep -E '^kinds = \{' tools/ci/nightly-publish.sh | grep -oE '"[a-z-]+"' | tr -d '"')
+rc=0; [ -n "$pub_kinds" ] || rc=1
+check "W11 the publish's kinds set is found in tools/ci/nightly-publish.sh" "$rc"
+for k in $(grep -oE '(say\(|warn\(src, )"[a-z-]+"' tools/import-docs.mjs | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u); do
+  rc=0; printf '%s\n' "$pub_kinds" | grep -qx "$k" || rc=1
+  check "W11 the publish's kinds set includes '$k', which the import writes" "$rc"
+done
+
 # W7: a look-alike by another user, and one by the bot with another title, are never touched; a new issue is made
 warn_ok warn-lookalike "an archive whose only look-alike issues are another user's or titled otherwise"
 rc=0; [ "$(issue_posts)" -eq 1 ] && [ "$(issue_puts)" -eq 0 ] || rc=1
@@ -1569,6 +1641,247 @@ check "W9 warn-reopen: a closed issue with warnings is reopened (state_event=reo
 warn_ok warn-closednone "an archive with no warnings when the bot's issue is closed"
 rc=0; grep -q '^PUT /issues/5' "$aux/api.log" && ! grep -q 'state_event' "$aux/issues.log" && [ -f "$body" ] && grep -qx 'none' "$body" || rc=1
 check "W9 warn-closednone: a closed issue with no warnings gets the body none and is left closed" "$rc"
+
+
+# ---------------------------------------------------------------- translations (#125 stage 2) --
+# `sh tools/ci/nightly-publish.sh translations` (job publish_translations) takes the artifact of translate_docs the
+# way the docs mode takes import_docs's (spec 5): only the entries assets/docs-i18n/<lang>/<slug|index>.json,
+# assets/i18n/<lang>.json, tools/i18n/state/<lang>.json and translate-report.json (never en.json, never assets/docs/);
+# branch i18n/translate-<stamp>; target $CI_COMMIT_BRANCH, one of dev, batch-a, batch-b (never main); auto-merge only
+# when the target is dev; the warnings issue is not touched. The docs mode stays dev-only and schedule-only.
+# TR1-TR10, one scenario each; mktr.py makes the archive: every page and key kept in English (so its shape is good
+# whatever the translation), with the entry the scenario plants.
+cat > "$aux/mktr.py" <<'PY'
+import hashlib, json, os, sys, zipfile
+out, sc = sys.argv[1:3]
+REG = 0o100644
+def h16(s): return hashlib.sha256(s.encode('utf-8')).hexdigest()[:16]
+def dump(o): return json.dumps(o, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+srcs = json.load(open('tools/docs-sources.json'))
+idx = json.load(open('assets/docs/index.json'))
+en = json.load(open('assets/i18n/en.json'))
+files = {}
+entries = []
+OLD, NEW = '2020-01-01T00:00:00.000Z', '2999-01-01T00:00:00.000Z'
+for n, s in enumerate(srcs):
+    p = json.load(open('assets/docs/%s.json' % s['slug']))
+    gen = idx['generated']          # the English the page was made from: the checkout's, unless the scenario says other
+    if sc == 'tr-stale' or (sc == 'tr-onepage' and n == 0): gen = OLD
+    if sc == 'tr-newer': gen = NEW
+    # the layout of #145: each section's first key is en, the hash16 of the English section; source is {generated, kept}
+    p['sections'] = [dict([('en', h16(json.dumps([x['title'], x['html'], x['subs']], separators=(',', ':'), ensure_ascii=False)))] + list(x.items())) for x in p['sections']]
+    p['source'] = {'generated': gen, 'kept': [x['id'] for x in p['sections']]}
+    if sc == 'tr-script' and n == 0: # a script in a section the translation made (so not kept in English)
+        p['source']['kept'] = [x['id'] for x in p['sections'][1:]]
+        p['sections'][0]['html'] = '<p>x</p><script>alert(1)</script>'
+    files['assets/docs-i18n/de/%s.json' % s['slug']] = dump(p)
+    q = {k: v for k, v in p.items()}
+    q['sections'] = [{k: v for k, v in x.items() if k != 'html'} for x in p['sections']]
+    entries.append(q)
+files['assets/docs-i18n/de/index.json'] = dump({'generated': idx['generated'], 'sources': entries})
+files['assets/i18n/de.json'] = dump(en)
+files['tools/i18n/state/de.json'] = dump({'catalogue': {k: h16(v) for k, v in en.items()}, 'kept': list(en.keys())})
+files['translate-report.json'] = dump({'summary': 'de: 0 translated, 0 unchanged, %d kept' % len(en), 'languages': {'de': {'translated': 0, 'unchanged': 0, 'kept': len(en)}}})
+extra = {
+    'tr-en': ('assets/i18n/en.json', dump(en)),
+    'tr-docs': ('assets/docs/x.json', b'{}'),
+    'tr-other': ('tools/ci/serve.mjs', b'x'),
+    'tr-html': ('assets/docs-i18n/de/x.html', b'<p>x</p>'),
+    'tr-deep': ('assets/docs-i18n/de/sub/x.json', b'{}'),
+}
+# #125 review 8: an artifact that breaks one rule of the gate, the rest of it good
+dp = 'assets/docs-i18n/de/%s.json' % srcs[0]['slug']
+if sc == 'tr-catalogue': # a key of en.json missing from the catalogue
+    first = next(iter(en)); files['assets/i18n/de.json'] = dump({k: v for k, v in en.items() if k != first})
+if sc == 'tr-lang': files['assets/i18n/xx.json'] = dump(en) # a language tools/i18n/languages.json does not list
+if sc == 'tr-half': del files['tools/i18n/state/de.json'] # a language present but not whole
+if sc == 'tr-noreport': del files['translate-report.json']
+if sc == 'tr-hostile': # a summary that tries to close its fence, run a quick action, mention, and hide text
+    files['translate-report.json'] = dump({'summary': 'de: 0 translated\n````\n/close\n@everyone Closes #1\n\x1b[2Jhidden \u202egnirts\n```\nmore'})
+def zi(name, mode):
+    z = zipfile.ZipInfo(name); z.external_attr = mode << 16; z.compress_type = zipfile.ZIP_DEFLATED; return z
+with zipfile.ZipFile(out, 'w') as z:
+    for d in ('assets/', 'assets/docs-i18n/', 'assets/docs-i18n/de/', 'assets/i18n/', 'tools/', 'tools/i18n/', 'tools/i18n/state/'):
+        z.writestr(zi(d, 0o040755), b'')
+    for n, data in files.items(): z.writestr(zi(n, REG), data)
+    if sc in extra: z.writestr(zi(extra[sc][0], REG), extra[sc][1])
+PY
+run_tr() { # run_tr <outfile> <scenario> <branch> <pipeline source>
+  outfile=$1
+  reset_tree
+  for b in $("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/i18n/translate-*'); do "$realgit" branch -q -D "$b"; done
+  rm -rf scratch-tmp; mkdir scratch-tmp
+  rm -f "$aux"/api.log "$aux"/shim.log "$aux"/merge-n "$aux"/post-n "$aux"/merge.log "$aux"/git.log "$aux"/npm.log \
+    "$aux"/node.log "$aux"/node-bad.log "$aux"/hook-ran "$aux"/fsmonitor-ran "$aux"/filter-ran "$aux"/tok.log "$aux"/issue-body "$aux"/issues.log "$aux"/mr-body
+  : > "$aux/api.log"; : > "$aux/shim.log"; : > "$aux/merge.log"; : > "$aux/git.log"
+  : > "$aux/npm.log"; : > "$aux/node.log"; : > "$aux/node-bad.log"; : > "$aux/mr-query.log"; : > "$aux/tok.log"; : > "$aux/issues.log"
+  "$realpython" -W ignore "$aux/mktr.py" "$aux/artifact.zip" "$2"
+  rc=0
+  env -i HOME="$aux" ORBIT_SITE_IMPORT_TOKEN="$fake" CI_JOB_TOKEN="$fakejob" \
+    FAKE_JOB="$fakejob" CI_PIPELINE_ID=77 HEADSHA="$basecommit" ZIP="$aux/artifact.zip" \
+    CI_COMMIT_BRANCH="$3" CI_PIPELINE_SOURCE="$4" GIT_STRATEGY=clone \
+    PATH="$pbin:$PATH" STATE="$aux" SCENARIO="$2" FAKE="$fake" \
+    REAL_GIT="$realgit" REAL_NODE="$realnode" \
+    TMPDIR="$tmp/scratch-tmp" CI_API_V4_URL=https://gitlab.invalid/api/v4 CI_PROJECT_ID=1 \
+    CI_SERVER_HOST=gitlab.invalid CI_PROJECT_PATH=ai/orbit-site OLDMR= STALE= DRY_RUN= \
+    sh tools/ci/nightly-publish.sh translations > "$outfile" 2>&1 || rc=$?
+  trbranch=$("$realgit" for-each-ref --format='%(refname:short)' 'refs/heads/i18n/translate-*' | head -n 1)
+}
+tr_merge_puts() { grep -c '^PUT /merge_requests/42/merge' "$aux/api.log" || true; }
+tr_issue_calls() { grep -c -e '^POST /issues' -e '^PUT /issues' "$aux/api.log" || true; }
+# good: the merge request opens into the branch the pipeline is on (tb, not b: reset_tree and run_tr loop over b)
+for pair in dev:schedule batch-a:web batch-b:web dev:web; do
+  tb=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$tb" "$src"
+  rcz=$rc
+  rc=0; [ "$rcz" -eq 0 ] && [ -n "$trbranch" ] && grep -q "^POST /merge_requests|.*source_branch=i18n/translate-" "$aux/api.log" || rc=1
+  check "TR1 translations on $tb ($src): exit 0, branch i18n/translate-<stamp> made, merge request opened from it (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+  rc=0; grep -q "^POST /merge_requests|.*target_branch=$tb|" "$aux/api.log" || grep -q "^POST /merge_requests|.*target_branch=$tb\$" "$aux/api.log" || rc=1
+  check "TR2 translations on $tb: the merge request's target_branch is $tb" "$rc"
+  rc=0; grep '^POST /merge_requests' "$aux/api.log" | grep -q 'title=Translations ' || rc=1
+  check "TR3 translations on $tb: the merge request is titled \"Translations <date>\"" "$rc"
+  rc=0; [ "$(tr_issue_calls)" -eq 0 ] || rc=1
+  check "TR4 translations on $tb: the warnings issue is not touched" "$rc"
+  if [ "$tb" = dev ]; then
+    rc=0; [ "$(tr_merge_puts)" -ge 1 ] && [ "$(grep '^PUT /merge_requests/42/merge' "$aux/api.log" | grep -vc 'auto_merge=true' || true)" -eq 0 ] || rc=1
+    check "TR5 translations on dev ($src): set to merge itself (auto_merge=true)" "$rc"
+  else
+    rc=0; [ "$(tr_merge_puts)" -eq 0 ] || rc=1
+    check "TR5 translations on $tb: left open for review, no auto-merge" "$rc"
+  fi
+done
+# the branch the artifact came from must be one of the three: nothing is sent to GitLab before refusing
+for pair in main:web main:schedule feature/x:web release/1:web; do
+  tb=${pair%%:*}; src=${pair##*:}
+  run_tr "$out" tr-ok "$tb" "$src"
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -qi 'branch' "$out" && [ ! -s "$aux/api.log" ] && [ -z "$trbranch" ] || rc=1
+  check "TR6 translations on $tb ($src) is refused naming the branch, before any call to GitLab and with no branch made (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+# entries outside the list are refused and named; nothing is pushed
+for pair in tr-en:en.json tr-docs:assets/docs/x.json tr-other:tools/ci/serve.mjs tr-html:x.html tr-deep:sub/x.json; do
+  sc=${pair%%:*}; named=${pair#*:}
+  run_tr "$out" "$sc" dev schedule
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -q -F "$named" "$out" && [ -z "$trbranch" ] && ! grep -q 'push' "$aux/shim.log" || rc=1
+  check "TR7 $sc: an archive with $named is refused, naming it, and nothing is pushed (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+done
+# #125 review 8 and amendment 5: the gate has its refusals, each before anything ships. The archive is good but for one thing.
+tr_refused() { # tr_refused <scenario> <what it holds> <regex (grep -i) naming what is wrong>
+  run_tr "$out" "$1" dev schedule
+  rcz=$rc
+  rc=0; [ "$rcz" -ne 0 ] && grep -qi -e "$3" "$out" && [ -z "$trbranch" ] && ! grep -q '^POST /merge_requests' "$aux/api.log" \
+    && ! grep -q 'push' "$aux/shim.log" || rc=1
+  check "TR8 $1: an archive with $2 is refused, naming it, and nothing is pushed or opened (exit $rcz)" "$rc"
+  [ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+}
+tr_refused tr-script "a <script> in a section the translation made" 'script\|markup'
+tr_refused tr-catalogue "a catalogue missing a key of en.json" 'catalogue\|assets/i18n/de\.json'
+tr_refused tr-lang "a language that tools/i18n/languages.json does not list" 'xx\.json'
+tr_refused tr-half "a language present without its state file" 'not whole\|state/de\.json'
+tr_refused tr-noreport "no translate-report.json" 'translate-report\.json'
+# the stamp: every page is made from the English the checkout holds (amendment 5), whether all are older, one is, or one is later
+tr_refused tr-stale "every page made from an older English than the checkout's" 'generated'
+tr_refused tr-onepage "one page made from an older English than the checkout's" 'generated'
+tr_refused tr-newer "a page made from a later English than the checkout's" 'generated'
+# a report whose summary tries to close its fence, run a quick action, mention, hide text: the merge request's
+# description is the summary, in one fence, with no backtick, control or bidi character left
+run_tr "$out" tr-hostile dev schedule
+rcz=$rc
+rc=0; [ "$rcz" -eq 0 ] && [ -f "$aux/mr-body" ] || rc=1
+check "TR9 tr-hostile: a hostile summary does not stop the publish (exit $rcz)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; [ -f "$aux/mr-body" ] && [ "$(grep -c '^````$' "$aux/mr-body")" -eq 2 ] && ! grep -q "\`\`\`.*\`\`\`" "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: the description's one fence is closed only by the report's own end (no line of the summary can close it)" "$rc"
+rc=0; [ -f "$aux/mr-body" ] && ! LC_ALL=C grep -q "$(printf '\033')" "$aux/mr-body" && ! grep -q "$(printf '\342\200\256')" "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: no escape or bidi control survives into the description" "$rc"
+rc=0; [ -f "$aux/mr-body" ] && awk '$0 == "````" { f = !f; next } !f && ($0 ~ /^\// || $0 ~ /@everyone/ || $0 ~ /Closes/) { bad = 1 } END { exit bad }' "$aux/mr-body" || rc=1
+check "TR9 tr-hostile: the quick action, the mention and the closing keyword stay inside the fence" "$rc"
+
+# #135 (amendments 5 and 6): publish_docs watches how far the German has fallen behind the English, from the page's own
+# stamp and the clock ($LAG_NOW when set), with no git history: the checkout is one commit, as the job's clone is.
+# Behind: the page is stamped before the English's generated. Stalled: behind, and the English changed 36 hours ago or
+# more. A page behind but not stalled is a line in the job log; a stalled one goes in the issue's body ("Translations"
+# block) and reopens the issue. A dry run prints the body. The page here is stamped a day before the English.
+lagbody() { grep '^   | ' "$out"; }
+lag_case() { # lag_case <id> <page hours> <now hours> <scenario> -- runs the dry run; the checks follow
+  dry=1; lag=$2; lagnow=$3
+  run_push "$out" "$4"
+  rcx=$rc
+  dry=; lag=; lagnow=
+}
+lag_case LAG0 -24 24 warn-none
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue' "$out" || rc=1
+check "LAG0 a dry run with a page behind exits 0 and reports the warnings issue (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; [ "$("$realgit" rev-list --count HEAD)" -eq 1 ] || rc=1
+check "LAG0 the fixture is one commit (no history to count imports with)" "$rc"
+rc=0; ! lagbody | grep -q -e "$slug" -e 'ranslations' || rc=1
+check "LAG1 a page a day behind, the English changed 24 hours ago (behind, not stalled): nothing in the warnings issue's body" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; grep -v '^   | ' "$out" | grep -q "$slug.*behind\|behind.*$slug" || rc=1
+check "LAG2 the same page is a line in the job log, naming it" "$rc"
+rc=0; ! grep -q 'could not read the translations' "$out" || rc=1
+check "LAG2 and the lag step did not fail" "$rc"
+
+lag_case LAG3 -24 35 warn-none
+rc=0; [ "$rcx" -eq 0 ] && ! lagbody | grep -q -e "$slug" -e 'ranslations' || rc=1
+check "LAG3 35 hours after the English changed is not yet stalled: nothing in the body (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+lag_case LAG4 -24 36 warn-none
+rc=0; [ "$rcx" -eq 0 ] && lagbody | grep -q "de/$slug" && lagbody | grep -q '36 hours' || rc=1
+check "LAG4 36 hours after (LAG_STALE_HOURS): the body names de/$slug and the 36 hours (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lag_case LAG5 -24 48 warn-none
+rc=0; [ "$rcx" -eq 0 ] && lagbody | grep -qi 'translations' && lagbody | grep -q "de/$slug" && lagbody | grep -q '48 hours' || rc=1
+check "LAG5 48 hours after: the body has a Translations block that names de/$slug and the 48 hours (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; lagbody | grep -q 'no translation has landed' || rc=1
+check "LAG5 the block says no translation has landed" "$rc"
+rc=0; lagbody | grep -q '^   | none$' && rc=1
+check "LAG5 and the body no longer says none" "$rc"
+
+lag_case LAG6 0 400 warn-none
+rc=0; [ "$rcx" -eq 0 ] && ! lagbody | grep -q -e "$slug" -e 'ranslations' && ! grep -v '^   | ' "$out" | grep -q "$slug" && lagbody | grep -q '^   | none$' || rc=1
+check "LAG6 a page stamped the same as the English, 400 hours on: nothing (English that has not changed is never stale; exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lagold=1
+lag_case LAG7 -24 "" warn-none
+lagold=
+rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'could not read the translations' "$out" && lagbody | grep -q "de/$slug" || rc=1
+check "LAG7 LAG_NOW not set: the clock is used, no error, and the English (changed long ago) is stalled: the body names de/$slug (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+
+lag_case LAG8 -24 48 warn-closednone
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'DRY_RUN: would rewrite the warnings issue #5 and reopen it' "$out" || rc=1
+check "LAG8 a stalled page reopens a closed warnings issue although the import had no warnings (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+lag_case LAG9 -24 24 warn-closednone
+rc=0; [ "$rcx" -eq 0 ] && ! grep -q 'and reopen it' "$out" || rc=1
+check "LAG9 a page behind but not stalled does not reopen it (exit $rcx)" "$rc"
+
+# fix review 8: a LAG_NOW that is not a date in the format of generated (here a date without a time, which a looser parser
+# takes) is not honoured, by this side as by the lint's (docs-i18n-shape.mjs): the log says the clock is used, and the clock
+# decides. Honoured, the year 2000 would put the English in the future and the page would not be stalled.
+lagraw=2000-01-01
+lagold=1
+lag_case LAGB -24 "" warn-none
+lagold=
+lagraw=
+rc=0; [ "$rcx" -eq 0 ] && grep -q 'LAG_NOW' "$out" && grep -i 'LAG_NOW' "$out" | grep -qi 'clock' || rc=1
+check "LAGB a LAG_NOW that is not in the format of generated: the log says the clock is used (exit $rcx)" "$rc"
+[ "$rc" -eq 0 ] || sed 's/^/     /' "$out"
+rc=0; lagbody | grep -q "de/$slug" || rc=1
+check "LAGB and the page is judged by the clock (stalled), not by the bad value" "$rc"
+
+# the docs mode is as it was: dev only, schedule only
+pinned "in docs mode on batch-b" "$tmp" "CI_COMMIT_BRANCH is not dev" CI_COMMIT_BRANCH=batch-b
+pinned "in docs mode from a web pipeline" "$tmp" "CI_PIPELINE_SOURCE is not schedule" CI_PIPELINE_SOURCE=web
 
 reset_tree
 rm -f "$out"

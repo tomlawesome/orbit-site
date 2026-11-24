@@ -1,0 +1,10 @@
+{
+  "de": {"name": "Deutsch", "english": "German", "voice": "informal (du)", "built": true, "script": "latin"},
+  "fr": {"name": "Français", "english": "French", "voice": "informal (tu)", "built": false, "script": "latin"},
+  "es": {"name": "Español", "english": "Spanish", "voice": "informal (tú)", "built": false, "script": "latin"},
+  "pt": {"name": "Português", "english": "Portuguese (Brazil)", "voice": "informal (você)", "built": false, "script": "latin"},
+  "id": {"name": "Bahasa Indonesia", "english": "Indonesian", "voice": "informal (kamu)", "built": false, "script": "latin"},
+  "zh-Hans": {"name": "简体中文", "english": "Chinese (Simplified)", "voice": "friendly, plain (你)", "built": false, "script": "cjk"},
+  "ja": {"name": "日本語", "english": "Japanese", "voice": "polite (です/ます)", "built": false, "script": "cjk"},
+  "ar": {"name": "العربية", "english": "Arabic", "voice": "Modern Standard Arabic, plain and friendly", "built": false, "script": "arabic"}
+}

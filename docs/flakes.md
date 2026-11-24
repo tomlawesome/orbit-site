@@ -13,18 +13,31 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 - 2026-10-23 · d4662e0 · coverage-run.sh site-browser, Chromium, agent host · lit false, flat true after ~10 s (a pass takes 36-39 s); failed 3 runs in a row, then passed 3 of 3 on the same code; Firefox, which gates it, passed in journey-local.sh
 - 2026-10-27 · a621f59 · site-browser-test.mjs alone, BROWSER=chromium, headless with no xvfb or software GL (sixth audit's engines pass), agent host · lit false, flat true; 'formed' after 31 frames; passed 9 of 9 on the rerun under xvfb with software GL, as journey-local.sh runs
 
-## journey, Chromium: "Back mid-flight returns to the door (preview)": the install-planet click never opens #installpad ([#107](https://gitlab.tomlawson.io/ai/orbit-site/-/issues/107)) — quarantined on Chromium (owner 22a, 2026-11-01): it runs and reports `QUARANTINED FAIL`, but does not fail the job
+## journey L1, L2 #116, Chromium: "the gate waits for the world and the flight, then flies; nothing is stored under fit=skip" (preview): the gate's click times out
 
-- 2026-10-28 · cc20922 · pipeline 3109, live:chromium 2/3, job 40862 · the click on the install planet never opened #installpad; cc20922 changes only `coverage-floors.json`, and the same shard passed 3 of 3 on 409c39b (pipeline 3106); retried as job 40991
-- 2026-10-29 · cfedb56 · pipeline 3153, live:chromium 2/3, job 41374 · the same; cfedb56 is the revert of !96, so the site's code is ccd883d's, which this shard passed on pipeline 3149; the second sighting, re-run by this push
-- 2026-10-29 · 2756f3b · pipeline 3158, live:chromium 2/3, job 41442 · the same, on the same tree plus one doc line; the third sighting files #107; re-run by this push
-- 2026-10-31 · e6bdea2 · journey-local.sh journey, Chromium, agent host (load average 5-6) · the same, two runs in a row; the change reaches only the Firefox image-loader route, which this journey does not take in Chromium; passed 2 of 2 on the same code straight after, and once with the change reverted
-- 2026-11-01 · 11cb867 · pipeline 3320, live:chromium 2/3, job 43174 · the same, on a batch that does not touch the door's planets or Back; passed on retry (job 43196); the fifth sighting, quarantined
+- 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs · locator.click: Timeout 30000ms exceeded; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
 
-## journey L4, Firefox: "an unfit verdict is remembered and tested again" (preview): waitForFunction times out at 120 s
+## journey L6 #116, Chromium: "the docs' Back is closed until the flight is ready, then opens" (preview): the descent never shows the dawn
 
-- 2026-11-02 · ae6e877 · pipeline 3425 live:firefox 2/2 job 43998 · Timeout 120000ms; the shard took 675 s against 200 s planned (slow runner); the diff touches only docs and the docs-diagram checks, and the same L4 code passed in pipeline 3426
+- 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
+
+## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
+
+- 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
+- 2026-11-19 · 39f9c54 · !148 pipeline 4696 live:chromium 3/3 job 56545 · the readying count saw 7 non-soft chores after the queue opened, wants 8 (tools/ci/freeze.mjs HARD_SEEN); 1.3 s long tasks in the run; the same code passed on pipeline 4673; retried (job 56717)
+
+## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
+
+- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
 
 ## Runner interrupted mid-job (host)
 
 - 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
+
+## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
+
+- 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host
+
+## journey, Firefox: console.error NS_BINDING_ABORTED from the driver's own worker script
+
+- 2026-11-21 · 407cdcab · pipeline 5074 live:firefox 1/2 job 60756 · every step passed; the run failed on `console.error: [JavaScript Error: "NS_BINDING_ABORTED: " {file: "chrome://juggler/content/content/WorkerMain.js" line: 6}]`, logged by Playwright's Firefox driver rather than at a site address, with no failed site request; the same journey passed in Firefox on pipelines 5048 and 5062. Console errors now carry the step's name, so the next sighting names the step

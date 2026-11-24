@@ -28,9 +28,11 @@ Standard patterns used, each named where it applies:
 | Pipeline | Lint | Browser tests | Coverage ratchet |
 | --- | --- | --- | --- |
 | Merge request into `dev` (or a branch) | the `lint` job, whole (about 3 min) | the tests the map links to the changed paths; nothing for a docs-only change | report; gates only what was measured in full (section 6) |
-| Push to `dev` after a merge | whole | the same selection, against the push's range (question 17) | as above |
+| Push to `dev` after a merge | none: since ai/agent-infra#113 a push to `dev` starts no pipeline, the merge request's green pipeline being the one run (corrected, #138; supersedes answer 17a for `dev`) | none | none |
+| Merge request into `batch-a` or `batch-b` (ai/agent-infra#114) | static checks only (section 3, "Batch and catch-up merge requests") | none: the batch's merge request into `dev` runs them once for the batch | none |
+| Catch-up merge request (`chore/catchup-*` into `batch-a` or `batch-b`) | `catchup-check`, `lint`, `scan:gitleaks` and `private-details` only | none | none |
 | Promotion: merge request `dev` -> `main` | whole | everything, both browsers | gates, as today |
-| The nightly import's merge request (`docs/import-*` -> `main`) | whole | the `docs` group (about 5 min, today 50) | report |
+| The nightly import's merge request (`docs/import-*` -> `dev`, since #129) | whole | the `docs` group (about 5 min, today 50) | report |
 | Push to `main` | whole | none (question 17) | none |
 | Schedules (`import_docs`, `publish_docs`, `renovate`) | unchanged | unchanged | unchanged |
 
@@ -137,7 +139,7 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 | `lint:import` | lint | same shape, group `import` | - | `nightly-import-test.sh`, `import-docs-test.mjs`, `raw-heading-test.mjs` (about 2.5 min) |
 | `lint:duplication` | lint | every pipeline but schedules | - | `jscpd` over the JavaScript and shell in `assets/` and `tools/` against the threshold in `.jscpd.json` (#121); a few seconds |
 | `scan:gitleaks`, `scan:shellcheck`, `scan:ruff`, `scan:zizmor`, `scan:actionlint` | lint | every pipeline but schedules | - | secrets in history, shell scripts, Python security rules, the GitHub workflow; each image pinned by digest, blocking (#120) |
-| `scan:trivy` | lint | every pipeline but schedules, and the `TRIVY=true` daily schedule | - | vulnerabilities, secrets and licences, HIGH or CRITICAL; accepted findings in `.trivyignore.yaml` (#120) |
+| `scan:trivy` | lint | every pipeline but schedules, and the `TRIVY=true` daily schedule | - | vulnerabilities, secrets and licences, HIGH or CRITICAL; accepted findings in `.trivyignore.yaml` (#120). Secrets and licences block every pipeline; a vulnerability blocks only the daily schedule, and elsewhere is listed in the log (#138) |
 | `private-details` | lint | every pipeline but schedules | - | the shared personal-details check over history after the adoption commit; defined by the include, rules on the runner host, blocking (#110) |
 | `live:firefox` | live | every pipeline but schedules; `parallel: 2` | `[]` | `xvfb-run` one Xvfb, `node tools/ci/live-run.mjs firefox`: selects, takes its shard, runs |
 | `live:chromium` | live | same; `parallel: 3` | `[]` | the same in Chromium, V8 coverage recorded, `coverage/` as an artifact |
@@ -146,7 +148,7 @@ The first check is what makes the map fail safe end to end: an unmapped file fai
 
 Why the jobs always start and select inside, rather than `rules:changes` on each: one source of truth (the map), the
 fail-safe rule lives in code, and `.gitlab-ci.yml` stays static, which the ci-split lint needs (it refuses every `include`
-but the one pinned personal-details template, and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
+but the three pinned ones of ai/agent-infra named under "Lint guards kept", and child pipelines, so GitLab's generated-pipeline route is closed on purpose and stays closed). The cost is a shard
 that starts, selects nothing and stops: about 15 s on this runner (image cached, `npm i playwright` 3 s). Question 16
 offers the other route.
 
@@ -166,10 +168,27 @@ report-only and Firefox's gate; with the browsers side by side the default is bo
 
 **Lint guards kept.** `publish_docs` is untouched (its one script line, variables, `needs` with `artifacts: false`,
 environment, no `parallel`, no rule variables); no job but it names `docs-import`, none but `renovate` names
-`renovate`; `NODE_IMAGE` once in the global variables; one `include` and no other: the shared personal-details template of ai/agent-infra, one list entry with exactly `project`, `file` and `ref`, the ref a full lowercase commit sha (owner, 2026-11-01, answer 21a, #110: a tag can be moved, a commit cannot, and any other include would let a job escape the lint); no `trigger`; the workflow rules keep their
-order (the docs-import and bot rules before the general ones). `parallel:` is on the live jobs only, which hold no
-token. The one change to the workflow rules is none: push pipelines on `dev` and `main` are still created and
-decide what to run inside (question 17).
+`renovate`; `NODE_IMAGE` once in the global variables; no `include` but a list of one to three entries of project `ai/agent-infra`, each with exactly `project`, `file` and `ref`, the ref a full lowercase commit sha (owner, 2026-11-01, answer 21a, #110: a tag can be moved, a commit cannot, and any other include would let a job escape the lint), each file at most once: the shared personal-details template (`scripts/private-details/ci-template.yml`), always, and beside it the catch-up and batch-intake snippets (`scripts/catchup-check/ci-template.yml`, `scripts/batch-intake/ci-template.yml`; ai/agent-infra#114); `lint`, `scan:gitleaks` and `private-details` take neither snippet's `job_rule`, by any route (their own rules, `extends`, a `!reference` or a YAML alias); no `trigger`. `parallel:` is on the live jobs only, which hold no
+token. (Corrected, #138: this paragraph used to say the lint keeps the workflow rules in order, the docs-import and
+bot rules before the general ones; no such check is left, and the workflow has no rule for the docs-import branch or the bot. It also
+said push pipelines on `dev` are still created; since ai/agent-infra#113 a push to `dev` starts none, and only
+`main` and `hotfix/*` pushes start one.)
+
+**Batch and catch-up merge requests** (ai/agent-infra#114, decision 60a; recorded here by #138). Two shared
+snippets of ai/agent-infra, included at a pinned commit, each set a variable from the first workflow rules and give a
+`job_rule` (`when: never` while the variable is set) that a job takes at the top of its rules to stay off that merge
+request. The first workflow rule that matches wins, so a merge request is one kind or the other, never both.
+
+- *A batch merge request* (any branch but `chore/catchup-*` into `batch-a` or `batch-b`; `BATCH_INTAKE`) runs the
+  static checks: `lint`, `lint:duplication`, `scan:gitleaks`, `scan:trivy`, `scan:shellcheck`, `scan:ruff`,
+  `scan:zizmor`, `scan:actionlint`, `private-details` and `flake-check`. `lint:test`, `lint:import`, the live jobs and
+  `coverage` take the batch-intake `job_rule` and do not run; they run once for the whole batch on its merge request
+  into `dev`, which is a merge request into `dev` as in section 1.
+- *A catch-up merge request* (`chore/catchup-*` into `batch-a` or `batch-b`; `CATCHUP_CHECK`) runs the snippet's own
+  `catchup-check` job (dev's tip is an ancestor of the head), and `lint`, `scan:gitleaks` and `private-details`,
+  because it merges onto a branch mirrored to GitHub. Every other job takes the catch-up `job_rule`.
+- Schedules, pushes and merge requests into `dev` or `main` set neither variable, so the snippets change nothing
+  there.
 
 **On a merge request with `LIVE_ALL` or a door change, and on promotion**, a pipeline is 2 + 3 + 3 = 8 jobs at once.
 The `light` lane's concurrency decides whether shards queue; the estimates below assume they do not. If the lane
@@ -389,7 +408,9 @@ for `page`; the `page` group is where the map's granularity is a dial the owner 
   and real time so the field can be refreshed from a log.
 - **Runner concurrency**: eight jobs at once on promotion; a lane that holds fewer queues them.
 - **Merge results are not tested on CE**: a merge request's tests run on its source head, not the merged tree.
-  Today's gate has the same gap; the push pipeline on `dev` (question 17) is the one that sees the merged tree.
+  Today's gate has the same gap. Since ai/agent-infra#113 a push to `dev` starts no pipeline, so the merge request's
+  own pipeline, on its source head, is the one run, and no pipeline sees the merged tree before promotion runs
+  everything (corrected, #138: this said the push pipeline on `dev`, question 17, saw it).
 - **The map's own change runs everything**, so a one-line map edit costs a full run: that is the fail-safe working,
   not a fault.
 

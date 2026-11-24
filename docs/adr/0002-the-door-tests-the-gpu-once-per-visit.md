@@ -3,8 +3,8 @@
 **Status:** Accepted (owner, 2026-10-10: decisions 5a, 6a, 7)
 **Amended:** 2026-10-31, section 6 (#116): owner decisions 18a and 19a replace decision 7 (nothing remembered) and the
 "a flight never waits for a verdict" half of 12d. A way in opens only once its proper version is loaded and the
-verdict is in; the verdict is remembered on the device for a week and re-taken quietly each visit. For the owner's
-review before any code.
+verdict is in; the verdict is remembered on the device for a week and re-taken quietly each visit. Built 2026-10-31
+(#116: `WORLD_FAILED`, `rememberedFit`, `WEEK`).
 **Date:** 2026-10-10
 **Relates to:** #2 (door freezes on software-GL machines); #116 (no way in plays a cheaper version for want of
 readiness); #115 (the gate opens 9-12 s on the phone); Orbit #1253 and #1310; ADR-0001; ADR-0004 6a.5 (the leisure
@@ -26,7 +26,7 @@ Owner decisions, 2026-10-10: **5a** a slow machine (median frame over 30 ms) get
 
 **A software refusal overrides the `?level=` ladder.** `?level=` chooses among live-door weights once the GPU is accepted; it never grants the GPU. A separate debug flag `gpu=force` (host reads `?gpu=force`) takes the context without the caveat check and skips the name check. Reason: one switch per question, and the site's own live check needs the force (below).
 
-**Fitness: adopt Orbit's refusal, keep the site's scaling (both).** After the warm-up frames, `frameCost()` draws 2 untimed frames then up to 5 timed, judging the median against 30 ms; unfit → the flight draws on its own 2D canvas ("too slow here, drawn without it"). `calibrate()` still scales resolution afterwards for fit machines. Owner decision 5a: refuse, as Orbit does, rather than fly a 31–45 ms machine coarse.
+**Fitness: adopt Orbit's refusal, keep the site's scaling (both).** After the warm-up frames, `frameCost()` draws 2 untimed frames then up to 5 timed, judging the median against 30 ms; unfit → the flight draws on its own 2D canvas ("too slow here, drawn without it"). `calibrate()` still scales resolution afterwards for fit machines. Owner decision 5a: refuse, as Orbit does, rather than fly a 31–45 ms machine coarse. *(Note, 2026-11-18, #104: the flight world's own verdict no longer calls `frameCost()`; `voyage.js` `quietFitness` times the same frames against the same budget, one at a time while the GPU is quiet, `busy.js`. `frameCost` stays in `fitness.js` as the back-to-back judgement.)*
 
 **No test frames on the door; the verdict is ready before anyone flies (owner decision 12d).** *(Superseded in part,
 2026-10-31, section 6: no flight or descent goes painted for want of a verdict; the ways in wait instead. The rest
@@ -130,7 +130,7 @@ judgement (`"failed"`). It never resolves on a remembered unfit (6.4). The gate 
 `journey.verdict()`; `openWays` and its "take no click" idiom are unchanged.
 
 **6.4 The memory.** Key `${storagePrefix}-fit ${gpu().renderer} ${screen.width}x${screen.height}@${devicePixelRatio}`
-(the renderer names the GPU and driver, and the test's cost scales with the screen: `fitness()` draws at `part` 0.4 of
+(the renderer names the GPU and driver, and the test's cost scales with the screen: `fitness()` (now `quietFitness`, 2026-11-18, #104) draws at `part` 0.4 of
 it; the UA is left out, since a browser's version turns over inside the week and the week already bounds drift); value
 `{ t, fit, ms }`; valid when `t <= Date.now() && Date.now() - t < WEEK` (the probe's rule, clock skew included), `WEEK`
 exported by `fitness.js` and imported by `capability.js` so there is one week. Read once a page, on the page (never in

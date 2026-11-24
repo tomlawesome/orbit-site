@@ -14,10 +14,12 @@
  * engine's, and the worker is told nothing more.
  */
 import { createFlight, wireProfile, EARTH_PICTURE } from "./engine.js";
-import { PICTURE_PATHS } from "./voyage.js";
+import { PICTURE_PATHS, SIZED_PATHS } from "./voyage.js";
 import { settings, image } from "./settings.js";
 import { decodeAside, rememberedFit } from "./fitness.js";
 import { page } from "./page.js";
+import { onStatusGo } from "./status.js";
+import { busyPeer } from "./busy.js";
 
 /** @import { Profile } from "./engine.js" */
 /** @typedef {ReturnType<typeof createFlight>} Engine */
@@ -29,6 +31,8 @@ import { page } from "./page.js";
    page draws as it always has. Under draw=worker there is none, so a slow runner cannot turn a forced worker test into
    a page-path pass */
 export const WORKER_WAIT = 5000;
+/* each flight's worker a name of its own in the page's ledger (busy.js: busyPeer) */
+let flights = 0;
 
 /**
  * @param {HTMLCanvasElement} canvas #warp, handed to the worker
@@ -71,6 +75,10 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   let worker = null;
   /** @param {object} m @param {Transferable[]} [transfer] */
   const post = (m, transfer = []) => { if (!(worker && !engine)) return false; worker.postMessage(m, transfer); return true; };
+  /* the worker's compiles and uploads kept in the page's ledger, and everyone else's told to it as they change, for its
+     verdict's quiet (busy.js, #104); until unlisten */
+  /** @type {ReturnType<typeof busyPeer> | null} */
+  let busy = null;
   const style = () => { const { W, H } = page.size(); for (const c of [warp, gl]) if (c) page.css(c, W, H); };
   const sizeNow = () => { const { W, H, dpr } = page.size(); return { W, H, dpr }; };
   const onVisibility = () => post({ type: "visible", hidden: page.hidden() });
@@ -100,13 +108,20 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
       case "warmed": { const ask = pending.get(m.id); if (ask) { pending.delete(m.id); ask.resolve(); } break; }
       case "frame": if (m.seq === seq) warp.dataset.drawn = String(m.seq); break;
       case "lost": page.note("orbit · flight: the world's context was lost in the worker"); break;
-      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})`); break;
+      case "dead": fallBack(`the worker stopped (${String(m.why || "no reason given")})${m.at ? ` at ${String(m.at).split("\n")[0]}` : ""}`); break;
+      /* the worker's compiles and uploads, kept in the page's ledger (busy.js) */
+      case "busy": busy?.heard(m); break;
     }
   };
   const failed = () => fallBack(up ? "the worker failed" : "the worker failed to load");
   const unreadable = () => fallBack("a message from the worker could not be read");
+  /* the host's word, told on to the worker (status.js; set after the `hello`, so a word already given reaches a
+     worker made late); stopped with the rest at a fallback or destroy */
+  let unword = () => {};
   const unlisten = () => {
     clearTimeout(timer);
+    unword();
+    busy?.gone(); busy = null;
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
     worker?.removeEventListener("message", hear);
     worker?.removeEventListener("error", failed);
@@ -153,10 +168,11 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     worker.addEventListener("messageerror", unreadable);
     /* (absolute, because a relative URL in a module worker resolves against the worker's own file, not the page) */
     const base = page.baseURI(), abs = (/** @type {string} */ u) => new URL(u, base).href;
-    const images = Object.fromEntries([...Object.values(PICTURE_PATHS), EARTH_PICTURE].map((p) => [p, abs(image(p))]));
+    const images = Object.fromEntries([...Object.values(PICTURE_PATHS), ...SIZED_PATHS, EARTH_PICTURE].map((p) => [p, abs(image(p))]));
     const flags = Object.fromEntries(Object.entries(settings.flags || {}).filter(([k]) => k !== "door3d"));
     const fonts = (settings.fonts || []).map((f) => ({ family: f.family, weight: f.weight, url: abs(f.url) }));
     post({ type: "hello", decode: decodeAside() ? "page" : "here", flags, images, fonts, baseURI: base, settle: settings.settle, size: sizeNow(), hidden: page.hidden() });
+    unword = onStatusGo(() => { post({ type: "status" }); });
     /* #warpgl made and placed beneath #warp, both styled, then both handed over */
     gl = document.createElement("canvas");
     page.mount(gl, warp);
@@ -165,6 +181,7 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
     handed = true;
     const b = gl.transferControlToOffscreen();
     post({ type: "canvases", warp: a, warpgl: b, size: sizeNow() }, [a, b]);
+    busy = busyPeer(`flight ${++flights}`, post);
     document.addEventListener("visibilitychange", onVisibility);
     if (cap) timer = setTimeout(() => { if (!up) fallBack(`no answer in ${WORKER_WAIT} ms`); }, WORKER_WAIT);
   } catch (e) {
@@ -182,8 +199,14 @@ export function createRemoteFlight(canvas, { now = () => performance.now(), cap 
   return {
     compiled() { return engine ? engine.compiled() : compiled; },
     verdict() { return engine ? engine.verdict() : verdict; },
-    /* the journey's hold gave up on the world (journey.js: WORLD_FAILED): the worker's engine is told */
-    abandon() { if (engine) { engine.abandon(); return; } post({ type: "abandon" }); },
+    /* the journey's hold gave up on the world (journey.js: WORLD_FAILED): the worker's engine is told, and the verdict, if
+       none is in, is failed here too, as the page engine's abandon fails it: a worker that has stalled answers nothing,
+       and the gate and the backs wait on the verdict */
+    abandon() {
+      if (engine) { engine.abandon(); return; }
+      post({ type: "abandon" });
+      decide({ fit: false, ms: Infinity, how: "failed" });
+    },
     aside() { return aside; },
     /* (a world in a worker cannot stall the page: the journey keeps real time, 6a.3) */
     get drawingWorld() { return engine ? engine.drawingWorld : false; },

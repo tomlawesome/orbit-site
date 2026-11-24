@@ -1,0 +1,32 @@
+{
+ "slug": "security",
+ "name": "Sicherheit",
+ "c": "#6ee7d8",
+ "title": "Sicherheit",
+ "repo": "example/orbit",
+ "path": "docs/security.md",
+ "sections": [
+  {
+   "en": "504ced409e406124",
+   "id": "overview",
+   "title": "Überblick",
+   "html": "<h2 id=\"overview\"><a class=\"anchor\" href=\"#docs/security/overview\" aria-label=\"Link zu dieser Überschrift\">#</a>Überblick</h2>\n<p>Orbit hält die Daten des Haushalts auf deinem Gerät und verschlüsselt sie.</p>",
+   "summary": "Orbit hält die Daten des Haushalts auf deinem Gerät und verschlüsselt sie.",
+   "text": "Überblick Orbit hält die Daten des Haushalts auf deinem Gerät und verschlüsselt sie.",
+   "subs": []
+  },
+  {
+   "en": "0976193052886ea1",
+   "id": "rotating-the-document-key-encryption-key",
+   "title": "Den Schlüssel zur Verschlüsselung des Dokumentschlüssels erneuern",
+   "html": "<h2 id=\"rotating-the-document-key-encryption-key\"><a class=\"anchor\" href=\"#docs/security/rotating-the-document-key-encryption-key\" aria-label=\"Link zu dieser Überschrift\">#</a>Den Schlüssel zur Verschlüsselung des Dokumentschlüssels erneuern</h2>\n<p>Erneuere den Schlüssel regelmäßig; die Dokumente bleiben dabei lesbar.</p>",
+   "summary": "Erneuere den Schlüssel regelmäßig; die Dokumente bleiben dabei lesbar.",
+   "text": "Den Schlüssel zur Verschlüsselung des Dokumentschlüssels erneuern Erneuere den Schlüssel regelmäßig; die Dokumente bleiben dabei lesbar.",
+   "subs": []
+  }
+ ],
+ "source": {
+  "generated": "2026-03-01T04:00:00.000Z",
+  "kept": []
+ }
+}

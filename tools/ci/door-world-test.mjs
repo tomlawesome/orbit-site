@@ -21,6 +21,7 @@
  */
 import { riskyPows, riskyPowsStrict, powBases } from "./door-pow-lint.mjs";
 import { INDEX, isProbeSrc, mountLive, listenerCounts, installPage, installClock, sleep, childMain, runCase, check, finish, errOf } from "./door-stub.mjs";
+import { blobOf, unplace, installBitmaps } from "./map-sizes-lib.mjs";
 
 const CASES = {
   async "shaders"() {
@@ -47,11 +48,12 @@ const CASES = {
         calls[u] = (calls[u] || 0) + 1;
         failedUrl ??= u;
         if (refusing && u === failedUrl) return Promise.reject(new Error("the network dropped"));
-        return Promise.resolve({ ok: true, blob: async () => ({ size: 1 }) });
+        return Promise.resolve({ ok: true, blob: async () => blobOf(unplace(u)) });
       },
     });
+    installBitmaps();                                           /* a picture has the size its file has (#148: the sized maps) */
     const door = await import(INDEX);
-    const d = door.createDoor({ typingWait: 0, flags: {} });
+    const d = door.createDoor({ typingWait: 0, image: (p) => "img/" + p, flags: {} });
     const journey = d.journey(page.journeyOptions());
     door.openChores();
     await Promise.race([journey.warm({ prove: false }).catch(() => {}), sleep(6000)]);
@@ -62,7 +64,9 @@ const CASES = {
     await Promise.race([journey.warm({ prove: false }).catch(() => {}), sleep(6000)]);
     await Promise.race([door.quiet(), sleep(6000)]);
     await sleep(200);
-    const others = Object.keys(calls).filter((u) => u !== failedUrl);
+    /* #148: the first warm fetches each map's smallest size; the larger ones are first fetched by the second warm. What the
+       first warm loaded must not be fetched again: the others are the files the first warm asked for, not the refused one */
+    const others = Object.keys(afterFirst).filter((u) => u !== failedUrl);
     return {
       failedUrl, firstFetches: afterFirst[failedUrl] || 0, fetches: calls[failedUrl] || 0, urls: Object.keys(calls).length,
       othersTwice: others.filter((u) => calls[u] > (afterFirst[u] || 0)), texFirst, texSecond: page.tex.filter((c) => !c.probe).length - texFirst,
@@ -325,7 +329,7 @@ if (process.argv[2] === "--child") await childMain(CASES);
 {
   const r = runCase(import.meta.url, "retry");
   check("control (D6): the first warm fetched several maps, and the first one was refused", !r.error && r.urls >= 2 && r.firstFetches >= 1, `${r.urls} URL(s) fetched; the refused one ${r.failedUrl} was asked for ${r.firstFetches}x${errOf(r)}`);
-  check("control (D6): a map that loaded in the first warm is not fetched again by the second", !r.error && r.othersTwice.length === 0, `fetched again: ${JSON.stringify(r.othersTwice)}${errOf(r)}`);
+  check("control (D6): a map size that loaded in the first warm (the smallest sizes) is not fetched again by the second", !r.error && r.othersTwice.length === 0, `fetched again: ${JSON.stringify(r.othersTwice)}${errOf(r)}`);
   check("D6: the map whose download failed is fetched again on the next warm", !r.error && r.fetches > r.firstFetches, `${r.failedUrl} asked for ${r.firstFetches}x in the first warm, ${r.fetches}x in all (want more)${errOf(r)}`);
   check("D6: ... and, when that succeeds, it is put on the GPU", !r.error && r.texSecond >= 1, `${r.texSecond} texture upload call(s) during the second warm (want 1 or more)${errOf(r)}`);
 }

@@ -11,7 +11,7 @@
  * pictures are decoded by the page (6e.2): a `decode` posted up, a `decoded` back. An exception handling a message is `dead`:
  * the page falls back.
  */
-import { createDoor, setPage, pace, openChores, askPage } from "../door/index.js";
+import { createDoor, setPage, pace, openChores, askPage, askedOnce, stoppedAt } from "../door/index.js";
 import { createWorld } from "./world.js";
 
 const scope = /** @type {any} */ (self);
@@ -35,6 +35,8 @@ function hello(m) {
     note(line) { post({ type: "note", line, kind: "note" }); },
     verdict(line) { post({ type: "note", line, kind: "verdict" }); },
     shared: () => false,
+    /* (this worker's compiles and uploads, for the page's ledger: the flight world's verdict, #104) */
+    busy(b) { post({ type: "busy", n: b.n, gen: b.gen }); },
   });
   createDoor({ flags: m.flags || {}, image: (p) => p, typingWait: 0 });
   /* the worker's own queue: open from the start, a picture on whole, nothing in it waiting for the page */
@@ -55,7 +57,7 @@ function bringUp(canvas) {
   let made = null;
   try {
     made = createWorld(canvas, {
-      small: w.small, map: w.map, rings: w.rings, moon: w.moon, sky: m.sky, tag: m.tag,
+      small: w.small, map: w.map, rings: w.rings, moon: w.moon, galaxy: w.galaxy, sky: m.sky, tag: m.tag,
       hue: m.hue, sat: m.sat, ringsOn: m.ringsOn, haze: m.haze, grade: m.grade,
       gated: true, warn: (...a) => post({ type: "note", line: text(a), kind: "warn" }),
     });
@@ -96,7 +98,7 @@ function tick(t) {
 function handle(m) {
   switch (m.type) {
     case "hello": hello(m); break;
-    case "canvas": bringUp(m.canvas); break;
+    case "canvas": bringUp(askedOnce(m.canvas)); break;
     case "decoded": asker?.heard(m); break;
     case "destroy": gone = true; running = false; scope.close(); break;
     default: {
@@ -106,9 +108,8 @@ function handle(m) {
         case "bake": { const { id } = m; world.bake().then((ok) => post({ type: "baked", id, ok: !!ok }), () => post({ type: "baked", id, ok: false })); break; }
         case "run": running = !!m.on; if (running) { last = 0; ask(); } break;
         case "view": held = { seq: m.seq, view: m.view }; ask(); break;
-        /* what was asked is done: the view held drawn first */
-        case "finish": if (held) drawHeld(16); world.finish(); break;
-        case "measure": { const { id } = m; world.measure(m.sets || []).then((ms) => post({ type: "measured", id, ms })); break; }
+        /* what was asked is done: the view held drawn first; then said, so the host knows its first draw is done (#119) */
+        case "finish": if (held) drawHeld(16); world.finish(); post({ type: "finished" }); break;
       }
     }
   }
@@ -116,7 +117,7 @@ function handle(m) {
 
 /* (an exception outside a frame: the worker cannot go on, and the page draws instead) */
 function guard(fn) {
-  try { fn(); } catch (e) { gone = true; running = false; post({ type: "dead", why: String(e?.message || e) }); }
+  try { fn(); } catch (e) { gone = true; running = false; post({ type: "dead", why: String(e?.message || e), at: stoppedAt(e) }); }
 }
 
 scope.onmessage = (ev) => guard(() => {

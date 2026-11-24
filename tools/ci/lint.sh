@@ -37,12 +37,12 @@ node --experimental-vm-modules --no-warnings -e '
     console.log(`   ${f} does not parse: ${why.name}: ${why.message}`);
     process.exitCode = 1;
   }
-' sw.js assets/js/*.js assets/door/*.js tests/*.js tools/*.mjs tools/ci/*.mjs || fail=1
+' sw.js assets/js/*.js assets/i18n/*.js assets/door/*.js tests/*.js tools/*.mjs tools/i18n/*.mjs tools/ci/*.mjs || fail=1
 fi
 
 if on refs; then
 echo "== every local src/href in the pages exists"
-for page in index.html install.html 404.html tests/index.html; do
+for page in index.html de/index.html install.html 404.html tests/index.html; do
   grep -o -E '(src|href)="[^"#?:]+"' "$page" | sed -E 's/^[a-z]+="//; s/"$//' | sort -u | while read -r ref; do
     case "$ref" in /*|data:*) continue ;; esac
     [ -e "$(dirname "$page")/$ref" ] || { echo "   $page -> $ref is missing"; exit 1; }
@@ -102,6 +102,10 @@ for ref in $(grep -o -E 'url\("?[^")]+"?\)' assets/door/door.css | sed -E 's/^ur
 done
 # and the page carries the door's markup as the folder writes it (tools/door-markup.mjs)
 node tools/door-markup.mjs --check || fail=1
+# and so does each language's page (#125): tools/pages.mjs writes de/index.html from index.html and the catalogues,
+# with the door's markup in that language; the catalogues, the page, the scripts and the auto-lang script agree
+node tools/pages.mjs --check || fail=1
+node tools/ci/i18n-check.mjs || fail=1
 fi
 
 if on types; then
@@ -129,6 +133,20 @@ echo "== the imported docs have the shape the import writes"
 # what tools/import-docs.mjs writes for the sources in tools/docs-sources.json
 # (the publish job holds the artifact to the same check, #18)
 node tools/ci/docs-shape.mjs assets/docs tools/docs-sources.json || fail=1
+# each translated folder (#125 stage 2): the same shape, its source record
+# (never stamped later than the committed English), the English pictures. How
+# far it lags the English is printed, never failed (#125 amendments 5 and 6):
+# the lag is the nightly schedule's state, which no merge request can break or
+# mend; publish_docs reports a page stalled 36 hours in the warnings issue.
+# --lag fails only on a page stamped later than the English, as the shape does.
+# A page behind may still name a picture the English has dropped: that is
+# reported with the lag, not failed; a page stamped at the English must name
+# only its pictures.
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-i18n-shape.mjs "${d%/}" tools/docs-sources.json assets/docs || fail=1
+done
+node tools/ci/docs-i18n-shape.mjs --lag || fail=1
 fi
 
 if on docs-markup; then
@@ -142,15 +160,51 @@ echo "== the imported docs carry no script: only the markup the import writes"
 # allow-list, which is what the import writes (audit 5, S1). Anything else is
 # refused outright, however harmless it looks: the import never writes it.
 node tools/ci/docs-markup.mjs assets/docs || fail=1
+# the translated docs (#125 stage 2) are held to the same allow-list
+for d in assets/docs-i18n/*/; do
+  [ -d "$d" ] || continue
+  node tools/ci/docs-markup.mjs "${d%/}" || fail=1
+done
 fi
 
 if on milkyway; then
 echo "== the Milky Way is drawn: no Gaia picture, credit or licence shipped"
-for f in assets/img/*/galaxy*.webp assets/img/galaxy*.webp; do
-  [ ! -e "$f" ] || { echo "   $f must be deleted (the galaxy is drawn, not a picture)"; fail=1; }
-done
+# The install world's galaxy pictures (#119) are the site's own drawing, painted
+# from world.js's SKY by tools/galaxy-bake.cjs. The rule is an allow-list: every
+# galaxy*.webp the tree tracks, under any directory, must be one of the two
+# shipped pictures, by git blob hash (galaxy.webp, then galaxy-2k.webp). So a
+# re-encoded, cropped or renamed Gaia file, or any other third-party galaxy
+# picture, is refused. Re-baking the pictures with tools/galaxy-bake.cjs means
+# updating these two hashes together with sw.js MEDIA (the media section prints
+# the new MEDIA). Gaia's own two blobs (CC BY-NC; as 98e1e897d deleted them) are
+# named in the refusal, though the allow-list already keeps them out.
+shipped_galaxy="78218df0d7cc5c4b21f650746aeea82ef9de7f87 d639bed40c9f9de01abcd4373a801b9360402521"
+# Every tracked file, read NUL-separated from the index (mode, blob, stage, TAB,
+# raw name), so a name with a space or a character git would quote is judged
+# like any other. Gaia's blobs are refused under any name; a name with
+# "galaxy" and ".webp" in any letter case must be a shipped blob.
+gal_list=$(mktemp)
+git ls-files -s -z | tr '\0' '\n' > "$gal_list"
+# a name with a newline would arrive split over two lines and could slip past the reads below: any such name, refused
+if [ "$(git ls-files -z | tr -cd '\n' | wc -c)" -gt 0 ]; then
+  echo "   a tracked name holds a newline: rename it (git ls-files shows it quoted)"; fail=1
+fi
+while IFS= read -r line; do
+  h=${line#* }; h=${h%% *}; f=${line#*	}
+  case "$h" in
+    e283e71534d7ec5bbc8fcad8ad44317321d89c47|5a10103ca37f94141a4b02e9e11bd2c5645097f1)
+      echo "   $f is Gaia's picture (CC BY-NC): delete it, or paint it with tools/galaxy-bake.cjs"; fail=1; continue ;;
+  esac
+  lower=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in *galaxy*.webp) ;; *) continue ;; esac
+  case " $shipped_galaxy " in
+    *" $h "*) ;;
+    *) echo "   $f is not one of the two shipped galaxy pictures (blob $h): paint it with tools/galaxy-bake.cjs and update shipped_galaxy and sw.js MEDIA, or delete it"; fail=1 ;;
+  esac
+done < "$gal_list"
+rm -f "$gal_list"
 [ ! -e tools/galaxy.py ] || { echo "   tools/galaxy.py must be deleted"; fail=1; }
-for f in index.html 404.html install.html README.md LICENSE; do
+for f in index.html de/index.html 404.html install.html README.md LICENSE; do
   if grep -q -i -E 'gaia|CC BY-NC 3\.0 IGO|by-nc/3\.0/igo' "$f"; then
     echo "   $f still mentions Gaia or its CC BY-NC 3.0 IGO licence"; fail=1
   fi
@@ -181,14 +235,24 @@ grep -q '^  NODE_IMAGE: [a-z0-9_-][a-z0-9_-]*\(/[a-z0-9._-][a-z0-9._-]*\)*:[A-Za
 grep -q '^  PLAYWRIGHT_IMAGE: \$CI_IMAGE_CACHE_MCR/playwright:[A-Za-z0-9._-][A-Za-z0-9._-]*@sha256:[a-f0-9]\{64\}$' .gitlab-ci.yml \
   || { echo "   .gitlab-ci.yml: PLAYWRIGHT_IMAGE must be \$CI_IMAGE_CACHE_MCR/playwright:<tag> and pin a digest"; fail=1; }
 grep -E '^  [A-Z_]+_IMAGE:' .gitlab-ci.yml | grep -v -E '@sha256:[a-f0-9]{64}$' | sed 's/^  \([A-Z_]*\):.*/   .gitlab-ci.yml: \1 must pin a digest/' | grep . && fail=1
+# private-details runs the gitleaks release scan:gitleaks runs, but names it after $CI_IMAGE_CACHE_GHCR, which
+# Renovate cannot read: a bump moves scan:gitleaks' pin alone, so every gitleaks pin must be the same tag and
+# digest (ALL-F2, #138). Only a pin is counted: the value of an `image:` or `name:` key, never a comment
+gl_lines=$(grep -E '^[[:space:]]*(image|name):[[:space:]]*"?[^#[:space:]"]*gitleaks/gitleaks:' .gitlab-ci.yml || true)
+gl_pins=$(printf '%s\n' "$gl_lines" | grep -oE 'gitleaks/gitleaks:[^[:space:]"]*' | sort -u)
+if [ "$(printf '%s\n' "$gl_lines" | grep -c .)" -lt 2 ] || [ "$(printf '%s\n' "$gl_pins" | grep -c .)" -ne 1 ]; then
+  echo "   .gitlab-ci.yml: scan:gitleaks and private-details must pin the same gitleaks image, tag and digest (Renovate bumps scan:gitleaks' alone; copy it to private-details); found: $(printf '%s\n' "$gl_pins" | tr '\n' ' ')"; fail=1
+fi
 fi
 
 if on ci-split; then
-echo "== the docs import is split: import_docs holds no token, publish_docs alone is in the docs-import environment, renovate alone in renovate"
+echo "== the docs import is split: import_docs holds no token, exactly publish_docs and publish_translations are in the docs-import environment, translate_docs alone in translate, renovate alone in renovate"
 # The import runs other people's code (npm packages) and so must hold nothing
-# worth stealing; the publish holds the token, runs no third-party code, and is
-# the only job in the docs-import environment, where the token is scoped (#18).
-# Both run from the schedule on main alone, never on a merge request pipeline.
+# worth stealing; the publish holds the token, runs no third-party code, and
+# exactly two jobs are in the docs-import environment, where the token is
+# scoped: publish_docs (#18) and publish_translations (#125), judged alike.
+# translate_docs, which holds the Anthropic API key, is alone in translate.
+# Both run from the schedule on dev alone (#129), never on a merge request pipeline.
 # The Renovate tokens are scoped the same way to the renovate environment,
 # which only the renovate job joins, since every other job runs npm packages.
 # Joining counts whether by name or inherited by extends or !reference (#52).
@@ -234,7 +298,7 @@ fi
 
 if on csp; then
 echo "== the pages carry a Content-Security-Policy that covers what they run"
-# GitHub Pages sends no headers, so index.html, 404.html and install.html each carry the policy as a
+# GitHub Pages sends no headers, so index.html, de/index.html, 404.html and install.html each carry the policy as a
 # <meta http-equiv="Content-Security-Policy">. A meta covers only what follows it, so it comes first in <head>, before
 # any script, link or style. Scripts run only from the site and the page's own inline scripts, each allowed by its
 # sha256 in script-src: no 'unsafe-inline' or 'unsafe-eval' for scripts, object-src 'none', base-uri 'self', and no
@@ -248,7 +312,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const bad = (m) => { console.log(`   ${m}`); process.exitCode = 1; };
 const hash = (t) => "\x27sha256-" + crypto.createHash("sha256").update(t, "utf8").digest("base64") + "\x27";
-for (const page of ["index.html", "404.html", "install.html"]) {
+for (const page of ["index.html", "de/index.html", "404.html", "install.html"]) {
   const raw = fs.readFileSync(page, "utf8");
   // comments set aside, but keeping every offset, so a tag named in a comment is not read as a tag
   const text = raw.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
@@ -278,7 +342,8 @@ for (const page of ["index.html", "404.html", "install.html"]) {
       && !(name === "style-src" && t === "\x27unsafe-inline\x27") && !(name === "script-src" && /^\x27unsafe-(inline|eval)\x27$/.test(t)));
     if (extra.length) bad(`${page}: ${name} allows ${extra.join(" ")}; nothing on the site loads from a third party (#92), so list \x27self\x27 only and host the file here`);
   }
-  const inline = scripts.filter((s) => !s.src).map((s) => hash(s.body));
+  // a data block (type="application/json": a translated page's words, #125) is never run, so it needs no hash
+  const inline = scripts.filter((s) => !s.src && !/\btype\s*=\s*["\x27]?application\/json/i.test(s.attrs)).map((s) => hash(s.body));
   for (const h of inline) if (!src.includes(h)) bad(`${page}: an inline script has no matching hash in script-src (it would be blocked); add ${h}`);
   for (const h of src.filter((t) => /^\x27sha(256|384|512)-/.test(t))) if (!inline.includes(h)) bad(`${page}: script-src has ${h}, which matches no inline script (an edited script keeps its old hash?); the inline scripts hash to ${inline.join(" ") || "nothing"}`);
   // an inline event handler (onclick=, …) or a javascript: address needs 'unsafe-inline'; attribute values and script text set aside
@@ -350,7 +415,7 @@ const code = (f, t) => {
     if (new RegExp(`(?<![\\w$])${v}\\s*=\\s*document\\s*\\.\\s*createElement\\(\\s*["'\`]link["'\`]`).test(t) || new RegExp(`(?<![\\w$.])${v}\\s*\\.\\s*(rel|as)\\s*=`).test(t)) say(f, "a <link>'s href", m[3]);
   }
 };
-for (const f of ["index.html", "404.html", "install.html", ...list("tests", /\.html$/)]) {
+for (const f of ["index.html", "de/index.html", "404.html", "install.html", ...list("tests", /\.html$/)]) {
   const t = blank(fs.readFileSync(f, "utf8"), /<!--[\s\S]*?-->/g);
   tags(f, t);
   css(f, [...t.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>|\sstyle\s*=\s*"([^"]*)"|\sstyle\s*=\s*'([^']*)'/gi)].map((m) => m[1] ?? m[2] ?? m[3] ?? "").join("\n"), false);
@@ -394,13 +459,16 @@ if on stray; then
 echo "== nothing stray at the root"
 # what git tracks, not what is on disk: a local, ignored .agents/ or
 # node_modules/ is fine; a committed one is not (#5)
-for f in node_modules package.json package-lock.json .agents import-warnings.txt; do
+for f in node_modules package.json package-lock.json .agents import-warnings.txt translate-report.json; do
   [ -z "$(git ls-files -- "$f")" ] || { echo "   $f must not be committed"; fail=1; }
 done
 # the import's warnings file (#82) is written at the root of every import's
 # checkout: ignored, so it is never committed by hand
 grep -qx -e 'import-warnings.txt' -e '/import-warnings.txt' .gitignore \
   || { echo "   .gitignore must list /import-warnings.txt"; fail=1; }
+# and the translation job's report (#125 stage 2): an artifact, never committed
+grep -qx -e 'translate-report.json' -e '/translate-report.json' .gitignore \
+  || { echo "   .gitignore must list /translate-report.json"; fail=1; }
 fi
 
 if on npm-pins; then
@@ -445,6 +513,10 @@ echo "== the test map is complete: every file in a group, every pattern live, ev
 # tools/ci/test-map.json says which browser tests a change runs (ADR-0005); a path it does not know runs
 # everything, and this refuses one before it merges. Reads .gitlab-ci.yml with js-yaml, as ci-split does.
 node tools/ci/test-map-check.mjs || fail=1
+# A quarantine takes a test out of the gate, and tools/ci/flake-gate.sh finds one by a line test alone, so every
+# quarantined("#<issue>" text in tools/ci/*.mjs must be an `await` call starting its line; one in a comment, a
+# string, a template literal or after other code is refused (SEC-12, #138; tools/ci/quarantine-lint.mjs)
+node tools/ci/quarantine-lint.mjs || fail=1
 fi
 
 if [ "$fail" = 0 ]; then echo "lint: ok"; else echo "lint: failed"; exit 1; fi

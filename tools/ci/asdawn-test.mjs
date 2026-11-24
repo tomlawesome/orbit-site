@@ -7,7 +7,7 @@
  * With the option, after the farewell beat (body.showdusk.farewell), at 1280x800: the dusk's ring is the dawn's
  * (centre and width within 1px, --R 368px, ring 265px across) and its gate is where the dawn's is; the farewell
  * hangs 22px under the way back in, on the ring's axis; the planet waits for the beat (opacity 0 under showdusk,
- * 1 within 1s of farewell, 1 with neither class); the farewell fades in within 1.5s; html.rich lights the ring, the
+ * 1 once farewell is added, 1 with neither class); the farewell fades in (opacity .9s after .3s, read from its CSS); html.rich lights the ring, the
  * discs and the name, and without it they are plain. At 390x844 (--R 265.2px) the name is hidden, the farewell is
  * inside the ring (the said), 26px under it (the sub), the gate 24px under the sub, and nothing overflows sideways.
  * Reduced motion turns the planet's and its spin's animations off and changes none of that. The Earth photo (11a):
@@ -16,9 +16,9 @@
  * world reads "pending" the moment start() returns. #26: journey.descend({ homes, at: 5400 }) still fires released, surface, farewell and sets
  * showdusk/farewell, 30 homes without a throw.
  *
- * Owner decision 3c (#25): the door's phone layout is used under 600px wide OR under 480px tall; 580x800, 844x390,
- * 599x800 and 800x479 must give it, 1280x560, 1280x800, 600x800 and 800x480 the desktop one (layoutSigns says how it
- * is told: the padding under the lockup, the hidden name, the farewell's place).
+ * Owner decision 3c (#25): the door's phone layout is used under 840px wide (#133; 600px before) OR under 480px tall;
+ * 580x800, 844x390, 600x800, 820x900 and 800x480 must give it, 1280x560, 1280x800, 840x800 and 860x900 the desktop one
+ * (layoutSigns says how it is told: the padding under the lockup, the hidden name, the farewell's place).
  *
  * Without the option the same page is measured too, as controls: the glyph is 420px, the gate sits inside the ring,
  * the farewell's bottom is 240px below the viewport's middle (desktop), the ring and name keep their plain colours
@@ -101,7 +101,8 @@ const MEASURE = () => {
     dawnPad: dawn && parseFloat(cs(dawn.querySelector(".loginchrome")).paddingBottom), duskPad: parseFloat(cs(dusk.querySelector(".loginchrome")).paddingBottom),
   };
 };
-/* adds the farewell beat and says, in ms, when the planet and the farewell first read opaque (null: not within `limit`) */
+/* adds the farewell beat and says, in ms, when the planet and the farewell first read opaque (null: not within `limit`).
+   Only reported, never held to a duration: how long a transition took is the machine's, what it is meant to take is read from the CSS (BEAT_CSS). */
 const FAREWELL_BEAT = (limit) => new Promise((ok) => {
   document.body.classList.add("farewell");
   const t0 = performance.now(), got = { tr: null, fw: null };
@@ -114,6 +115,25 @@ const FAREWELL_BEAT = (limit) => new Promise((ok) => {
   };
   tick();
 });
+
+/* #164: the farewell slides up (translate 0,9px to 0) after .3s over .9s; a fixed sleep can end before it lands on a slow runner.
+   Waits for the outcome, not a duration: opacity 1 and no vertical offset left, within `limit` ms (true: it did). */
+const farewellLanded = (page, limit = 20000) => page.waitForFunction(() => {
+  const fw = document.querySelector("#dusk .farewell");
+  if (!fw) return false;
+  const cs = getComputedStyle(fw);
+  return parseFloat(cs.opacity) >= 0.99 && Math.abs(new DOMMatrix(cs.transform === "none" ? undefined : cs.transform).f) < 0.01;
+}, null, { timeout: limit, polling: 50 }).then(() => true, () => false);
+
+/* the transition of one property on an element, in seconds, as computed: { duration, delay } or null if it is not transitioned */
+const BEAT_CSS = (sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  const cs = getComputedStyle(el), sec = (v) => parseFloat(v), list = (v) => v.split(",").map((x) => x.trim());
+  const props = list(cs.transitionProperty), dur = list(cs.transitionDuration), del = list(cs.transitionDelay);
+  const i = props.findIndex((x) => x === "opacity" || x === "all");
+  return i < 0 ? null : { duration: sec(dur[i % dur.length]), delay: sec(del[i % del.length]) };
+};
 
 /* ---- a scenario collects what is wrong ---- */
 function scenario(name) {
@@ -197,8 +217,8 @@ function phoneControl(s, m) {
   s.want("(control) the farewell's bottom is where it is today", near(m.fw?.b, PHONE_TODAY.fwBottom, 1), `bottom ${f(m.fw?.b)} (today ${PHONE_TODAY.fwBottom})`);
 }
 
-/* #25, owner 3c: the door's sign-in (#door) and goodbye (#dusk) use their phone layout when the window is under 600px
-   wide OR under 480px tall ((max-width: 599.98px), (max-height: 479.98px)). The signs of each layout, whatever the
+/* #25, owner 3c: the door's sign-in (#door) and goodbye (#dusk) use their phone layout when the window is under 840px
+   wide OR under 480px tall ((max-width: 839.98px), (max-height: 479.98px)). The signs of each layout, whatever the
    window's size (measured at 390x844 and 1280x800, and not at the sizes below, where --R is the same in both):
      dawn and asDawn dusk, phone: the .loginchrome's bottom padding is 4% of the window's height; desktop 8%;
      asDawn dusk, phone: .name is hidden, the said stands on the ring's centre, the sub 26px under the ring, the gate
@@ -253,10 +273,16 @@ try {
         const before = await page.evaluate(MEASURE);
         s.want("10. under showdusk alone the planet is opacity 0", before.trOpacity === 0, `opacity ${before.trOpacity}`);
         s.want("11. under showdusk alone the farewell is opacity 0", before.fwOpacity === 0, `opacity ${before.fwOpacity}`);
-        const got = await page.evaluate(FAREWELL_BEAT, 3000);
-        s.want("10. once farewell is added the planet reaches opacity 1 within 1s", got.tr !== null && got.tr <= 1000, `after ${got.tr === null ? "more than 3000" : got.tr} ms`);
-        s.want("11. once farewell is added the farewell reaches opacity 1 within 1.5s", got.fw !== null && got.fw <= 1500, `after ${got.fw === null ? "more than 3000" : got.fw} ms`);
+        const got = await page.evaluate(FAREWELL_BEAT, 10000);
+        s.want("10. once farewell is added the planet reaches opacity 1", got.tr !== null, "it had not within 10000 ms");
+        s.want("11. once farewell is added the farewell reaches opacity 1", got.fw !== null, "it had not within 10000 ms");
+        if (!reduced) {
+          const trCss = await page.evaluate(BEAT_CSS, "#dusk .glyph .tr"), fwCss = await page.evaluate(BEAT_CSS, "#dusk .farewell");
+          s.want("10. the planet's opacity transition is .4s with no delay (its CSS)", !!trCss && near(trCss.duration, 0.4, 0.001) && near(trCss.delay, 0, 0.001), `transition ${JSON.stringify(trCss)}`);
+          s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
+        }
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         const m = await page.evaluate(MEASURE);
         desktopAsDawn(s, m);
         lookAsDawn(s, m, true, "9. ");
@@ -282,10 +308,16 @@ try {
         const before = await page.evaluate(MEASURE);
         s.want("10. under showdusk alone the planet is opacity 0", before.trOpacity === 0, `opacity ${before.trOpacity}`);
         s.want("11. under showdusk alone the farewell is opacity 0", before.fwOpacity === 0, `opacity ${before.fwOpacity}`);
-        const got = await page.evaluate(FAREWELL_BEAT, 3000);
-        s.want("10. once farewell is added the planet reaches opacity 1 within 1s", got.tr !== null && got.tr <= 1000, `after ${got.tr === null ? "more than 3000" : got.tr} ms`);
-        s.want("11. once farewell is added the farewell reaches opacity 1 within 1.5s", got.fw !== null && got.fw <= 1500, `after ${got.fw === null ? "more than 3000" : got.fw} ms`);
+        const got = await page.evaluate(FAREWELL_BEAT, 10000);
+        s.want("10. once farewell is added the planet reaches opacity 1", got.tr !== null, "it had not within 10000 ms");
+        s.want("11. once farewell is added the farewell reaches opacity 1", got.fw !== null, "it had not within 10000 ms");
+        if (!reduced) {
+          const trCss = await page.evaluate(BEAT_CSS, "#dusk .glyph .tr"), fwCss = await page.evaluate(BEAT_CSS, "#dusk .farewell");
+          s.want("10. the planet's opacity transition is .4s with no delay (its CSS)", !!trCss && near(trCss.duration, 0.4, 0.001) && near(trCss.delay, 0, 0.001), `transition ${JSON.stringify(trCss)}`);
+          s.want("11. the farewell's opacity transition is .9s after .3s (its CSS)", !!fwCss && near(fwCss.duration, 0.9, 0.001) && near(fwCss.delay, 0.3, 0.001), `transition ${JSON.stringify(fwCss)}`);
+        }
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         const m = await page.evaluate(MEASURE);
         phoneAsDawn(s, m);
         lookAsDawn(s, m, true, "9. ");
@@ -301,6 +333,7 @@ try {
         await withPage(desk, "asdawn=0", s, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           desktopControl(s, m);
           for (const rich of [true, false]) {
@@ -317,6 +350,7 @@ try {
         await withPage(phone, "asdawn=0", s, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           if (process.env.DUMP) console.log(JSON.stringify(m));
           phoneControl(s, m);
@@ -328,11 +362,14 @@ try {
     await phone.close();
   }
 
-  /* ---- owner 3c: phone layout under 600px wide OR under 480px tall, desktop otherwise ---- */
+  /* ---- owner 3c: phone layout under 840px wide (#133; 600 before) OR under 480px tall, desktop otherwise ---- */
   {
     const SIZES = [
       [580, 800, true, "narrow, tall"], [844, 390, true, "wide, short"], [599, 800, true, "just under 600 wide"], [800, 479, true, "just under 480 tall"],
-      [1280, 560, false, "wide, not short"], [1280, 800, false, "desktop"], [600, 800, false, "600 wide"], [800, 480, false, "480 tall"],
+      [1280, 560, false, "wide, not short"], [1280, 800, false, "desktop"], [840, 800, false, "840 wide"], [840, 480, false, "840 wide, 480 tall"],
+      /* #133: the width switch is 840, not 600 */
+      [820, 900, true, "under 840 wide (#133)"], [700, 900, true, "700 wide (#133)"], [600, 800, true, "600 wide (#133)"], [800, 480, true, "800 wide, 480 tall (#133)"],
+      [860, 900, false, "over 840 wide (#133)"], [1000, 470, true, "wide, under 480 tall (#133)"],
     ];
     for (const [width, height, phone, why] of SIZES) {
       const ctx = await browser.newContext({ viewport: { width, height }, reducedMotion: "no-preference" });
@@ -340,6 +377,7 @@ try {
       await withPage(ctx, "asdawn=1", s, async (page) => {
         await page.evaluate(() => window.beat("showdusk", "farewell"));
         await sleep(SETTLE);
+        s.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
         layoutSigns(s, await page.evaluate(MEASURE), phone, "");
       });
       s.done();
@@ -349,6 +387,7 @@ try {
         await withPage(ctx, "asdawn=0", c, async (page) => {
           await page.evaluate(() => window.beat("showdusk", "farewell"));
           await sleep(SETTLE);
+          c.want("the farewell has landed (opaque, no slide left) within 20 s", await farewellLanded(page), "it had not");
           const m = await page.evaluate(MEASURE);
           c.want("(control) the glyph is 420 wide", near(m.duskSvg?.w, 420, 0.6), `glyph ${f(m.duskSvg?.w)} wide`);
           c.want("(control) .name shows and there is no padding added", m.nameVisibility === "visible" && m.duskPad === 0, `visibility ${m.nameVisibility}, padding ${m.duskPad}`);

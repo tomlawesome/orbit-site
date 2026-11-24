@@ -365,6 +365,28 @@ export function aiAttribution(message) {
     || /^\s*claude-session\s*:/iu.test(line));
 }
 
+/*
+ * Known bot identities (owner answer 18b, #132): the display name of the owner's GitLab bot account and the sha256 of
+ * its lower-cased commit email. A banned-login name is accepted only when the name AND that email digest match the
+ * same entry; the email is kept only as a digest. NO_REAL_NAMES_EXTRA_BOT_IDENTITIES ("<name>:<digest>,...") adds
+ * entries, for tests.
+ */
+export const BOT_IDENTITIES = [
+  { name: "codex", digest: "2b6c7fa315d4fc72c14bfdd2ac17799a6e4b14cff5d47950f0cf3bfd6e7de4c4" },
+];
+const botIdentities = () => [
+  ...BOT_IDENTITIES,
+  ...(process.env.NO_REAL_NAMES_EXTRA_BOT_IDENTITIES || "").split(",").map((e) => e.trim()).filter(Boolean).map((e) => {
+    const i = e.lastIndexOf(":");
+    return { name: e.slice(0, i).trim().toLowerCase(), digest: e.slice(i + 1).trim().toLowerCase() };
+  }),
+];
+const isBotIdentity = (name, email) => {
+  const n = name.trim().toLowerCase();
+  const d = sha(String(email).toLowerCase());
+  return botIdentities().some((b) => b.name === n && b.digest === d);
+};
+
 /**
  * The categories under which an author or committer NAME (or EMAIL) is banned:
  * a login (the bare login as the whole name, or a home directory) or an email,
@@ -373,7 +395,7 @@ export function aiAttribution(message) {
  */
 function personFindings(name, email) {
   const found = findings(name, { addresses: false }).map((f) => f.category).filter((c) => c !== "word");
-  if (bannedLogin(name.trim().toLowerCase())) found.push("login");
+  if (bannedLogin(name.trim().toLowerCase()) && !isBotIdentity(name, email)) found.push("login");
   if (bannedEmail(email)) found.push("email");
   // git's automatic identity is <login>@<host> (#60 r3 item 5)
   const at = email.lastIndexOf("@");
@@ -402,6 +424,11 @@ export function messageFindings(line) {
   return found;
 }
 
+/* #166, owner 2026-11-23: "let it pass this one time and never use it again". main's 3 November release merge carries
+   the owner's account name and email, and GitLab will not promote dev until dev holds it. Only its author and committer
+   are skipped; its message is still checked. One commit, by its full id: never add a second, never make this a list. */
+const ONE_TIME_EXCEPTION = "f1c0bc3370d37e44c3bbdba3fc033908bd84392f";
+
 /* `<short id> author|committer|message (<categories>)` for every commit reachable
    from HEAD with a banned login or email in the author or committer name or
    email (a login also as the email's local part), a banned word, login, email or
@@ -411,13 +438,16 @@ export function messageFindings(line) {
 function commitHits() {
   if (git("rev-parse", "--is-shallow-repository").trim() === "true") return null;
   const hits = [];
-  const fields = git("log", "-z", "--format=%h%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
+  const fields = git("log", "-z", "--format=%H%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
   for (let i = 0; i + 5 < fields.length; i += 6) {
-    const [id, ae, ce, an, cn, message] = fields.slice(i, i + 6);
-    const author = personFindings(an, ae);
-    if (author.length) hits.push(`${id} author (${author.join(", ")})`);
-    const committer = personFindings(cn, ce);
-    if (committer.length) hits.push(`${id} committer (${committer.join(", ")})`);
+    const [full, ae, ce, an, cn, message] = fields.slice(i, i + 6);
+    const id = full.slice(0, 7);
+    if (full !== ONE_TIME_EXCEPTION) {
+      const author = personFindings(an, ae);
+      if (author.length) hits.push(`${id} author (${author.join(", ")})`);
+      const committer = personFindings(cn, ce);
+      if (committer.length) hits.push(`${id} committer (${committer.join(", ")})`);
+    }
     const found = message.split("\n").flatMap(messageFindings);
     if (found.length) hits.push(`${id} message (${categories(found)})`);
     if (aiAttribution(message)) hits.push(`${id} message (AI attribution)`);

@@ -42,7 +42,12 @@ const sameKeys = (o, want) => {
   return have === need;
 };
 
-export function checkDocs(dir, sources) {
+/* opts (the translated folders, docs-i18n-shape.mjs): extraPageKeys, keys a page and an index entry carry besides
+   the English shape's; pictures, a folder of pictures (the English img/) a section may use in place of its own;
+   noImgDir, an img/ folder of its own is refused; extraSectionKeys, keys each section carries besides the English shape's;
+   behind, the page files made from older English, and stalePicture(f, where, src), called in place of a problem for
+   a picture name (assets/docs/img/<16 hex>.<type>) on such a page that is in neither folder */
+export function checkDocs(dir, sources, opts = {}) {
   const problems = [];
   const bad = (m) => problems.push(m);
   if (!Array.isArray(sources) || !sources.length || sources.some((s) => !isObj(s) || !ID.test(s.slug || "") || !COLOUR.test(s.c || ""))) {
@@ -51,11 +56,11 @@ export function checkDocs(dir, sources) {
   const want = new Set([...sources.map((s) => `${s.slug}.json`), "index.json"]);
   let have;
   try { have = readdirSync(dir); } catch { return [`${dir} cannot be read`]; }
-  for (const f of have) if (!want.has(f) && f !== "img") bad(`${f}: not a file the import writes`);
+  for (const f of have) if (!want.has(f) && (f !== "img" || opts.noImgDir)) bad(`${f}: not a file the import writes${f === "img" ? " (a translated folder has no img/: its pages show the English pictures)" : ""}`);
   /* the pictures: judged from lstat, so a link is never followed */
   const pictures = new Set(), used = new Set();
   let total = 0;
-  if (have.includes("img")) {
+  if (have.includes("img") && !opts.noImgDir) {
     let names = [];
     if (!lstatSync(join(dir, "img")).isDirectory()) bad("img: not a file the import writes (a folder of pictures)");
     else names = readdirSync(join(dir, "img"));
@@ -69,12 +74,23 @@ export function checkDocs(dir, sources) {
     }
     if (total > MAX_PICTURE_BYTES_TOTAL) bad(`img: its pictures come to ${total} bytes, more than the ${MAX_PICTURE_BYTES_TOTAL} one import may copy`);
   }
+  /* a translated folder's pictures are the English folder's, judged as that folder's own are */
+  const shared = new Set();
+  if (opts.pictures) {
+    let names = [];
+    try { names = readdirSync(opts.pictures); } catch { bad(`${opts.pictures}: the English pictures cannot be read`); }
+    for (const f of names) { const m = PICTURE.exec(f), st = lstatSync(join(opts.pictures, f)); if (m && st.isFile() && st.size <= MAX_PICTURE) shared.add(f); }
+  }
   /* each <img> of a section's html, read as a browser reads it: its src as written must be a picture above or the mark */
   const imgs = (f, where, html) => {
     for (const t of htmlTokens(html)) {
       if (typeof t === "string" || t.name !== "img" || t.closing || !t.at) continue;
       const src = t.at.get("src"), name = src?.startsWith("assets/docs/img/") ? src.slice(16) : null;
       if (pictures.has(name)) used.add(name);
+      else if (shared.has(name)) { /* an English picture */ }
+      /* a page behind the English may name a picture of the older English it was made from, which the import has
+         since replaced or dropped: the caller reports it with the lag; any other unknown src is still a problem */
+      else if (opts.behind && opts.behind.has(f) && opts.stalePicture && name !== null && PICTURE.test(name)) opts.stalePicture(f, where, src);
       else if (src !== undefined && src !== MARK) bad(`${f}: ${where} has a picture ${JSON.stringify(src).slice(0, 80)}, not one in img/ or the mark`);
       if (t.at.has("srcset")) bad(`${f}: ${where} has a picture with a srcset`);
     }
@@ -103,7 +119,7 @@ export function checkDocs(dir, sources) {
     /* at least one: a source with nothing to chart, search or read is an import that went wrong (an empty or
        heading-only file, or every section skipped), not a page */
     if (!Array.isArray(list) || !list.length || list.length > MAX_SECTIONS) return bad(`${f}: sections is not a list of 1 to ${MAX_SECTIONS}`);
-    const keys = withHtml ? ["id", "title", "html", "summary", "text", "subs"] : ["id", "title", "summary", "text", "subs"];
+    const keys = [...(withHtml ? ["id", "title", "html", "summary", "text", "subs"] : ["id", "title", "summary", "text", "subs"]), ...(opts.extraSectionKeys || [])];
     list.forEach((s, k) => {
       const where = `sections[${k}]`;
       if (!isObj(s) || !sameKeys(s, keys)) return bad(`${f}: ${where} does not have exactly ${keys.join(", ")}`);
@@ -119,7 +135,7 @@ export function checkDocs(dir, sources) {
     }
     str(f, "title", p.title);
   };
-  const pageKeys = ["slug", "name", "c", "title", "repo", "path", "sections"];
+  const pageKeys = ["slug", "name", "c", "title", "repo", "path", "sections", ...(opts.extraPageKeys || [])];
 
   for (const src of sources) {
     const f = `${src.slug}.json`, p = load(f);

@@ -2,7 +2,7 @@
  * The front door is one surface with stages (owner, sealed): the dawn, the
  * launch, the sky, and the dusk to leave by. This is the switch.
  */
-import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu, rememberedFit } from "../door/index.js";
+import { createDoor, probe, level, lateDoor, openChores, openCompiles, hurryChores, note, programs, compilesAside, drawnAside, gpu, rememberedFit, statusGo } from "../door/index.js";
 import { initTheme, bindSwatches, mountTiledSky, mountGrain } from "./sky.js";
 import * as home from "./home.js";
 import { createPlayer } from "./tour.js";
@@ -10,10 +10,15 @@ import { recall, households } from "./data.js";
 import * as law from "./law.js";
 import { UP_RING, RIGHT, LEFT, docsFlight, demoFlight } from "./journeys.js";
 import { SECTIONS, createDocs, createInfo, wirePlanets } from "./pads.js";
+import { createWays } from "./ways.js";
 import { createInstall } from "./install.js";
 import { createLock } from "./lock.js";
-import { offPage, ringWaits } from "./ring.js";
+import { offPage, ringWaits, flightLate, giveWord } from "./ring.js";
 import { createPlaces, plan } from "./places.js";
+import { site, tr, wireLanguages } from "./lang.js";
+
+/* the languages (lang.js): the switch and the AI notice, live before anything else */
+wireLanguages(document);
 
 /* the shared door (assets/door/index.js), with what differs here: where its pictures are, and the debug switches read
    from the address (the folder itself never reads the address) */
@@ -34,12 +39,20 @@ FLAGS.draw = location.search.match(/[?&]draw=(worker|page)\b/)?.[1] ?? null;
 /* ?decode=img|blob: how the pictures are decoded, whatever the door's rule says (assets/door/fitness.js: decodeAside; the
    browser's image loader is Firefox's by the rule, ADR-0004 6e.1; blob is today's route, the A/B control) */
 FLAGS.decode = location.search.match(/[?&]decode=(img|blob)\b/)?.[1] ?? null;
+/* ?sun=page: the door's sun is painted on the page, not in the worker the host makes (sunWorker below): the A/B control (#119) */
+FLAGS.sun = /[?&]sun=page\b/.test(location.search) ? "page" : null;
+/* the flight's shaders asked only after the install's first draw where it is drawn in a worker with no background compile
+   (#119, owner 53a; assets/door/status.js, ring.js: flightLate); ?links=now: asked at once, as before, to compare */
+FLAGS.links = /[?&]links=now\b/.test(location.search) ? null : "late";
 const door = createDoor({
-  image: (p) => `assets/door/img/${p}`, flags: FLAGS,
+  image: (p) => site(`assets/door/img/${p}`), flags: FLAGS,
   /* the worker the flight may be drawn in (the folder never reads its own address, so the host makes it), and the face
-     it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way */
-  drawWorker: () => new Worker("assets/door/draw-worker.js", { type: "module" }),
-  fonts: [{ family: "JetBrains Mono", weight: 500, url: "assets/fonts/jetbrains-mono-latin.woff2" }],
+     it writes names with: the page's own file (assets/fonts/fonts.css), so the names are the same pixels either way.
+     (Every path from the site's root, so a language's folder finds the same files: lang.js) */
+  drawWorker: () => new Worker(site("assets/door/draw-worker.js"), { type: "module" }),
+  /* and the one the sun is painted and encoded in, off the page's thread (assets/door/sun-worker.js; the page paints it where this fails) */
+  sunWorker: () => new Worker(site("assets/door/sun-worker.js"), { type: "module" }),
+  fonts: [{ family: "JetBrains Mono", weight: 500, url: site("assets/fonts/jetbrains-mono-latin.woff2") }],
 });
 /* (the GPU is asked once, by showDoor below, before anything else needs it: assets/door/fitness.js. The capability probe,
    and with it the level, is the live door's alone: only under ?door3d, when the GPU was accepted, on that one context) */
@@ -100,9 +113,10 @@ const idle = (fn) => (window.requestIdleCallback ? requestIdleCallback(fn, { tim
 let warmingAll = null, compiledAll = null, doorCompiled = null;
 function warmJourneys() {
   if (warmingAll) return warmingAll;
-  if (MAINTENANCE) return (warmingAll = Promise.resolve());
+  /* (nothing readied: the flight's word given at once, so a flight's worker never waits for it: ring.js giveWord) */
+  if (MAINTENANCE) { statusGo(); return (warmingAll = Promise.resolve()); }
   /* (under save-data every way in opens at once on its cheaper version, the flights painted: ADR-0002 6.9) */
-  if (saveData()) { openWays(["install", "docs", "info", "back"], true); return (warmingAll = Promise.resolve()); }
+  if (saveData()) { statusGo(); openWays(["install", "docs", "info", "back"], true); return (warmingAll = Promise.resolve()); }
   /* all asked for at once, while the first light's ring is still running: their pictures start down the wire and
      their shaders start compiling now (both away from the page; where the browser compiles on the page's own thread,
      the compiles are chores too, asked for at the first light and done under the ring: compileFirst); the work each
@@ -125,8 +139,13 @@ function warmJourneys() {
      motion the flights draw no world, so they wait for no verdict (6.10) */
   const settled = (p) => Promise.resolve(p).catch(() => {});
   const verdictIn = journey.reduced ? null : settled(journey.verdict());
-  /* (the worlds open as soon as they are baked: their measure, queued last, is not waited for) */
-  settled(PADS.install.ring.baked ?? all[0]).then(() => openWays(["install"]));
+  /* (the worlds open as soon as they are baked: their touch, queued after the bake, is not waited for) */
+  const baked = settled(PADS.install.ring.baked ?? all[0]);
+  baked.then(() => openWays(["install"]));
+  /* the flight's worker told it may ask for its shaders: where they are asked late, once the install's world is baked
+     and has drawn its first frame, so that draw is not kept waiting behind them (ring.js: flightLate, giveWord, #119) */
+  const late = flightLate({ links: FLAGS.links, drawnAside: drawnAside(), aside: compilesAside() });
+  giveWord({ late, baked, drawn: PADS.install.ring.firstDrawn, go: statusGo });
   Promise.all([settled(all[1]), verdictIn]).then(() => openWays(["back"], true));
   /* (the docs' way in opens on its own galaxy, not the flight's maps: ADR-0004 6d.1) */
   Promise.all([settled(all[2]), settled(journey.warmDocs({ prove: false })), verdictIn]).then(() => openWays(["docs"]));
@@ -135,7 +154,8 @@ function warmJourneys() {
      the browser compiles on the page's own thread, every one of them, the docs' galaxy's and the live door's too
      (engine.js: compiled; compileFirst), and on every visit: the page stands still while each compiles, better behind
      the running ring than on the door's reveal */
-  compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
+  /* (where the flight's are asked late, not waited for: they are not asked until the ring's own work is done) */
+  compiledAll = Promise.all([PADS.install.ring.compiled, PADS.info.world?.compiled, late ? null : journey.compiled(), doorCompiled].map((p) => Promise.resolve(p).catch(() => {})));
   /* (?door3d) how many programs were compiled before the door: all the ring waits for, and the live door's first
      weight and its planets' (where compiles are in the background these come after the reveal, still before the door
      is live) */
@@ -153,23 +173,8 @@ function loseGate() {
     note("gpu: the page's context let go");
   }).catch(() => {});
 }
-/* the ways in: a planet takes clicks (and the keyboard) once its journey is ready, and shows its label; the gate
-   shows once the flight is, and the backs to the dawn (id "back") fade in then (ADR-0002 6.8) */
-let planetsIn = Promise.resolve();
-function openWays(ids, gate = false) {
-  /* never before the planets themselves are in: a label that came before its planet would read as the other way round */
-  planetsIn.then(() => openNow(ids, gate));
-}
-function openNow(ids, gate) {
-  for (const id of ids) { const p = $(`#door .planet[data-section="${id}"]`); if (!p) continue; p.classList.add("ready"); p.removeAttribute("tabindex"); p.removeAttribute("aria-disabled"); }
-  if (gate) { document.body.classList.add("ready-flight"); $("#gate").disabled = false; }
-  if (ids.includes("back")) for (const b of BACKS()) {
-    if (b.getAttribute("aria-disabled") !== "true") continue;
-    b.removeAttribute("tabindex"); b.removeAttribute("aria-disabled");
-    /* (faded in on filter, not opacity: the landings' and the home's own fades are on opacity, site.css) */
-    if (!journey.reduced) b.animate?.([{ filter: "opacity(0)" }, { filter: "opacity(1)" }], { duration: 600, easing: "ease" });
-  }
-}
+/* the ways in (ways.js): a planet takes clicks once its journey is ready, and shows its label; built below, once the journey is */
+const openWays = (ids, gate) => ways.open(ids, gate);
 /* until then */
 for (const p of document.querySelectorAll("#door .planet")) { p.setAttribute("tabindex", "-1"); p.setAttribute("aria-disabled", "true"); }
 /* the descents' controls, the docs' back to the dawn and the home's two (its corner and the goodbye), closed
@@ -237,6 +242,8 @@ const journey = door.journey({
     farewell() { const h = $("#home"); h.classList.remove("shown"); h.hidden = true; },
   },
 });
+
+const ways = createWays({ $, body: document.body, BACKS, reduced: journey.reduced, raf: requestAnimationFrame, animations: () => document.getAnimations() });
 
 function hideAll() {
   $("#home").classList.remove("shown"); $("#home").hidden = true; player.hide();
@@ -312,11 +319,8 @@ function showDoor() {
       /* the journeys are readied once the ring is up and running; where the ring waits for their shaders, this is what it waits for */
       after() { warmJourneys(); return waitCompiled ? within(compiledAll, ring.ms) : null; },
       onLit() {
-        /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end, found a frame on */
-        planetsIn = new Promise((r) => requestAnimationFrame(() => {
-          const a = document.getAnimations().find((x) => x.transitionProperty === "opacity" && x.effect?.target?.matches?.("#door .planet .body"));
-          (a ? a.finished.catch(() => {}) : Promise.resolve()).then(r);
-        }));
+        /* the planets' pictures fade in with the reveal (site.css): the ways in wait for that fade's end (ways.js) */
+        ways.revealed();
         warmJourneys();
         prove(4000);
       },
@@ -442,6 +446,8 @@ function leaveWorld() {
     done(token); shot.stop(); pad.el.hidden = true; pad.el.classList.remove("forming"); current = "door"; doorFocus(id);
     document.body.classList.remove("departing", "racking", "covered"); scene.planet.classList.remove("chosen");
     places.settle();
+    /* a link may have brought the visitor straight to this pad, so the door's reveal never came: its ways open now */
+    ways.revealed();
   });
 }
 function flyToPad(id, push = true) {
@@ -498,9 +504,9 @@ function backToDawn() {
   }
   /* the landing is left as it is (its chart still on it) until the flight has covered it, and set straight after */
   /* (held at its first beat until the flight's world is proved: ADR-0002 6.8) */
-  journey.descend({ title: SECTIONS[current].title, subtitle: "back to the dawn", onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
+  journey.descend({ title: SECTIONS[current].title, subtitle: tr("flight-back-dawn"), onto: "dawn", from: pad.flown || pad.profile, ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
-    farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); places.settle(); readyDoor(); },
+    farewell() { done(token); const left = current; const door = $("#door"); door.classList.add("shown"); pad.ring.stop(); pad.el.hidden = true; current = "door"; doorFocus(left); document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell"); places.settle(); ways.revealed(); readyDoor(); },
   } });
 }
 
@@ -523,7 +529,7 @@ function launchNow(ready, token) {
     name: o.name,
     bodies: o.items.filter((it) => it.status === "active").map((it) => { const p = law.dialPlacement(law.daysBetween(new Date(new Date().setHours(0, 0, 0, 0)), it.dueDate)); const r = 22 + Math.min(1, Math.max(0, (p.radius - 40) / 140)) * 58; return [Math.cos(p.angle) * r, Math.sin(p.angle) * r, SEC[o.sections.find((sc) => sc.id === it.section)?.accent] || "#8fb8ff", 3.2]; }),
   }));
-  journey.fly(demoFlight(others), { title: h.name, subtitle: "welcome back", ready, on: {
+  journey.fly(demoFlight(others), { title: h.name, subtitle: tr("flight-welcome-back"), ready, on: {
     release: leaveCurrent,
     land() { const el = $("#home"); el.hidden = false; el.classList.add("shown"); home.renderGalaxy(); current = "home"; if (!after) places.keep("#home"); },
     settled() { done(token); document.body.classList.remove("at-door"); if (wantsDrawer) home.openDrawer(wantsDrawer, true); else arriveFocus($("#home")); wantsDrawer = null; player.show(); },
@@ -557,7 +563,7 @@ function homeToDawn() {
   player.stop(false); home.closeDrawers();
   try { sessionStorage.removeItem("orbit-site-arrived"); } catch { /* this visit only */ }
   hurryChores("flight");
-  journey.descend({ title: home.household().name, subtitle: "back to the dawn", onto: "dawn", ready: journey.warm(), on: {
+  journey.descend({ title: home.household().name, subtitle: tr("flight-back-dawn"), onto: "dawn", ready: journey.warm(), on: {
     surface() { const door = $("#door"); dawn.start(); door.hidden = false; document.body.classList.add("at-door", "lit"); },
     farewell() {
       done(token);
@@ -565,6 +571,7 @@ function homeToDawn() {
       $("#door").classList.add("shown"); $("#gate").classList.remove("flash"); current = "door"; doorFocus("home");
       document.body.classList.remove("arrived", "showdawn", "dispersing", "farewell");
       places.settle();
+      ways.revealed();
       readyDoor();
     },
   } });
@@ -598,11 +605,11 @@ document.querySelectorAll("[data-copy]").forEach((el) => {
   const was = el.textContent;
   el.addEventListener("click", () => {
     navigator.clipboard?.writeText(el.dataset.copy).then(() => {
-      el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = "copied";
+      el.dataset.done = "1"; if (el.tagName !== "CODE") el.textContent = tr("copy-done");
       setTimeout(() => { delete el.dataset.done; if (el.tagName !== "CODE") el.textContent = was; }, 1600);
     }).catch(() => {
       /* a refused write says so, rather than failing silently */
-      if (el.tagName !== "CODE") { el.textContent = "not copied"; setTimeout(() => { el.textContent = was; }, 1600); }
+      if (el.tagName !== "CODE") { el.textContent = tr("copy-failed"); setTimeout(() => { el.textContent = was; }, 1600); }
     });
   });
 });
@@ -615,5 +622,5 @@ if (wantsPad) arrivePad(wantsPad); else if (arrived || wantsDrawer) arrive(); el
 if (current !== "door") journey.later(readyDoor, { after: 4000 });
 /* the site's own cache (sw.js): pictures kept a day, the code always fresh */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => { /* fine without it */ }); });
+  addEventListener("load", () => { navigator.serviceWorker.register(site("sw.js")).catch(() => { /* fine without it */ }); });
 }
