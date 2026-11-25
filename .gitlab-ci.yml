@@ -158,6 +158,7 @@ lint:
     paths: [coverage/]
     expire_in: 24 hours
   script:
+    - git fetch origin "+refs/heads/main:refs/remotes/origin/main" # the names guard checks only commits not on main (#167)
     - npm ci --prefix tools --ignore-scripts --no-audit --no-fund
     - sh tools/ci/lint.sh
     - sh tools/ci/lint-sections-test.sh
