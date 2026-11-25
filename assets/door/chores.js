@@ -26,6 +26,9 @@
 /** @type {Job[]} */
 const queue = [];
 let open = false, soft = false, compiling = false, running = false, resting = false, /** @type {string[] | null} */ want = null, until = 0, wake = 0, started = 0, openedAt = 0;
+/** every start in order, for the test hook (choresNow): the pump may start a chain of chores within one frame, which a reader
+    looking once a frame cannot tell apart from the queue (#165) @type {{ tag: string, soft: boolean, open: boolean }[]} */
+const starts = [];
 /* when someone last typed (watchTyping): an unhurried chore waits while they are, so a texture upload never lands
    between a keystroke and its echo (Orbit's addition; settings.typingWait, 0 to never wait) */
 let lastInput = -Infinity;
@@ -204,6 +207,7 @@ function pump() {
   const run = (asked) => {
     queue.splice(Math.max(0, queue.indexOf(job)), 1);
     started++;
+    starts.push({ tag: tags(job.tag).join("+"), soft: !!job.soft, open });
     const t0 = performance.now(); waited += t0 - asked; if (fresh) { frameAt = t0; fresh = false; }
     const rec = { tag: tags(job.tag).join("+") || "-", w: Math.round(t0 - asked), r: 0, f: 0, t: 0 }; record.push(rec); lastRec = rec;
     let out;
@@ -351,8 +355,9 @@ export function quiet() {
   });
 }
 /** for the test only (?door3d, index.js: window.__chores; tools/ci/freeze.mjs): the queue as it is now (queuedSoft:
-    whether each queued one is soft, beside queued; moving: how many loops hold the smaller share, moving()) */
-export const choresNow = () => ({ queued: queue.map((j) => tags(j.tag).join("+")), queuedSoft: queue.map((j) => j.soft), running, started, open, soft, compiling, openedAt, moving: movers });
+    whether each queued one is soft, beside queued; starts: every chore started so far, in order, { tag, soft, open: the
+    queue's state when it started }, as many as started; moving: how many loops hold the smaller share, moving()) */
+export const choresNow = () => ({ starts, queued: queue.map((j) => tags(j.tag).join("+")), queuedSoft: queue.map((j) => j.soft), running, started, open, soft, compiling, openedAt, moving: movers });
 
 /* the pictures, fetched once for whatever wants them, and asked for as early as is wanted: the network is never a chore */
 /* (keyed by the address resolved against the page, so a relative and an absolute spelling of one picture share
