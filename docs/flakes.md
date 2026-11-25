@@ -57,3 +57,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## asdawn, Firefox: "1280x800, asDawn, reduced motion: … the planet (10)"
 
 - 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 2/2 job 63592 · "10. under showdusk alone the planet is opacity 0" read 0.232 under reduced motion; passed when re-run on the same code (job 63616)
+
+## hurry, node: "control: hurryChores([flight, docs]) once: the docs and second flight chores are done at once"
+
+- 2026-11-25 · 0e80520f · local `sh tools/ci/node-tests.sh` on a loaded host (load about 49) · flight-2 done 894 ms after the held chore, the others within 136 ms; passed when re-run on the same code
