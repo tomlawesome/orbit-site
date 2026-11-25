@@ -740,10 +740,11 @@ export function createWorld(canvas, opts = {}) {
         else Promise.all([loadMap(), loadRings, loadMoon]).then(() => { baked = true; res(true); }, (e) => { warn("orbit: no map", e); baking = null; mapLoad = null; res(false); });
       };
       /* the galaxy's picture waited for, as the map is, and its program's build as the others' are (made's: read only
-         once done, within COMPILE_WAIT): where both came, it is put in; where either did not, it is painted */
+         once done, within COMPILE_WAIT): where both came, it is put in; where either did not, it is painted. A bake
+         retried after a map failure finds the picture already let go and its program deleted, so it waits on neither (#162 W-R1) */
       made.then((ok) => {
         if (!ok) { res(false); Promise.resolve(galaxyLoad).then(dropPicture); return; }
-        Promise.all([galaxyLoad, inProgram ? compiledWithin(gl, par, [inProgram.p]) : true]).then(([src, compiled]) => {
+        Promise.all([galaxyLoad, inProgram && !pictureGone ? compiledWithin(gl, par, [inProgram.p]) : true]).then(([src, compiled]) => {
           if (src && !pictureGone && !lost()) {
             if (!compiled) { warn("orbit: the galaxy is painted, not loaded", new Error("its program did not compile in time")); dropPicture(src); }
             else try { pictureSky(src); } catch (e) { warn("orbit: the galaxy is painted, not loaded", e); dropPicture(src); }
