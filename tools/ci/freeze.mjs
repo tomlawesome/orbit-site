@@ -157,6 +157,8 @@ const COUNT = () => {
         const len = now - tickAt;
         tickAt = now;
         rec.chores.seen = { started: q.started, open: q.open };
+        /* every start, as the page reports it (choresNow().starts): chained chores started in one frame included (#165) */
+        if (rec.chores.every?.length !== q.starts.length) rec.chores.every = q.starts.slice();
         /* frames in a row with nothing queued or running (the queue at rest: what a wait for it reads) */
         rec.chores.rest = q.running || q.queued.length ? 0 : (rec.chores.rest || 0) + 1;
         if (q.started !== last.started) {
@@ -243,10 +245,6 @@ const scenario = async (name, fn, quarantine = null) => {
   for (const p of problems) console.log(`       problem: ${p}`);
   if (problems.length && !quarantine) failed = true;
 };
-/* A flaky scenario past its third sighting (docs/flakes.md) still runs and reports, but a failure does not fail the
-   run: it leaves the merge gate until its issue fixes, rewrites or deletes it (#107; same as journey.mjs). Call it as
-   a line of its own that starts with await and the quarantined call and the issue, which tools/ci/flake-gate.sh reads */
-const quarantined = (issue, name, fn) => scenario(name, fn, issue);
 const short = (s) => JSON.stringify(s).slice(0, 400);
 
 try {
@@ -358,7 +356,7 @@ try {
   /* ---- 5: ?gpu=force on the same machine ---- */
   {
     const { ctx, page, log } = await open({ init: [COUNT] });
-    await quarantined("#165", "5 ?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame", async (want, info) => {
+    await scenario("5 ?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame", async (want, info) => {
       await page.goto(at(["gpu=force"]), { waitUntil: "load" });
       await waitBody(page, "lit", 90000);
       const s = await state(page);
@@ -385,10 +383,9 @@ try {
       /* (a fresh chores line, so its backstops cover every start counted: the page's own lines may all be earlier) */
       await page.evaluate(() => import(new URL("/assets/door/chores.js", location.href).href).then(({ noteChores }) => noteChores("freeze check 5")));
       await page.waitForTimeout(500);
-      const opened = ch.starts.filter((f) => f.open);
-      const hardSeen = opened.reduce((a, f) => a + hard(f).length, 0);
-      info(`chores: ${ch.seen?.started} started over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
-      want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores known to start after the queue opened (else this proves nothing) -- ${hardSeen}`);
+      const hardSeen = (ch.every || []).filter((e) => !e.soft && e.open).length;
+      info(`chores: ${ch.seen?.started} started (hardSeen ${hardSeen}) over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
+      want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores started after the queue opened, as the page reports them (else this proves nothing) -- ${hardSeen}`);
       const { broken, extra } = crowding(ch.starts);
       const backstops = backstopsSaid(log);
       info(`frames holding two or more non-soft starts: ${ch.starts.filter((f) => hard(f).length > 1).map((f) => `${Math.round(f.len)} ms x${hard(f).length}`).join(", ") || "none"}; extra starts ${extra}; backstops said ${backstops}`);
