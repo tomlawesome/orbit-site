@@ -91,6 +91,7 @@ initial groups, from each test's own header:
 | `asdawn` | harness | Firefox |
 | `dropped-warning` | import | Chromium (headless, 2 s) |
 | `draw-pixels` | harness, flight | Chromium (added with #85 batch 3: the worker path's pixel identity, ADR-0004 6a.7 P1) |
+| `earth-look` | harness, flight | Chromium (added with #150: the flight's Earth look) |
 | `draw-live` | page, flight | Firefox (added with #85 batch 3: P2 and P3) |
 | `world-pixels` | harness, worlds | Chromium (added with #93 batch 3: the worlds' worker path's pixel identity, ADR-0004 6b.7 PW2) |
 | `world-live` | page, worlds | Firefox (added with #93 batch 3: PW1 and PW3) |

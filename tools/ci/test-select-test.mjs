@@ -328,6 +328,7 @@ try {
       asdawn: [["harness"], ["firefox"]],
       "dropped-warning": [["import"], ["chromium"]],
       "draw-pixels": [["harness", "flight"], ["chromium"]],
+      "earth-look": [["harness", "flight"], ["chromium"]],
       "draw-live": [["page", "flight"], ["firefox"]],
       "world-pixels": [["harness", "worlds"], ["chromium"]],
       "world-live": [["page", "worlds"], ["firefox"]],
@@ -352,9 +353,9 @@ try {
     };
     r("R4 assets/js/home.js (home): journey and site-browser", ["journey", "site-browser"], { write: { "assets/js/home.js": "h2\n" } });
     r("R5 assets/js/pads.js (docs, worlds): journey, csp, site-browser, docs-img-centre, i18n-journey, docs-planet, phone-door, freeze, world-live, world-pixels", ["journey", "csp", "site-browser", "docs-img-centre", "i18n-journey", "docs-planet", "phone-door", "freeze", "world-live", "world-pixels"], { write: { "assets/js/pads.js": "p2\n" } });
-    r("R6 assets/js/journeys.js (flight): journey, flight-context-loss, docs-planet, docs-sky-portrait-live, draw-pixels, draw-live", ["journey", "flight-context-loss", "docs-planet", "docs-sky-portrait-live", "draw-pixels", "draw-live"], { write: { "assets/js/journeys.js": "j2\n" } });
+    r("R6 assets/js/journeys.js (flight): journey, flight-context-loss, docs-planet, docs-sky-portrait-live, draw-pixels, earth-look, draw-live", ["journey", "flight-context-loss", "docs-planet", "docs-sky-portrait-live", "draw-pixels", "earth-look", "draw-live"], { write: { "assets/js/journeys.js": "j2\n" } });
     r("R7 index.html (page): every page test, not the harness or import tests", ["journey", "csp", "phone-door", "site-browser", "freeze", "flight-context-loss", "docs-img-centre", "i18n-journey", "docs-planet", "docs-sky-portrait-live", "door-lows", "draw-live", "world-live"], { write: { "index.html": "i2\n" } });
-    r("R8 tests/upload.html (harness): upload, dawn, asdawn, draw-pixels, world-pixels, freeze", ["upload", "dawn", "asdawn", "draw-pixels", "world-pixels", "freeze"], { write: { "tests/upload.html": "u2\n" } });
+    r("R8 tests/upload.html (harness): upload, dawn, asdawn, draw-pixels, earth-look, world-pixels, freeze", ["upload", "dawn", "asdawn", "draw-pixels", "earth-look", "world-pixels", "freeze"], { write: { "tests/upload.html": "u2\n" } });
     r("R9 tools/import-docs.mjs (import): dropped-warning", ["dropped-warning"], { write: { "tools/import-docs.mjs": "x2\n" } });
     r("R10 tools/ci/lint.sh (tooling): no browser test", [], { write: { "tools/ci/lint.sh": "l2\n" } });
     r("R11 README.md and docs/** (none): no browser test", [], { write: { "README.md": "r2\n", "docs/adr/0001.md": "a2\n" } });
