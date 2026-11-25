@@ -243,7 +243,8 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     /* (a flight drawn in a worker is posted by name: one whose curves are neither UP's nor DOWN's throws here, ADR-0004 6a.3) */
     if (remote) wireProfile(profile);
     dropLeisure();
-    cancelTimeline(); clock.release();
+    /* (a descent before this one capped stalls: a climb starts uncapped, as before #163, until its own warp sets it) */
+    cancelTimeline(); clock.stalls(false); clock.release();
     body.classList.remove(...CLASSES, "holding");
     const pinned = typeof at === "number";
     flight = { profile, on: hooks, at, gone: false };

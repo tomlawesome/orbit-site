@@ -184,7 +184,7 @@ export function runTimeline(beats, apply, { at, schedule, cancel } = {}) {
   }
   /* no clock of the host's own: a plain timer would fire every beat a stall had made overdue on the one frame after it,
      so the descent's goodbye could be skipped (#163, decision 10a). The beats run on frames, a stall counted as at most
-     64 ms, the climb's cap (journey.js, stalls()); each beat on its own frame */
+     64 ms, the climb's cap (journey.js, stalls()); every beat due by then fires on that frame, in order */
   let setTimer = schedule, clearTimer = cancel;
   if (!setTimer) {
     let t = 0, last = performance.now(), raf = 0, ids = 0;
@@ -192,7 +192,7 @@ export function runTimeline(beats, apply, { at, schedule, cancel } = {}) {
     const pending = new Map();
     const poll = () => {
       raf = 0; const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p;
-      for (const [id, b] of pending) if (b.at <= t) { pending.delete(id); b.fn(); break; }
+      for (const [id, b] of pending) if (b.at <= t) { pending.delete(id); b.fn(); }
       if (pending.size) raf = requestAnimationFrame(poll);
     };
     setTimer = (fn, ms) => {
