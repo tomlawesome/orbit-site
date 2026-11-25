@@ -2,7 +2,7 @@
  * What the translation job (tools/ci/translate.mjs), the lint (tools/ci/i18n-check.mjs) and the publish job
  * (tools/ci/nightly-publish.sh, through i18n-check --catalogues) share about translated text (#125 stage 2):
  *
- *   - the catalogue rules: a catalogue has exactly en.json's keys, each a non-empty string with English's {holes}
+ *   - the catalogue rules: a catalogue has en.json's keys (a key missing with no hash in its state is pending translation and shown in English, #159 D-F1, decision 12a), no others, each a non-empty string with English's {holes}
  *     and bare inline tags; its state file (tools/i18n/state/<lang>.json) has exactly the catalogue's keys, each a
  *     16-hex hash, and a kept key (left in English after a failed check) holds English's value;
  *   - a translated docs section's derived fields (spec 2.3): text, the html's words (heading anchors and mermaid
@@ -26,11 +26,14 @@ export function valueProblem(enValue, value) {
   return "";
 }
 
-/* a catalogue (file names it in each line) against en.json */
-export function catalogueProblems(en, cat, file) {
+/* a catalogue (file names it in each line) against en.json. With its state (#159 D-F1, decision 12a), a key of
+   en.json the catalogue lacks is pending translation, allowed while the state holds no hash for it; without
+   state every en.json key is required */
+export function catalogueProblems(en, cat, file, state) {
   if (!isObj(cat)) return [`${file}: not a JSON object of key to text`];
   const out = [];
-  for (const k of Object.keys(en)) if (!Object.hasOwn(cat, k)) out.push(`${file}: no "${k}" (en.json has it)`);
+  const hashed = isObj(state) && isObj(state.catalogue) ? state.catalogue : null;
+  for (const k of Object.keys(en)) if (!Object.hasOwn(cat, k) && !(hashed && !Object.hasOwn(hashed, k))) out.push(`${file}: no "${k}" (en.json has it)`);
   for (const k of Object.keys(cat)) {
     if (!Object.hasOwn(en, k)) { out.push(`${file}: "${k}" is not in en.json`); continue; }
     const why = valueProblem(en[k], cat[k]);
