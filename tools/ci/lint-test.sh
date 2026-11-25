@@ -81,6 +81,10 @@ git init -q
 export GIT_CONFIG_GLOBAL=/dev/null
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
+# the names guard reads only commits not on main (#167): main stays at this base, and every case commits on a
+# work branch, so the commits the cases plant are the new ones it judges
+git checkout -q -B work
+git branch -f main work
 
 failed=0
 
