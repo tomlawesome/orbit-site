@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -555,6 +555,142 @@ for (const [label, name, want] of [
   const r = pathReports([name], { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E) });
   check(`email domain end in a path: ${label} gives ${want ? "a masked report" : "no report"}`, Array.isArray(r) && r.length === want && (!want || (r[0].includes("***") && !r[0].toLowerCase().includes(E))), Array.isArray(r) ? `${r.length} report(s)` : "scanPaths missing or failed");
 }
+
+// #167: the commit check reads only commits a branch adds: those reachable from HEAD and not from main. Scratch repos
+// hold invented commits; the banned author is the invented address E (by digest). Every git call is plumbing, no hooks.
+const guardPath = new URL("./no-real-names.mjs", import.meta.url);
+const guardSrc = readFileSync(guardPath, "utf8");
+const bannedWho = { GIT_AUTHOR_NAME: "Pat Nobody", GIT_AUTHOR_EMAIL: E, GIT_COMMITTER_NAME: "Pat Nobody", GIT_COMMITTER_EMAIL: E };
+const cleanWho = { GIT_AUTHOR_NAME: "Sam Example", GIT_AUTHOR_EMAIL: "sam@example.invalid", GIT_COMMITTER_NAME: "Sam Example", GIT_COMMITTER_EMAIL: "sam@example.invalid" };
+const authorOnly = { ...cleanWho, GIT_AUTHOR_NAME: bannedWho.GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL: E };
+const committerOnly = { ...cleanWho, GIT_COMMITTER_NAME: bannedWho.GIT_COMMITTER_NAME, GIT_COMMITTER_EMAIL: E };
+const banEnv = { NO_REAL_NAMES_EXTRA_EMAIL_DIGESTS: sha(E), NO_REAL_NAMES_EXTRA_WORD_DIGESTS: sha(W) };
+// Builds a repo: base (clean) <- old (banned author, on main) = main tip; then new commits on a branch off main.
+// mainRefs: the refs that point at main's tip; staleRefs: refs named main-ish that point at base (an older main).
+// `news` is a list of [message, env]. Returns { git, run, ids } with the guard copied in after the last reset.
+function scratch({ mainRefs, staleRefs = [], news = [], checkoutMain = false, oldWho = bannedWho }) {
+  const root = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "names-167-"));
+  const dir = join(root, "repo");
+  mkdirSync(dir);
+  const git = (args, env = {}, input) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], { cwd: dir, env: { ...cleanEnv(), ...env }, encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] }).trim();
+  git(["init", "-q"]);
+  mkdirSync(join(dir, "tools/ci"), { recursive: true });
+  writeFileSync(join(dir, "README.md"), "A scratch project.\n");
+  copyFileSync(guardPath, join(dir, "tools/ci/no-real-names.mjs"));
+  git(["add", "-A"]);
+  const tree = git(["write-tree"]);
+  const base = git(["commit-tree", tree, "-m", "Start the scratch project"], cleanWho);
+  const old = git(["commit-tree", tree, "-p", base, "-m", "Add a page"], oldWho); // already on main, banned author and committer
+  for (const r of staleRefs) git(["update-ref", r, base]);
+  for (const r of mainRefs) git(["update-ref", r, old]);
+  let head = old;
+  const ids = { base, old };
+  news.forEach(([msg, env], i) => { head = git(["commit-tree", tree, "-p", head, "-m", msg], env); ids[`n${i}`] = head; });
+  git(["update-ref", "refs/heads/work", head]);
+  git(["symbolic-ref", "HEAD", checkoutMain ? "refs/heads/main" : "refs/heads/work"]);
+  git(["reset", "-q", "--hard"]);
+  copyFileSync(guardPath, join(dir, "tools/ci/no-real-names.mjs")); // a reset restores the tree's own copy, so copy after it
+  const run = (env = {}) => {
+    const r = spawnSync(process.execPath, [join(dir, "tools/ci/no-real-names.mjs")], { cwd: dir, env: { ...cleanEnv(), ...banEnv, ...env }, encoding: "utf8" });
+    const out = String(r.stdout) + String(r.stderr);
+    return { status: r.status, out, lines: String(r.stdout).split("\n").filter((l) => /^ {3}\S/u.test(l)).map((l) => l.trim()) };
+  };
+  return { git, run, ids, done: () => rmSync(root, { recursive: true, force: true }) };
+}
+const about = (r, id, kind) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)) && l.slice(l.indexOf(" ") + 1).startsWith(kind));
+const touches = (r, id) => r.lines.filter((l) => l.startsWith(id.slice(0, 7)));
+const refSets = [
+  ["gitlab/main", ["refs/remotes/gitlab/main"], []],
+  ["origin/main", ["refs/remotes/origin/main"], []],
+  ["main", ["refs/heads/main"], []],
+  // lookup order: gitlab/main beats origin/main beats main, so the stale ones must be ignored
+  ["gitlab/main beats a stale origin/main and main", ["refs/remotes/gitlab/main"], ["refs/remotes/origin/main", "refs/heads/main"]],
+  ["origin/main beats a stale main", ["refs/remotes/origin/main"], ["refs/heads/main"]],
+];
+try {
+  for (const [label, mainRefs, staleRefs] of refSets) {
+    const t = scratch({ mainRefs, staleRefs, news: [["Tidy the page", cleanWho], ["Reword the page", authorOnly], ["Move the page", committerOnly]] });
+    try {
+      const r = t.run();
+      check(`#167 (${label}): a banned author on a commit already on main passes (author)`, about(r, t.ids.old, "author").length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): a banned committer on a commit already on main passes (committer)`, about(r, t.ids.old, "committer").length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): the clean new commit is not reported`, touches(r, t.ids.n0).length === 0, JSON.stringify(r.lines));
+      check(`#167 (${label}): a new commit with a banned author fails (author)`, about(r, t.ids.n1, "author").length === 1, JSON.stringify(r.lines));
+      check(`#167 (${label}): a new commit with a banned committer fails (committer)`, about(r, t.ids.n2, "committer").length === 1, JSON.stringify(r.lines));
+      check(`#167 (${label}): the guard exits 1 for the new commits`, r.status === 1, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+    } finally { t.done(); }
+  }
+
+  // the same identity on both roles of one new commit
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"], news: [["Another change", bannedWho]] });
+    try {
+      const r = t.run();
+      check("#167: one new commit by the banned identity fails for author and committer both", about(r, t.ids.n0, "author").length === 1 && about(r, t.ids.n0, "committer").length === 1 && r.status === 1, JSON.stringify(r.lines));
+      check("#167: the banned commit already on main stays unreported beside it", touches(r, t.ids.old).length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // a branch that adds nothing passes, though main's own history holds the banned identity
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"] });
+    try {
+      const r = t.run();
+      check("#167: a branch at main's tip, over a banned commit on main, exits 0", r.status === 0, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+      check("#167: a branch at main's tip prints the ok verdict", /^no-real-names: ok/mu.test(r.out), r.out);
+    } finally { t.done(); }
+  }
+
+  // main itself: checked out, with and without a remote-tracking ref
+  for (const [label, refs] of [["main checked out, remote-tracking ref too", ["refs/heads/main", "refs/remotes/gitlab/main"]], ["main checked out, no remote ref", ["refs/heads/main"]]]) {
+    const t = scratch({ mainRefs: refs, checkoutMain: true });
+    try {
+      const r = t.run();
+      check(`#167 (${label}): run at main's own tip exits 0`, r.status === 0, `exit ${r.status}: ${JSON.stringify(r.lines)}`);
+      check(`#167 (${label}): run at main's own tip reports no commit`, r.lines.length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // a banned message on a new commit still fails, and on one already on main it does not matter
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/main"], news: [[`Tidy ${W}`, cleanWho], [`Fine\n\nCo-authored-by: Claude <${["noreply", "anthropic.com"].join("@")}>`, cleanWho]] });
+    try {
+      const r = t.run();
+      check("#167: a banned word in a new commit's message fails", about(r, t.ids.n0, "message (").some((l) => /word/u.test(l)), JSON.stringify(r.lines));
+      check("#167: AI attribution in a new commit's message fails", about(r, t.ids.n1, "message (AI attribution)").length === 1, JSON.stringify(r.lines));
+      check("#167: a bad message on a new commit exits 1", r.status === 1, `exit ${r.status}`);
+      check("#167: a clean author on a new commit with a bad message is not reported as an author", about(r, t.ids.n0, "author").length === 0 && about(r, t.ids.n0, "committer").length === 0, JSON.stringify(r.lines));
+    } finally { t.done(); }
+  }
+
+  // no main anywhere: fail closed with a clear message, never pass
+  {
+    const t = scratch({ mainRefs: [], oldWho: cleanWho, news: [["Tidy the page", cleanWho]] }); // all clean: only a missing main can fail it
+    try {
+      // no ref named main exists; HEAD is on `work`
+      const r = t.run();
+      check("#167: with no main to compare against the guard exits non-zero (fails closed)", r.status !== 0 && r.status !== null, `exit ${r.status}: ${r.out}`);
+      check("#167: with no main the guard does not print the ok verdict", !/no-real-names: ok/u.test(r.out), r.out);
+      check("#167: with no main the message says main could not be found", /^no-real-names: .*\bmain\b.*(?:not found|cannot be found|could not be found|no main|missing|fetch)/imu.test(r.out), r.out);
+    } finally { t.done(); }
+  }
+  // an unrelated ref name is not taken for main
+  {
+    const t = scratch({ mainRefs: ["refs/remotes/gitlab/dev", "refs/heads/maintenance"], oldWho: cleanWho, news: [["Tidy the page", cleanWho]] });
+    try {
+      const r = t.run();
+      check("#167: refs named dev or maintenance are not taken for main (fails closed)", r.status !== 0 && !/no-real-names: ok/u.test(r.out), `exit ${r.status}: ${r.out}`);
+    } finally { t.done(); }
+  }
+} catch (e) {
+  check("#167: the scratch repos build", false, String(e.stderr || e.message).split("\n")[0]);
+}
+
+// #167 removes the one-time exception of #166: no commit id literal, and no ONE_TIME_EXCEPTION, remains in the guard
+check("#167: the guard holds no ONE_TIME_EXCEPTION", !/ONE_TIME_EXCEPTION/u.test(guardSrc), "present");
+check("#167: the guard holds no f1c0bc337 literal", !/f1c0bc337/iu.test(guardSrc), "present");
+const idLiterals = guardSrc.match(/\b[0-9a-f]{40}\b/gu) || [];
+check("#167: the guard holds no 40-character commit id literal", idLiterals.length === 0, `${idLiterals.length} literal(s)`);
 
 // the real tree and history still pass (#60 item 10); a clean environment, so planted digests do not reach it
 const real = spawnSync(process.execPath, [fileURLToPath(new URL("./no-real-names.mjs", import.meta.url))], { cwd: repoRoot, env: cleanEnv(), encoding: "utf8" });

@@ -24,10 +24,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
 
 - 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
-
-## live PW1b, Firefox: page.goto times out
-
-- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47071 · page.goto timeout (also seen on !115); the retry passed PW1b (job 47094)
+- 2026-11-19 · 39f9c54 · !148 pipeline 4696 live:chromium 3/3 job 56545 · the readying count saw 7 non-soft chores after the queue opened, wants 8 (tools/ci/freeze.mjs HARD_SEEN); 1.3 s long tasks in the run; the same code passed on pipeline 4673; retried (job 56717)
 
 ## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
 
@@ -40,3 +37,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
 
 - 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host
+
+## journey, Firefox: console.error NS_BINDING_ABORTED from the driver's own worker script
+
+- 2026-11-21 · 407cdcab · pipeline 5074 live:firefox 1/2 job 60756 · every step passed; the run failed on `console.error: [JavaScript Error: "NS_BINDING_ABORTED: " {file: "chrome://juggler/content/content/WorkerMain.js" line: 6}]`, logged by Playwright's Firefox driver rather than at a site address, with no failed site request; the same journey passed in Firefox on pipelines 5048 and 5062. Console errors now carry the step's name, so the next sighting names the step

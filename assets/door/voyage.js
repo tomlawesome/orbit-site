@@ -21,10 +21,12 @@
 
 import { chore, fetchOnce, fetchBitmap, note, linked, counted, compilesAside, compiledWithin } from "./chores.js";
 import { image, flag } from "./settings.js";
-import { uploadBanded } from "./upload.js";
+import { uploadBanded, uploadSized, easeLevels } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
-import { frameCost, gpu, sayVerdict } from "./fitness.js";
+import { gpu, sayVerdict, FIT_MS, WARM_FRAMES, TIMED_FRAMES } from "./fitness.js";
+import { quiet as allQuiet, mark, own, pulse, settling, onBusy } from "./busy.js";
 import { page } from "./page.js";
+import { statusTurn } from "./status.js";
 
 /** @typedef {[number, number, number, number]} Box a lon/lat box: west, east, south, north */
 /** @typedef {Record<string, string>} Pictures picture name to URL */
@@ -60,6 +62,46 @@ export const PICTURE_PATHS = {
 export function pictures() {
   return textures || (textures = Object.fromEntries(Object.entries(PICTURE_PATHS).map(([k, p]) => [k, image(p)])));
 }
+/* each map's full size (#148): its smaller sizes are ready-made beside it, each half the last down to the last one still
+   SMALLEST or more wide, named <name>-<width>.webp (tools/map-sizes.py, which must be run again when a map is replaced;
+   these are the GPU's own levels of the full map, floor(w / 2^i) by floor(h / 2^i)) */
+/** @type {Record<string, [number, number]>} */
+export const FULL = { lights: [4096, 2048], day: [2048, 1024], clouds: [2048, 1024], euro: [2048, 1582], moon: [1024, 512],
+  lightsN: [2625, 1425], cloudsN: [3360, 1824], dayN: [1050, 570] };
+const SMALLEST = 512;
+/** every size of a map, largest first (its path, as the host's image() is asked for it, and its size); null for a map
+    with no ready-made sizes @param {string} key @returns {{ path: string, w: number, h: number }[] | null} */
+export function mapSizes(key) {
+  const full = FULL[key];
+  if (!full) return null;
+  const all = [{ path: PICTURE_PATHS[key], w: full[0], h: full[1] }];
+  for (let i = 1; full[0] >> i >= SMALLEST; i++) all.push({ path: PICTURE_PATHS[key].replace(/\.webp$/, `-${full[0] >> i}.webp`), w: full[0] >> i, h: full[1] >> i });
+  return all;
+}
+/* every ready-made size's path (the page resolves each for the worker, remote-flight.js) */
+export const SIZED_PATHS = Object.keys(FULL).flatMap((k) => /** @type {{ path: string }[]} */ (mapSizes(k)).slice(1).map((z) => z.path));
+/* the sizes this screen fetches, from the largest wanted down: the largest is the first, from the smallest up, at least
+   twice the screen's width in device pixels (D, as lightsStrip has it: W * min(dpr, 2)), or the full size where none is.
+   A phone (390 css px at dpr 3: D 780) stops at 2048 for the 4096-wide lights. Chosen once a page view, so the door and
+   the flight ask for the same files */
+/** @type {Record<string, import("./upload.js").Size[]>} */
+const chosen = {};
+/** @param {string} key @returns {import("./upload.js").Size[] | null} */
+export function sizesFor(key) {
+  if (chosen[key]) return chosen[key];
+  const all = mapSizes(key);
+  /* (a host whose image() places its pictures but not these sizes, as a worker told of the full maps alone: whole maps) */
+  const placed = (/** @type {string} */ p) => image(p) !== p;
+  if (!all || (placed(all[0].path) && !all.every((z) => placed(z.path)))) return null;
+  const screen = page.size(), want = 2 * (screen.W || 0) * Math.min(screen.dpr || 1, 2);
+  /* (no size known yet: every size, and nothing kept) */
+  if (!screen.W) return all.map((z) => ({ url: image(z.path), w: z.w, h: z.h }));
+  let top = 0;
+  for (let i = all.length - 1; i >= 0; i--) if (all[i].w >= want) { top = i; break; }
+  return (chosen[key] = all.slice(top).map((z) => ({ url: image(z.path), w: z.w, h: z.h })));
+}
+/** where a map is first asked for: its smallest size, or (a map with no sizes, or a host without them) the full one @param {string} key */
+export const firstURL = (key) => { const z = sizesFor(key); return z ? z[z.length - 1].url : pictures()[key]; };
 /* the live door, while it is tried (?door3d: the host's flag): engine.js waits for the probe under it. Only
    where the door is live here (capability.js: liveDoor, the flag and level 1 or 2) is the strip below drawn */
 export const DOOR3D = () => !!flag("door3d");
@@ -126,7 +168,7 @@ function sharpen() {
 /** start the flight's pictures down the wire, before its world is made (that is a chore; the network is not) */
 /* (only where the page may use the GPU at all, fitness.js: gpu(), asked here if not yet; a refused page draws without the
    world and fetches none of its pictures) */
-export function fetchVoyage() { if (!gpu()) return; for (const url of Object.values(pictures())) fetchOnce(url).catch(() => {}); }
+export function fetchVoyage() { if (!gpu()) return; for (const key of Object.keys(pictures())) fetchOnce(firstURL(key)).catch(() => {}); }
 /* the Europe lights cover lon 2..24, lat 38..55: the door's own view, sharper */
 /** @type {Box} */
 export const EURO = [2, 24, 38, 55];
@@ -1110,12 +1152,17 @@ export function createVoyage(under, { restFor }) {
   /* gone: its journey was taken down (stop): it draws nothing more, judges nothing and never retires the context,
      which is the page's one and may already be a later journey's world */
   let gone = false;
+  /* (links "late", below: the wait for the host's word, ended if the world is lost or taken down meanwhile) */
+  const holding = new AbortController();
   /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
      fitness test's, said when the test has ended and the world was still there to be judged) */
   let offSaid = false, madeOk = false;
   /** @param {string} why */
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; sayOff("the context was lost"); };
+  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; holding.abort(); unwait?.(); sayOff("the context was lost"); };
+  /* a wait for quiet (quietFitness), ended at once by a lost context or stop() */
+  /** @type {(() => void) | null} */
+  let unwait = null;
   canvas.addEventListener("webglcontextlost", onLost);
   /* what it put on the page's one context, given back when its journey is taken down (stop: release); given: those
      already given back, so nothing is deleted twice (a late arrival, or a program that is two of P's) */
@@ -1135,7 +1182,7 @@ export function createVoyage(under, { restFor }) {
      richProgram's; createVoyage itself starts on a live context) */
   const shader = (type, src) => { const s = /** @type {WebGLShader} */ (gl.createShader(type)); shaders.add(s); gl.shaderSource(s, src); gl.compileShader(s); return s; };
   /* (when the compiles began: how long they took, to the last link status read, is said once they are done) */
-  const t0 = performance.now();
+  let t0 = performance.now();
   const vs = shader(gl.VERTEX_SHADER, VERT);
   /** @param {string} fsrc @param {WebGLShader} [vsh] @param {string} [label] @returns {Linked} */
   const program = (fsrc, vsh = vs, label = "flight") => {
@@ -1157,12 +1204,27 @@ export function createVoyage(under, { restFor }) {
      (level 0, or no ?door3d) the flight is as it always was: no strip, no sharp tier, the lean overlay */
   const live = liveDoor();
   const weight = live ? theDoorWeight() : null, richOnly = weight === "rich";
-  const P = /** @type {Programs} */ ({ scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST), gal: null, stars: null });
+  /* (#119, the host's flag links "late": in a worker with no background compile the three are built one at a time on
+     the GPU's queue, and the host's own first work (the install's first draw) waited behind them, so they are asked
+     for only at the host's word, or STATUS_LATE after this: status.js. The world is made meanwhile, its vertex shader
+     alone; the docs' galaxy is made as ever) */
+  const late = flag("links") === "late" && !par && !page.shared();
+  const ask = () => ({ scene: program(SCENE), over: program(richOnly ? OVER_RICH : OVER), post: program(POST) });
+  const P = /** @type {Programs} */ ({ ...(late ? { scene: null, over: null, post: null } : ask()), gal: null, stars: null });
   /* true once they are done; false once the world is dead, or past COMPILE_WAIT (chores.js): then it goes without them */
   /** @param {Linked[]} list */
   const compiled = (list) => compiledWithin(gl, par, list.map((pr) => pr.p), 40, () => dead);
-  const core = /** @type {Linked[]} */ (Object.values(P).filter(Boolean));
-  const made = compiled(core).then((done) => {
+  let core = /** @type {Linked[]} */ (Object.values(P).filter(Boolean));
+  /* (a world lost or taken down while it waited asks for nothing: made is false) */
+  const asked = late ? statusTurn(holding.signal).then((ms) => {
+    if (dead) return false;
+    note(`flight: its shaders asked for ${Math.round(ms)} ms late, after the host's first work (links "late")`);
+    /* (a context lost and not yet said, where asking throws: not done, below) */
+    t0 = performance.now(); try { Object.assign(P, ask()); } catch { return false; }
+    core = [P.scene, P.over, P.post];
+    return compiled(core);
+  }) : compiled(core);
+  const made = asked.then((done) => {
     if (dead) return false;
     if (!done) { dead = true; page.unmount(canvas); sayOff("its shaders did not compile in time"); return false; }
     try { core.forEach(finish); ok = true; madeOk = true; } catch (e) { console.warn(e); dead = true; page.unmount(canvas); sayOff("its shaders would not link"); }
@@ -1312,10 +1374,49 @@ export function createVoyage(under, { restFor }) {
   /* the strip's sharper tier, fading in over the small one (sharpStrip; ?door3d only) */
   /** @type {SharpStrip | null} */
   let stripS = null;
+  /* a map with ready-made sizes (#148): its smallest put on the GPU whole, mipped and drawn from at once (resolved
+     then; a clouds map's field made from it then, and again once its top is in), its larger sizes left for sharpen
+     (more), which the warm-up asks for once every map has its smallest and a verdict is in; landing until its smallest is in */
+  /** @type {Record<string, () => Promise<void>>} */
+  const more = {};
+  /** @param {string} key @returns {Promise<void>} */
+  const load = (key) => {
+    const sizes = sizesFor(key);
+    if (!sizes) return loadWhole(key);
+    landing.add(key);
+    const up = uploadSized(gl, sizes, { decode: (url) => fetchBitmap(url, { colorSpaceConversion: "none", premultiplyAlpha: "none" }), tag: "flight", more: "sharp", name: key, setup: wrapOf(key), after: sharper, gone: () => gone || dead });
+    more[key] = () => up.more().then(() => {
+      if (gone) return;   /* (given back with the other maps: release) */
+      if (key === "clouds" || key === "cloudsN") return chore(() => fieldAgain(key), 60, "sharp");
+    });
+    return up.first.then((t) => {
+      if (gone || !t) { landing.delete(key); if (t) giveBack("Texture", t); delete more[key]; return; }
+      maps[key] = t; dims[key] = [sizes[0].w, sizes[0].h];
+      /* in maps from now, so given back with them (release); its larger sizes stop once gone (uploadSized). Its levels
+         are whole from its smallest down (uploadSized), so a field may be made from it now */
+      landing.delete(key); mipped.add(key);
+      if (key === "clouds" || key === "cloudsN") fieldsOf();
+    }).catch(() => {
+      landing.delete(key); delete more[key];
+      if (!gone) failed.add(key);
+    });
+  };
+  /* a clouds map's field made again from its top size, the one made from its smallest given back once it is replaced */
+  /** @param {string} key */
+  const fieldAgain = (key) => {
+    const old = fields[key];
+    if (gone || !old) return;
+    delete fields[key];
+    fieldsOf();
+    if (fields[key]) giveBack("Texture", old); else fields[key] = old;
+  };
+  /* a map's larger sizes (a map whose smallest did not land, or with no sizes: nothing) */
+  /** @param {string} key @returns {Promise<void>} */
+  const sharpen = (key) => { const m = more[key]; delete more[key]; return m ? m() : Promise.resolve(); };
   /* drawn from its last band (its first level alone, LINEAR); loaded, and so the fields, the glow and the warm draws,
      only once its mipmaps are made */
   /** @param {string} key @returns {Promise<void>} */
-  const load = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
+  const loadWhole = (key) => fetchBitmap(pictures()[key], { colorSpaceConversion: "none", premultiplyAlpha: "none" })
     .then((bm) => {
       if (gone) return;   /* (stopped: nothing more put on the page's one context) */
       /** @type {[number, number]} */
@@ -1348,14 +1449,17 @@ export function createVoyage(under, { restFor }) {
     const done = () => { unwatch(); unhide = null; resolve(); };
     unhide = done;
   })));
-  /* the fitness test, run only with the tab shown: asked in a chore, and looked at again inside it, right before the timed
-     frames (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and asks again */
+  /* the fitness test, run only with the tab shown (quietFitness). Under the host's flag `fit: "skip"` (a tool that draws
+     pictures on software GL) no frame is timed and nothing waits for quiet: the world is taken as fit in a chore, looked
+     at again inside it (the tab can be hidden between the first look and the chore's turn); hidden then, it waits and
+     asks again */
   /** @param {string} tag @returns {Promise<Verdict>} */
   const fitWhenShown = async (tag) => {
+    if (flag("fit") !== "skip") return quietFitness(tag);
     for (;;) {
       await whenVisible();
       if (gone) return { fit: false, ms: Infinity };
-      const verdict = await chore(() => (page.hidden() ? null : fitness()), 60, tag);
+      const verdict = await chore(() => (page.hidden() ? null : ok ? { fit: true, ms: 0, skipped: true } : { fit: false, ms: Infinity }), 60, tag);
       if (verdict) return verdict;
     }
   };
@@ -1365,12 +1469,17 @@ export function createVoyage(under, { restFor }) {
      (ADR-0002 6.3, 6.4): resolved only when the test was taken on a world still there, before an unfit one is retired;
      a world lost or never made never resolves it (the engine hears that from `dead`) */
   let judging = /** @type {Promise<void> | null} */ (null);
+  /* the verdict in, however it went (the maps' larger sizes wait for it, #148: none for a world that is then retired) */
+  let provedIs = () => {};
+  /** @type {Promise<void>} */
+  const proved = new Promise((r) => { provedIs = r; });
   /** @type {(v: Verdict) => void} */
   let judgedIs = () => {};
   /** @type {Promise<Verdict>} */
   const judged = new Promise((r) => { judgedIs = r; });
   /** @param {string} tag @returns {Promise<void>} */
   const judge = (tag) => (judging ??= fitWhenShown(tag).then(({ fit: fits, ms, skipped }) => {
+    provedIs();
     if (gone) return;
     fit = fits;
     ready = ok && !dead && fit;
@@ -1405,7 +1514,10 @@ export function createVoyage(under, { restFor }) {
       const again = [...failed].filter((k) => k !== "lightsS"); failed.clear();
       /* beside the proof, never in front of it: a download that hangs must not hold the verdict back. Whatever lands is
          used from then on, and the cities' glow made if it was waiting for the lights map */
-      Promise.all(again.map(load)).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      const back = again.map(load);
+      Promise.all(back).then(() => (gone || !P.overRich || glowT ? null : chore(richMaps, 60, "flight"))).catch(() => {});
+      /* its larger sizes, as the others', only after a fit verdict (none without one, or after an unfit one) */
+      back.forEach((p, i) => p.then(() => proved).then(() => (fit && !gone ? sharpen(again[i]) : undefined)).catch(() => {}));
     }
     if (!loading) {
       /* the strip only where the door is live (the same one the door draws: theStrip): the small one waited for, the
@@ -1414,9 +1526,14 @@ export function createVoyage(under, { restFor }) {
       const loadStrip = () => load("lightsS").then(() => {
         if (maps.lightsS) /** @type {SharpStrip} */ (stripS).ready((bm) => { if (!gone) maps.lightsS2 = upload("lightsS", bm); }); else /** @type {SharpStrip} */ (stripS).fail();
       });
-      loaded = Promise.all([...["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"].map(load), ...(live ? [loadStrip()] : [])])
-        .then(() => { allIn = true; });
-      loading = Promise.all([made, loaded])
+      /* every map's first size (for a map loaded whole, its only one), all the gate waits for, and all the cities' glow needs
+         (it reads the lights a few levels down: cityGlow); their larger sizes (#148) once the verdict is in, each map's
+         cloud field made once its own are (load) */
+      const KEYS = ["lights", "euro", "clouds", "day", "moon", "lightsN", "cloudsN", "dayN"];
+      const firsts = Promise.all([...KEYS.map(load), ...(live ? [loadStrip()] : [])]);
+      loaded = firsts.then(() => { allIn = true; });
+      firsts.then(() => proved).then(() => Promise.all(KEYS.map(sharpen))).catch(() => {});
+      loading = Promise.all([made, firsts])
         /* rich from the first: its fields and its glow, before anything is drawn with it */
         .then(() => richOnly && chore(richMaps, 60, "flight"))
         .then(() => starsOn)
@@ -1437,8 +1554,9 @@ export function createVoyage(under, { restFor }) {
            length: it is let go, and the flight draws on its own canvas, as it always could. Every visit; the engine keeps
            the verdict a week (ADR-0002 6.4), which changes when a way in opens, never what is drawn: only this decides that */
         .then(() => judge("flight"));
-      /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is */
-      warming.then(() => chore(calibrate, 200, "measure"));
+      /* the measure is never hurried, and nothing waits on it: a flight that comes first is drawn as it is (and a world
+         taken down meanwhile, its verdict's wait ended by stop(), queues none: its rest would hold the queue for nothing) */
+      warming.then(() => (gone ? undefined : chore(calibrate, 200, "measure")));
     }
     return warming;
   }
@@ -1476,25 +1594,105 @@ export function createVoyage(under, { restFor }) {
     allMaps = false;
     gl.disable(gl.SCISSOR_TEST); lastDraw = 0;
   }
-  /* the fitness test: whole frames at the heaviest point of the flight, at the smallest drawing the measure would ever
-     choose, warmed first and judged on their median (fitness.js: frameCost); fit if that leaves room for about 30
-     frames a second. Returns { fit, ms }, taken on every visit (what the engine remembers of it never reaches here); warm says the verdict */
-  /** @returns {Verdict} */
-  function fitness() {
-    if (!ok) return { fit: false, ms: Infinity };
-    /* the host's flag `fit: "skip" (a tool that draws pictures on software GL): the world is taken as fit, no frame timed */
-    if (flag("fit") === "skip") return { fit: true, ms: 0, skipped: true };
-    if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
-    const was = part;
-    part = 0.4; CW = 0; resize(W, H);
-    /* (every map's branch taken, whichever maps have landed: the same shader work either way, so the verdict is the machine's
-       and not the moment's, and the docs' proof may judge it before the maps are in) */
-    allMaps = true;
-    let cost;
-    try { cost = frameCost(gl, () => draw(ST())); } finally { allMaps = false; }
-    const { fit: fits, ms } = cost;
-    part = was; CW = 0; resize(W, H); lastDraw = 0;
-    return { fit: fits, ms };
+  /*
+   * THE FITNESS TEST, TAKEN WHILE NOTHING ELSE RUNS (#104; the standard pattern: measure in a quiet window, discard the
+   * contaminated samples, take the median of the clean ones). Whole frames at the heaviest point of the flight, at the
+   * smallest drawing the measure would ever choose, warmed first (WARM_FRAMES, again at a new size: the window resized)
+   * and judged on their median; fit if that leaves room for about 30 frames a second (FIT_MS). Each timed frame is a
+   * chore of its own, begun only once nothing is under way on any of the site's contexts, here or on another thread, and
+   * nothing has ended for SETTLE ms (busy.js: quiet; the warm-up is such work), and thrown away if anything began, ended
+   * or pulsed while it was timed (heard HEAR ms after it). It stops once most of TIMED_FRAMES agree. Bounded: past
+   * QUIET_WAIT of the tab shown without a quiet moment, or MAX_THROWN frames thrown away, the frames still to come are
+   * timed whatever runs, as they were before. Hidden, it waits, and the QUIET_WAIT starts again when it is shown. Taken on
+   * every visit (what the engine remembers of it never reaches here); one console line says how it went; warm says the
+   * verdict.
+   */
+  const QUIET_WAIT = 8000, MAX_THROWN = 10, HEAR = 20;
+  /** @param {number} ms @returns {Promise<void>} */
+  const after = (ms) => new Promise((r) => { setTimeout(r, ms); });
+  /* true once quiet; false past the deadline (moved on each time the tab is shown) or once the world is gone. No poll:
+     it looks again when the ledger changes, when the last work will have settled, at the deadline and on a show */
+  /** @param {{ at: number }} deadline @returns {Promise<boolean>} */
+  const untilQuiet = (deadline) => new Promise((resolve) => {
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    /** @param {boolean} v */
+    const end = (v) => { clearTimeout(timer); unbusy(); unshown(); unwait = null; resolve(v); };
+    const look = () => {
+      clearTimeout(timer);
+      if (gone || !ok) return end(false);
+      if (page.hidden()) return;
+      if (allQuiet()) return end(true);
+      const left = deadline.at - performance.now();
+      if (left <= 0) return end(false);
+      timer = setTimeout(look, Math.min(left, settling() || left));
+    };
+    const unbusy = onBusy(look);
+    const unshown = page.onVisible(() => { deadline.at = performance.now() + QUIET_WAIT; look(); });
+    unwait = () => end(false);
+    look();
+  });
+  /** @param {string} tag @returns {Promise<Verdict>} */
+  async function quietFitness(tag) {
+    /** @type {Verdict} */
+    const no = { fit: false, ms: Infinity };
+    /** @type {number[]} */
+    const times = [];
+    let over = 0, thrown = 0, loud = false, set = false, was = part, sizeAt = "";
+    const t0 = performance.now(), deadline = { at: t0 + QUIET_WAIT };
+    const sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    /* one turn, in its chore: the warm-up where the size is new (the frames after a new size carry its allocation), else
+       one frame timed; null where it may not be taken now (hidden, gone, or no longer quiet) */
+    /** @returns {{ warm: boolean, ms: number, m0: number } | null} */
+    const turn = () => {
+      if (gone || !ok || page.hidden() || (!loud && !allQuiet())) return null;
+      if (!set) {
+        if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
+        set = true; was = part; part = 0.4; CW = 0; resize(W, H);
+      }
+      /* (every map's branch taken, whichever maps have landed: the same shader work either way, so the verdict is the
+         machine's and not the moment's, and the docs' proof may judge it before the maps are in) */
+      allMaps = true;
+      try {
+        if (`${CW}x${CH}` !== sizeAt) {
+          sizeAt = `${CW}x${CH}`;
+          for (let i = 0; i < WARM_FRAMES; i++) { draw(ST()); sync(); }
+          pulse();
+          return { warm: true, ms: 0, m0: 0 };
+        }
+        const m0 = mark(), a = performance.now();
+        own(() => { draw(ST()); sync(); });
+        return { warm: false, ms: performance.now() - a, m0 };
+      } finally { allMaps = false; }
+    };
+    try {
+      for (;;) {
+        if (gone || !ok) return no;
+        if (page.hidden()) { await whenVisible(); deadline.at = performance.now() + QUIET_WAIT; continue; }
+        if (!loud && !(await untilQuiet(deadline))) { if (gone || !ok) return no; loud = true; }
+        const r = await chore(turn, 60, tag);
+        if (!r || r.warm) continue;
+        if (!loud) {
+          await after(HEAR);
+          if (gone || !ok) return no;
+          if (mark() !== r.m0) { if (++thrown >= MAX_THROWN) loud = true; continue; }
+        }
+        times.push(r.ms);
+        if (r.ms > FIT_MS) over++;
+        /* the median is settled once more than half lie on one side */
+        if (over > TIMED_FRAMES / 2 || times.length - over > TIMED_FRAMES / 2) break;
+      }
+      /* stopped early, the lower middle one, which always lies on the side that decided it */
+      const sorted = [...times].sort((a, b) => a - b);
+      const ms = sorted[Math.floor((sorted.length - 1) / 2)] ?? Infinity;
+      page.note(`orbit · flight world: ${times.length} frame${times.length === 1 ? "" : "s"} timed (${sorted.map(Math.round).join(", ")} ms), ${thrown} thrown away` +
+        `${loud ? ", not quiet in time: the rest timed whatever ran" : ", each while quiet"}, in ${Math.round(performance.now() - t0)} ms`);
+      return { fit: ms <= FIT_MS, ms };
+    } catch {
+      return no;
+    } finally {
+      if (set && !gone) { part = was; CW = 0; resize(W, H); lastDraw = 0; }
+    }
   }
   /* a world too slow for the machine is let go: its canvas out of the page and its context lost, the flight drawn
      without it from then on */
@@ -1599,6 +1797,8 @@ export function createVoyage(under, { restFor }) {
   function draw(/** @type {Frame} */ s) {
     if (!ok) return;
     if (!hdr) resize(W, H);
+    /* a map's larger size easing in (#148: upload.js) */
+    easeLevels(gl);
     /* the size is never changed mid-flight (a change reallocates every target, and that is a hitch): a slow flight
        is noted, and the next one is drawn smaller, the change made while nothing is flying */
     lastDraw = performance.now();
@@ -1727,8 +1927,10 @@ export function createVoyage(under, { restFor }) {
   function stop() {
     if (gone) return;
     gone = true; dead = true; ok = false; ready = false;
+    holding.abort();
     canvas.removeEventListener("webglcontextlost", onLost);
     unhide?.();   /* (a warm-up waiting for the tab to be shown waits no more, and draws nothing) */
+    unwait?.();   /* (nor does a verdict waiting for quiet) */
     stripS?.leave();   /* (it may be holding the sharp strip back from every other context; its take is never called) */
     richRelease();
     release();

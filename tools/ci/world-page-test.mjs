@@ -29,7 +29,7 @@ import { bootInstallPage, settled, infoWorld, childMain, runCase, chk, check, fi
 const INSTALL = "../../assets/js/install.js", WORLD = "../../assets/js/world.js";
 const MOON = { map: "http://localhost/map.webp", rings: "http://localhost/rings.png", moon: "http://localhost/moon.webp", small: true };
 
-/* the page path of the install: the shared world made, baked and measured on the page */
+/* the page path of the install: the shared world made and baked on the page */
 async function onPage(o) {
   const b = await bootInstallPage(o);
   const { createInstall } = await import(INSTALL);
@@ -148,7 +148,7 @@ for (const [name, how, why] of [
   ["W1 no worker given (drawnAside false)", "pageNotGiven", "no worker given"],
 ]) {
   const r = run(how);
-  chk(`${name}: the world is made, baked and measured on the page`, r, (r) => [r.prepared === true && !r.flat, `prepare() gave ${show(r.prepared)} (want true), the pad is ${r.flat ? "flat" : "not flat"}`]);
+  chk(`${name}: the world is made and baked on the page`, r, (r) => [r.prepared === true && !r.flat, `prepare() gave ${show(r.prepared)} (want true), the pad is ${r.flat ? "flat" : "not flat"}`]);
   chk(`${name}: the .orbitgl keeps its webgl2 context and is not handed over`, r, (r) => [r.context === "webgl2" && r.transferred === false, `context ${show(r.context)}, handed over ${show(r.transferred)}`]);
   chk(`${name}: no worker is made and none is announced`, r, (r) => [r.workers === 0 && !r.drawnInWorker, `${r.workers} worker(s) made; "drawn in a worker" ${r.drawnInWorker ? "said" : "not said"}`]);
   chk(`${name}: the canvas is still in its pad`, r, (r) => [r.canvasInPad, `canvas in pad: ${show(r.canvasInPad)}`]);
