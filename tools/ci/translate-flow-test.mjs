@@ -47,6 +47,9 @@
  *   T48 (#140) adopting: a foreign batch with malformed results (not JSON, no custom_id, a repeated custom_id, no
  *       results_url) is not ours, skipped, exit 0; the same faults in the run's own batch stay exit 4
  *
+ *   T49 (#159 D-S1) round 1 ends after the deadline with a retryable failure: the retry batch is not created, the Exit
+ *       says it was not sent and nothing was spent
+ *
  * Assumption (the spec leaves it open): --poll-seconds and --timeout-minutes take fractions (0.05, 0.02).
  *
  *   node tools/ci/translate-flow-test.mjs
@@ -605,5 +608,19 @@ await T.attempt("T48", async () => {
       T.check(`T48 (${how}, control) nothing written`, !r.notBuilt && snapshot(fy.dir) === before, "files changed");
     } finally { await fakeY.close(); fy.cleanup(); }
   }
+});
+
+await T.attempt("T49", async () => {
+  /* #159 D-S1: round 1 ends only after the deadline, with one retryable failure. The retry round must not be sent:
+     one batch is created, the run stops with an Exit saying the retry batch was not sent and nothing was spent.
+     Timing: --timeout-minutes 0.02 is 1.2 s; the fake ends a batch on its 2nd poll and the poll waits 1.2 s. */
+  const fx = mkFixture(), fake = await startFake({ polls: 2, script: (cid, n, q, ans) => (cid === `${TOP}@de` && n === 1 ? { answer: dropStrong(ans) } : undefined) });
+  try {
+    const r = await runTool(fx, ["--api-base", fake.url, "--report", fx.report, "--poll-seconds", "1.2", "--langs", "de", "--timeout-minutes", "0.02"]);
+    T.check("T49a round 1 ended after the deadline with a retryable failure: create is called once, not twice", !r.notBuilt && fake.posts === 1 && fake.batches.length === 1, `${fake.posts} batches created`);
+    T.check("T49b the run stops with a non-zero exit", !r.notBuilt && r.code !== 0 && r.code !== null, `exit ${r.code}`);
+    const out = `${r.out || ""}${r.err || ""}`;
+    T.check("T49c the message says the retry batch was not sent and nothing was spent", /retry batch (was )?not sent/i.test(out) && /nothing (was )?spent/i.test(out), out.slice(-300));
+  } finally { await fake.close(); fx.cleanup(); }
 });
 T.done();

@@ -103,7 +103,7 @@ export function build(indexHtml, catalogue, lang) {
   html = html.replace(tpl[0], "");
   const notice = tpl[1].replace(/<p data-ai-notice>/, '<p class="ai-notice">');
   html = html.replace(/<!-- ai-notice -->/g, notice);
-  html = html.replace(/\sdata-translated-only hidden/g, "");
+  /* the docs "not translated" lines keep `hidden` and data-translated-only: pads.js un-hides one only when the docs are English (#159 ALL-F3) */
   html = html.replace(/<html lang="[^"]*"/, `<html lang="${lang}"`);
   html = html.replace(/(\n([ \t]*)<meta name="viewport"[^>]*>)/, `$1\n$2<meta name="robots" content="noindex" />`);
   /* attributes first (a text's own inline tags then carry theirs translated), then texts, last first */

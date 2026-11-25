@@ -11,6 +11,7 @@
  *   P5  every local src/href of de/index.html exists on disk relative to de/
  *   P6  de/index.html carries the AI notice (.ai-notice, key ai-notice, a link hreflang="en") at least on the door and
  *       the docs pad; the root index.html has the hreflang set, no noindex and no notice
+ *   P9  (#159, ALL-F3) the built language page keeps `hidden` on the docs "not translated" line (data-translated-only)
  *   L1  lang.js t(): placeholders filled; a missing key falls back to the key's English
  *   L2  lang.js pick(): stored beats languages; "de-AT" picks de; no match gives null; stored "en" gives null;
  *       "en" in languages means the root (null)
@@ -98,6 +99,16 @@ await attempt("P4 strings", async () => {
   const noDe = sample.filter((k) => !html.includes(de[k]));
   const stillEn = sample.filter((k) => html.includes(`>${en[k]}<`));
   check("P4 German in place of English for a sample of keys", sample.length >= 3 && !noDe.length && !stillEn.length, `${sample.length} sampled; no German ${JSON.stringify(noDe)}; still English ${JSON.stringify(stillEn)}`);
+});
+
+await attempt("P9 untranslated line", async () => {
+  /* #159 ALL-F3: a language page keeps `hidden` on the docs "not translated" line; pads.js un-hides it only when the
+     docs really are English, so with the docs fetch blocked or delayed the line stays hidden */
+  const html = built || read("de/index.html");
+  const lines = [...html.matchAll(/<p\b[^>]*\bclass="[^"]*\buntranslated\b[^"]*"[^>]*>/g)].map((m) => m[0]);
+  check("P9a the built language page has the docs untranslated line(s)", lines.length >= 1, `${lines.length} found`);
+  check("P9b each stays hidden and keeps data-translated-only (the build does not strip them)", lines.length >= 1 && lines.every((t) => /\shidden(\s|>|=)/.test(t) && /\bdata-translated-only\b/.test(t)), JSON.stringify(lines.slice(0, 2)));
+  check("P9c de/index.html on disk agrees", (read("de/index.html").match(/<p\b[^>]*\buntranslated\b[^>]*\shidden/g) || []).length === lines.length, "on disk");
 });
 
 await attempt("P5 paths", async () => {
