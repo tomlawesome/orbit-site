@@ -167,12 +167,12 @@ report-only and Firefox's gate; with the browsers side by side the default is bo
 `site-browser` on Firefox only until its Chromium flake (B7, `docs/flakes.md`) is fixed.
 
 **Lint guards kept.** `publish_docs` is untouched (its one script line, variables, `needs` with `artifacts: false`,
-environment, no `parallel`, no rule variables); no job but it names `docs-import`, none but `renovate` names
+environment, no `parallel`, no rule variables); only `publish_docs` and `publish_translations` name `docs-import`, and only `translate_docs` names `translate`; none but `renovate` names
 `renovate`; `NODE_IMAGE` once in the global variables; no `include` but a list of one to three entries of project `ai/agent-infra`, each with exactly `project`, `file` and `ref`, the ref a full lowercase commit sha (owner, 2026-11-01, answer 21a, #110: a tag can be moved, a commit cannot, and any other include would let a job escape the lint), each file at most once: the shared personal-details template (`scripts/private-details/ci-template.yml`), always, and beside it the catch-up and batch-intake snippets (`scripts/catchup-check/ci-template.yml`, `scripts/batch-intake/ci-template.yml`; ai/agent-infra#114); `lint`, `scan:gitleaks` and `private-details` take neither snippet's `job_rule`, by any route (their own rules, `extends`, a `!reference` or a YAML alias); no `trigger`. `parallel:` is on the live jobs only, which hold no
 token. (Corrected, #138: this paragraph used to say the lint keeps the workflow rules in order, the docs-import and
 bot rules before the general ones; no such check is left, and the workflow has no rule for the docs-import branch or the bot. It also
 said push pipelines on `dev` are still created; since ai/agent-infra#113 a push to `dev` starts none, and only
-`main` and `hotfix/*` pushes start one.)
+`main` and `hotfix/*` pushes start one.) (Corrected 2026-11-25, #159 ALL-F5: this paragraph used to say only `publish_docs` names `docs-import` and no other job does; `publish_translations` names it too, and `translate_docs` is alone in `translate`.)
 
 **Batch and catch-up merge requests** (ai/agent-infra#114, decision 60a; recorded here by #138). Two shared
 snippets of ai/agent-infra, included at a pinned commit, each set a variable from the first workflow rules and give a
