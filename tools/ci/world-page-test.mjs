@@ -124,6 +124,46 @@ const CASES = {
     const baked = await settled(w.bake(), b.clock);
     return { baked: baked.state === "resolved" ? baked.value : baked.state, consoled };
   },
+  /* W-R1 (#162): the first bake's map load fails after its galaxy step is done; the retry must not wait on the deleted picture program */
+  async bakeRetry() {
+    const b = await bootInstallPage({});
+    const g = b.page.glBase, renderer = g.getParameter;
+    g.getParameter = (p) => (p === 1 ? 8192 : renderer(p));   /* MAX_TEXTURE_SIZE (the stub's unknown constants are 1): room for the galaxy's picture */
+    /* the worker bed hides the parallel-compile extension; the case is about a page that has it */
+    const ext = g.getExtension;
+    g.getExtension = (n) => (n === "KHR_parallel_shader_compile" ? { COMPLETION_STATUS_KHR: 0x91b1 } : ext(n));
+    const deleted = new Set(), polls = [];
+    const del = g.deleteProgram;
+    g.deleteProgram = (p) => { deleted.add(p); return del?.(p); };
+    /* as a browser: a deleted program never reports completion, and every ask about it is noted */
+    g.getProgramParameter = (p, pname) => { if (deleted.has(p) && pname === 0x91b1) { polls.push(pname); return false; } return true; };
+    const fetch0 = globalThis.fetch;
+    let mapFails = true;
+    globalThis.fetch = (u, ...a) => (mapFails && /map/.test(String(u)) ? Promise.resolve({ ok: false, status: 503 }) : fetch0(u, ...a));
+    const warned = [];
+    const w = await world(b, fresh(b), { warn: (...a) => { warned.push(a.map(String).join(" ")); } });
+    if (!w) return { error: "createWorld gave no world on the stub page" };
+    /* the pictures come by real async hops the virtual clock does not count: the clock moves on in steps, with the real
+       queue let through between, so the case does not depend on how fast this machine is */
+    const settle = async (p) => {
+      let out = { state: "pending" };
+      Promise.resolve(p).then((value) => { out = { state: "resolved", value }; }, (error) => { out = { state: "rejected", error }; });
+      for (let i = 0; i < 400 && out.state === "pending"; i++) { await b.clock.advance(100, () => out.state !== "pending"); for (let j = 0; j < 20; j++) await new Promise((r) => setImmediate(r)); }
+      return out;
+    };
+    for (let j = 0; j < 50; j++) await new Promise((r) => setImmediate(r));
+    const first = await settle(w.bake());
+    const deletedAfterFirst = deleted.size, pollsAfterFirst = polls.length;
+    mapFails = false;
+    const t0 = performance.now();
+    const second = await settle(w.bake());
+    return {
+      first: first.state === "resolved" ? first.value : first.state,
+      second: second.state === "resolved" ? second.value : second.state,
+      took: performance.now() - t0, deletedAfterFirst, pollsAfterFirst, pollsAfterSecond: polls.length - pollsAfterFirst,
+      noMap: warned.some((l) => /no map/.test(l)),
+    };
+  },
   async exports() {
     const door = await import(INDEX);
     return { kinds: Object.fromEntries(["setPage", "pace", "drawnAside"].map((n) => [n, typeof door[n]])) };
@@ -193,6 +233,12 @@ for (const [name, how, why] of [
   chk("W1 warn default: console.warn is told the map is missing", d, (d) => [d.consoled.some((l) => /no map/.test(l)), `console.warn heard ${show(d.consoled)}`]);
   chk("W1 warn given: opts.warn is told the map is missing", g, (g) => [g.given.some((l) => /no map/.test(l)), `opts.warn heard ${show(g.given)}`]);
   chk("W1 warn given: console.warn is not told as well", g, (g) => [!g.consoled.some((l) => /no map/.test(l)), `console.warn heard ${show(g.consoled)}`]);
+}
+{
+  const r = run("bakeRetry");
+  chk("W-R1 setup: the first bake's map fails (bake gives false) after the picture program is let go", r, (r) => r.error ? [false, r.error] : [r.first === false && r.noMap && r.deletedAfterFirst >= 1, `first bake gave ${show(r.first)}, no-map warned ${show(r.noMap)}, programs deleted ${r.deletedAfterFirst} (want false, true, at least 1)`]);
+  chk("W-R1 retry: the second bake gives true well under COMPILE_WAIT (5000 ms of the fake clock)", r, (r) => r.error ? [false, r.error] : [r.second === true && r.took < 1000, `second bake gave ${show(r.second)} after ${r.took} ms (want true, under 1000)`]);
+  chk("W-R1 retry: the deleted picture program is never polled", r, (r) => r.error ? [false, r.error] : [r.pollsAfterFirst + r.pollsAfterSecond === 0, `${r.pollsAfterFirst} poll(s) of a deleted program during the first bake, ${r.pollsAfterSecond} during the retry (want 0)`]);
 }
 {
   const r = run("exports");
