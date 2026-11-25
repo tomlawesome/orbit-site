@@ -75,7 +75,7 @@ await T.attempt("T25", async () => {
         for (const f of extra) { mkdirSync(dirname(join(d, f)), { recursive: true }); copyFileSync(join(base, f), join(d, f)); }
         mutate(d);
         const r = spawnSync(process.execPath, ["tools/ci/i18n-check.mjs"], { cwd: d, encoding: "utf8" }), text = `${r.stdout}${r.stderr}`;
-        if (!want) { control = r.status === 0; T.check(name, control, `exit ${r.status}: ${tail(text)}`); }
+        if (!want) { if (name.startsWith("T25a")) control = r.status === 0; T.check(name, r.status === 0, `exit ${r.status}: ${tail(text)}`); }
         else T.check(name, r.status === 1 && want.test(text), `exit ${r.status}, want 1 naming ${want}; got ${tail(text)}`);
       } catch (e) { T.check(name, false, String(e && e.message || e)); } finally { rmSync(d, { recursive: true, force: true }); }
     };
@@ -101,6 +101,16 @@ await T.attempt("T25", async () => {
     case_("T25k a kept key that is not in the catalogue is refused", (d) => edit(d, "tools/i18n/state/fr.json", (j) => { j.kept.push("ghost"); }), /state\/fr\.json|ghost/);
     case_("T25l a kept key whose value differs from English is refused", (d) => edit(d, "assets/i18n/fr.json", (j) => { const k = Object.keys(en).find((x) => !translated.has(x)); j[k] = `${swap(en[k])} changed`; }), /fr\.json[^\n]*(kept|English)|state\/fr\.json/i);
     case_("T25m a built language without its state file is refused", (d) => rmSync(join(d, "tools/i18n/state/de.json")), /state\/de\.json|de[^\n]*state/i);
+    /* #159 D-F1 (owner decision 12a): a key in en.json missing from a catalogue is pending translation while that
+       language's state has no hash for it (the page shows English); extra keys, broken {holes} or tags and a hash
+       for a key the catalogue lacks (a stale hash) still fail */
+    const pend = (d, k) => { edit(d, "assets/i18n/fr.json", (j) => { delete j[k]; }); edit(d, "tools/i18n/state/fr.json", (j) => { delete j.catalogue[k]; j.kept = j.kept.filter((x) => x !== k); }); };
+    case_("T25n #159 D-F1 a key in en.json with no catalogue entry and no state hash is pending: passes", (d) => pend(d, plain[7]));
+    case_("T25o #159 D-F1 a key with no catalogue entry but a state hash is refused (stale hash), state/fr.json or fr.json named", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/fr.json", (j) => { j.catalogue[plain[7]] = "0123456789abcdef"; }); }, /fr\.json/);
+    case_("T25p #159 D-F1 a pending key does not excuse an extra key in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j.ghost = "x"; }); }, /ghost/);
+    case_("T25q #159 D-F1 a pending key does not excuse a broken {hole} in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }); }, /fr\.json[^\n]*(\{|holes|placeholder)/i);
+    case_("T25r #159 D-F1 a pending key does not excuse a broken tag in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }); }, /fr\.json[^\n]*tag/i);
+    case_("T25s #159 D-F1 a pending key does not excuse a stale hash (a hash for a ghost key)", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/fr.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }); }, /state\/fr\.json[^\n]*ghost/);
   } catch (e) { T.check("T25", false, String(e && e.message || e)); } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
