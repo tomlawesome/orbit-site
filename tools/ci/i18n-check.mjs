@@ -44,9 +44,9 @@ function catalogues(base, whole) {
     if (!existsSync(join(base, file))) { if (whole && all[lang] && all[lang].built === true) bad(`${file}: missing, and ${lang} is built`); continue; }
     let cat, state;
     try { cat = JSON.parse(readFileSync(join(base, file), "utf8")); } catch { bad(`${file}: not JSON`); continue; }
-    for (const m of catalogueProblems(en, cat, `${file}`)) bad(m);
-    if (!existsSync(join(base, stateFile))) { bad(`${stateFile}: missing; ${file} has no record of the English it was made from`); continue; }
-    try { state = JSON.parse(readFileSync(join(base, stateFile), "utf8")); } catch { bad(`${stateFile}: not JSON`); continue; }
+    if (!existsSync(join(base, stateFile))) { for (const m of catalogueProblems(en, cat, `${file}`)) bad(m); bad(`${stateFile}: missing; ${file} has no record of the English it was made from`); continue; }
+    try { state = JSON.parse(readFileSync(join(base, stateFile), "utf8")); } catch { for (const m of catalogueProblems(en, cat, `${file}`)) bad(m); bad(`${stateFile}: not JSON`); continue; }
+    for (const m of catalogueProblems(en, cat, `${file}`, state)) bad(m);
     for (const m of stateProblems(en, cat, state, `${stateFile}`, `${file}`)) bad(m);
   }
 }

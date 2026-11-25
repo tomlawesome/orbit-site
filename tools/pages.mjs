@@ -90,9 +90,14 @@ const scriptKeys = () => {
 };
 
 /* index.html in a language, from its catalogue */
-export function build(indexHtml, catalogue, lang) {
+export function build(indexHtml, catalogue, lang, en = JSON.parse(readFileSync(join(ROOT, "assets/i18n/en.json"), "utf8"))) {
   const cat = catalogue || {};
-  const need = (key) => { if (!Object.hasOwn(cat, key)) throw new Error(`${lang}.json has no "${key}"`); return cat[key]; };
+  /* a key the catalogue lacks is pending translation (#159 D-F1, decision 12a): the page carries its English */
+  const need = (key) => {
+    if (Object.hasOwn(cat, key)) return cat[key];
+    if (Object.hasOwn(en, key)) return en[key];
+    throw new Error(`${lang}.json has no "${key}", and nor has en.json`);
+  };
   let html = indexHtml;
   /* the root's auto-lang script, and its hash in the policy */
   const auto = /\n[ \t]*<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(html);
