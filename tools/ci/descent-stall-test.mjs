@@ -6,6 +6,10 @@
  *       frame after the stall. (A stall counts as at most 64 ms of the descent's clock, as the climb's does.)
  *   S2  timeline.js's plain-timer form (runTimeline with no options, over descentBeats()): the same stall, the same
  *       demand. (Fails until the build gives the plain-timer form the cap too.)
+ *   S3  a sign-in climb after a sign-out starts in real time (no stall cap) up to its warp, as before #163: a 6 s
+ *       stall before the warp is counted whole, so the warp comes on the frame after it. Control: a climb with no
+ *       sign-out before it does the same.
+ *   S4  timeline.js plain-timer form: two beats at the same `at` fire on the same frame (as journey.js's clock does).
  *   C1  control: the climb already caps stalls: once its warp has come up, a 6 s jump does not fire the rest of the
  *       climb's beats on one frame.
  *
@@ -32,6 +36,20 @@ async function journeyCase(go) {
   return go({ page, clock, door, journey });
 }
 
+async function climbStall(afterDescent) {
+  return journeyCase(async ({ page, clock, door, journey }) => {
+    if (afterDescent) { journey.descend({ title: "Orbit", subtitle: "signing out" }); await clock.advance(9000); }
+    const from = page.bodyLog.length;
+    journey.fly(door.UP, { title: "Orbit", subtitle: "to somewhere" });
+    await clock.advance(FRAME);                         /* one frame, before the warp */
+    const t0 = clock.now();
+    clock.jump(STALL);
+    await clock.advance(10000);
+    const warp = page.bodyLog.slice(from).find((e) => e.op === "add" && e.name === "showwarp")?.at ?? null;
+    return { warpAfterStall: warp === null ? null : warp - (t0 + STALL) };
+  });
+}
+
 const CASES = {
   async "journey-descent"() {
     return journeyCase(async ({ page, clock, journey }) => {
@@ -56,6 +74,20 @@ const CASES = {
     clock.jump(STALL);
     await clock.advance(10000);
     return { warp: at.warp ?? null, dusk: at.dusk ?? null, farewell: at.farewell ?? null };
+  },
+
+  /* S3: a climb (after a descent that ran to its end, or none) with a stall before its warp (200 ms in) */
+  async "climb-after-descent"() { return climbStall(true); },
+  async "climb-alone"() { return climbStall(false); },
+
+  /* S4 */
+  async "timeline-same-at"() {
+    const clock = installClock();
+    const { runTimeline } = await import(new URL("../../assets/door/timeline.js", import.meta.url));
+    const at = {};
+    runTimeline([{ at: 100, act: "a" }, { at: 100, act: "b" }, { at: 100, act: "c" }], (act) => { at[act] = performance.now(); });
+    await clock.advance(2000);
+    return { a: at.a ?? null, b: at.b ?? null, c: at.c ?? null };
   },
 
   /* the climb caps a stall only while its WebGL world is drawing (journey.js: stalls(drawingWorld)), so this one
@@ -102,6 +134,21 @@ else {
     const r = runCase(import.meta.url, "timeline-descent");
     check("S2: timeline.js plain-timer form: a 6 s stall: warp, dusk and farewell are each seen", seen(r, ["warp", "dusk", "farewell"]), detail(r));
     check("S2: ... each on its own frame, in order (not all on the frame after the stall)", apart(r), detail(r));
+  }
+  /* S3 */
+  {
+    const c = runCase(import.meta.url, "climb-alone");
+    check("control (S3): a climb with no sign-out before it counts a 6 s stall before its warp whole (the warp is on the next frame)",
+      !c.error && c.warpAfterStall !== null && c.warpAfterStall <= FRAME, `the warp came ${c.warpAfterStall} ms after the stall (want ${FRAME} or less)${errOf(c)}`);
+    const r = runCase(import.meta.url, "climb-after-descent");
+    check("S3: a climb after a sign-out starts in real time: the stall before its warp is counted whole (descend() leaves no cap on)",
+      !r.error && r.warpAfterStall !== null && r.warpAfterStall <= FRAME, `the warp came ${r.warpAfterStall} ms after the stall (want ${FRAME} or less)${errOf(r)}`);
+  }
+  /* S4 */
+  {
+    const r = runCase(import.meta.url, "timeline-same-at");
+    check("S4: timeline.js plain-timer form: three beats at the same `at` fire on the same frame",
+      !r.error && typeof r.a === "number" && r.a === r.b && r.b === r.c, `a ${r.a}, b ${r.b}, c ${r.c} (virtual ms)${errOf(r)}`);
   }
   finish();
 }
