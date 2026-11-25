@@ -22,12 +22,6 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 - 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
 - 2026-11-24 · 3ecf0a1 · live:chromium 2/3, CI job 64233, MR !178 · failed once; the change touched only the names lint and its tests
 
-## freeze 5 [#165](https://gitlab.tomlawson.io/ai/orbit-site/-/work_items/165), Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
-
-- 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
-- 2026-11-19 · 39f9c54 · !148 pipeline 4696 live:chromium 3/3 job 56545 · the readying count saw 7 non-soft chores after the queue opened, wants 8 (tools/ci/freeze.mjs HARD_SEEN); 1.3 s long tasks in the run; the same code passed on pipeline 4673; retried (job 56717)
-- 2026-11-21 · d4f224fe · !160 pipeline 5121 live:chromium 3/3 job 61245 · "the count sees the readying: at least 8 non-soft chores" saw 7; passed when re-run on the same code
-
 ## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
 
 - 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
