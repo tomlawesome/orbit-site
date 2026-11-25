@@ -182,8 +182,27 @@ export function runTimeline(beats, apply, { at, schedule, cancel } = {}) {
     for (const beat of beats) if (beat.at <= at) apply(beat.act, beat);
     return () => {};
   }
-  const setTimer = schedule ?? ((fn, ms) => setTimeout(fn, ms));
-  const clearTimer = cancel ?? ((id) => clearTimeout(id));
+  /* no clock of the host's own: a plain timer would fire every beat a stall had made overdue on the one frame after it,
+     so the descent's goodbye could be skipped (#163, decision 10a). The beats run on frames, a stall counted as at most
+     64 ms, the climb's cap (journey.js, stalls()); every beat due by then fires on that frame, in order */
+  let setTimer = schedule, clearTimer = cancel;
+  if (!setTimer) {
+    let t = 0, last = performance.now(), raf = 0, ids = 0;
+    /** @type {Map<number, { at: number, fn: () => void }>} */
+    const pending = new Map();
+    const poll = () => {
+      raf = 0; const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p;
+      for (const [id, b] of pending) if (b.at <= t) { pending.delete(id); b.fn(); }
+      if (pending.size) raf = requestAnimationFrame(poll);
+    };
+    setTimer = (fn, ms) => {
+      if (!raf) { const p = performance.now(); t += Math.min(64, Math.max(0, p - last)); last = p; }
+      const id = ++ids; pending.set(id, { at: t + ms, fn });
+      if (!raf) raf = requestAnimationFrame(poll);
+      return /** @type {any} */ (id);
+    };
+    clearTimer = (id) => { pending.delete(/** @type {any} */ (id)); };
+  } else clearTimer = cancel ?? ((id) => clearTimeout(id));
   const timers = beats.map((beat) => setTimer(() => apply(beat.act, beat), beat.at));
-  return () => timers.forEach(clearTimer);
+  return () => timers.forEach(/** @type {any} */ (clearTimer));
 }
