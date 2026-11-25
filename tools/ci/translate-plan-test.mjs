@@ -20,7 +20,7 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startFake } from "./fake-claude.mjs";
-import { run as runPlan } from "./translate.mjs";
+import { run as runPlan, estimate } from "./translate.mjs";
 import { T, REPO, hash16, sectionHash, mkFixture, runTool, argsFor, snapshot, docsIds, siteQs, oldLayout } from "./translate-fixture.mjs";
 
 const run = async (fx, fake, ...more) => runTool(fx, argsFor(fx, fake, ...more));
@@ -139,11 +139,13 @@ await T.attempt("T47", async () => {
    2,275,267 output tokens (thinking included). A dry run sends nothing and needs no key: the plan and its estimate are
    built from a copy of the English alone (no translated catalogue, page or state), so the plan is the empty-state one.
    #159 ALL-F12 (owner decision 13a): T23 checks only that the estimate is sensible. The expected figure is worked out
-   from the docs the test reads (their payload characters, weighted by the languages in languages.json: a cjk
-   language counts half), at the recorded run's yield of 1.30 output tokens per weighted character (2,275,267 over
-   this checkout's 249,463 payload characters at 7 weighted languages); the language count is read from
+   from the docs the test reads (their payload characters, weighted by each language's own factor, read from the
+   estimator's estimate() for that language, so a cjk language counts as the estimator counts it), at a yield fitted to
+   the one recorded run (2,275,267 over this checkout's 249,463 payload characters at the factors of 6 latin and 2 cjk
+   languages; the estimator itself runs about 12.5% above that run, inside the 15% limit); the language count is read from
    languages.json, not fixed at 8. T23c and T23d are therefore changed from a fixed figure and a fixed 8 to these. */
-const YIELD = 1.30;   /* output tokens per payload character per weighted language, from the recorded run */
+const YIELD = 0.943;   /* fitted to the one recorded run: its output over payload characters x the estimator's factors */
+const factor = (L) => estimate([{ chars: 1e6, L }], "").output / 1e6;   /* the estimator's own output per character for a language */
 const payloadChars = (root) => readdirSync(join(root, "assets/docs")).filter((f) => f.endsWith(".json") && f !== "index.json").reduce((n, f) => {
   const page = JSON.parse(readFileSync(join(root, "assets/docs", f), "utf8"));
   return n + page.sections.reduce((m, sec) => m + JSON.stringify({ slug: page.slug, id: sec.id, title: sec.title, html: sec.html, subs: sec.subs }).length, 0);
@@ -172,7 +174,7 @@ async function dryRun({ grow = 0, more = {} } = {}) {
     const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "100000000" }, log: (l) => lines.push(l) });
     const m = /^estimate: ([\d,]+) input tokens \+ ([\d,]+) output tokens/m.exec(lines.join("\n"));
     const langs = new Set(lines.filter((l) => l.startsWith("   ")).map((l) => /@([\w-]+)\s/.exec(l)?.[1]).filter(Boolean));
-    const weight = Object.values(all).reduce((w, l) => w + (l.script === "cjk" ? 0.5 : 1), 0);
+    const weight = Object.values(all).reduce((w, l) => w + factor(l), 0);
     return { code, lines, out: m ? Number(m[2].replace(/,/g, "")) : NaN, found: !!m, langs, count: Object.keys(all).length, expected: Math.round(YIELD * payloadChars(dir) * weight) };
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
@@ -193,6 +195,14 @@ await T.attempt("T23e", async () => {
   T.check("T23e the copied docs hold 30% or more characters than the checkout's", r.expected >= base.expected * 1.2, `${r.expected} against ${base.expected}`);
   sensible("T23e2", r);
   T.check("T23f the estimate grows with the docs, between 20% and 40% over the plain one", r.out / base.out > 1.2 && r.out / base.out < 1.4, `${(r.out / base.out).toFixed(3)}x`);
+});
+/* a tenth language, a second cjk one, so the mix of scripts changes and the estimate must still track the weighting */
+await T.attempt("T23j", async () => {
+  const r = await dryRun({ more: {
+    it: { name: "Italiano", english: "Italian", voice: "informal (tu)", built: false, script: "latin" },
+    ko: { name: "한국어", english: "Korean", voice: "polite (haeyo)", built: false, script: "cjk" } } });
+  T.check("T23j the dry run with a tenth, cjk, language exits 0 and plans ten", r.code === 0 && r.count === 10 && r.langs.size === 10 && r.langs.has("ko"), `exit ${r.code}; ${[...r.langs].join(",")}`);
+  sensible("T23j2", r);
 });
 await T.attempt("T23g", async () => {
   const r = await dryRun({ more: { it: { name: "Italiano", english: "Italian", voice: "informal (tu)", built: false, script: "latin" } } });
