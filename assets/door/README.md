@@ -46,11 +46,12 @@ const journey = door.journey({ canvas, name, dawnGlyph, duskGlyph, on: { dusk, f
 | Setting | What | Site | Orbit |
 | --- | --- | --- | --- |
 | `image(path)` | Where a picture is: `"dawn/dawn.webp"` → a URL the page can load. Never built from `import.meta.url`: in a Vite build that leaks file paths into server-rendered pages and does not resolve in the browser | a relative base | its own map, `import.meta.glob(..., { query: "?url" })` |
-| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded). The folder never reads the address; the host does | from `location.search` | none |
+| `flags` | The debug switches: `door3d`, `rich`, `lean`, `level` (`"0"`–`"2"`), `holdreveal`, `mainthread`, `ring` (`"stop"`/`"rush"`), `open` (`"late"`), `gpu` (`"force"`: the GPU gate accepts a software renderer, see below), `fit` (`"skip"`: the flight world's speed test is not run and the world is taken as fit, the console line saying `on (fitness skipped)`; for a tool that draws pictures on software GL, together with `gpu: "force"`, which it does not imply), `draw` (`"worker"` or `"page"`: where the flight is drawn, whatever the rule says; see The flight in a worker), `decode` (`"img"` or `"blob"`: how the pictures are decoded, whatever the rule says; see Where the pictures are decoded), `sun` (`"page"`: the sun is painted on the page, never in the `sunWorker`; the control), `links` (`"late"`: the flight's shaders asked for only at the host's word; see The flight in a worker). The folder never reads the address; the host does | from `location.search` | none |
 | `storagePrefix` | The first word of every localStorage key the folder writes (`orbit-probe …`) | `orbit` | `orbit` |
 | `settle` | `timeline.js`: ms after the landing at which the instrument arrives (the site's own amendment, 2026-10) | 1100 | 1100 |
 | `typingWait` | `chores.js`: an unhurried chore waits while someone is typing, this long after the last key; 0 never waits (Orbit's addition) | 600 | 600 |
 | `drawWorker` | `() => Worker \| null`: makes a **module** worker running `draw-worker.js`, the flight drawn there where the rule says (below). Absent (the default), no worker is ever made | `() => new Worker("assets/door/draw-worker.js", { type: "module" })` | none yet; when taken up, `() => new Worker(new URL("./draw-worker.js", import.meta.url), { type: "module" })` from its own code |
+| `sunWorker` | `() => Worker \| null`: makes a **module** worker running `sun-worker.js`, in which the dawn's sun is painted and PNG-encoded off the page's thread (the same pixels as the page paints, from `sun.js`). Absent (the default), null, or failing (an error, no picture, no answer in 20 s), the page paints it. No `fonts` needed | `() => new Worker("assets/door/sun-worker.js", { type: "module" })` | none yet; when taken up, `() => new Worker(new URL("./sun-worker.js", import.meta.url), { type: "module" })` from its own code |
 | `fonts` | `[{ family, weight, url }]`: the faces the flight's pens write with, loadable from the page's own origin, the very files the page's stylesheet uses (a worker has none of the page's fonts). Required with `drawWorker`: without it the flight stays on the page | JetBrains Mono, 500, `assets/fonts/jetbrains-mono-latin.woff2` | none yet; its own file's URL through Vite, as its pictures |
 
 ### The dawn: `door.dawn(host)` → `{ start, light, live, destroy, held, world, host }`
@@ -320,8 +321,9 @@ Found by reading what the folder loads (`fetch`, `Image`, `createObjectURL`,
   style object (`style.setProperty`, `style.width`), which a policy does not
   block, and the markup has no `style=""` attribute. A host that keeps
   `'unsafe-inline'` for its own styles loses nothing.
-- `worker-src 'self'` where the host passes `drawWorker` (the folder makes no
-  worker itself, and never from a `blob:`), and `font-src 'self'` for the font
+- `worker-src 'self'` where the host passes `drawWorker` or `sunWorker` (the
+  folder makes no worker itself, and never from a `blob:`; the sun's worker
+  needs nothing else, it fetches nothing), and `font-src 'self'` for the font
   the host names in `fonts`. The worker runs under the page's policy where the
   browser carries it into a dedicated worker (Firefox) and under none where it
   does not (Chromium, where the site sends no headers), so it needs nothing the
@@ -348,9 +350,31 @@ is refused or absent (nothing will compile), `false` under the `mainthread` flag
 nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
 `drawnAside()` (not exported: the journey asks it at its first need, after the gate): whether the flight is drawn
 in a worker, below.
-`FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, which `frameCost(gl, draw)`
-(in `fitness.js`, imported directly by tests) runs on the flight's first proving `warm()`. The console says the
-verdict: `flight world: on (frame N ms)`, or `off: frame N ms`.
+`FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, run on the flight's first
+proving `warm()`: two frames warmed, then whole frames timed one at a time and judged on their median, stopped once
+most of 5 agree (`frameCost(gl, draw)` in `fitness.js`, imported directly by tests, is the same judgement taken back to
+back). Each timed frame is taken only while the GPU is quiet (below), else thrown away. The console says the verdict:
+`flight world: on (frame N ms)`, or `off: frame N ms`; and before it one line of how the frames went: `flight world: N
+frames timed (…), K thrown away`, with `not quiet in time` where the wait ran out.
+
+### What the GPU is busy with (`busy.js`, #104)
+
+A frame timed while another part of the site compiles a program or uploads a picture times that work too, so the
+fitness test times a frame only while nothing else runs. `watch(gl)` → `gl`: a context watched (once, however often
+asked; `null` and `undefined` pass through): a shader or program is under way from `compileShader` / `linkProgram`
+until its status is read (`COMPILE_STATUS`, `LINK_STATUS`, `COMPLETION_STATUS_KHR` answering true) or it is deleted,
+and never longer than 5000 ms; every `texImage*`, `texSubImage*`, `compressed*` and `generateMipmap` is a pulse. The
+door watches its own contexts (the gate's, the live door's); a host watches the contexts it makes itself (the site:
+its planets and its worlds). Each thread keeps its own ledger. A worker's ledger reaches the page as
+`{ type: "busy", n, gen }` posted by its page adapter's `busy({ n, gen })` (`page.js`, an additive change: the default
+does nothing; `draw-worker.js` posts it), and the page tells each worker everyone else's in the same message, never
+the worker's own back. For a host's own worker: `busyPeer(name, post)` → `{ heard(message), gone() }` (the worker's
+`busy` messages heard under a name of its own, everyone else's posted to it as they change, until `gone()`), or by
+hand `busyHeard(name, { n, gen })` and `busyGone(name)`. The test waits for nothing under way anywhere and nothing
+ended for 100 ms; a frame during which anything began, ended or pulsed is thrown away. Bounded: after 8 s of the tab
+shown with no quiet moment, or 10 frames thrown away, the rest are timed whatever runs; hidden, it waits, and the 8 s
+start again when the tab is shown. Under `fit: "skip"` nothing waits. A host that watches nothing has the door as
+before, its own work unseen.
 
 The verdict is kept a week (ADR-0002 6.4): localStorage key `<storagePrefix>-fit <renderer> <w>x<h>@<dpr>` (the
 gate's renderer, the screen and the device pixel ratio), value `{ t, fit, ms }`, valid while
@@ -394,12 +418,26 @@ first need. A host that draws its own worlds in a worker of its own reads it
 before letting the page's context go: a worker that fell back before it was up
 drew on the page, with that context.
 
-Any failure (the worker's `error`, its `up` not ok, a `dead`, and under the
+Any failure (the worker's `error`, its `up` not ok, a `dead` (which says `why`, and `at`: the first lines of the
+stack where it stopped), and under the
 automatic rule no `up` within 5000 ms; under `draw: "worker"` there is no
 limit) falls back to the page: `#warp` is replaced by a fresh canvas with the
 same attributes, `#warpgl` removed, the worker terminated, the pending warm-ups
 asked again of a page engine, and a flight under way picked up where it was.
 The console says `orbit · flight: drawn on the page: <why>`.
+
+Under the flag `links: "late"` (#119), a world made in a worker with no
+background compile (no `KHR_parallel_shader_compile`: Firefox) is made with its
+vertex shader alone, and its three programs (scene, over, post) are asked for
+only at the host's word, `statusGo()` (`status.js`), told on to the worker as
+`status` (to a worker made after it too), or `STATUS_LATE` (9000 ms) after the
+world would have asked, whichever first: built one at a time on the GPU's queue,
+they kept the host's own first work waiting behind them. A flight started gives
+the word itself, and a world lost or taken down while it waits asks for nothing
+(its `warm` is answered not ok). The host gives the word once its first work is
+done, or at once if it readies nothing; without the flag nothing waits, and on
+the page or with the extension the flag changes nothing. `journey.compiled()`
+settles only after the word.
 
 ### Where the pictures are decoded (ADR-0004 6e; Firefox)
 
@@ -441,8 +479,10 @@ above, in place of `createImageBitmap` of the blob), `linked`, `counted`, `note`
 a background compile, `compiledWithin` and `COMPILE_WAIT`), `uploadBanded`, the GPU gate (`gpu`,
 `isSoftware`, `FIT_MS`, below), whether the flight is drawn in a worker
 (`drawnAside()`, for a host that puts its own drawing beside it), whether the pictures are decoded by the image loader
-(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the capability probe
-(`probe`, `level`, `liveDoor`, `lateDoor`), `seededRng`, `el`,
+(`decodeAside()`) and a blob decoded as `fetchBitmap` does (`decodeBlob(blob, options)`), for a host's workers, the host's word
+that its first work is done (`statusGo()`, above: The flight in a worker), the capability probe
+(`probe`, `level`, `liveDoor`, `lateDoor`), what the GPU is busy with (`watch`, `busyHeard`, `busyGone`, `busyPeer`,
+above), `seededRng`, `el`,
 `measureTile`, the engine (`createFlight`, `UP`, `PROPS_UP`, `UPDUR`,
 `homeProps(homes)`, `docsRest`) and its pace (`UPTIME`, `DOWNTIME`, `clockAt`, `paced`: below) and `decodeAhead`, and the glows' graphs (`DAWN`, `DUSK`).
 For a host's own worker, which must answer for the page and run its queue
@@ -450,6 +490,10 @@ unpaced as `draw-worker.js` does: `setPage(over)` (`page.js`: the page's
 answers replaced by the worker's), `pace("none")` (`chores.js`: the rests
 and the one-band-a-frame uploads dropped) and `askPage(post)` (`chores.js`: the worker's `decode(blob, options)`
 for `setPage`, which asks the page and falls back to decoding here, and `heard(message)` for the page's `decoded`).
+Such a worker wraps every canvas the page hands it in `askedOnce(canvas)` (`page.js`) before anything asks it for a
+context: each kind of context is then made once and given to every later ask. Firefox 159 refuses a second
+`getContext` made in a worker on a canvas handed over, whatever it asks for, and the worker stops (#154). Its `dead`
+can say where with `stoppedAt(error)` (`page.js`: the first lines of the stack, without the line repeating the message).
 All of them are optional: a host that uses none of them has the door as before.
 `page.decode(blob, options)` (`page.js`) is an additive change to the page interface (#113), and `picture`'s `loaded`
 is called once the picture's `decode()` has settled rather than at `load`. A host's own page adapter given to `setPage`
@@ -513,15 +557,18 @@ changed (additive interface change, 2026-11, #151).
 | `journey.js` | The journey's clock and `createJourney` |
 | `engine.js`, `timeline.js`, `voyage.js` | The flight's canvas engine and its pace, its beats, its WebGL world |
 | `door3d.js` | The live door: the Earth drawn as it is, where the level allows |
-| `fitness.js` | The GPU gate (`gpu()`), the fitness test (`frameCost`), the software renderers refused |
+| `fitness.js` | The GPU gate (`gpu()`), the fitness budget and `frameCost`, the back-to-back judgement tests import (the flight world's own verdict is `voyage.js` `quietFitness`), the software renderers refused |
+| `busy.js` | What the GPU is busy with, for the fitness test's quiet frames (`watch`, the ledger, what workers tell the page) |
 | `capability.js` | The probe for the live door (`?door3d`), and the level it gives |
-| `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands |
+| `chores.js`, `upload.js` | The background work a piece at a time; pictures put on the GPU in bands, a flight map's ready-made sizes smallest first (`uploadSized`, eased in by `easeLevels`) |
 | `page.js` | The page as the flight's modules see it (size, frames, visibility, pictures, the console): every touch of the page by `engine.js`, `voyage.js`, `chores.js` and `fitness.js` goes through it (ADR-0004 6a.2); in the worker, `draw-worker.js` answers for it (`setPage`) |
 | `remote-flight.js` | The flight drawn in a worker, as the page sees it: the engine's surface, the messages, the fallback |
 | `draw-worker.js` | The worker's entry (the host's `drawWorker` runs it): the handshake, the engine on the handed-over canvases |
+| `sun-worker.js`, `sun.js` | The sun painted in the host's `sunWorker`: the worker's entry, and the DOM-free band routine (`sunBand`) it shares with the page's own path in `glows.js` |
 | `stars.js`, `glows.js` | The star fields; the glows' graphs and the sun painted per size |
 | `decode-ahead.js` | Pictures decoded before they are shown |
 | `markup.js`, `door.css` | The markup and the stylesheet |
 | `img/dawn/` | The door's Earth (`dawn-pre`, `dawn`), its glows, the gold planet (`planet-gold`, the goodbye's under `asDawn`), and the near maps and light strips the live door draws |
 | `img/dusk/` | The dusk's glows |
 | `img/flight/` | The flight's Earth maps and the gold moon |
+| `img/{flight,dawn}/<map>-<width>.webp` | Each flight map's smaller sizes (#148; `tools/map-sizes.py`, `voyage.js` `FULL` and `SIZED_PATHS`). A host's `image()` places them as it places the full maps; one that returns these paths unchanged gets the full maps whole, as before |

@@ -424,18 +424,31 @@ export function messageFindings(line) {
   return found;
 }
 
+/* #167: main's own commits are already public, so only the commits a branch adds are checked. The first of these
+   that exists is main: the GitLab remote, the origin remote, the local branch. Nothing else is taken for main. */
+const MAIN_REFS = ["refs/remotes/gitlab/main", "refs/remotes/origin/main", "refs/heads/main"];
+function mainRef() {
+  return MAIN_REFS.find((ref) => spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], { cwd: root, stdio: "ignore" }).status === 0);
+}
+
 /* `<short id> author|committer|message (<categories>)` for every commit reachable
-   from HEAD with a banned login or email in the author or committer name or
+   from HEAD and not from main (#167) with a banned login or email in the author or committer name or
    email (a login also as the email's local part), a banned word, login, email or
    private address in the full message (trailers included; the banned word is
    allowed in a person trailer's name), or AI attribution. Never the value. A
    shallow clone cannot see the whole history, so it is refused rather than passed. */
 function commitHits() {
   if (git("rev-parse", "--is-shallow-repository").trim() === "true") return null;
+  const main = mainRef();
+  if (!main) {
+    console.log("no-real-names: main could not be found, so new commits cannot be told apart: fetch main (git fetch origin main)");
+    process.exit(1); // fails closed: without main every commit would look new, or none would be checked
+  }
   const hits = [];
-  const fields = git("log", "-z", "--format=%h%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD").split("\0");
+  const fields = git("log", "-z", "--format=%H%x00%ae%x00%ce%x00%an%x00%cn%x00%B", "HEAD", "--not", main).split("\0");
   for (let i = 0; i + 5 < fields.length; i += 6) {
-    const [id, ae, ce, an, cn, message] = fields.slice(i, i + 6);
+    const [full, ae, ce, an, cn, message] = fields.slice(i, i + 6);
+    const id = full.slice(0, 7);
     const author = personFindings(an, ae);
     if (author.length) hits.push(`${id} author (${author.join(", ")})`);
     const committer = personFindings(cn, ce);

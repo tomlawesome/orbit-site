@@ -111,10 +111,11 @@ const src = fs.readFileSync(at(".gitlab-ci.yml"), "utf8");
 // 1 or the like (a boolean, null or number to one reader or both). The variables
 // publish_docs's image reads are defined once, in the global variables.
 
-// publish_docs's image, as .gitlab-ci.yml has it. The image runs beside the
-// token, so changing it is a deliberate edit to this check, not to the CI file alone.
-const PUBLISH_IMAGE = "$NODE_IMAGE";
-const IMAGE_VARS = new Set([...PUBLISH_IMAGE.matchAll(/\$\{?(\w+)\}?/g)].map((m) => m[1]));
+// The global variable the jobs' images read, defined once and pinned. A job
+// holding a secret does not read it: a pipeline variable outranks the file's
+// own variables, so it names its image itself, the same text (secretImage).
+const IMAGE_VARS = new Set(["NODE_IMAGE"]);
+const PINNED_IMAGE = /^[a-z0-9_-]+(?:\/[a-z0-9._-]+)*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/;
 const NAME = /^\.?[A-Za-z_][A-Za-z0-9_.:/ -]*$/, NOT_NAME = /^(y|n|yes|no|on|off|true|false|null|\.inf|\.nan)$/i;
 const E = yaml.EVENT_ID, STYLE = yaml.SCALAR_STYLE;
 let events;
@@ -197,10 +198,20 @@ try {
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) stop(".gitlab-ci.yml: is not a mapping of jobs");
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+// A job holding a secret names its own image, written and as GitLab runs it: a
+// string with no variable in it, pinned to a digest, and the global NODE_IMAGE's
+// text, so Renovate's one bump moves all of them or this fails. A pipeline
+// variable outranks the file's own variables, so $NODE_IMAGE there would be the
+// starter's image, run beside the secret.
+const secretImage = (name, own, ex, what) => {
+  const want = isObj(doc.variables) ? doc.variables.NODE_IMAGE : undefined;
+  const ok = (v) => typeof v === "string" && !v.includes("$") && PINNED_IMAGE.test(v) && v === want;
+  if (!(ok(own.image) && ex.image === own.image)) bad(`.gitlab-ci.yml: ${name} must set its own image to the global NODE_IMAGE's text, written out (${JSON.stringify(want ?? null)}): no variable in it, pinned to a digest; found: ${Object.hasOwn(own, "image") ? JSON.stringify(ex.image) : "none of its own"}; a pipeline variable outranks the file's variables, and the image runs beside the ${what}`);
+};
 // the one global definition of each variable the image reads is pinned to a digest
 for (const v of IMAGE_VARS) {
   const val = isObj(doc.variables) ? doc.variables[v] : undefined;
-  if (!(typeof val === "string" && /^[a-z0-9_-]+(?:\/[a-z0-9._-]+)*:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$/.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that is a plain Docker Hub name (no registry host, no variable) and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
+  if (!(typeof val === "string" && PINNED_IMAGE.test(val))) bad(`.gitlab-ci.yml: the global ${v} must be a string that is a plain Docker Hub name (no registry host, no variable) and pins a digest, found: ${JSON.stringify(val ?? null)}; publish_docs's image reads it`);
 }
 // whether a mapping in the set (LATE or TWICE) is in v, replaced values included
 const within = (set, v, seen = new Set()) => {
@@ -488,8 +499,10 @@ for (const j of SCANS) {
   if (String(v.GIT_DEPTH) !== "0") bad(".gitlab-ci.yml: the job scan:gitleaks must set GIT_DEPTH: 0, or it scans only part of the history (#143)");
 }
 
-// the owner's hand-started translation (#141) skips the test jobs, never a secret scan: the skip is the rule
-// entry .not_translation (by alias or written out), before any entry that would run the job
+// the owner's hand-started translation (#141) leaves the test jobs unrun, never a secret scan: the entry is
+// .not_translation (by alias or written out), before any entry that would run the job. It is a blocking manual
+// entry (when: manual, allow_failure: false), never when: never: a pipeline whose test jobs were skipped is green
+// and can stand as a merge request's passing pipeline; one with a blocking manual job shows blocked
 const TRANSLATION_SKIP = '$CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"';
 const SKIPS_ON_TRANSLATION = ["live:firefox", "live:chromium", "coverage", "lint:test", "lint:import"];
 // a rules list as GitLab runs it: each !reference to a key of the file replaced by the entries it names ([key, rules],
@@ -511,16 +524,24 @@ const ruleEntries = (v, seen = new Set(), depth = 0) => {
   for (const p of path.slice(path[1] === "rules" ? 2 : 1)) at = isObj(at) && Object.hasOwn(at, p) ? at[p] : (Array.isArray(at) && /^\d+$/.test(p) ? at[Number(p)] : undefined);
   return at === undefined ? [UNFOLLOWED] : ruleEntries(at, new Set([...seen, key]), depth + 1);
 };
-const isTranslationSkip = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP;
-const mentionsTranslate = (e) => isObj(e) && e.when === "never" && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
+const isTranslationSkip = (e) => isObj(e) && typeof e.if === "string" && e.if.replace(/\s+/g, " ").trim() === TRANSLATION_SKIP
+  && e.when === "manual" && e.allow_failure === false && Object.keys(e).length === 3;
+const mentionsTranslate = (e) => isObj(e) && typeof e.if === "string" && /\$TRANSLATE\b/.test(e.if);
 for (const j of SKIPS_ON_TRANSLATION) {
   const list = ruleEntries(rulesOf(j) ?? []);
+  if (list.some((e) => mentionsTranslate(e) && e.when === "never")) bad(`.gitlab-ci.yml: the job ${j} skips the translation pipeline with when: never, which leaves that pipeline green with no test run, so it could stand as a merge request's passing pipeline; its entry is - *not_translation (when: manual, allow_failure: false)`);
   const at = list.findIndex(isTranslationSkip);
-  const runs = list.findIndex((e) => !(isObj(e) && e.when === "never"));
-  if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141): put - *not_translation in its rules, before any entry that runs it`);
+  const runs = list.findIndex((e) => !(isObj(e) && (e.when === "never" || isTranslationSkip(e))));
+  if (at < 0 || (runs >= 0 && runs < at)) bad(`.gitlab-ci.yml: the job ${j} must not run in the owner's translation pipeline (#141) and must leave it blocked, not passed: put - *not_translation (if: ${TRANSLATION_SKIP}, when: manual, allow_failure: false, nothing else) in its rules, before any entry that runs it`);
+}
+// the workflow admits the hand-started translation on dev and the batches only, the two translation jobs' own
+// rule: on any other branch it has nothing to run, and that branch is tested by its merge request
+{
+  const admits = ruleEntries(isObj(doc.workflow) ? doc.workflow.rules ?? [] : []).filter(mentionsTranslate);
+  if (!(admits.length === 1 && admits[0].if === TRANSLATE_RULES[1])) bad(`.gitlab-ci.yml: the workflow must admit the hand-started translation pipeline ($TRANSLATE) by exactly one rule, if: ${TRANSLATE_RULES[1]}, found: ${admits.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
 }
 for (const j of SCANS) {
-  if (ruleEntries(rulesOf(j) ?? []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} skips on the translation pipeline ($TRANSLATE); the secret scans and the lint run on every pipeline (#141)`);
+  if (ruleEntries(rulesOf(j) ?? []).some(mentionsTranslate)) bad(`.gitlab-ci.yml: the job ${j} has a rule entry on the translation pipeline ($TRANSLATE), manual or never; the secret scans and the lint run on every pipeline (#141)`);
 }
 
 // so could a child pipeline (trigger: include, a file, a list or an artifact),
@@ -572,9 +593,8 @@ const publishJob = (name, pub, need, PUBLISH_LINE) => {
     if (h === "script" && !from) bad(`.gitlab-ci.yml: ${name} runs npm or another package manager; it holds the token and runs no third-party code`);
     else bad(`.gitlab-ci.yml: ${name} runs npm or another package manager ${from ? `in the ${h} it takes from default` : `in its ${h}`}; it holds the token and runs no third-party code`);
   }
-  // the image runs beside the token, so publish_docs names its own, and it is
-  // PUBLISH_IMAGE; NODE_IMAGE itself is pinned to a digest by lint.sh
-  if (pub.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: ${name} must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(pub, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the token`);
+  // the image runs beside the token, so the job names its own (secretImage)
+  secretImage(name, pub, ex, "token");
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(`.gitlab-ci.yml: ${name} sets NODE_IMAGE in its variables, which would change its image; the image runs beside the token`);
   if (Object.hasOwn(ex, "services")) bad(`.gitlab-ci.yml: ${name} has services; a service container runs beside the token`);
   // What runs beside the token is exactly what is written (#60 round 4): the
@@ -659,7 +679,7 @@ if (trn !== null) {
   for (const [key, why] of [["hooks", "a hook runs shell commands beside the key"], ["cache", "a cache holds files other jobs, which run npm, can write"], ["services", "a service container runs beside the key"]]) {
     if (Object.hasOwn(ex, key) || Object.hasOwn(def, key)) bad(`.gitlab-ci.yml: translate_docs has ${key}${Object.hasOwn(ex, key) ? "" : " from default"}; ${why}`);
   }
-  if (trn.image !== PUBLISH_IMAGE || ex.image !== PUBLISH_IMAGE) bad(`.gitlab-ci.yml: translate_docs must set its own image: ${PUBLISH_IMAGE}, found: ${Object.hasOwn(trn, "image") ? JSON.stringify(ex.image) : "none of its own"}; the image runs beside the key`);
+  secretImage("translate_docs", trn, ex, "key");
   if (isObj(ex.variables) && Object.hasOwn(ex.variables, "NODE_IMAGE")) bad(".gitlab-ci.yml: translate_docs sets NODE_IMAGE in its variables, which would change its image; the image runs beside the key");
   const LINE = "sh tools/ci/nightly-translate.sh";
   const script = lines(ex.script);
@@ -718,6 +738,27 @@ for (const t of strings(doc)) if (t.includes("TRANSLATE_MAX_TOKENS")) { bad(".gi
 if (isObj(doc.default) && (Object.hasOwn(doc.default, "services") || (isObj(expand("default")) && Object.hasOwn(expand("default"), "services")))) bad(".gitlab-ci.yml: default has services; they would run beside the token in publish_docs");
 
 const read = (p) => (fs.existsSync(at(p)) ? fs.readFileSync(at(p), "utf8") : null);
+// Release readiness (#156): `release_readiness` runs only on a merge request from dev into main (that rule, then
+// `when: never`, so no other pipeline gets it), and every other job waits for it, by stage or by an optional need.
+// A job with an empty `needs` would start beside it, so none has one but the two secret scans' `private-details`
+// and `scan:gitleaks` (cheap; judged by nothing the readiness depends on) and translate_docs, which the check
+// above holds to `needs: []` itself (a need on another job could bring a dotenv report into the job with the key;
+// it never runs on a merge request).
+const READY_RULES = [`$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "dev" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"`];
+const ready = job("release_readiness");
+if (ready === null) bad(".gitlab-ci.yml: there is no release_readiness job");
+else {
+  const rules = Array.isArray(ready.rules) ? ready.rules : ready.rules === undefined ? [] : [ready.rules];
+  const exact = rules.length === 2 && isObj(rules[0]) && Object.keys(rules[0]).length === 1 && rules[0].if === READY_RULES[0]
+    && isObj(rules[1]) && Object.keys(rules[1]).length === 1 && rules[1].when === "never";
+  if (!exact) bad(`.gitlab-ci.yml: release_readiness rules must be exactly the dev into main merge request rule (if: ${READY_RULES[0]}) followed by when: never, found: ${rules.map((r) => JSON.stringify(r)).join(" | ") || "none"}`);
+}
+const MAY_START_BESIDE = ["scan:gitleaks", "private-details", "release_readiness", "translate_docs"];
+for (const [name, j] of Object.entries(doc)) {
+  if (name.startsWith(".") || !isObj(j) || MAY_START_BESIDE.includes(name)) continue;
+  if (Array.isArray(j.needs) && j.needs.length === 0) bad(`.gitlab-ci.yml: ${name} has needs: [], so it would start beside release_readiness; say needs: [{ job: release_readiness, optional: true }] (only the secret scans start beside it)`);
+}
+
 const imps = read("tools/ci/nightly-import.sh"), pubs = read("tools/ci/nightly-publish.sh");
 if (imps === null) bad("tools/ci/nightly-import.sh: is missing");
 else {

@@ -197,58 +197,199 @@ export function uploadBanded(gl, bitmap, { internal = gl.RGBA8, format = gl.RGBA
   /* (the probe's GPU part is a chore of its own, once a context: it takes its turn like a band, and not before the chores may run) */
   return cropHonoured(gl, (fn) => chore(fn, 0, tag, { soft: true })).then((ok) => (ok ? inBands() : whole()));
   function inBands() {
-    let /** @type {WebGLTexture | null} */ t = null, rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
-    /* (seen once on the laptop in Firefox and not again: a first band of 1012 ms, with the browser's warning that a
-       texture made empty is cleared on its first partial upload; every other run cleared in 0-1 ms. Said with the
-       bands: how long the first band's own bitmap took to come and how long its copy took, to tell a deferred decode
-       from a slow clear if it is ever seen again) */
-    /* a band's own bitmap, cut from the picture (off the page's thread) */
-    /** @param {number} y @returns {Promise<Band>} */
-    const cut = (y) => {
-      const n = Math.min(rows, h - y), c0 = performance.now(), p = createImageBitmap(bitmap, 0, y, w, n, CUT).then((bm) => { if (!y) firstCut = performance.now() - c0; return { y, n, bm }; });
-      /* (a cut that fails is said where it is waited for, not before) */
-      p.catch(() => {});
-      return p;
-    };
-    /* a band put in, in its own soft chore (the texture made with the first); how long the copy took (ms) */
-    /** @param {Band} band @returns {Promise<number>} */
-    const put = ({ y, n, bm }) => chore(() => {
-      alive();
+    let /** @type {WebGLTexture | null} */ t = null;
+    /* (the texture made with the first band) */
+    const bind = () => {
       if (!t) {
         t = gl.createTexture(); gl.bindTexture(T, t);
         gl.texImage2D(T, 0, internal, w, h, 0, format, type, null);
         params(t);
       } else gl.bindTexture(T, t);
-      const t0 = performance.now();
-      gl.texSubImage2D(T, 0, 0, y, w, n, format, type, bm);
-      return performance.now() - t0;
-    }, 0, tag, { soft: true }).finally(() => bm.close?.());
-    const bandsIn = (async () => {
-      /** @type {Promise<Band> | null} */ let next = cut(0);
-      try {
-        for (;;) {
-          /** @type {Band} */ const band = await next;
-          /* the next band's bitmap cut while this one waits its turn */
-          /** @type {number} */ const end = band.y + band.n;
-          next = end < h ? cut(end) : null;
-          const ms = await put(band);
-          if (!bands++) firstBand = ms;
-          if (ms > SLOW) rows = Math.max(FEWEST, rows >> 1);
-          longest = Math.max(longest, ms);
-          if (!next) break;
-        }
-      } catch (e) {
-        next?.then((b) => b.bm.close?.(), () => {});
-        drop(t);
-        throw e;
-      } finally {
-        if (!keep) bitmap.close?.();
-      }
-      if (say()) note(`upload: ${name} ${w}x${h} in ${bands} bands, longest ${longest.toFixed(1)} ms (the first: cut ${firstCut.toFixed(0)} ms, copied ${firstBand.toFixed(1)})`);
-      /* (t is set by the first band put in, in put(), a closure; the checker narrows it to null here) */
+    };
+    const bandsIn = bandsInto(gl, bitmap, 0, bind, { format, type, tag, name, keep, alive }).then(() => {
+      /* (t is set by the first band put in, in bind(), a closure; the checker narrows it to null here) */
       drawable?.(/** @type {WebGLTexture} */ (/** @type {unknown} */ (t)));
       return /** @type {WebGLTexture} */ (/** @type {unknown} */ (t));
-    })();
+    }, (e) => { drop(t); throw e; });
     return mips ? bandsIn.then((tx) => chore(() => { try { alive(); levels(tx); } catch (e) { drop(tx); throw e; } return tx; }, 60, tag)) : bandsIn;
   }
+}
+
+/** a picture's rows put into one level of a texture a band at a time, each band a soft chore (bind(): the texture bound,
+    made with the first band if the caller makes it then); the bitmap closed at the end unless keep. Resolves once the
+    last band is in
+ * @param {WebGL2RenderingContext} gl @param {ImageBitmap} bitmap @param {number} level
+ * @param {() => void} bind
+ * @param {{ format: number, type: number, tag: Tag, name: string, keep: boolean, alive: () => void }} o
+ * @returns {Promise<void>}
+ */
+function bandsInto(gl, bitmap, level, bind, { format, type, tag, name, keep, alive }) {
+  const T = gl.TEXTURE_2D, w = bitmap.width, h = bitmap.height;
+  let rows = Math.min(h, Math.max(FEWEST, Math.floor(BYTES / (w * 4)))), bands = 0, longest = 0, firstCut = 0, firstBand = 0;
+  /* (seen once on the laptop in Firefox and not again: a first band of 1012 ms, with the browser's warning that a
+     texture made empty is cleared on its first partial upload; every other run cleared in 0-1 ms. Said with the
+     bands: how long the first band's own bitmap took to come and how long its copy took, to tell a deferred decode
+     from a slow clear if it is ever seen again) */
+  /* a band's own bitmap, cut from the picture (off the page's thread) */
+  /** @param {number} y @returns {Promise<Band>} */
+  const cut = (y) => {
+    const n = Math.min(rows, h - y), c0 = performance.now(), p = createImageBitmap(bitmap, 0, y, w, n, CUT).then((bm) => { if (!y) firstCut = performance.now() - c0; return { y, n, bm }; });
+    /* (a cut that fails is said where it is waited for, not before) */
+    p.catch(() => {});
+    return p;
+  };
+  /* a band put in, in its own soft chore; how long the copy took (ms) */
+  /** @param {Band} band @returns {Promise<number>} */
+  const put = ({ y, n, bm }) => chore(() => {
+    alive();
+    bind();
+    const t0 = performance.now();
+    gl.texSubImage2D(T, level, 0, y, w, n, format, type, bm);
+    return performance.now() - t0;
+  }, 0, tag, { soft: true }).finally(() => bm.close?.());
+  return (async () => {
+    /** @type {Promise<Band> | null} */ let next = cut(0);
+    try {
+      for (;;) {
+        /** @type {Band} */ const band = await next;
+        /* the next band's bitmap cut while this one waits its turn */
+        /** @type {number} */ const end = band.y + band.n;
+        next = end < h ? cut(end) : null;
+        const ms = await put(band);
+        if (!bands++) firstBand = ms;
+        if (ms > SLOW) rows = Math.max(FEWEST, rows >> 1);
+        longest = Math.max(longest, ms);
+        if (!next) break;
+      }
+    } catch (e) {
+      next?.then((b) => b.bm.close?.(), () => {});
+      throw e;
+    } finally {
+      if (!keep) bitmap.close?.();
+    }
+    if (say()) note(`upload: ${name} ${w}x${h}${level ? ` (level ${level})` : ""} in ${bands} bands, longest ${longest.toFixed(1)} ms (the first: cut ${firstCut.toFixed(0)} ms, copied ${firstBand.toFixed(1)})`);
+  })();
+}
+
+/* ── a map whose smaller sizes come ready-made (#148) ──────────────────────
+   The standard pattern, progressive texture streaming: the texture's storage made at once for the largest size this
+   screen fetches (texStorage2D, every level), the smallest size put into its own level first, whole (a 512-wide
+   picture: a frame-sized chore), the levels below it made from it by the one generateMipmap the map ever has (from the
+   smallest: TEXTURE_BASE_LEVEL set to it for the call), and the texture drawn at once, held to that level by
+   TEXTURE_MIN_LOD. Each larger size then lands in its own level (in bands where the crop is honoured, as uploadBanded;
+   whole otherwise), and the texture's least level of detail is eased down to it over EASE ms (easeLevels, called by
+   whoever draws, before each frame), so a sharper size comes in as a sharpening, never a jump; a chore sets the last
+   value when the ease is over, whether anything was drawn or not */
+const EASE = 1000;
+/* the pause before a dropped larger size is asked for once more, ms */
+const RETRY = 1500;
+/** @typedef {{ t: WebGLTexture, from: number, to: number, at: number }} Ease a texture's least level easing down */
+/** @type {WeakMap<WebGL2RenderingContext, Set<Ease>>} */
+const easing = new WeakMap();
+/** @param {Ease} e @param {number} now */
+const easeAt = (e, now) => { const k = Math.min(1, Math.max(0, (now - e.at) / EASE)); return e.from + (e.to - e.from) * k * k * (3 - 2 * k); };
+/** the eases under way on this context, each texture's least level set to where it is now: called before a frame is
+    drawn (it binds on unit 0 and leaves nothing bound there; every draw binds its own maps after) @param {WebGL2RenderingContext} gl */
+export function easeLevels(gl) {
+  const set = easing.get(gl);
+  if (!set?.size || gl.isContextLost()) return;
+  const now = performance.now(), T = gl.TEXTURE_2D;
+  gl.activeTexture(gl.TEXTURE0);
+  for (const e of set) {
+    if (!gl.isTexture(e.t)) { set.delete(e); continue; }
+    gl.bindTexture(T, e.t); gl.texParameterf(T, gl.TEXTURE_MIN_LOD, easeAt(e, now));
+  }
+  gl.bindTexture(T, null);
+}
+/** @typedef {{ url: string, w: number, h: number }} Size one size of a map: where it is, and its width and height */
+/**
+ * @typedef {object} SizedOptions
+ * @property {(url: string) => Promise<ImageBitmap>} decode the picture at an address, decoded (chores.js: fetchBitmap)
+ * @property {Tag} [tag] the first size's chore and the eases' (default "")
+ * @property {Tag} [more] the larger sizes' chores (default: tag)
+ * @property {string} [name]
+ * @property {(gl: WebGL2RenderingContext, texture: WebGLTexture) => void} [setup] the caller's own parameters (wrap modes)
+ * @property {(gl: WebGL2RenderingContext, texture: WebGLTexture) => void} [after] and the rest (anisotropy)
+ * @property {() => boolean} [gone] the caller is taken down: no larger size is asked for or put in after it says so
+ */
+/**
+ * A map's sizes (largest first, each the next level of the texture: level i is floor(w0 / 2^i) wide) put on the GPU
+ * smallest first. `first`: resolves with the texture once the smallest size is in and it may be drawn; `more()`: then
+ * each larger size in turn, resolving once the last is in and its ease over (never rejecting: a size that fails leaves
+ * the texture as sharp as it was, and says so)
+ * @param {WebGL2RenderingContext} gl
+ * @param {Size[]} sizes
+ * @param {SizedOptions} options
+ * @returns {{ first: Promise<WebGLTexture | null>, more: () => Promise<void> }} (first: null once gone)
+ */
+export function uploadSized(gl, sizes, { decode, tag = "", more: moreTag = tag, name = "map", setup, after, gone = () => false }) {
+  const T = gl.TEXTURE_2D, s = sizes.length - 1, top = sizes[0];
+  const levels = Math.floor(Math.log2(Math.max(top.w, top.h))) + 1;
+  const alive = () => { if (gl.isContextLost()) throw new Error(`upload: ${name}: the context was lost`); };
+  /** @param {ImageBitmap} bm @param {Size} z */
+  const fits = (bm, z) => { if ((bm.width !== z.w || bm.height !== z.h) && say()) note(`upload: ${name}: ${bm.width}x${bm.height} where ${z.w}x${z.h} was expected (tools/map-sizes.py)`); };
+  /** @type {WebGLTexture | null} */
+  let t = null;
+  /* (stopped before it is in: nothing put on the GPU, and null for the texture) */
+  const first = decode(sizes[s].url).then((bm) => (gone() ? (bm.close?.(), null) : chore(() => {
+    if (gone()) { bm.close?.(); return null; }
+    try {
+      alive(); fits(bm, sizes[s]);
+      t = gl.createTexture(); gl.bindTexture(T, t);
+      gl.texStorage2D(T, levels, gl.RGBA8, top.w, top.h);
+      gl.texSubImage2D(T, s, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+      /* the levels below the smallest size, made from it: the one generateMipmap, on the smallest */
+      gl.texParameteri(T, gl.TEXTURE_BASE_LEVEL, s); gl.generateMipmap(T); gl.texParameteri(T, gl.TEXTURE_BASE_LEVEL, 0);
+      if (s) gl.texParameterf(T, gl.TEXTURE_MIN_LOD, s);
+      gl.texParameteri(T, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(T, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      setup?.(gl, t); after?.(gl, t);
+      if (say()) note(`upload: ${name} ${sizes[s].w}x${sizes[s].h} first, of ${s + 1} sizes up to ${top.w}x${top.h}`);
+      return t;
+    } catch (e) { if (t) try { gl.deleteTexture(t); } catch { /* a lost context */ } t = null; throw e; }
+    finally { bm.close?.(); }
+  }, 0, tag, { soft: true })));
+  /* the texture eased to a level from wherever it is now; a chore puts the last value in once the ease is over */
+  /** @param {WebGLTexture} tx @param {number} to @returns {Promise<void>} */
+  const ease = (tx, to) => {
+    let set = easing.get(gl);
+    if (!set) easing.set(gl, (set = new Set()));
+    const now = performance.now();
+    let from = to + 1;
+    for (const e of set) if (e.t === tx) { from = easeAt(e, now); set.delete(e); }
+    /** @type {Ease} */
+    const e = { t: tx, from, to, at: now };
+    set.add(e);
+    return new Promise((r) => setTimeout(r, EASE)).then(() => chore(() => {
+      if (!set.has(e)) return;
+      set.delete(e);
+      if (gl.isContextLost() || !gl.isTexture(tx)) return;
+      gl.bindTexture(T, tx); gl.texParameterf(T, gl.TEXTURE_MIN_LOD, to || -1000);
+    }, 0, tag, { soft: true }));
+  };
+  const more = () => first.then(async (tx) => {
+    if (!tx) return;
+    let k = s - 1;
+    try {
+      for (; k >= 0; k--) {
+        if (gone()) return;
+        /* a download that dropped is asked for once more, a moment later (the door's and the flight's retry of a smallest
+           size, voyage.js: warm); if that drops too, the size it has is kept (below) */
+        const bm = await decode(sizes[k].url).catch(async () => { await new Promise((r) => setTimeout(r, RETRY)); return gone() ? null : decode(sizes[k].url); });
+        if (!bm) return;
+        if (gone()) { bm.close?.(); return; }
+        fits(bm, sizes[k]);
+        const level = k;
+        /* (stopped part-way: the texture is someone else's to give back, never bound again here) */
+        const bind = () => { if (gone()) throw new Error(`upload: ${name}: stopped`); gl.bindTexture(T, tx); };
+        if (holdReveal() || unpaced() || !(await cropHonoured(gl, (fn) => chore(fn, 0, moreTag, { soft: true })))) {
+          await chore(() => { try { alive(); bind(); gl.texSubImage2D(T, level, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, bm); } finally { bm.close?.(); } }, 60, moreTag);
+        } else await bandsInto(gl, bm, level, bind, { format: gl.RGBA, type: gl.UNSIGNED_BYTE, tag: moreTag, name, keep: false, alive });
+        if (gone()) return;
+        if (say()) note(`upload: ${name} ${sizes[k].w}x${sizes[k].h} in, eased in over ${EASE / 1000} s`);
+        /* (a larger size's ease is not waited for; a chore of it that throws is let go, the level as it was) */
+        if (k) ease(tx, k).catch(() => {}); else await ease(tx, 0);
+      }
+    } catch (e) { if (!gone()) console.warn(`orbit: ${name} stays at ${sizes[k + 1]?.w ?? "its smallest"} wide`, e); }
+  });
+  return { first, more };
 }

@@ -81,6 +81,10 @@ git init -q
 export GIT_CONFIG_GLOBAL=/dev/null
 git add -A
 git -c user.name=t -c user.email=t@t commit -q -m base
+# the names guard reads only commits not on main (#167): main stays at this base, and every case commits on a
+# work branch, so the commits the cases plant are the new ones it judges
+git checkout -q -B work
+git branch -f main work
 
 failed=0
 
@@ -733,6 +737,39 @@ split_case "t8: TRANSLATE_MAX_TOKENS in the pipeline-wide variables" $ci "TRANSL
 # marks the job line with a comment, so it changes the file whether the shipped job has the line or not.
 split_case "t9: translate_docs without needs: [] (it would take earlier stages' artifacts)" $ci "translate_docs.*needs" '
   y = y.replace(/(\ntranslate_docs:\n(?:(?:  [^\n]*)?\n)*?)  needs: \[\]\n/, (m, a) => a).replace("\ntranslate_docs:\n", "\ntranslate_docs: # no needs\n");'
+# Cases (rr1)-(rr4) (#156): release_readiness exists, runs only on a merge request from dev into main, and no job but the
+# secret scans and translate_docs starts beside it with an empty needs. Each edit changes the shipped file.
+split_case "rr1: no release_readiness job" $ci "no release_readiness job" '
+  y = y.replace("\nrelease_readiness:\n", () => "\nrelease_readiness_x:\n");'
+split_case "rr2: release_readiness on every merge request (wider rule)" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n)    - if: [^\n]*\n/, (m, a) => a + "    - if: $CI_PIPELINE_SOURCE == \"merge_request_event\"\n");'
+split_case "rr3: release_readiness without the closing when: never" $ci "release_readiness rules must be" '
+  y = y.replace(/(\nrelease_readiness:[\s\S]*?  rules:\n    - if: [^\n]*\n)    - when: never\n/, (m, a) => a);'
+split_case "rr4: live:firefox with needs: []" $ci "live:firefox has needs" '
+  y = y.replace(/(\nlive:firefox:[\s\S]*?)  needs: \[\{ job: release_readiness, optional: true \}\]\n/, (m, a) => a + "  needs: []\n");'
+# Cases t10-t13 (audit finding SEC-8, #158): the job that holds a secret names its image itself. A pipeline variable
+# outranks the file's own `variables:`, so `image: $NODE_IMAGE` on translate_docs, publish_translations or publish_docs
+# lets whoever starts a web pipeline with NODE_IMAGE run an image of their choice beside the key or the token. The three
+# jobs take the pinned literal, equal to the global NODE_IMAGE. Each refusal names .gitlab-ci.yml, the job and "image".
+# Each case edits the one job and leaves the other two as committed; t10 writes the variable form with a trailing
+# comment, so its edit changes the file whether or not the committed job already carries the literal. (t11-t13 are already refused by the old check, which wants "$NODE_IMAGE"
+# exactly; they are here so the new check, which wants the literal, keeps refusing them.)
+ti_js='
+  const GLOBAL_IMAGE = /^  NODE_IMAGE: (\S+)\s*$/m.exec(y)[1];
+  const setImage = (y, job, img) => {
+    const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
+    if (!m) throw new Error("no job " + job);
+    const b = m[0].replace(/^  image: .*$/m, () => "  image: " + img);
+    return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
+  };'
+split_case "t10: translate_docs on image: \$NODE_IMAGE (a pipeline variable rebinds it)" $ci "translate_docs.*image|image.*translate_docs" "$ti_js"'
+  y = setImage(y, "translate_docs", "$NODE_IMAGE # a pipeline variable outranks the file");'
+split_case "t11: publish_translations on image: \${NODE_IMAGE}" $ci "publish_translations.*image|image.*publish_translations" "$ti_js"'
+  y = setImage(y, "publish_translations", "${NODE_IMAGE}");'
+split_case "t12: publish_docs on the literal with one digit of the digest changed" $ci "publish_docs.*image|image.*publish_docs" "$ti_js"'
+  y = setImage(y, "publish_docs", GLOBAL_IMAGE.slice(0, -1) + (GLOBAL_IMAGE.endsWith("0") ? "1" : "0"));'
+split_case "t13: translate_docs on a literal with a variable inside the digest" $ci "translate_docs.*image|image.*translate_docs" "$ti_js"'
+  y = setImage(y, "translate_docs", "node:24-bookworm@\$DIGEST");'
 split_case "the import script naming the token" tools/ci/nightly-import.sh "names the token" '
   y = y.replace("DRY_RUN=${DRY_RUN:-}\n", "DRY_RUN=${DRY_RUN:-}\ntoken=${ORBIT_SITE_IMPORT_TOKEN:-}\n");'
 split_case "the import script calling the API" tools/ci/nightly-import.sh "calls curl or git push" '
@@ -960,11 +997,11 @@ split_case "p11: a package manager in default before_script" $ci "publish_docs r
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  before_script:\n    - npm ci --prefix tools\n");'
 # M5: services and image.
 split_case "p12: publish_docs gaining services" $ci "publish_docs has services; a service container" '
-  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n  services:\n    - some/image\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a, img) => a + "  image: " + img + "\n  services:\n    - some/image\n");'
 split_case "p13: default gaining services" $ci "default has services; they would run beside the token" '
   y = y.replace("default:\n  tags: [light]\n", "default:\n  tags: [light]\n  services:\n    - some/image\n");'
 split_case "p14: publish_docs with a different image" $ci "publish_docs must set its own image" '
-  y = y.replace("publish_docs:\n  stage: publish\n  image: $NODE_IMAGE\n", "publish_docs:\n  stage: publish\n  image: some/other:1\n");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a) => a + "  image: some/other:1\n");'
 # M6 (#59): expire_in is a short time in hours or minutes, one day at most.
 split_case "p15: import_docs with expire_in 999 hours" $ci "import_docs artifacts need a short expire_in" '
   y = y.replace("    expire_in: 1 day\n", "    expire_in: 999 hours\n");'
@@ -1347,7 +1384,7 @@ split_case "p164: publish_docs with no interruptible of its own (default: gives 
 split_case "p165: publish_docs interruptible: \"false\" as text" $ci "publish_docs.*[^a-z_]interruptible([^a-z_]|$)" '
   y = y.replace("  interruptible: false\n  needs:\n    - job: import_docs", "  interruptible: \"false\"\n  needs:\n    - job: import_docs");'
 split_case "p166: publish_docs with its image as a mapping" $ci "publish_docs must set its own image" '
-  y = y.replace("  image: $NODE_IMAGE\n  interruptible: false\n  needs:", "  image:\n    name: $NODE_IMAGE\n  interruptible: false\n  needs:");'
+  y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)  image: (.*)\n/, (m, a, img) => a + "  image:\n    name: " + img + "\n");'
 split_case "p167: GIT_DEPTH: 1.0 in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
   y = y.replace(/(\npublish_docs:\n(?:[ #].*\n)*?)    GIT_DEPTH: 1\n    GIT_STRATEGY: clone\n/, "$1" + "    GIT_DEPTH: 1.0\n    GIT_STRATEGY: clone\n");'
 split_case "p168: GIT_DEPTH: 1. in publish_docs" $ci "publish_docs.*GIT_DEPTH" '
@@ -1510,8 +1547,9 @@ split_case "p232: scan:gitleaks taking the rules of scan:trivy, which carry the 
 # Cases p233-p242 (#141): a pipeline started from the web with TRANSLATE=true runs no browser test, no coverage
 # and no lint test (the translation does not touch the site's code), but every secret scan still runs. ci-split
 # refuses .gitlab-ci.yml when live:firefox, live:chromium, coverage, lint:test or lint:import lack the
-# `not_translation` skip (the rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`, `when: never`,
-# shared as the alias *not_translation or written out inline), or when lint, scan:gitleaks or private-details
+# `not_translation` entry (the blocking manual rule entry `if: $CI_PIPELINE_SOURCE == "web" && $TRANSLATE == "true"`,
+# `when: manual`, `allow_failure: false`, shared as the alias *not_translation or written out inline; #158 replaced
+# `when: never`, which left that pipeline green), or when lint, scan:gitleaks or private-details
 # carry it. Each case first gives the five jobs the skip where one lacks it (and adds the anchor if the file has
 # none) so it fails only for the one fault under test; the removal cases then take the skip off one job, the
 # planting cases put it on one of the three scans. A refusal names .gitlab-ci.yml, the job and "translation".
@@ -1528,7 +1566,7 @@ tr_js='
   };
   const addAnchor = (y) => {
     if (y.includes("&not_translation")) return y;
-    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: never\n");
+    const r = y.replace(/\n\.not_scheduled: &not_scheduled\n  if: .*\n  when: never\n/, (m) => m + "\n.not_translation: &not_translation\n  " + SKIP_IF + "\n  when: manual\n  allow_failure: false\n");
     if (r === y) throw new Error("no .not_scheduled anchor to put it beside");
     return r;
   };
@@ -1541,7 +1579,7 @@ tr_js='
   const strip = (y, job) => {
     const m = new RegExp("\\n" + job + ":\\n(?:[ #].*\\n)*").exec(y);
     if (!m) throw new Error("no job " + job);
-    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: never\n", "");
+    const b = m[0].replace("    - *not_translation\n", "").replace("    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n", "");
     if (hasSkip(b)) throw new Error("the skip is still on " + job);
     return y.slice(0, m.index) + b + y.slice(m.index + m[0].length);
   };
@@ -1567,7 +1605,7 @@ split_case "p240: private-details carrying the translation skip" $ci "$(tr_name 
   y = plant(withFive(y), "private-details", "    - *not_translation\n");'
 # the entry written out in the job (not the alias) counts as the skip too
 split_case "p241: lint carrying the translation skip written out inline" $ci "$(tr_name 'lint')" "$tr_js"'
-  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: never\n");'
+  y = plant(withFive(y), "lint", "    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n");'
 # the real file: the skip is on all five (giving it to them again changes nothing) and ci-split passes it
 has_five=0
 Y="$(cat "$ci")" JS="$tr_js"'
@@ -1718,6 +1756,43 @@ split_case "p266: scan:gitleaks with a second gitleaks line, the right one repea
   y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + all));'
 split_case "p267: scan:gitleaks with a second gitleaks line, a scan of another path that carries the right --log-opts" $ci "$gl_name" "$gx_js"'
   y = edit(withBoth(y), (b) => b.replace(/^(    - gitleaks git .*\n)/m, (all) => all + "    - gitleaks git --no-banner --redact --verbose " + opt + " .\n"));'
+# Cases p268-p273 (audit finding SEC-2, #158; the ruling names p243-p248, taken by #143 and #142): a pipeline started
+# from the web with TRANSLATE=true must not end green with its test jobs unrun. The five jobs skip it with a blocking
+# manual entry (`when: manual`, `allow_failure: false`), never `when: never`, and the workflow admits the hand-start on
+# dev and the batches only. These cases write the fault, not the fix, so they hold whichever form the file has when
+# they run: p268 puts the `when: never` form on the five, p269 writes it inline on one job, p270 writes the blocking
+# entry without `allow_failure: false`, p271 widens the workflow admission to any branch, p272 puts the blocking entry
+# on a secret scan. p273 is the control: the admission restricted to dev and the batches passes.
+sk_js="$tr_js"'
+  const NEVER = "    - " + SKIP_IF + "\n      when: never\n";
+  const MANUAL = "    - " + SKIP_IF + "\n      when: manual\n      allow_failure: false\n";
+  const MANUAL_MAY_FAIL = "    - " + SKIP_IF + "\n      when: manual\n";
+  const ANCHOR = /\n\.not_translation: &not_translation\n  if: .*\n  when: .*\n(?:  allow_failure: .*\n)?/;
+  const asNever = (y) => {
+    y = withFive(y);
+    const r = y.replace(ANCHOR, () => "\n.not_translation: &not_translation # the skip that leaves a green pipeline\n  " + SKIP_IF + "\n  when: never\n");
+    if (r === y) throw new Error("no .not_translation anchor");
+    return r;
+  };
+  const ADMIT = /^    - if: \$CI_PIPELINE_SOURCE == "web" && \$TRANSLATE == "true".*$/m;
+  const admit = (y, text) => {
+    const r = y.replace(ADMIT, () => "    - " + text);
+    if (r === y) throw new Error("no workflow admission");
+    return r;
+  };'
+split_case "p268: the five jobs skipping the translation pipeline with when: never (a green pipeline with no test)" $ci "$(tr_name 'live:firefox')" "$sk_js"'
+  y = asNever(y);'
+split_case "p269: coverage carrying the translation skip written out inline with when: never" $ci "$(tr_name 'coverage')" "$sk_js"'
+  y = plant(strip(withFive(y), "coverage"), "coverage", NEVER);'
+split_case "p270: coverage carrying the blocking translation entry without allow_failure: false" $ci "$(tr_name 'coverage')" "$sk_js"'
+  y = plant(strip(withFive(y), "coverage"), "coverage", MANUAL_MAY_FAIL);'
+split_case "p271: the workflow admitting the hand-started translation on any branch" $ci "workflow" "$sk_js"'
+  y = admit(y, "if: \$CI_PIPELINE_SOURCE == \"web\" \&\& \$TRANSLATE == \"true\" # on any branch");'
+split_case "p272: scan:gitleaks carrying the blocking translation entry" $ci "$(tr_name 'scan:gitleaks')" "$sk_js"'
+  y = plant(withFive(y), "scan:gitleaks", MANUAL);'
+# control: the owner hand-start on dev or a batch stays admitted (the same text as the two translation jobs rules)
+split_pass_case "p273: the workflow admitting the hand-started translation on dev, batch-a and batch-b only" $ci "$sk_js"'
+  y = admit(y, "if: \$CI_PIPELINE_SOURCE == \"web\" \&\& \$TRANSLATE == \"true\" \&\& \$CI_COMMIT_BRANCH =~ /^(dev|batch-a|batch-b)\$/ # dev and the batches");'
 # Cases (d1)-(d3) judge the section "the imported docs have the shape the import
 # writes" (issue #18): the pad draws the index's colour and ids into innerHTML.
 # shape_case <label> <file> <js>: <js> edits the parsed JSON j of the file.
@@ -2899,6 +2974,54 @@ flake_lint_case "(f-sec12j) the lint refusing quarantined(\"#777\", in a templat
 flake_lint_case "(f-sec12k) the lint refusing a real call after other code on its line" 1 'export const re7 = /[/*]/; await quarantined("#777", ["firefox"], "made-up check", async () => {});'
 flake_lint_case "(f-sec12l) the lint refusing quarantined(\"#777\", in a line comment" 1 '// await quarantined("#777", ["firefox"], "made-up check")'
 flake_lint_case "(f-sec12m) the lint accepting an anchored await quarantined(\"#777\", call (control)" 0 'await quarantined("#777", ["firefox"], "made-up check", async () => {});'
+
+# Section "the Milky Way is drawn" (#119; cases gal1-gal11): every galaxy*.webp the tree tracks must be one of the two
+# shipped pictures, by git blob hash (an allow-list, so a re-encoded, cropped or renamed Gaia file, or any third-party
+# galaxy picture, is refused and named); Gaia's own two blobs are refused as Gaia's. The committed tree passes.
+galaxy_case() { # galaxy_case <label> <want: 0 or 1> <text the refusal names>; the change is made, uncommitted, before
+  commit_all "$1"
+  lint_to_out milkyway
+  if [ "$2" -eq 1 ] && [ "$rc" -eq 1 ] && grep -q -- "$3" "$out"; then
+    echo "ok   $1 fails"
+  elif [ "$2" -eq 0 ] && [ "$rc" -eq 0 ]; then
+    echo "ok   $1 passes"
+  else
+    echo "FAIL $1 (exit $rc, want $2: 1 naming $3, 0 passing)"; sed 's/^/     /' "$out"; failed=1
+  fi
+  git reset -q --hard HEAD~1
+}
+galaxy_case "(gal1) the two shipped galaxy pictures (control)" 0 -
+printf 'not the shipped picture' > assets/img/install/galaxy-wide.webp
+galaxy_case "(gal2) a galaxy*.webp with other bytes beside the shipped ones" 1 'assets/img/install/galaxy-wide.webp'
+mkdir -p assets/img/docs
+printf 'a third-party galaxy, renamed' > assets/img/docs/milkyway-galaxy-4k.webp
+galaxy_case "(gal3) a galaxy*.webp with other bytes in another folder" 1 'assets/img/docs/milkyway-galaxy-4k.webp'
+printf 'the shipped name, other bytes' > assets/img/install/galaxy-2k.webp
+galaxy_case "(gal4) a shipped picture's name over other bytes" 1 'assets/img/install/galaxy-2k.webp'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/install/galaxy.webp
+  galaxy_case "(gal5) Gaia's picture under the shipped name" 1 "Gaia's picture"
+else
+  echo "ok   (gal5) Gaia's blob is not in this clone: not run"
+fi
+printf 'other bytes, a space in the name' > "assets/img/docs/my galaxy.webp"
+galaxy_case "(gal6) a galaxy*.webp with other bytes and a space in its name" 1 'assets/img/docs/my galaxy.webp'
+printf 'other bytes, a non-ASCII name' > "assets/img/docs/galáxia-galaxy.webp"
+galaxy_case "(gal7) a galaxy*.webp with other bytes and a non-ASCII name" 1 'assets/img/docs/galáxia-galaxy.webp'
+printf 'other bytes, upper-case name' > assets/img/docs/MILKY-GALAXY.WEBP
+galaxy_case "(gal8) a GALAXY*.WEBP with other bytes in upper case" 1 'assets/img/docs/MILKY-GALAXY.WEBP'
+if git -C "$root" cat-file -e e283e71534d7ec5bbc8fcad8ad44317321d89c47 2>/dev/null; then
+  git -C "$root" cat-file blob e283e71534d7ec5bbc8fcad8ad44317321d89c47 > assets/img/docs/sky.png
+  galaxy_case "(gal9) Gaia's picture under a non-galaxy name and another extension" 1 "Gaia's picture"
+else
+  echo "ok   (gal9) Gaia's blob is not in this clone: not run"
+fi
+name=$(printf 'assets/img/docs/galaxy\n.webp_'); name=${name%_}
+printf 'other bytes, a newline in the name' > "$name"
+galaxy_case "(gal10) a galaxy*.webp with a newline in its name" 1 'holds a newline'
+name=$(printf 'assets/img/docs/galaxy\na\t.webp_'); name=${name%_}
+printf 'other bytes, a newline and a tab in the name' > "$name"
+galaxy_case "(gal11) a galaxy*.webp with a newline and a tab in its name" 1 'holds a newline'
 
 rm -f "$cspjs"
 

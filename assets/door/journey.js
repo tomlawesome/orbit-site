@@ -86,7 +86,7 @@ const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ 
    ready) is counted as no more than a frame or so while the climb's WebGL world is drawing (stalls: Orbit's #1262),
    so a stall pauses the journey where it is rather than skipping it ahead to the landing; otherwise real time, so a
    machine that simply draws slowly finishes the journey on time rather than stretching it. The flight and its beats
-   both keep this time. The descent always keeps real time */
+   both keep this time. The descent caps stalls like the climb (#163, decision 10a) */
 /* how long a hold waits for the flight's world before the world counts as failed (holdAt; ADR-0002 6.7): past the
    longest bounded wait inside a proof (PICTURE_WAIT and COMPILE_WAIT, chores.js, and the chores between), so it fires
    only when something has hung. Not a let-go into the painted flight for want of readiness (#116): when it fires, the
@@ -219,7 +219,7 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
       case "disperse": body.classList.add("dispersing"); break;
       case "warp": {
         const P = descentProfile(descent);
-        body.classList.add("showwarp"); if (descent.gone) { need().clear(); clock.stalls(false); } else need().start(P, pinnedFlight(P, descent.at, beat.at)); break;
+        body.classList.add("showwarp"); if (descent.gone) { need().clear(); } else need().start(P, pinnedFlight(P, descent.at, beat.at)); break;
       }
       case "release": body.classList.remove("withdrawing"); (descent.on.released ?? on.released)?.(); break;
       case "nameOn": name.classList.add("on"); break;
@@ -246,7 +246,8 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     /* (a flight drawn in a worker is posted by name: one whose curves are neither UP's nor DOWN's throws here, ADR-0004 6a.3) */
     if (remote) wireProfile(profile);
     dropLeisure();
-    cancelTimeline(); clock.release();
+    /* (a descent before this one capped stalls: a climb starts uncapped, as before #163, until its own warp sets it) */
+    cancelTimeline(); clock.stalls(false); clock.release();
     body.classList.remove(...CLASSES, "holding");
     const pinned = typeof at === "number";
     flight = { profile, on: hooks, at, gone: false };
@@ -276,9 +277,9 @@ export function createJourney({ canvas, name, dawnGlyph, duskGlyph, on = {} }) {
     need();
     dropLeisure();
     cancelTimeline();
-    /* the climb's warp left the stall cap on, and may have left its hold: the descent keeps real time, or a slowly
-       drawn world stretches it out of reach, and never waits for a world the climb was waiting for */
-    clock.stalls(false); clock.release();
+    /* the climb's warp may have left its hold: the descent never waits for a world the climb was waiting for. It
+       caps stalls like the climb, from the start (#163, decision 10a), so a stall cannot skip the farewell */
+    clock.stalls(true); clock.release();
     body.classList.remove("showdawn", "showdusk", "farewell", "bare", "launching", "holding");
     descent = { onto, from, homes, on: hooks, at, rate: from?.rate ? DOWN_QUICK : 1 };
     write(title, subtitle);

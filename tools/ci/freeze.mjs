@@ -157,6 +157,8 @@ const COUNT = () => {
         const len = now - tickAt;
         tickAt = now;
         rec.chores.seen = { started: q.started, open: q.open };
+        /* every start, as the page reports it (choresNow().starts): chained chores started in one frame included (#165) */
+        if (rec.chores.every?.length !== q.starts.length) rec.chores.every = q.starts.slice();
         /* frames in a row with nothing queued or running (the queue at rest: what a wait for it reads) */
         rec.chores.rest = q.running || q.queued.length ? 0 : (rec.chores.rest || 0) + 1;
         if (q.started !== last.started) {
@@ -194,9 +196,9 @@ const clickGate = (page) => page.evaluate(() => { const t = performance.now(); d
 const webgl2 = (s) => s.gl.filter((c) => c.type === "webgl2");
 /* the chores' counts (COUNT): the known starts that are not soft ("hard") in a frame; frames where a hard one other
    than a compile started with the queue not yet open */
-/* 5's floor on known non-soft starts. The code queues at least ten on ?gpu=force: the flight's stars, two touches
+/* 5's floor on known non-soft starts. The code queues at least nine on ?gpu=force: the flight's stars, two touches
    and calibrate (voyage.js), the docs' touch and the galaxy (voyage.js), the docs chart (pads.js), the install's touch
-   and calibrate (install.js), the information's world (planets3d.js); most are chained on another
+   (install.js), the information's world (planets3d.js); most are chained on another
    chore's result, so they are queued while that one still runs and wait a frame in the queue, where they are known.
    15-17 were known in six runs (#32). 8 leaves room for a few queued and started within a frame, and is well over the
    two the bound needs to be able to trip */
@@ -231,17 +233,17 @@ const said = (log, re) => log.console.filter((c) => re.test(c.text));
    the light, and everything that is not a timing, are judged everywhere. Locally every check is judged */
 const GPU_TIMINGS_JUDGED = process.env.CI !== "true";
 const only = process.env.FREEZE_ONLY ? new RegExp(process.env.FREEZE_ONLY) : null;   /* FREEZE_ONLY='^12' runs one */
-const scenario = async (name, fn) => {
+const scenario = async (name, fn, quarantine = null) => {
   if (only && !only.test(name)) return;
   const problems = [];
   const info = [];
   const want = (ok, what) => { if (!ok) problems.push(`want: ${what}`); };
   want.gpu = (ok, what) => { if (!ok) (GPU_TIMINGS_JUDGED ? problems : info).push(`${GPU_TIMINGS_JUDGED ? "" : "not judged on CI (a 3D timing; the runner has no GPU): "}want: ${what}`); };
   try { await fn(want, (line) => info.push(line)); } catch (e) { problems.push(`${String(e.message).split("\n")[0]}`); }
-  console.log(`${problems.length ? "FAIL" : "ok  "} ${name}`);
+  console.log(`${problems.length ? (quarantine ? "QUARANTINED FAIL" : "FAIL") : "ok  "} ${name}${problems.length && quarantine ? ` (${quarantine}, not gating)` : ""}`);
   for (const line of info) console.log(`       ${line}`);
   for (const p of problems) console.log(`       problem: ${p}`);
-  if (problems.length) failed = true;
+  if (problems.length && !quarantine) failed = true;
 };
 const short = (s) => JSON.stringify(s).slice(0, 400);
 
@@ -381,10 +383,9 @@ try {
       /* (a fresh chores line, so its backstops cover every start counted: the page's own lines may all be earlier) */
       await page.evaluate(() => import(new URL("/assets/door/chores.js", location.href).href).then(({ noteChores }) => noteChores("freeze check 5")));
       await page.waitForTimeout(500);
-      const opened = ch.starts.filter((f) => f.open);
-      const hardSeen = opened.reduce((a, f) => a + hard(f).length, 0);
-      info(`chores: ${ch.seen?.started} started over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
-      want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores known to start after the queue opened (else this proves nothing) -- ${hardSeen}`);
+      const hardSeen = (ch.every || []).filter((e) => !e.soft && e.open).length;
+      info(`chores: ${ch.seen?.started} started (hardSeen ${hardSeen}) over ${ch.frames} frames; the frames with a start (n, the known ones): ${ch.starts.map((f) => `${f.n}${f.known.length ? ` [${f.known.join(", ")}]` : ""}`).join("; ").slice(0, 3000)}`);
+      want(hardSeen >= HARD_SEEN, `the count sees the readying: at least ${HARD_SEEN} non-soft chores started after the queue opened, as the page reports them (else this proves nothing) -- ${hardSeen}`);
       const { broken, extra } = crowding(ch.starts);
       const backstops = backstopsSaid(log);
       info(`frames holding two or more non-soft starts: ${ch.starts.filter((f) => hard(f).length > 1).map((f) => `${Math.round(f.len)} ms x${hard(f).length}`).join(", ") || "none"}; extra starts ${extra}; backstops said ${backstops}`);

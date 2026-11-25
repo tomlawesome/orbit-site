@@ -717,6 +717,8 @@ export async function run(opts) {
       }
       const ids = [];
       for (let round = 1; round <= 2 && todo.length; round++) {
+        /* #159 D-S1: a retry round that could not be polled to its end is spend for nothing: stop before it is built */
+        if (round === 2 && !(resume && resume[1]) && deadline - Date.now() < o.pollSeconds * 1000) throw new Exit(3, `the deadline of ${o.timeoutMinutes} minutes has passed or less than one poll (${o.pollSeconds} s) is left: the retry batch was not sent, nothing was spent on it and nothing is written`);
         const requests = round === 1 ? first : requestsFor(2, todo);
         if (round === 2 && !(resume && resume[1])) {
           /* the retry round is spend too: it counts against the same cap as the first (one already made and paid for,

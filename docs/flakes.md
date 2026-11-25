@@ -20,22 +20,17 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## journey L6 #116, Chromium: "the docs' Back is closed until the flight is ready, then opens" (preview): the descent never shows the dawn
 
 - 2026-11-05 · 0ad4298 · journey.mjs, Chromium, agent host (load average about 70), 5th of 5 runs, the same run as L1, L2 · body classes seen: instrument, arrived, ready-flight, holding, withdrawing, dispersing, showwarp, at-door, lit; passed in runs 1-4 on the same code, and in 5 of 5 at 4x CPU throttling straight after
-
-## freeze 5, Chromium: "?gpu=force: a webgl2 context without the caveat, #warpgl, and one non-soft chore a frame" fails
-
-- 2026-11-05 · df30deb · pipeline 3670 live:chromium 3/3 job 46885 · case 5 failed (F1's WebGL flight drew 0.384); the change does not reach the door or WebGL; passed on retry (job 46962)
-
-## live PW1b, Firefox: page.goto times out
-
-- 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47071 · page.goto timeout (also seen on !115); the retry passed PW1b (job 47094)
+- 2026-11-24 · 3ecf0a1 · live:chromium 2/3, CI job 64233, MR !178 · failed once; the change touched only the names lint and its tests
 
 ## draw-live P2a, Firefox: "the real worker loads with no CSP violation, the flight is drawn in it and lands"
 
 - 2026-11-05 · 5fb7428 · !120 pipeline 3690 live:firefox job 47094 (retry of 47071) · the flight never landed within 150 s (body classes stopped at holding/arming/showwarp); passed on the next retry (job 47105)
+- 2026-11-21 · 4f3659a4 · !175 pipeline 5171 live:firefox 2/2 job 61996 · P2a failed; passed when re-run on the same code (job 62145)
 
 ## Runner interrupted mid-job (host)
 
 - 2026-10-23 · 9e6311b · pipeline 2935, lint (job 38943) and lint:test (job 38944) · both stopped `runner_interrupted` at the same second (12:37:33 UTC), mid-test; passed on retry
+- 2026-11-21 · d4f224fe · !160 pipeline 5121, lint:test job 61231 · "execution took longer than 1h0m0s" (job_execution_timeout); retried as job 61476, which passed
 
 ## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
 
@@ -45,3 +40,20 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## door-lows L1, Chromium: "a lost context gives the door its Earth and limb pictures back"
 
 - 2026-11-10 · 16b2cc87 · journey-local.sh door-lows, Chromium, agent host under heavy load · first run ran past a 190 s limit, second failed L1 ("canvas shows 0.365 of its box"), third passed on the same code; not run on the base (e97ceba2)
+
+## journey, Firefox: console.error NS_BINDING_ABORTED from the driver's own worker script
+
+- 2026-11-21 · 407cdcab · pipeline 5074 live:firefox 1/2 job 60756 · every step passed; the run failed on `console.error: [JavaScript Error: "NS_BINDING_ABORTED: " {file: "chrome://juggler/content/content/WorkerMain.js" line: 6}]`, logged by Playwright's Firefox driver rather than at a site address, with no failed site request; the same journey passed in Firefox on pipelines 5048 and 5062. Console errors now carry the step's name, so the next sighting names the step
+
+## draw-pixels P1b, Chromium: "demoFlight with two named households at 1500: pixel for pixel"
+
+- 2026-11-21 · d4f224fe · !160 pipeline 5121 live:chromium 3/3 job 61245 · failed in the same job as freeze 5's sighting of that date; passed when re-run on the same code
+
+## site-browser B1, Firefox: "a burst of 20 resizes draws the galaxy once"
+
+- 2026-11-21 · d4f224fe · !160 pipeline 5121 live:firefox 1/2 job 61241 · failed; passed when re-run on the same code
+- 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 1/2 job 63591 · failed; passed when re-run on the same code (job 63617)
+
+## asdawn, Firefox: "1280x800, asDawn, reduced motion: … the planet (10)"
+
+- 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 2/2 job 63592 · "10. under showdusk alone the planet is opacity 0" read 0.232 under reduced motion; passed when re-run on the same code (job 63616)

@@ -75,7 +75,7 @@ await T.attempt("T25", async () => {
         for (const f of extra) { mkdirSync(dirname(join(d, f)), { recursive: true }); copyFileSync(join(base, f), join(d, f)); }
         mutate(d);
         const r = spawnSync(process.execPath, ["tools/ci/i18n-check.mjs"], { cwd: d, encoding: "utf8" }), text = `${r.stdout}${r.stderr}`;
-        if (!want) { control = r.status === 0; T.check(name, control, `exit ${r.status}: ${tail(text)}`); }
+        if (!want) { if (name.startsWith("T25a")) control = r.status === 0; T.check(name, r.status === 0, `exit ${r.status}: ${tail(text)}`); }
         else T.check(name, r.status === 1 && want.test(text), `exit ${r.status}, want 1 naming ${want}; got ${tail(text)}`);
       } catch (e) { T.check(name, false, String(e && e.message || e)); } finally { rmSync(d, { recursive: true, force: true }); }
     };
@@ -101,6 +101,16 @@ await T.attempt("T25", async () => {
     case_("T25k a kept key that is not in the catalogue is refused", (d) => edit(d, "tools/i18n/state/fr.json", (j) => { j.kept.push("ghost"); }), /state\/fr\.json|ghost/);
     case_("T25l a kept key whose value differs from English is refused", (d) => edit(d, "assets/i18n/fr.json", (j) => { const k = Object.keys(en).find((x) => !translated.has(x)); j[k] = `${swap(en[k])} changed`; }), /fr\.json[^\n]*(kept|English)|state\/fr\.json/i);
     case_("T25m a built language without its state file is refused", (d) => rmSync(join(d, "tools/i18n/state/de.json")), /state\/de\.json|de[^\n]*state/i);
+    /* #159 D-F1 (owner decision 12a): a key in en.json missing from a catalogue is pending translation while that
+       language's state has no hash for it (the page shows English); extra keys, broken {holes} or tags and a hash
+       for a key the catalogue lacks (a stale hash) still fail */
+    const pend = (d, k) => { edit(d, "assets/i18n/fr.json", (j) => { delete j[k]; }); edit(d, "tools/i18n/state/fr.json", (j) => { delete j.catalogue[k]; j.kept = j.kept.filter((x) => x !== k); }); };
+    case_("T25n #159 D-F1 a key in en.json with no catalogue entry and no state hash is pending: passes", (d) => pend(d, plain[7]));
+    case_("T25o #159 D-F1 a key with no catalogue entry but a state hash is refused (stale hash), state/fr.json or fr.json named", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/fr.json", (j) => { j.catalogue[plain[7]] = "0123456789abcdef"; }); }, /fr\.json/);
+    case_("T25p #159 D-F1 a pending key does not excuse an extra key in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j.ghost = "x"; }); }, /ghost/);
+    case_("T25q #159 D-F1 a pending key does not excuse a broken {hole} in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }); }, /fr\.json[^\n]*(\{|holes|placeholder)/i);
+    case_("T25r #159 D-F1 a pending key does not excuse a broken tag in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/fr.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }); }, /fr\.json[^\n]*tag/i);
+    case_("T25s #159 D-F1 a pending key does not excuse a stale hash (a hash for a ghost key)", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/fr.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }); }, /state\/fr\.json[^\n]*ghost/);
   } catch (e) { T.check("T25", false, String(e && e.message || e)); } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -180,6 +190,9 @@ await T.attempt("T27", async () => {
     T.check("T27c translate_docs has timeout: 1h (the one-hour runner lane; amendment 1)", /^[ \t]+timeout:\s*1h\s*$/m.test(block) && !/timeout:\s*3h/.test(block), (block.match(/timeout:[^\n]*/) || ["no timeout line"])[0]);
     /* a line put under a job's own line: the job's own key order does not matter to YAML */
     const after = (text, job, line) => { const re = new RegExp(`^${job}:[^\\n]*\\n`, "m"); if (!re.test(text)) throw new Error(`no job ${job} in .gitlab-ci.yml to change`); return text.replace(re, (m) => `${m}${line}\n`); };
+    /* a key of a job's own replaced in place: a second copy would be refused as written twice, never reaching the
+       check the case names */
+    const swap = (text, job, key, line) => { const re = new RegExp(`(^${job}:[^\\n]*\\n(?:[ \\t].*\\n|\\n)*?)  ${key}:[^\\n]*\\n`, "m"); if (!re.test(text)) throw new Error(`no ${key} of job ${job} in .gitlab-ci.yml to change`); return text.replace(re, (m, head) => `${head}${line}\n`); };
     const refused = (name, fn, want) => {
       const d = scratch();
       try {
@@ -192,8 +205,8 @@ await T.attempt("T27", async () => {
     const ed = (fn) => (d) => put(d, ".gitlab-ci.yml", fn(read(d, ".gitlab-ci.yml")));
     refused("a second job naming environment translate", ed((t) => `${t}\nextra_translate:\n  stage: maintenance\n  image: $NODE_IMAGE\n  environment: { name: translate, deployment_tier: other }\n  script: [echo hi]\n`), /translate/);
     refused("a package manager in translate_docs", ed((t) => after(t, "translate_docs", "  before_script: [npm ci --prefix tools]")), /translate_docs[^\n]*(npm|package manager)|npm[^\n]*translate_docs/i);
-    refused("needs with artifacts in translate_docs", ed((t) => after(t, "translate_docs", "  needs: [{ job: import_docs, artifacts: true }]")), /translate_docs[^\n]*needs|needs[^\n]*translate_docs/i);
-    refused("translate_docs on another image", ed((t) => after(t, "translate_docs", "  image: node:latest")), /translate_docs[^\n]*(image|NODE_IMAGE)|(image|NODE_IMAGE)[^\n]*translate_docs/i);
+    refused("needs with artifacts in translate_docs", ed((t) => swap(t, "translate_docs", "needs", "  needs: [{ job: import_docs, artifacts: true }]")), /translate_docs[^\n]*needs|needs[^\n]*translate_docs/i);
+    refused("translate_docs on another image", ed((t) => swap(t, "translate_docs", "image", "  image: node:latest")), /translate_docs[^\n]*(image|NODE_IMAGE)|(image|NODE_IMAGE)[^\n]*translate_docs/i);
     refused(`${KEY} in another file`, (d) => put(d, "tools/ci/serve.mjs", `${read(d, "tools/ci/serve.mjs")}\n// ${KEY}\n`), new RegExp(KEY));
     refused("import_docs with an environment", ed((t) => after(t, "import_docs", "  environment: { name: translate }")), /import_docs[^\n]*environment|environment[^\n]*import_docs/i);
     refused("a third job in the docs-import environment", ed((t) => `${t}\nextra_publish:\n  stage: publish\n  image: $NODE_IMAGE\n  environment: { name: docs-import }\n  script: [echo hi]\n`), /docs-import/);

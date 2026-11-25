@@ -9,7 +9,8 @@
  *   source is exactly {generated, kept}: generated the English index's date the page was made from (an ISO
  *   date), kept the ids of the sections left in English, each a section of the page, once;
  *   an index entry's source is its page's;
- *   no img/ folder: every <img src> is one of the English folder's pictures (assets/docs/img/) or the mark.
+ *   no img/ folder: every <img src> is one of the English folder's pictures (assets/docs/img/) or the mark; a page
+ *   behind the English may still name a picture of the older English it was made from, reported, not failed.
  *
  *   node tools/ci/docs-i18n-shape.mjs <dir> <sources.json> <english docs dir>   prints each problem, exits 1 if any
  *        [--same-english]   (publish_translations) every page made from exactly that English, not merely no later
@@ -71,12 +72,22 @@ function sourceProblems(where, src, ids) {
   return out;
 }
 
-export function checkTranslated(dir, sources, englishDir, { sameEnglish = false } = {}) {
-  const problems = checkDocs(dir, sources, { extraPageKeys: ["source"], extraSectionKeys: ["en"], pictures: join(englishDir, "img"), noImgDir: true });
-  if (!Array.isArray(sources)) return problems;
+/* reported, when given, collects a line for each picture a page behind the English names that the English no longer
+   has: that is the lag, reported, never failed; a page stamped at the English must name only the English's pictures */
+export function checkTranslated(dir, sources, englishDir, { sameEnglish = false, reported = [] } = {}) {
   const read = (f) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
   let english = null;
   try { english = JSON.parse(readFileSync(join(englishDir, "index.json"), "utf8")).generated; } catch { /* checkDocs of the English names it */ }
+  /* the pages made from older English, with their stamps. Never under --same-english: there every page is made from
+     exactly this English (another stamp is a problem below), so a picture it does not have is a real fault */
+  const behind = new Map();
+  if (!sameEnglish && Array.isArray(sources) && typeof english === "string" && ISO.test(english)) for (const s of sources) {
+    const f = isObj(s) ? `${s.slug}.json` : null, p = f && existsSync(join(dir, f)) ? read(f) : null, g = isObj(p) && isObj(p.source) ? p.source.generated : null;
+    if (typeof g === "string" && ISO.test(g) && g < english) behind.set(f, g);
+  }
+  const stalePicture = (f, where, src) => reported.push(`${f}: ${where} names ${JSON.stringify(src).slice(0, 80)}, a picture the English no longer has: behind the English, translated from ${behind.get(f)}; the next translation run catches up`);
+  const problems = checkDocs(dir, sources, { extraPageKeys: ["source"], extraSectionKeys: ["en"], pictures: join(englishDir, "img"), noImgDir: true, behind, stalePicture });
+  if (!Array.isArray(sources)) return problems;
   /* --same-english compares each stamp with the English's: an English index.json that cannot be read is a problem here */
   if (sameEnglish && (typeof english !== "string" || !ISO.test(english))) problems.push(`${join(englishDir, "index.json")}: missing, not JSON or without a generated date: the translation's stamps cannot be compared with the English's`);
   const later = (where, src) => {
@@ -170,8 +181,11 @@ if (main && process.argv[2] === "--lag") {
   if (!dir || !srcFile || !englishDir || (flag !== undefined && flag !== "--same-english")) { console.log("usage: node tools/ci/docs-i18n-shape.mjs <dir> <sources.json> <english docs dir> [--same-english]"); process.exit(1); }
   let sources;
   try { sources = JSON.parse(readFileSync(srcFile, "utf8")); } catch { console.log(`${srcFile} cannot be read as JSON`); process.exit(1); }
-  const problems = checkTranslated(dir, sources, englishDir, { sameEnglish: flag === "--same-english" });
+  const reported = [];
+  const problems = checkTranslated(dir, sources, englishDir, { sameEnglish: flag === "--same-english", reported });
   for (const p of problems.slice(0, 20)) console.log(`   ${p}`);
   if (problems.length > 20) console.log(`   ... and ${problems.length - 20} more`);
+  for (const l of reported.slice(0, 20)) console.log(`   (reported) ${l}`);
+  if (reported.length > 20) console.log(`   ... and ${reported.length - 20} more reported`);
   process.exit(problems.length ? 1 : 0);
 }

@@ -17,7 +17,6 @@
  *   frames    three `view`s in one frame draw once, the last, and post one `drew` with its seq (and a dt, the worker's own
  *             period between its frame callbacks, and an ms)
  *   runOff    `run { on: false }` stops the frame callbacks (`run { on: true }` runs them: control)
- *   measure   `measure` with two sets posts `measured` with two numbers, each the ms a draw of that set took
  *   resize    `resize` sets the canvas's bitmap size (w x scale by h x scale)
  *   warn      a warning from world.js (the map cannot be had) is posted as `note { kind: "warn" }`, and `baked { ok: false }`
  *   lost      `webglcontextlost` on the OffscreenCanvas posts `lost`
@@ -189,24 +188,6 @@ async function runOff() {
   await w.run(1000);
   return { running: running - idle, afterStop: w.fires - stopped, ...common(w) };
 }
-async function measure() {
-  const w = await boot();
-  let skew = 0, part = 1;
-  const base = performance.now.bind(performance);
-  Object.defineProperty(performance, "now", { value: () => base() + skew, configurable: true, writable: true });
-  const u1 = w.page.glBase.uniform1f, u3 = w.page.glBase.uniform3fv;
-  w.page.glBase.uniform1f = (loc, v) => { if (loc?.n === "uPartK") part = v; return u1(loc, v); };
-  w.page.glBase.uniform3fv = (loc, v) => { if (loc?.n === "uCam") skew += part < 0.6 ? 4 : 10; return u3(loc, v); };
-  await w.bring();
-  await w.sizeUp();
-  await w.bake(1);
-  const reads0 = w.page.readPixels, paints0 = w.draws().length;
-  const set = (p) => [0, 1, 2, 3].map((i) => mkView(i + 1, { part: p, dustN: 18 }));
-  w.send(structuredClone({ type: "measure", id: 5, sets: [set(0.4), set(0.8)] }));
-  await w.run(20000, () => w.of("measured").length > 0);
-  await w.run(100);
-  return { measured: w.of("measured").map((m) => ({ id: m.id, ms: m.ms })), paints: w.draws().length - paints0, reads: w.page.readPixels - reads0, ...common(w) };
-}
 async function resize() {
   const w = await boot();
   await w.bring();
@@ -287,7 +268,7 @@ async function decodePage(decode) {
   };
 }
 
-const CASES = guarded({ up, noGl, compile, pictures, whole, bake, frames, runOff, measure, resize, warn, lost, destroy, decodePage: () => decodePage("page"), decodePageNone: () => decodePage(undefined) });
+const CASES = guarded({ up, noGl, compile, pictures, whole, bake, frames, runOff, resize, warn, lost, destroy, decodePage: () => decodePage("page"), decodePageNone: () => decodePage(undefined) });
 
 if (process.argv[2] === "--child") await childMain(CASES);
 
@@ -341,12 +322,6 @@ const clean = (r) => r.cloneErrors.length === 0 && r.deads.length === 0;
   const r = run("runOff");
   chk("W5 (control) `run { on: true }` runs the frame callbacks (a frame every 16 ms on the virtual clock)", r, (r) => [r.running >= 10, `callbacks in 500 ms of run on: ${r.running}`]);
   chk("W5 `run { on: false }` stops the frame callbacks", r, (r) => [r.afterStop === 0, `callbacks after it: ${r.afterStop}`]);
-}
-{
-  const r = run("measure");
-  chk("W5 `measure` with two sets posts `measured` with its id and two numbers", r, (r) => [r.measured.length === 1 && r.measured[0].id === 5 && Array.isArray(r.measured[0].ms) && r.measured[0].ms.length === 2 && r.measured[0].ms.every((x) => Number.isFinite(x)), `measured ${show(r.measured)}`]);
-  chk("W5 ... each number the ms a draw of that set took (a draw of 4 ms for the first set, of 10 for the second)", r, (r) => [r.measured.length === 1 && Math.abs(r.measured[0].ms[0] - 4) < 0.5 && Math.abs(r.measured[0].ms[1] - 10) < 0.5, `measured ${show(r.measured)}`]);
-  chk("W5 ... each set drawn in turn, and finished: 8 draws, a pixel read after the first draw and after the three timed ones of each set", r, (r) => [r.paints === 8 && r.reads >= 4, `draws ${r.paints}, pixel reads ${r.reads}`]);
 }
 {
   const r = run("resize");

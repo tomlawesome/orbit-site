@@ -90,9 +90,14 @@ const scriptKeys = () => {
 };
 
 /* index.html in a language, from its catalogue */
-export function build(indexHtml, catalogue, lang) {
+export function build(indexHtml, catalogue, lang, en = JSON.parse(readFileSync(join(ROOT, "assets/i18n/en.json"), "utf8"))) {
   const cat = catalogue || {};
-  const need = (key) => { if (!Object.hasOwn(cat, key)) throw new Error(`${lang}.json has no "${key}"`); return cat[key]; };
+  /* a key the catalogue lacks is pending translation (#159 D-F1, decision 12a): the page carries its English */
+  const need = (key) => {
+    if (Object.hasOwn(cat, key)) return cat[key];
+    if (Object.hasOwn(en, key)) return en[key];
+    throw new Error(`${lang}.json has no "${key}", and nor has en.json`);
+  };
   let html = indexHtml;
   /* the root's auto-lang script, and its hash in the policy */
   const auto = /\n[ \t]*<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(html);
@@ -103,7 +108,7 @@ export function build(indexHtml, catalogue, lang) {
   html = html.replace(tpl[0], "");
   const notice = tpl[1].replace(/<p data-ai-notice>/, '<p class="ai-notice">');
   html = html.replace(/<!-- ai-notice -->/g, notice);
-  html = html.replace(/\sdata-translated-only hidden/g, "");
+  /* the docs "not translated" lines keep `hidden` and data-translated-only: pads.js un-hides one only when the docs are English (#159 ALL-F3) */
   html = html.replace(/<html lang="[^"]*"/, `<html lang="${lang}"`);
   html = html.replace(/(\n([ \t]*)<meta name="viewport"[^>]*>)/, `$1\n$2<meta name="robots" content="noindex" />`);
   /* attributes first (a text's own inline tags then carry theirs translated), then texts, last first */
