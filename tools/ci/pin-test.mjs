@@ -3,10 +3,13 @@
  * written from the issue's specification and the browser test it replaces.
  *
  * journey.fly(profile, { at }) and journey.descend({ at }) take `at`, milliseconds into the journey, and start there:
- * the beats before `at` count as already passed. Unpinned, the ascent lands (hook `land`, body class `bare`) 4800 ms
- * in and the descent's farewell (hook `farewell`, class `farewell`) comes 5350 ms in, the dusk (hook `surface`, class
- * `showdusk`) before it. Pinned past them, they arrive at once; pinned before them, they are not skipped. The controls
- * show the unpinned journey has not got there by 2.5 s, and does get there later.
+ * the beats before `at` count as already passed. Unpinned, the ascent lands (hook `land`, body class `bare`) about
+ * 5308 ms in and the descent's farewell (hook `farewell`, class `farewell`) comes about 5777 ms in, the dusk (hook
+ * `surface`, class `showdusk`) before it, at about 3336 ms. (#151, the flight's pace: a beat at or after the warp beat
+ * moves to warp + clockAt(beat - warp), so the landing, once 4800 ms, and the farewell, once 5350 ms, come later; the
+ * arithmetic is in tools/ci/flight-pace-test.mjs.) Pinned past them, they arrive at once; pinned before them, they are
+ * not skipped, which includes a pin at 5000 on the climb and at 5400 on the descent, past the old times and short of
+ * the new. The controls show the unpinned journey has not got there by 2.5 s, and does get there later, at the new times.
  *
  *   node tools/ci/pin-test.mjs
  *
@@ -19,13 +22,15 @@ import { INDEX, installPage, installClock, childMain, runCase, check, finish, er
 
 /* how soon "at once" is, on the page's clock: far below the 1800 ms a pin at 3000 leaves before the landing */
 const SOON = 1000;
-const CONTROL = 2500;          /* an unpinned journey watched this long has not landed (4800) or said farewell (5350) */
-const LONG = 7000;             /* ... and watched this long it has */
+const CONTROL = 2500;          /* an unpinned journey watched this long has not landed (5308) or said farewell (5777) */
+const LONG = 7000;             /* ... and watched this long it has (the clock is virtual, so this is exact, not a race) */
 
 const SCENARIOS = {
+  "fly-5600": ["fly", 5600, SOON],
   "fly-5000": ["fly", 5000, SOON],
   "fly-none": ["fly", undefined, LONG],
   "fly-3000": ["fly", 3000, SOON],
+  "descend-6000": ["descend", 6000, SOON],
   "descend-5400": ["descend", 5400, SOON],
   "descend-none": ["descend", undefined, LONG],
   "descend-3700": ["descend", 3700, SOON],
@@ -73,8 +78,8 @@ const run = (name) => {
 };
 
 {
-  const { r, base, seen } = run("fly-5000");
-  check("P1 fly pinned at 5000 (past the landing): the release hook has fired (a beat before the pin)", base && r.hooks.release !== undefined, seen);
+  const { r, base, seen } = run("fly-5600");
+  check("P1 fly pinned at 5600 (past the landing, about 5308): the release hook has fired (a beat before the pin)", base && r.hooks.release !== undefined, seen);
   check("P1 ... the land hook fires at once", base && before(r.hooks.land, SOON), `${seen} (want land before ${SOON} ms)`);
   check("P1 ... the body has class bare at once, and keeps it", base && before(r.classes.bare, SOON) && r.now.includes("bare"), seen);
   check("P1 ... the flight's canvas is off again (no class showwarp)", base && !r.now.includes("showwarp"), seen);
@@ -82,7 +87,7 @@ const run = (name) => {
 {
   const { r, base, seen } = run("fly-none");
   check("P2 fly unpinned (control): by 2.5 s the land hook has not fired and the body is not bare", base && !before(r.hooks.land, CONTROL + 1) && !(r.atControl || []).includes("bare") && !before(r.classes.bare, CONTROL + 1), seen);
-  check("P2 ... and it does land, later (4800 ms in)", base && r.hooks.land !== undefined && r.hooks.land > CONTROL && r.hooks.land < LONG && r.classes.bare > CONTROL, seen);
+  check("P2 ... and it does land, later (about 5308 ms in, not the old 4800: between 5100 and 5600)", base && r.hooks.land !== undefined && r.hooks.land > 5100 && r.hooks.land < 5600 && r.classes.bare > 5100, seen);
 }
 {
   const { r, base, seen } = run("fly-3000");
@@ -90,8 +95,12 @@ const run = (name) => {
   check("P3 ... the landing is not skipped: no land hook at once", base && !before(r.hooks.land, SOON), seen);
 }
 {
-  const { r, base, seen } = run("descend-5400");
-  check("P4 descend pinned at 5400 (past the farewell): the released hook has fired (a beat before the pin)", base && r.hooks.released !== undefined, seen);
+  const { r, base, seen } = run("fly-5000");
+  check("P3b fly pinned at 5000 (short of the new landing, past the old 4800): the landing is not skipped, no land hook at once", base && !before(r.hooks.land, SOON) && !before(r.classes.bare, SOON), seen);
+}
+{
+  const { r, base, seen } = run("descend-6000");
+  check("P4 descend pinned at 6000 (past the farewell, about 5777): the released hook has fired (a beat before the pin)", base && r.hooks.released !== undefined, seen);
   check("P4 ... the surface hook has fired (the dusk came up)", base && before(r.hooks.surface, SOON), seen);
   check("P4 ... the farewell hook fires at once", base && before(r.hooks.farewell, SOON), `${seen} (want farewell before ${SOON} ms)`);
   check("P4 ... the body has class farewell at once, and showdusk", base && before(r.classes.farewell, SOON) && r.now.includes("farewell") && r.now.includes("showdusk"), seen);
@@ -99,11 +108,16 @@ const run = (name) => {
 {
   const { r, base, seen } = run("descend-none");
   check("P5 descend unpinned (control): by 2.5 s no farewell hook, no farewell class, no surface hook", base && !before(r.hooks.farewell, CONTROL + 1) && !before(r.hooks.surface, CONTROL + 1) && !(r.atControl || []).includes("farewell"), seen);
-  check("P5 ... and the farewell does come, later (5350 ms in)", base && r.hooks.farewell !== undefined && r.hooks.farewell > CONTROL && r.hooks.farewell < LONG, seen);
+  check("P5 ... and the farewell does come, later (about 5777 ms in, not the old 5350: between 5600 and 6000)", base && r.hooks.farewell !== undefined && r.hooks.farewell > 5600 && r.hooks.farewell < 6000, seen);
 }
 {
   const { r, base, seen } = run("descend-3700");
   check("P6 descend pinned at 3700 (past the dusk, before the farewell): the surface hook has fired and the body has showdusk", base && before(r.hooks.surface, SOON) && before(r.classes.showdusk, SOON), seen);
   check("P6 ... the farewell is still to come: no farewell hook at once", base && !before(r.hooks.farewell, SOON), seen);
+}
+{
+  const { r, base, seen } = run("descend-5400");
+  check("P6b descend pinned at 5400 (short of the new farewell, past the old 5350): the farewell is not skipped, no farewell hook at once", base && !before(r.hooks.farewell, SOON) && !before(r.classes.farewell, SOON), seen);
+  check("P6b ... the surface hook has fired (the dusk, about 3336, is behind the pin)", base && before(r.hooks.surface, SOON), seen);
 }
 finish();

@@ -35,6 +35,11 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## draw-pixels P1a, Chromium: "fly(UP) at 2600: the worker's picture is the page's, pixel for pixel"
 
 - 2026-11-08 · 00fa35be · pipeline 3802 live:chromium 3/3 job 48251 · 997,225 of 1,024,000 pixels differ between draw=page and draw=worker; P1b in the same run 0 differ; passed 3 of 3 on the same code with journey-local.sh, Chromium, agent host
+- 2026-11-10 · 14f919ea · journey-local.sh earth-look draw-pixels, Chromium, agent host (load average about 49) · this time P1b ("demoFlight with two named households at 1500"): 997,701 of 1,024,000 pixels differ between draw=page and draw=worker; P1a in the same run 0 differ; passed 2 of 2 straight after on the same code
+
+## door-lows L1, Chromium: "a lost context gives the door its Earth and limb pictures back"
+
+- 2026-11-10 · 16b2cc87 · journey-local.sh door-lows, Chromium, agent host under heavy load · first run ran past a 190 s limit, second failed L1 ("canvas shows 0.365 of its box"), third passed on the same code; not run on the base (e97ceba2)
 
 ## journey, Firefox: console.error NS_BINDING_ABORTED from the driver's own worker script
 
@@ -52,3 +57,7 @@ A fixed flake's heading comes off with the fix; its issue, if any, and git histo
 ## asdawn, Firefox: "1280x800, asDawn, reduced motion: … the planet (10)"
 
 - 2026-11-24 · 1f756060 · !175 pipeline 5296 live:firefox 2/2 job 63592 · "10. under showdusk alone the planet is opacity 0" read 0.232 under reduced motion; passed when re-run on the same code (job 63616)
+
+## hurry, node: "control: hurryChores([flight, docs]) once: the docs and second flight chores are done at once"
+
+- 2026-11-25 · 0e80520f · local `sh tools/ci/node-tests.sh` on a loaded host (load about 49) · flight-2 done 894 ms after the held chore, the others within 136 ms; passed when re-run on the same code

@@ -16,6 +16,16 @@
  * looks like run the other way. drawBloom() is ONE function, read forwards by
  * the login and backwards by the logout, exactly as the mockup reads it.
  *
+ * THE PACE (#151, ADR-0007). All of the above is FLIGHT TIME, and stays the
+ * mockup's. The flight is seen on the clock through one map, `clockAt` (flight
+ * time to clock time) and its inverse `paced`, as an animation's timing
+ * function bends its clock: the climb lingers over the Earth and as the moon
+ * passes and is quicker through the dark, 5300 ms on the clock (UPTIME) for its
+ * 4800 of flight time; the descent is that climb run backwards (DOWNTIME =
+ * UPTIME * REV). The engine draws `paced(clock * rate, P.rev)`, a frame's
+ * movement is the flight time that passed over it, and a flight still ends at
+ * its own `P.dur`. Nothing else here knows the pace.
+ *
  * The flight colour-matches the DEFAULT pack (star-chart) whatever pack the
  * reader is wearing — the owner's words say default theme, and the sky you are
  * climbing into is not yet yours to have chosen. If it is ever asked to wear
@@ -236,13 +246,13 @@ export function homeProps(homes) {
 }
 
 /* ── the two profiles ─────────────────────────────────────────────────────
-   UP · 4800ms.  0–300 ignition (the ship is barely moving; the mark flares
+   UP · 4800ms of flight time (5300 on the clock: THE PACE, below).  0–300 ignition (the ship is barely moving; the mark flares
    and the card dissolves) · 300–1350 hard acceleration out of the dawn ·
    1350–2600 cruise through the dark, where all the chart-pen traffic is ·
    2600–3500 deceleration onto the household's own coordinates · 3400–4800
    THE REVEAL: 1.4 slow seconds of the sun blooming.
 
-   DOWN · 4100ms, and NOT ITS OWN CURVE. Negative speed is the whole trick:
+   DOWN · 4100ms of flight time (DOWNTIME on the clock), and NOT ITS OWN CURVE. Negative speed is the whole trick:
    the star engine multiplies each star's radius by (1 + v·dt·K·z), so a
    negative v contracts the field toward the vanishing point and draws each
    streak from outside in. It reads at 0.854× the climb — the reversal earns a
@@ -252,6 +262,61 @@ export const DOWNDUR = 4100;
 export const REV = DOWNDUR / UPDUR;
 /** @param {number} t */
 export const mirror = (t) => UPDUR * (1 - Math.min(1, Math.max(0, t / DOWNDUR)));
+
+/* THE PACE (#151, ADR-0007): everything above and below is written in FLIGHT TIME, and stays so. The clock the flight
+   is seen on is bent in front of it, as an animation's timing function bends its clock: the climb lingers over the
+   Earth and as the moon passes (one more second across the first 1.9 s of flight time) and is quicker through the
+   dark (half a second back), so it is 5300 ms on the clock (UPTIME) for its 4800 of flight time. cost(f), the clock
+   ms per flight ms, is 1 + SLOW * slow(f) - FAST * fast(f), with slow = sm(0, 300) * (1 - sm(1500, 1900)) and fast =
+   sm(1900, 2400) * (1 - sm(4400, 4800)), sm the smoothstep; the two windows do not overlap, so slow = sm(0, 300) -
+   sm(1500, 1900) and fast = sm(1900, 2400) - sm(4400, 4800) exactly, and the integral is closed: clockAt. Its
+   inverse, paced, is Newton's method on it, kept inside a bracket (cost is at least 0.79, so it always converges).
+   The descent is the climb run backwards (rev, in its own flight time d): at clock c it shows the climb's moment at
+   clock UPTIME * (1 - c / DOWNTIME), at REV pace. Nothing else knows the pace. */
+export const UPTIME = 5300;
+export const DOWNTIME = UPTIME * REV;
+const SLOW = 1000 / 1550, FAST = 500 / 2450;
+/** the integral of sm(a, b, s) for s from a to x (0 below a) @param {number} a @param {number} b @param {number} x */
+const smArea = (a, b, x) => {
+  if (x <= a) return 0;
+  if (x >= b) return (b - a) / 2 + (x - b);
+  const u = (x - a) / (b - a);
+  return (b - a) * u * u * u * (1 - u / 2);
+};
+/** @param {number} a @param {number} b @param {number} x */
+const sm = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+/** the climb's clock at flight time f (0 to UPDUR; the same formula is f below 0 and f + 500 past UPDUR) @param {number} f */
+const climbClock = (f) => f + SLOW * (smArea(0, 300, f) - smArea(1500, 1900, f)) - FAST * (smArea(1900, 2400, f) - smArea(4400, 4800, f));
+/** @param {number} f */
+const climbCost = (f) => 1 + SLOW * (sm(0, 300, f) - sm(1500, 1900, f)) - FAST * (sm(1900, 2400, f) - sm(4400, 4800, f));
+/** the climb's flight time at clock c, 0 to UPTIME @param {number} c */
+const climbPaced = (c) => {
+  let lo = 0, hi = UPDUR, f = c * (UPDUR / UPTIME);
+  for (let k = 0; k < 24; k++) {
+    const e = climbClock(f) - c;
+    if (Math.abs(e) < 1e-7) break;
+    if (e > 0) hi = f; else lo = f;
+    const next = f - e / climbCost(f);
+    f = next > lo && next < hi ? next : (lo + hi) / 2;
+  }
+  return f;
+};
+/** the clock (ms since the flight began) at which a flight shows flight time f; rev: the descent's, in its own time
+    @param {number} f @param {boolean} [rev] */
+export function clockAt(f, rev = false) {
+  if (f < 0) return f;
+  if (!rev) return f > UPDUR ? f + (UPTIME - UPDUR) : climbClock(f);
+  return f > DOWNDUR ? f + (DOWNTIME - DOWNDUR) : DOWNTIME - REV * climbClock(mirror(f));
+}
+/** the flight time a flight shows at clock c (ms since it began): clockAt's inverse @param {number} c @param {boolean} [rev] */
+export function paced(c, rev = false) {
+  if (c < 0) return c;
+  if (!rev) return c > UPTIME ? c - (UPTIME - UPDUR) : climbPaced(c);
+  return c > DOWNTIME ? c - (DOWNTIME - DOWNDUR) : DOWNDUR * (1 - climbPaced(UPTIME * (1 - c / DOWNTIME)) / UPDUR);
+}
+/** the flight time a flight P shows `ms` of the clock after it began (its rate, and where it starts, P.skip, in flight time)
+    @param {{ rate?: number, skip?: number, rev?: boolean }} P @param {number} ms */
+export const flownAt = (P, ms) => paced(ms * (P.rate || 1) + clockAt(P.skip || 0, !!P.rev), !!P.rev);
 
 /* THE DOCS' GALAXY, first seen just where the mark's ring is at the centre of the screen and as large (166.4px
    across, timeline.js: MARK_ARRIVE; the ring 72 of its 200), far out; the camera then rushes in, faster and
@@ -1282,12 +1347,15 @@ export function createFlight(canvas, options = {}) {
     /* the flight's own clock (options.now): the journey's, which a stall pauses rather than skips (journey.js) */
     const now = clock();
     const active = flight;
-    /* a profile may run its beats faster (the docs' and the information's flights) */
-    const rate = active.P.rate || 1;
-    const t = (now - active.start) * rate;
-    const dt = Math.min(48, now - active.last) / 1000 * rate;
+    /* a profile may run its beats faster (the docs' and the information's flights); the clock, so quickened, is paced
+       into flight time (clockAt, paced: the pace), and what moves a little each frame moves by the flight time that
+       passed over the frame, its length capped on the clock */
+    const rate = active.P.rate || 1, rev = active.rev;
+    const c = (now - active.start) * rate;
+    const t = paced(c, rev);
+    const dt = (t - paced(c - Math.min(48, now - active.last) * rate, rev)) / 1000;
     /* the first second, counted: how the hand-over from the door went (the console says) */
-    if (t < 1000 * rate) { active.n = (active.n || 0) + 1; active.worst = Math.max(active.worst || 0, now - active.last); }
+    if (now - active.start < 1000) { active.n = (active.n || 0) + 1; active.worst = Math.max(active.worst || 0, now - active.last); }
     else if (active.n && !active.noted) { active.noted = true; note(`flight: first second ${active.n} frames, worst ${Math.round(/** @type {number} */ (active.worst))} ms`); }
     active.last = now;
     step(t, dt);
@@ -1331,8 +1399,8 @@ export function createFlight(canvas, options = {}) {
       if (n.p0 === undefined) n.p0 = n.p;
       n.p = n.p0;                      /* every run starts from the same dust */
     }
-    /* a flight may start a little way into itself (P.skip, in its own time) */
-    flight = { P, rev: !!P.rev, start: clock() - (P.skip || 0) / (P.rate || 1), last: clock(), props: P.props, dpr, tall: tallScreen(W, H) };
+    /* a flight may start a little way into itself (P.skip, in its own time): its start set back by the clock that costs */
+    flight = { P, rev: !!P.rev, start: clock() - clockAt(P.skip || 0, !!P.rev) / (P.rate || 1), last: clock(), props: P.props, dpr, tall: tallScreen(W, H) };
     voyage?.reset();
   }
 

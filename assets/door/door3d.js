@@ -343,7 +343,7 @@ export function liveDoor(world) {
     gl.uniform2f(u.uRes, canvas.width, canvas.height); gl.uniform1f(u.uPx, canvas.width / W);
     gl.uniform1f(u.uTime, t % 1000);
     gl.uniform3f(u.uCirc, W / 2, ly(3920), 3000 * s);
-    gl.uniform1f(u.uD, cam.D0); gl.uniform1f(u.uAirK, AIR);
+    gl.uniform1f(u.uD, cam.D0); gl.uniform1f(u.uAirK, AIR); gl.uniform1f(u.uLook, 0);
     gl.uniformMatrix3fv(u.uB, false, new Float32Array(cam.B)); gl.uniform3fv(u.uSun, cam.S);
     gl.uniformMatrix3fv(u.uSpinM, false, new Float32Array(M)); gl.uniform1f(u.uCloudOff, state.cloudOff);
     gl.uniform4f(u.uHas, maps.lights ? 1 : 0, maps.euro ? 1 : 0, maps.clouds && maps.day ? 1 : 0, 0);

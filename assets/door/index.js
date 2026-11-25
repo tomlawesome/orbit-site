@@ -39,6 +39,8 @@ export { pace, askPage } from "./chores.js";
 export { seededRng, el, measureTile } from "./stars.js";
 /* the flight's engine and its climb, for a host's own flights (the site: assets/js/journeys.js) */
 export { createFlight, UP, PROPS_UP, UPDUR, DOWN, DOWNDUR, homeProps, docsRest } from "./engine.js";
+/* and its pace (ADR-0007): the flight's length on the clock, and the map between the clock and the flight's own time */
+export { UPTIME, DOWNTIME, clockAt, paced } from "./engine.js";
 /* the glows' filter graphs, for the tool that draws them into pictures (tools/glows.cjs) */
 export { DAWN, DUSK } from "./glows.js";
 export { createJourney, descentProfile, DOWN_DAWN, mirrored } from "./journey.js";

@@ -82,7 +82,7 @@ async function flightScenario(dies) {
   const cur = b.dom.find("warp");
   const ops = cur ? cur.ops.filter((o) => DRAW_OPS.has(o.op) && o.at >= deadAt) : [];
   return {
-    startAt, deadAt, lands, terminated: w.terminated, fresh: !!cur && cur !== b.dom.warp,
+    startAt, uptime: b.door.UPTIME, deadAt, lands, terminated: w.terminated, fresh: !!cur && cur !== b.dom.warp,
     firstOp: ops.length ? ops[0].at : null, lastOp: ops.length ? ops[ops.length - 1].at : null, nOps: ops.length,
     lines: drawnLines(b.page),
   };
@@ -131,8 +131,8 @@ for (const [name, what, why] of [["error", "the worker fires `error` before `up`
   chk("D4 `dead` after `up`: the worker is terminated and #warp replaced", r, (r) => [r.terminated === 1 && r.fresh, `terminate() calls ${r.terminated}, fresh #warp ${r.fresh}`]);
   chk("D4 ... the console says `flight: drawn on the page: <why>`", r, (r) => [!!reason(r.lines), `lines ${show(r.lines)}`]);
   chk("D4 ... the page engine goes on from where the flight was: it paints from the next few frames", r, (r) => [r.firstOp !== null && r.firstOp - r.deadAt <= 200, `died at ${r.deadAt}, first paint at ${r.firstOp}`]);
-  chk("D4 ... and its skip is the elapsed journey time: the last frame it paints is when the flight would have ended (start + 5200 ms), not 2 s later", r, (r) => {
-    const end = r.startAt + 5200;
+  chk("D4 ... and its skip is the elapsed journey time: the last frame it paints is when the flight would have ended (start + UPTIME + 400 ms: the climb's length on the clock, then the 400 ms tail), not 2 s later", r, (r) => {
+    const end = r.startAt + r.uptime + 400;
     return [r.lastOp !== null && r.lastOp >= end - 50 && r.lastOp <= end + 100, `flight started at ${r.startAt}, the page's last paint at ${r.lastOp} (want about ${end})`];
   });
   chk("D4 (control) a worker that does not die: the `land` hook fires once", c, (c) => [c.lands.length === 1, `land fired ${c.lands.length} times`]);

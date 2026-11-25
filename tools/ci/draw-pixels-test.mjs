@@ -45,10 +45,21 @@ const SITE = process.env.SITE || `http://127.0.0.1:${await freePort()}/`;
 const here = dirname(fileURLToPath(import.meta.url));
 const VIEW = { width: 1280, height: 800 };
 const FLAGS = "gpu=force&fit=skip";
-/* docsFlight is the climb played a second shorter (rate 4800/3800), its warp beat at 200 ms of the journey's own
-   quickened time, so the journey's `at` for 4200 ms into the flight is (200 + 4200) / rate; a journey `at` of 4200
-   itself is past the landing (3800), where the journey draws no flight at all */
-const DOCS_AT = Math.round((200 + 4200) * 3800 / 4800);
+/* docsFlight is the climb played a second shorter (#151: rate UPTIME / (UPTIME - 1000) = 5300 / 4300), its warp beat at
+   200 ms of the journey's own quickened time. A journey at `j` shows the flight's clock c = j * rate - 200 ms after the
+   warp beat, and the flight draws flight time paced(c), so the flight time is 4200 when c = clockAt(4200), the integral
+   of the specification's cost (computed below, 4200 ms of flight time = about 4782 ms of clock, so DOCS_AT is about 4042). The journey's `at` for
+   4200 ms into the flight is therefore (200 + clockAt(4200)) / rate; a journey `at` of 4200 itself is past the landing,
+   where the journey draws no flight at all */
+const clockAt = (f) => {
+  const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const cost = (x) => 1 + (1000 / 1550) * sm(0, 300, x) * (1 - sm(1500, 1900, x)) - (500 / 2450) * sm(1900, 2400, x) * (1 - sm(4400, 4800, x));
+  const n = 8400;                            /* Simpson steps of 0.5 ms over 4200 ms */
+  let s = cost(0) + cost(f);
+  for (let i = 1; i < n; i++) s += cost(i * f / n) * (i % 2 ? 4 : 2);
+  return s * (f / n) / 3;
+};
+const DOCS_AT = Math.round((200 + clockAt(4200)) * 4300 / 5300);
 
 const server = process.env.SITE ? null : spawn(process.execPath, [join(here, "serve.mjs"), new URL(SITE).port], { stdio: ["ignore", "ignore", "inherit"] });
 const results = [];
