@@ -11,11 +11,12 @@
  *   T47 (#145) the plan reads each section's English hash from the section itself (en), not from a source.sections table:
  *       a section whose en is the English's hash16 is unchanged, any other (or none) is due; a previous file in the layout
  *       before #145 (source.sections, no en) is not trusted for any section, as if there were no previous file
- *   T23 (#144) the output estimate for the first real run's plan is within 15% of what that run used
+ *   T23 (#144, #159) the output estimate over the English alone, over docs grown by 30% and over a ninth language is
+ *       within 15% of a figure worked out from the docs and languages.json the test reads
  *
  *   node tools/ci/translate-plan-test.mjs
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startFake } from "./fake-claude.mjs";
@@ -136,9 +137,20 @@ await T.attempt("T47", async () => {
 /* #144: the first real run (pipeline 3802, job 48253) translated this checkout's English, assets/docs and
    assets/i18n/en.json, into the 8 languages of tools/i18n/languages.json with no prior translation, and used
    2,275,267 output tokens (thinking included). A dry run sends nothing and needs no key: the plan and its estimate are
-   built from a copy of the English alone (no translated catalogue, page or state), so the plan is the empty-state one. */
-await T.attempt("T23", async () => {
-  const RECORDED_OUTPUT = 2_275_267;
+   built from a copy of the English alone (no translated catalogue, page or state), so the plan is the empty-state one.
+   #159 ALL-F12 (owner decision 13a): T23 checks only that the estimate is sensible. The expected figure is worked out
+   from the docs the test reads (their payload characters, weighted by the languages in languages.json: a cjk
+   language counts half), at the recorded run's yield of 1.30 output tokens per weighted character (2,275,267 over
+   this checkout's 249,463 payload characters at 7 weighted languages); the language count is read from
+   languages.json, not fixed at 8. T23c and T23d are therefore changed from a fixed figure and a fixed 8 to these. */
+const YIELD = 1.30;   /* output tokens per payload character per weighted language, from the recorded run */
+const payloadChars = (root) => readdirSync(join(root, "assets/docs")).filter((f) => f.endsWith(".json") && f !== "index.json").reduce((n, f) => {
+  const page = JSON.parse(readFileSync(join(root, "assets/docs", f), "utf8"));
+  return n + page.sections.reduce((m, sec) => m + JSON.stringify({ slug: page.slug, id: sec.id, title: sec.title, html: sec.html, subs: sec.subs }).length, 0);
+}, 0);
+/* one dry run over a scratch copy of the English; grow: every section's html is lengthened by that fraction with
+   plain paragraphs (no ids, no links); more: languages added to the copy of languages.json */
+async function dryRun({ grow = 0, more = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "orbit-plan-"));
   try {
     cpSync(join(REPO, "assets/docs"), join(dir, "assets/docs"), { recursive: true });
@@ -146,18 +158,46 @@ await T.attempt("T23", async () => {
     cpSync(join(REPO, "assets/i18n/en.json"), join(dir, "assets/i18n/en.json"));
     cpSync(join(REPO, "tools/i18n"), join(dir, "tools/i18n"), { recursive: true, filter: (f) => !/[\\/]state([\\/]|$)/.test(f) });
     cpSync(join(REPO, "tools/docs-sources.json"), join(dir, "tools/docs-sources.json"));
+    if (grow) for (const f of readdirSync(join(dir, "assets/docs")).filter((f) => f.endsWith(".json") && f !== "index.json")) {
+      const file = join(dir, "assets/docs", f), page = JSON.parse(readFileSync(file, "utf8"));
+      for (const sec of page.sections) {
+        const want = Math.ceil(sec.html.length * grow), pad = "<p>A little more to read about the same thing, in plain words.</p>\n";
+        sec.html += pad.repeat(Math.ceil(want / pad.length));
+      }
+      writeFileSync(file, JSON.stringify(page));
+    }
+    const langFile = join(dir, "tools/i18n/languages.json"), all = { ...JSON.parse(readFileSync(langFile, "utf8")), ...more };
+    writeFileSync(langFile, JSON.stringify(all));
     const lines = [];
-    /* a cap above the whole run: a from-nothing run is over the default 3,000,000 once the estimate is right (#144),
-       and this case judges the estimate, not the cap */
-    const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "10000000" }, log: (l) => lines.push(l) });
-    T.check("T23a the dry run over the English alone exits 0", code === 0, `exit ${code}; ${lines.slice(-2).join(" | ").slice(0, 200)}`);
+    const code = await runPlan({ root: dir, args: ["--dry-run"], env: { TRANSLATE_MAX_TOKENS: "100000000" }, log: (l) => lines.push(l) });
     const m = /^estimate: ([\d,]+) input tokens \+ ([\d,]+) output tokens/m.exec(lines.join("\n"));
-    T.check("T23b the run prints its estimate", !!m, lines.filter((l) => l.startsWith("estimate")).join("") || "no estimate line");
-    const out = m ? Number(m[2].replace(/,/g, "")) : NaN;
-    const off = Math.abs(out - RECORDED_OUTPUT) / RECORDED_OUTPUT;
-    T.check("T23c the output estimate is within 15% of the recorded run's 2,275,267 output tokens", off <= 0.15, `estimate ${out}, ${(off * 100).toFixed(1)}% off`);
     const langs = new Set(lines.filter((l) => l.startsWith("   ")).map((l) => /@([\w-]+)\s/.exec(l)?.[1]).filter(Boolean));
-    T.check("T23d the plan covers all 8 languages", langs.size === 8, [...langs].join(","));
+    const weight = Object.values(all).reduce((w, l) => w + (l.script === "cjk" ? 0.5 : 1), 0);
+    return { code, lines, out: m ? Number(m[2].replace(/,/g, "")) : NaN, found: !!m, langs, count: Object.keys(all).length, expected: Math.round(YIELD * payloadChars(dir) * weight) };
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+const sensible = (name, r) => {
+  const off = Math.abs(r.out - r.expected) / r.expected;
+  T.check(`${name} the output estimate is within 15% of the figure worked out from the docs read (${r.expected})`, off <= 0.15, `estimate ${r.out}, ${(off * 100).toFixed(1)}% off`);
+};
+await T.attempt("T23", async () => {
+  const r = await dryRun();
+  T.check("T23a the dry run over the English alone exits 0", r.code === 0, `exit ${r.code}; ${r.lines.slice(-2).join(" | ").slice(0, 200)}`);
+  T.check("T23b the run prints its estimate", r.found, r.lines.filter((l) => l.startsWith("estimate")).join("") || "no estimate line");
+  sensible("T23c", r);
+  T.check("T23d the plan covers every language of languages.json", r.langs.size === r.count, `${[...r.langs].join(",")} of ${r.count}`);
+});
+/* #159 ALL-F12: the same estimate check over docs grown by 30%, and over a languages.json with a ninth language */
+await T.attempt("T23e", async () => {
+  const base = await dryRun(), r = await dryRun({ grow: 0.3 });
+  T.check("T23e the copied docs hold 30% or more characters than the checkout's", r.expected >= base.expected * 1.2, `${r.expected} against ${base.expected}`);
+  sensible("T23e2", r);
+  T.check("T23f the estimate grows with the docs, between 20% and 40% over the plain one", r.out / base.out > 1.2 && r.out / base.out < 1.4, `${(r.out / base.out).toFixed(3)}x`);
+});
+await T.attempt("T23g", async () => {
+  const r = await dryRun({ more: { it: { name: "Italiano", english: "Italian", voice: "informal (tu)", built: false, script: "latin" } } });
+  T.check("T23g the dry run with a ninth language exits 0", r.code === 0, `exit ${r.code}`);
+  T.check("T23h the language count follows languages.json: nine, with it in the plan", r.count === 9 && r.langs.size === 9 && r.langs.has("it"), `${[...r.langs].join(",")}`);
+  sensible("T23i", r);
 });
 T.done();
