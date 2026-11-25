@@ -619,7 +619,7 @@ await T.attempt("T49", async () => {
     const r = await runTool(fx, ["--api-base", fake.url, "--report", fx.report, "--poll-seconds", "1.2", "--langs", "de", "--timeout-minutes", "0.02"]);
     T.check("T49a round 1 ended after the deadline with a retryable failure: create is called once, not twice", !r.notBuilt && fake.posts === 1 && fake.batches.length === 1, `${fake.posts} batches created`);
     T.check("T49b the run stops with a non-zero exit", !r.notBuilt && r.code !== 0 && r.code !== null, `exit ${r.code}`);
-    const out = `${r.stdout || ""}${r.stderr || ""}`;
+    const out = `${r.out || ""}${r.err || ""}`;
     T.check("T49c the message says the retry batch was not sent and nothing was spent", /retry batch (was )?not sent/i.test(out) && /nothing (was )?spent/i.test(out), out.slice(-300));
   } finally { await fake.close(); fx.cleanup(); }
 });
