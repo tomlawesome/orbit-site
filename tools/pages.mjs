@@ -120,7 +120,7 @@ export function build(indexHtml, catalogue, lang, en = JSON.parse(readFileSync(j
   /* the dusk's words, through the door's own setting */
   html = doorBlocks(html, { "dusk-said": need("dusk-said"), "dusk-sub": need("dusk-sub") });
   /* each language link: that language's page from this folder */
-  html = html.replace(/<a data-lang="([a-z-]+)" href="[^"]*"([^>]*)>/g, (_, to, rest) => {
+  html = html.replace(/<a data-lang="([A-Za-z-]+)" href="[^"]*"([^>]*)>/g, (_, to, rest) => {
     const href = to === lang ? "./" : to === "en" ? "../" : `../${to}/`;
     rest = rest.replace(/\saria-current="page"/, "");
     return `<a data-lang="${to}" href="${href}"${rest}${to === lang ? ' aria-current="page"' : ""}>`;
