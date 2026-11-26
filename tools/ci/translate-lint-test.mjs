@@ -53,8 +53,8 @@ await T.attempt("T25", async () => {
   const base = scratch();
   try {
     /* what i18n-check reads: the page, the scripts, the door, the catalogues of en and of every built language, the
-       real languages.json (with its state files and pages), and ar, which is really unbuilt, given a catalogue and state
-       below (the real ar files are left out) */
+       real languages.json (with its state files and pages), and "xx", a made-up code that is unbuilt (ar and every real language are built, #173),
+       added to languages.json below and given a catalogue and state */
     const realLangs = JSON.parse(read(REPO, "tools/i18n/languages.json"));
     const builtLangs = Object.keys(realLangs).filter((l) => realLangs[l].built === true);
     const isBuilt = (l) => builtLangs.includes(l);
@@ -65,11 +65,12 @@ await T.attempt("T25", async () => {
     const plain = Object.keys(en).filter((k) => !/[{<]/.test(en[k]));
     const holey = Object.keys(en).find((k) => /\{\w+\}/.test(en[k]));
     const translated = new Set([plain[0], plain[1], plain[2], holey]);
-    put(base, "assets/i18n/ar.json", Object.fromEntries(Object.entries(en).map(([k, v]) => [k, translated.has(k) ? swap(v) : v])));
-    if (!realLangs.ar || realLangs.ar.built !== false) throw new Error("tools/i18n/languages.json: ar is no longer the unbuilt example; pick another language for T25");
-    /* the real languages.json is kept (built languages and ar, unbuilt) */
-        put(base, "tools/i18n/state/ar.json", stateFor(en, Object.keys(en).filter((k) => !translated.has(k))));
-    const extra = ["assets/i18n/ar.json", "tools/i18n/state/ar.json"];
+    put(base, "assets/i18n/xx.json", Object.fromEntries(Object.entries(en).map(([k, v]) => [k, translated.has(k) ? swap(v) : v])));
+    if (realLangs.xx) throw new Error("tools/i18n/languages.json: xx is a real language now; pick another made-up code for T25");
+    /* the real languages.json is kept, with the made-up unbuilt xx added */
+    put(base, "tools/i18n/languages.json", { ...realLangs, xx: { name: "Xxish", english: "Xxish", voice: "plain", built: false, script: "latin" } });
+        put(base, "tools/i18n/state/xx.json", stateFor(en, Object.keys(en).filter((k) => !translated.has(k))));
+    const extra = ["assets/i18n/xx.json", "tools/i18n/state/xx.json"];
     let control = null;   /* the control's verdict: a refusal means nothing from a check that refuses the good tree too */
     const case_ = (name, mutate, want) => {
       if (want && control !== true) return T.check(name, false, "the control (T25a) does not pass, so this refusal proves nothing");
@@ -84,38 +85,38 @@ await T.attempt("T25", async () => {
       } catch (e) { T.check(name, false, String(e && e.message || e)); } finally { rmSync(d, { recursive: true, force: true }); }
     };
     const edit = (d, p, fn) => { const j = JSON.parse(read(d, p)); fn(j); put(d, p, j); };
-    case_("T25a the control: the real built languages, ar unbuilt with its catalogue and state, no ar page, no ar hreflang: passes", () => {});
-    case_("T25b an unbuilt catalogue missing a key is refused, ar.json named", (d) => edit(d, "assets/i18n/ar.json", (j) => { delete j[plain[5]]; }), /ar\.json/);
-    case_("T25c an unbuilt catalogue whose {holes} differ is refused", (d) => edit(d, "assets/i18n/ar.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }), /ar\.json[^\n]*(\{|holes|placeholder)/i);
-    case_("T25d an unbuilt catalogue that adds a bare tag is refused", (d) => edit(d, "assets/i18n/ar.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }), /ar\.json[^\n]*tag/i);
-    case_("T25e an unbuilt catalogue with an empty value is refused", (d) => edit(d, "assets/i18n/ar.json", (j) => { j[plain[1]] = ""; }), /ar\.json[^\n]*empty/i);
-    case_("T25f an unbuilt language with a page (ar/index.html) is refused", (d) => put(d, "ar/index.html", read(d, "de/index.html")), /ar\/index\.html|ar[^\n]*(built|page)/i);
+    case_("T25a the control: the real built languages, xx (made-up, unbuilt) with its catalogue and state, no xx page, no xx hreflang: passes", () => {});
+    case_("T25b an unbuilt catalogue missing a key is refused, xx.json named", (d) => edit(d, "assets/i18n/xx.json", (j) => { delete j[plain[5]]; }), /xx\.json/);
+    case_("T25c an unbuilt catalogue whose {holes} differ is refused", (d) => edit(d, "assets/i18n/xx.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }), /xx\.json[^\n]*(\{|holes|placeholder)/i);
+    case_("T25d an unbuilt catalogue that adds a bare tag is refused", (d) => edit(d, "assets/i18n/xx.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }), /xx\.json[^\n]*tag/i);
+    case_("T25e an unbuilt catalogue with an empty value is refused", (d) => edit(d, "assets/i18n/xx.json", (j) => { j[plain[1]] = ""; }), /xx\.json[^\n]*empty/i);
+    case_("T25f an unbuilt language with a page (xx/index.html) is refused", (d) => put(d, "xx/index.html", read(d, "de/index.html")), /xx\/index\.html|xx[^\n]*(built|page)/i);
     case_("T25g an unbuilt language in the page's hreflang set is refused", (d) => {
       const h = read(d, "index.html"), m = /^[ \t]*<link rel="alternate" hreflang="de"[^\n]*$/m.exec(h);
       if (!m) throw new Error("no de hreflang line in index.html to copy");
-      put(d, "index.html", h.replace(m[0], `${m[0]}\n${m[0].replace(/hreflang="de"/, 'hreflang="ar"').replace(/\/de\//, "/ar/")}`));
-    }, /hreflang|ar/i);
+      put(d, "index.html", h.replace(m[0], `${m[0]}\n${m[0].replace(/hreflang="de"/, 'hreflang="xx"').replace(/\/de\//, "/xx/")}`));
+    }, /hreflang|xx/i);
     case_("T25h an unbuilt language in lang.js BUILT is refused", (d) => {
       const l = read(d, "assets/js/lang.js");
       const m = /export const BUILT = \[([^\]]*)\]/.exec(l);
       if (!m) throw new Error("no BUILT array in lang.js");
-      put(d, "assets/js/lang.js", l.replace(m[0], `export const BUILT = [${m[1]}, "ar"]`));
-    }, /BUILT|lang\.js|ar/);
-    case_("T25i state with a key the catalogue lacks is refused, state/ar.json named", (d) => edit(d, "tools/i18n/state/ar.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }), /state\/ar\.json/);
-    case_("T25j state missing a key of the catalogue is refused", (d) => edit(d, "tools/i18n/state/ar.json", (j) => { delete j.catalogue[plain[6]]; }), /state\/ar\.json/);
-    case_("T25k a kept key that is not in the catalogue is refused", (d) => edit(d, "tools/i18n/state/ar.json", (j) => { j.kept.push("ghost"); }), /state\/ar\.json|ghost/);
-    case_("T25l a kept key whose value differs from English is refused", (d) => edit(d, "assets/i18n/ar.json", (j) => { const k = Object.keys(en).find((x) => !translated.has(x)); j[k] = `${swap(en[k])} changed`; }), /ar\.json[^\n]*(kept|English)|state\/ar\.json/i);
+      put(d, "assets/js/lang.js", l.replace(m[0], `export const BUILT = [${m[1]}, "xx"]`));
+    }, /BUILT|lang\.js|xx/);
+    case_("T25i state with a key the catalogue lacks is refused, state/xx.json named", (d) => edit(d, "tools/i18n/state/xx.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }), /state\/xx\.json/);
+    case_("T25j state missing a key of the catalogue is refused", (d) => edit(d, "tools/i18n/state/xx.json", (j) => { delete j.catalogue[plain[6]]; }), /state\/xx\.json/);
+    case_("T25k a kept key that is not in the catalogue is refused", (d) => edit(d, "tools/i18n/state/xx.json", (j) => { j.kept.push("ghost"); }), /state\/xx\.json|ghost/);
+    case_("T25l a kept key whose value differs from English is refused", (d) => edit(d, "assets/i18n/xx.json", (j) => { const k = Object.keys(en).find((x) => !translated.has(x)); j[k] = `${swap(en[k])} changed`; }), /xx\.json[^\n]*(kept|English)|state\/xx\.json/i);
     case_("T25m a built language without its state file is refused", (d) => rmSync(join(d, "tools/i18n/state/de.json")), /state\/de\.json|de[^\n]*state/i);
     /* #159 D-F1 (owner decision 12a): a key in en.json missing from a catalogue is pending translation while that
        language's state has no hash for it (the page shows English); extra keys, broken {holes} or tags and a hash
        for a key the catalogue lacks (a stale hash) still fail */
-    const pend = (d, k) => { edit(d, "assets/i18n/ar.json", (j) => { delete j[k]; }); edit(d, "tools/i18n/state/ar.json", (j) => { delete j.catalogue[k]; j.kept = j.kept.filter((x) => x !== k); }); };
+    const pend = (d, k) => { edit(d, "assets/i18n/xx.json", (j) => { delete j[k]; }); edit(d, "tools/i18n/state/xx.json", (j) => { delete j.catalogue[k]; j.kept = j.kept.filter((x) => x !== k); }); };
     case_("T25n #159 D-F1 a key in en.json with no catalogue entry and no state hash is pending: passes", (d) => pend(d, plain[7]));
-    case_("T25o #159 D-F1 a key with no catalogue entry but a state hash is refused (stale hash), state/ar.json or ar.json named", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/ar.json", (j) => { j.catalogue[plain[7]] = "0123456789abcdef"; }); }, /ar\.json/);
-    case_("T25p #159 D-F1 a pending key does not excuse an extra key in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/ar.json", (j) => { j.ghost = "x"; }); }, /ghost/);
-    case_("T25q #159 D-F1 a pending key does not excuse a broken {hole} in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/ar.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }); }, /ar\.json[^\n]*(\{|holes|placeholder)/i);
-    case_("T25r #159 D-F1 a pending key does not excuse a broken tag in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/ar.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }); }, /ar\.json[^\n]*tag/i);
-    case_("T25s #159 D-F1 a pending key does not excuse a stale hash (a hash for a ghost key)", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/ar.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }); }, /state\/ar\.json[^\n]*ghost/);
+    case_("T25o #159 D-F1 a key with no catalogue entry but a state hash is refused (stale hash), state/xx.json or xx.json named", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/xx.json", (j) => { j.catalogue[plain[7]] = "0123456789abcdef"; }); }, /xx\.json/);
+    case_("T25p #159 D-F1 a pending key does not excuse an extra key in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/xx.json", (j) => { j.ghost = "x"; }); }, /ghost/);
+    case_("T25q #159 D-F1 a pending key does not excuse a broken {hole} in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/xx.json", (j) => { j[holey] = `${en[holey].replace(/\{\w+\}/g, "").trim()} x`; }); }, /xx\.json[^\n]*(\{|holes|placeholder)/i);
+    case_("T25r #159 D-F1 a pending key does not excuse a broken tag in the catalogue", (d) => { pend(d, plain[7]); edit(d, "assets/i18n/xx.json", (j) => { j[plain[0]] = `${j[plain[0]]} <b>x</b>`; }); }, /xx\.json[^\n]*tag/i);
+    case_("T25s #159 D-F1 a pending key does not excuse a stale hash (a hash for a ghost key)", (d) => { pend(d, plain[7]); edit(d, "tools/i18n/state/xx.json", (j) => { j.catalogue.ghost = "0123456789abcdef"; }); }, /state\/xx\.json[^\n]*ghost/);
   } catch (e) { T.check("T25", false, String(e && e.message || e)); } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

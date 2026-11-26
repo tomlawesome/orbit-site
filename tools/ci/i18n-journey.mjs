@@ -22,6 +22,8 @@
  *       the context menu, points at the address the visitor is at now (the site moves its hash without a hashchange), not
  *       the one the page loaded with
  *   J14-J16 (#125 languages live) per built language: the door's notice at its foot, the English link, the hide button
+ *   K1-K9 (#173 Arabic, right to left): corners, the docs reader, the drawers, the dial and transport, letter-spacing and
+ *       small print, <bdi> around inserted values, the stale line's English link; each against the root as the control
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -375,7 +377,7 @@ try {
   const SIX = ["fr", "es", "pt", "id", "zh-Hans", "ja"];
   const visible = (page, sel) => page.evaluate((q) => { const e = document.querySelector(q); if (!e) return false; const c = getComputedStyle(e), r = e.getBoundingClientRect(); return c.visibility !== "hidden" && c.display !== "none" && +c.opacity > 0.01 && r.width > 0 && r.height > 0; }, sel);
   const hiddenNow = (page, sel) => page.waitForFunction((q) => { const e = document.querySelector(q); if (!e) return true; const c = getComputedStyle(e); return c.visibility === "hidden" || c.display === "none" || +c.opacity === 0; }, sel, { timeout: 8000 }).then(() => true, () => false);
-  check("J14a fr, es, pt, id, zh-Hans and ja are built (languages.json) and ar is not", SIX.every((k) => LANGS[k]?.built === true) && LANGS.ar?.built === false, `built: ${JSON.stringify(builtNow)}`);
+  check("J14a fr, es, pt, id, zh-Hans, ja and ar are built (languages.json)", SIX.every((k) => LANGS[k]?.built === true) && LANGS.ar?.built === true, `built: ${JSON.stringify(builtNow)}`);
   for (const lang of builtNow) {
     for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
       const tag = `${lang} ${size.width}x${size.height}`;
@@ -461,6 +463,156 @@ try {
       await page.locator("#docspad .docs-stale").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
       const stale = await page.locator("#docspad .docs-stale .hide, #docspad .docs-stale button").count();
       check(`J16d ${lang}: .docs-stale has no hide control`, stale === 0, `${stale} control(s)`);
+    });
+  }
+
+  /* ---- K (#173 Arabic, right to left): measured in the browser on ar/, with the root (and de/) as the control ----
+     Class and attribute selectors only. The positions the root and de/ had before the change are the BEFORE table below
+     (measured on the tree before #173, 1280x800 and 390x844, ?preview, the docs pad open), so "other languages unchanged"
+     is a number, not a comparison with itself. RTL_MEASURE=1 prints them instead of checking. */
+  const SIZES = [{ width: 1280, height: 800 }, { width: 390, height: 844 }];
+  const rectOf = (sel) => (page) => page.evaluate((q) => { const e = [...document.querySelectorAll(q)].find((x) => x.offsetParent || getComputedStyle(x).position === "fixed"); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom) }; }, sel);
+  const CORNERS = { langs: ".langs", back: "#docspad .back", home: "#docspad .mark-row.home" };
+  const corners = async (page) => Object.fromEntries(await Promise.all(Object.entries(CORNERS).map(async ([k, q]) => [k, await rectOf(q)(page)])));
+  const BEFORE = {
+    "1280x800": {
+      "de/": { langs: { l: 24, r: 52, t: 52, b: 74 }, back: { l: 24, r: 182, t: 22, b: 36 }, home: { l: 1187, r: 1256, t: 16, b: 38 } },
+      root: { langs: { l: 24, r: 52, t: 52, b: 74 }, back: { l: 24, r: 107, t: 22, b: 36 }, home: { l: 1187, r: 1256, t: 16, b: 38 } },
+    },
+    "390x844": {
+      "de/": { langs: { l: 16, r: 44, t: 52, b: 74 }, back: { l: 24, r: 182, t: 22, b: 36 }, home: { l: 297, r: 366, t: 16, b: 38 } },
+      root: { langs: { l: 16, r: 44, t: 52, b: 74 }, back: { l: 24, r: 107, t: 22, b: 36 }, home: { l: 297, r: 366, t: 16, b: 38 } },
+    },
+  };
+  const measuring = !!process.env.RTL_MEASURE;
+  const enterHome = async (page, path) => {
+    await page.goto(`${SITE}${path}?preview#home`, { waitUntil: "load" });
+    await page.locator("#gate").waitFor({ state: "visible", timeout: 60000 });
+    await page.locator("#gate").click();
+    await page.locator("#transport.on").waitFor({ state: "attached", timeout: 60000 });
+    await page.waitForFunction(() => !document.querySelector("#home").hidden && !/launching|showwarp/.test(document.body.className), null, { timeout: 60000 });
+  };
+
+  for (const size of SIZES) {
+    const tag = `${size.width}x${size.height}`;
+    const seen = {};
+    for (const path of ["ar/", "de/", ""]) {
+      await run(`K1 ${path || "root"} ${tag}`, { context: { locale: "en-US", viewport: size } }, async (page) => {
+        await page.goto(`${SITE}${path}?preview#docs`, { waitUntil: "load" });
+        await docsOpen(page);
+        await page.evaluate(() => document.fonts.ready).catch(() => {});
+        const c = await corners(page);
+        seen[path] = c;
+        if (measuring) { console.log(`MEASURE ${JSON.stringify([path || "root", tag, c])}`); return; }
+        const W = size.width, mid = (r) => (r ? (r.l + r.r) / 2 : NaN);
+        if (path === "ar/") {
+          check(`K1a ar/ ${tag}: .langs and the pad's .back sit in the right-hand quarter, .mark-row.home in the left`, mid(c.langs) >= W * 0.75 && mid(c.back) >= W * 0.75 && mid(c.home) <= W * 0.25, JSON.stringify(c));
+        } else {
+          check(`K1b ${path || "root"} ${tag}: the other way round (.langs and .back left-hand, .mark-row.home right-hand), as before`, mid(c.langs) <= W * 0.5 && mid(c.back) <= W * 0.5 && mid(c.home) >= W * 0.5, JSON.stringify(c));
+          const was = BEFORE[tag] && BEFORE[tag][path || "root"];
+          const same = !!was && Object.keys(CORNERS).every((k) => c[k] && ["l", "r", "t", "b"].every((e) => Math.abs(c[k][e] - was[k][e]) <= 1));
+          check(`K1c ${path || "root"} ${tag}: positions equal those measured before the change (within 1px)`, same, `now ${JSON.stringify(c)}, before ${JSON.stringify(was)}`);
+        }
+      });
+    }
+  }
+
+  await run("K2 ar docs reader", { context: { locale: "en-US" } }, async (page) => {
+    await page.goto(`${SITE}ar/?preview#docs/installing`, { waitUntil: "load" });
+    await docsOpen(page);
+    await page.waitForFunction(() => (document.querySelector("#docspad .reader .readhead h1")?.textContent || "").length > 0 && document.querySelectorAll("#docspad .reader p").length > 5, null, { timeout: 20000 });
+    const r = await page.evaluate(() => {
+      const reader = document.querySelector("#docspad .reader");
+      /* the right edge of the first line of an element's text, and the right edge of its own content box */
+      const edge = (e) => { const cs = getComputedStyle(e), rg = document.createRange(); rg.selectNodeContents(e); const line = rg.getClientRects()[0], box = e.getBoundingClientRect(); return { dir: cs.direction, line: line ? line.right : null, box: box.right - parseFloat(cs.paddingRight) }; };
+      const ps = [...reader.querySelectorAll(".sections p, .body p, article p, p")].filter((p) => !p.closest("pre,.docs-stale,.untranslated,.ai-notice,.source") && p.textContent.trim().length > 40).slice(0, 3);
+      const grid = reader.querySelector(".readgrid"), on = reader.querySelector(".onpage");
+      const gr = grid.getBoundingClientRect(), orr = on.getBoundingClientRect();
+      const nav = reader.querySelector(".readnav"), prev = nav.querySelector("a.prev, a:first-child"), next = nav.querySelector("a.next");
+      const pr = prev && prev.getBoundingClientRect(), nr = next && next.getBoundingClientRect();
+      const codes = [...reader.querySelectorAll("pre, code, kbd")].map((e) => { const cs = getComputedStyle(e); return [cs.direction, cs.textAlign]; });
+      return { h1: edge(reader.querySelector(".readhead h1")), ps: ps.map(edge), onpageMid: (orr.left + orr.right) / 2, gridMid: (gr.left + gr.right) / 2, prevRight: pr && pr.right, nextLeft: nr && nr.left, codes };
+    });
+    const startsRight = (e) => e.dir === "rtl" && e.line !== null && e.line >= e.box - 3;
+    check("K2a the reader's h1 has direction rtl and its text starts at the right edge", startsRight(r.h1), JSON.stringify(r.h1));
+    check("K2b body paragraphs have direction rtl and start at the right edge", r.ps.length >= 1 && r.ps.every(startsRight), JSON.stringify(r.ps));
+    check("K2c every pre, code and kbd has direction ltr and text-align start", r.codes.length >= 1 && r.codes.every(([d, a]) => d === "ltr" && a === "start"), JSON.stringify(r.codes.slice(0, 6)));
+    check("K2d .onpage sits at the inline end (left half of the readgrid)", r.onpageMid < r.gridMid, `onpage ${r.onpageMid}, grid ${r.gridMid}`);
+    check("K2e the .readnav previous link's right edge lies to the right of the next link's left edge", r.prevRight !== null && r.nextLeft !== null && r.prevRight > r.nextLeft, `prev right ${r.prevRight}, next left ${r.nextLeft}`);
+  });
+
+  /* the docs reader through a stale translation: the banner's inserted date and the English link (spec section 5) */
+  await run("K3 ar stale line", { context: { locale: "en-US" }, stored: "ar" }, async (page) => {
+    await fakeDocs(page, "2000-01-01T00:00:00Z");
+    await page.goto(`${SITE}ar/?preview#docs/readme`, { waitUntil: "load" });
+    await docsOpen(page);
+    const banner = page.locator("#docspad .docs-stale");
+    await banner.first().waitFor({ state: "visible", timeout: 8000 });
+    const inner = await banner.first().evaluate((p) => ({ bdi: [...p.querySelectorAll("bdi")].map((b) => b.textContent.trim()), dir: getComputedStyle(p).direction }));
+    check("K3a .docs-stale is rtl and wraps its inserted date in <bdi>", inner.dir === "rtl" && inner.bdi.some((t) => t.length > 0), JSON.stringify(inner));
+    const src = await page.evaluate(() => { const s = document.querySelector("#docspad .readhead .source"); return s ? s.innerHTML : ""; });
+    check("K3b the reader's .source line wraps its inserted value (repo, path) in <bdi>", /<bdi\b/.test(src), src.slice(0, 160));
+    const href = new URL(await banner.first().locator("a[hreflang='en']").first().evaluate((a) => a.href));
+    check("K3c the stale line's English link points at the root with #docs/readme", href.pathname === new URL(SITE).pathname && href.hash === "#docs/readme", href.href);
+    await banner.first().locator("a[hreflang='en']").first().click();
+    await page.waitForURL((u) => u.pathname === new URL(SITE).pathname);
+    await page.waitForLoadState("load");
+    check("K3d and opens the English page (<html lang> en)", (await page.evaluate(() => document.documentElement.lang)).startsWith("en"), page.url());
+  });
+
+  /* the home screen: drawers, dial, transport. Each is measured on ar/ and on the root as the control */
+  for (const path of ["ar/", ""]) {
+    const who = path || "root";
+    await run(`K4 ${who} home`, { context: { locale: "en-US", viewport: { width: 1280, height: 800 } }, stored: path ? "ar" : "en" }, async (page) => {
+      await enterHome(page, path);
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      const rtl = path === "ar/";
+      const W = 1280;
+      /* a drawer, opened by the control the visitor would use, measured with its .close */
+      const drawer = async (id, open) => {
+        await open();
+        await page.waitForFunction((i) => { const d = document.getElementById(i); const r = d.getBoundingClientRect(); return d.classList.contains("open") && r.width > 0 && r.right > 0 && r.left < innerWidth; }, id, { timeout: 8000 });
+        await page.waitForTimeout(400);
+        return page.evaluate((i) => { const d = document.getElementById(i), r = d.getBoundingClientRect(); const c = d.querySelector(".close, .handle"), cr = c && c.getBoundingClientRect(); return { mid: (r.left + r.right) / 2, closeMid: cr ? (cr.left + cr.right) / 2 : null, handleMid: (() => { const h = d.querySelector(".handle"), hr = h && h.getBoundingClientRect(); return hr ? (hr.left + hr.right) / 2 : null; })() }; }, id);
+      };
+      const shut = () => page.keyboard.press("Escape").then(() => page.waitForTimeout(300));
+      const install = await drawer("installdrawer", async () => { await page.locator("#account-orb").click({ force: true }); await page.locator('[data-open-drawer="installdrawer"]').click({ force: true }); });
+      await shut();
+      const inbox = await drawer("inboxdrawer", () => page.locator("#inbox-orb").click({ force: true }));
+      await shut();
+      const key = await drawer("keydrawer", () => page.evaluate(() => document.querySelector("#keydrawer .handle").click()));
+      /* the install drawer is the start drawer (right on ar/, left on the root); inbox and key are the end drawers */
+      check(`K4a ${who}: the install drawer opens from the ${rtl ? "right" : "left"}`, rtl ? install.mid > W / 2 : install.mid < W / 2, JSON.stringify(install));
+      check(`K4b ${who}: the inbox and key drawers open from the ${rtl ? "left" : "right"}`, rtl ? inbox.mid < W / 2 && key.mid < W / 2 : inbox.mid > W / 2 && key.mid > W / 2, JSON.stringify({ inbox, key }));
+      /* each .close on the inner edge: the side of the drawer that faces the middle of the screen */
+      const inner = (d, onRight) => d.closeMid !== null && (onRight ? d.closeMid < d.mid : d.closeMid > d.mid);
+      check(`K4c ${who}: each .close sits on its drawer's inner edge`, inner(install, rtl) && inner(inbox, !rtl), JSON.stringify({ install, inbox }));
+      check(`K4d ${who}: the key .handle goes with its drawer, on the inner edge`, key.handleMid !== null && (rtl ? key.handleMid > key.mid : key.handleMid < key.mid), JSON.stringify(key));
+      await shut();
+      /* the dial: today at 12 o'clock, the next month clockwise of it, the same on both */
+      const dial = await page.evaluate(() => { const m = [...document.querySelectorAll("#dial .months text")].map((t) => { const r = t.getBoundingClientRect(); return [(r.left + r.right) / 2, (r.top + r.bottom) / 2]; }); const c = document.querySelector("#dial").getBoundingClientRect(); return { m, cx: (c.left + c.right) / 2 }; });
+      const now = dial.m[0], nextMonth = dial.m[1];
+      check(`K4e ${who}: the dial's today month is at 12 o'clock (topmost, centred) and the next lies clockwise of it (to its right, lower)`, dial.m.length === 12 && Math.abs(now[0] - dial.cx) < 6 && dial.m.every((p) => p[1] >= now[1] - 1) && nextMonth[0] > now[0] && nextMonth[1] > now[1], JSON.stringify({ now, nextMonth, cx: dial.cx }));
+      /* the transport's played segment grows from the left on both: a physical bar, as time runs left to right */
+      const bar = await page.evaluate(() => { const rail = document.querySelector("#transport .rail").getBoundingClientRect(), p = document.querySelector("#transport .played"); p.style.setProperty("--p", "50%"); p.style.transition = "none"; const r = p.getBoundingClientRect(); return { railL: rail.left, railR: rail.right, l: r.left, r: r.right }; });
+      check(`K4f ${who}: the transport's played segment starts at the rail's left edge and grows right`, Math.abs(bar.l - bar.railL) <= 1 && bar.r > bar.l + 10 && bar.r < bar.railR - 1, JSON.stringify(bar));
+    });
+  }
+
+  for (const path of ["ar/", ""]) {
+    const who = path || "root";
+    await run(`K5 ${who} letter-spacing`, { context: { locale: "en-US", viewport: { width: 1280, height: 800 } }, stored: path ? "ar" : "en" }, async (page) => {
+      await page.goto(`${SITE}${path}?preview#docs`, { waitUntil: "load" });
+      await docsOpen(page);
+      await page.waitForSelector("#docspad .results h4", { timeout: 20000 });
+      const m = await page.evaluate(() => {
+        const get = (q) => { const e = [...document.querySelectorAll(q)].find((x) => x.offsetParent); if (!e) return null; const cs = getComputedStyle(e); return { ls: cs.letterSpacing, fs: parseFloat(cs.fontSize) }; };
+        return { corner: get("#docspad .corner"), langs: get(".langs button"), h4: get("#docspad.docs .results h4, .pad.docs .results h4") };
+      });
+      const zero = (o) => o && (o.ls === "0px" || o.ls === "normal");
+      const spaced = (o) => o && o.ls !== "normal" && parseFloat(o.ls) > 0;
+      if (path) check("K5a ar/: letter-spacing is 0 on .corner, .langs button and .pad.docs .results h4, and each is at least 12px", zero(m.corner) && zero(m.langs) && zero(m.h4) && [m.corner, m.langs, m.h4].every((o) => o && o.fs >= 12), JSON.stringify(m));
+      else check("K5b root: the same three are letter-spaced (non-zero)", spaced(m.corner) && spaced(m.langs) && spaced(m.h4), JSON.stringify(m));
     });
   }
 } catch (e) {

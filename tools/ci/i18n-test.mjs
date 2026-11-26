@@ -211,7 +211,7 @@ const SIX = ["fr", "es", "pt", "id", "zh-Hans", "ja"];
 await attempt("B1 six built", async () => {
   const off = SIX.filter((k) => !(LANGS[k] && LANGS[k].built === true));
   check("B1a fr, es, pt, id, zh-Hans and ja are built in languages.json", !off.length, `not built: ${JSON.stringify(off)}`);
-  check("B1b de stays built and ar stays off", LANGS.de?.built === true && LANGS.ar?.built === false, `de ${LANGS.de?.built}, ar ${LANGS.ar?.built}`);
+  check("B1b de stays built and ar is built too (#173)", LANGS.de?.built === true && LANGS.ar?.built === true, `de ${LANGS.de?.built}, ar ${LANGS.ar?.built}`);
 });
 
 await attempt("W1 notices on every built page", async () => {
@@ -274,6 +274,99 @@ await attempt("N1 404", async () => {
   const html = read("404.html");
   check("N1a no <script>", !/<script\b/i.test(html), "404.html");
   check("N1b has German and English", /Not in this world/.test(html) && /\b(nicht|Seite|diese|Welt|gefunden)\b/i.test(html), "both lines");
+});
+
+/* ---- #173 Arabic, right to left (spec "Arabic right-to-left layout", sections 2 to 5; no browser) ----
+ *   D1  languages.json: ar carries "dir": "rtl", no other language carries a dir
+ *   D2  ar/index.html is <html lang="ar" dir="rtl">; the root, 404, install and every other built page carry no dir; build() agrees
+ *   D3  the Arabic page and the root's markup carry dir="ltr" on `.cmd code`, `.theline code` and #relay-addr
+ *   D4  ar is in lang.js BUILT, pick() and the root's auto-lang script send an Arabic browser to ar/, every page's switch links ar
+ *       with lang and hreflang
+ *   D5  site.css: logical properties carry the chrome, :lang(ar) zeroes letter-spacing and raises the small print, the code rule,
+ *       the font stack, and at most a handful of [dir=rtl] rules (no override sheet); door.css is left alone
+ *   D6  lang.js tr() on an Arabic page wraps a filled {value} in U+2068 ... U+2069; on the root it does not
+ */
+const rtlTag = (html) => (/<html\b[^>]*>/i.exec(html) || [""])[0];
+await attempt("D1 dir in languages.json", async () => {
+  const withDir = Object.keys(LANGS).filter((k) => "dir" in LANGS[k]);
+  check("D1a ar has dir \"rtl\"", LANGS.ar?.dir === "rtl", JSON.stringify(LANGS.ar));
+  check("D1b no other language carries a dir (ltr is the default)", withDir.length === 1 && withDir[0] === "ar", JSON.stringify(withDir));
+});
+
+await attempt("D2 html dir", async () => {
+  const ar = read("ar/index.html");
+  check("D2a ar/index.html is <html lang=\"ar\" dir=\"rtl\">", /<html\b[^>]*\blang="ar"[^>]*\bdir="rtl"|<html\b[^>]*\bdir="rtl"[^>]*\blang="ar"/.test(rtlTag(ar)), rtlTag(ar));
+  const others = ["index.html", "404.html", "install.html", ...builtKeys.filter((k) => k !== "ar").map((k) => `${k}/index.html`)].filter((f) => existsSync(at(f)));
+  const withDir = others.filter((f) => /\sdir\s*=/.test(rtlTag(read(f))));
+  check("D2b no other page has a dir attribute on <html>", others.length >= 8 && !withDir.length, `${others.length} pages; with dir ${JSON.stringify(withDir)}`);
+  const { build } = await import(pathToFileURL(at("tools/pages.mjs")).href);
+  const arCat = json("assets/i18n/ar.json");
+  check("D2c build(index.html, ar.json, \"ar\") equals ar/index.html on disk", build(indexHtml, arCat, "ar") === ar, "ar");
+  check("D2d build(..., \"de\") still has no dir", !/\sdir\s*=/.test(rtlTag(build(indexHtml, de, "de"))), rtlTag(build(indexHtml, de, "de")));
+  const dirs = [...ar.matchAll(/<[a-z][^>]*\sdir="(?:rtl)"/gi)].length;
+  check("D2e dir=\"rtl\" is on <html> only (nothing else in the page is marked rtl)", dirs === 1, `${dirs} element(s) with dir="rtl"`);
+});
+
+await attempt("D3 code stays ltr", async () => {
+  /* the code elements: .cmd code, .theline code and #relay-addr, found by their container in the markup */
+  const find = (html) => {
+    const out = [];
+    for (const m of html.matchAll(/<div\b[^>]*class="cmd"[^>]*>\s*(<code\b[^>]*>)/g)) out.push([".cmd code", m[1]]);
+    for (const m of html.matchAll(/<p\b[^>]*class="theline"[^>]*>\s*(<code\b[^>]*>)/g)) out.push([".theline code", m[1]]);
+    for (const m of html.matchAll(/<code\b[^>]*\bid="relay-addr"[^>]*>/g)) out.push(["#relay-addr", m[0]]);
+    return out;
+  };
+  for (const [name, html] of [["ar/index.html", read("ar/index.html")], ["index.html", indexHtml]]) {
+    const found = find(html);
+    const kinds = new Set(found.map((f) => f[0]));
+    check(`D3 ${name}: .cmd code, .theline code and #relay-addr are found and each has dir="ltr"`, kinds.size === 3 && found.every(([, tag]) => attr(tag, "dir") === "ltr"), JSON.stringify(found.map(([k, tag]) => [k, attr(tag, "dir") || null])));
+  }
+});
+
+await attempt("D4 ar is a built language everywhere", async () => {
+  const { BUILT, pick } = await import(pathToFileURL(at("assets/js/lang.js")).href);
+  check("D4a lang.js BUILT lists ar", BUILT.includes("ar"), JSON.stringify(BUILT));
+  check("D4b pick() sends ar, ar-EG and ar-SA to ar; stored ar is honoured", ["ar", "ar-EG", "ar-SA"].every((l) => pick({ languages: [l] }) === "ar") && pick({ stored: "ar", languages: [] }) === "ar", JSON.stringify(["ar", "ar-EG", "ar-SA"].map((l) => pick({ languages: [l] }))));
+  const auto = /<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(indexHtml);
+  if (!auto) throw new Error("index.html has no auto-lang script");
+  const goes = (browser) => { let went = null; vm.runInNewContext(auto[1], { localStorage: { getItem: () => null }, navigator: { languages: browser, language: browser[0] }, document: { referrer: "" }, location: { href: "https://example.test/", search: "", hash: "", replace: (u) => { went = u; } }, String }); return went; };
+  check("D4c the root's auto-lang script sends ar-EG and ar to ar/", goes(["ar-EG"]) === "ar/" && goes(["ar"]) === "ar/", JSON.stringify([goes(["ar-EG"]), goes(["ar"])]));
+  for (const [name, html] of [["root", indexHtml], ...builtKeys.map((k) => [`${k}/`, read(`${k}/index.html`)])]) {
+    const sw = (/<nav\b[^>]*class="langs"[^>]*>([\s\S]*?)<\/nav>/.exec(html) || [])[1] || "";
+    check(`D4d ${name}: the switch has an ar link with lang, hreflang and data-lang`, /<a\b(?=[^>]*\bdata-lang="ar")(?=[^>]*\bhreflang="ar")(?=[^>]*\blang="ar")(?=[^>]*\bhref=)/.test(sw), sw.slice(0, 60));
+  }
+});
+
+await attempt("D5 css", async () => {
+  const css = read("assets/site.css");
+  const count = (re) => (css.match(re) || []).length;
+  const logical = count(/\b(?:inset-inline-(?:start|end)|margin-inline-(?:start|end)|padding-inline-(?:start|end)|border-inline-(?:start|end)(?:-[a-z]+)?|border-(?:start|end)-(?:start|end)-radius)\s*:/g) + count(/text-align\s*:\s*(?:start|end)\b/g);
+  check("D5a site.css carries at least 30 logical-property declarations (the spec converts about 50 text and chrome rules)", logical >= 30, `${logical} found`);
+  const rules = [...css.matchAll(/([^{}]*)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]]);
+  const arRules = rules.filter(([sel]) => /:lang\(\s*ar\s*\)/.test(sel));
+  check("D5b a :lang(ar) rule sets letter-spacing:0", arRules.some(([, b]) => /letter-spacing\s*:\s*0(?:px|em)?\s*(?:;|$|!)/.test(b)), `${arRules.length} :lang(ar) rules`);
+  const small = arRules.flatMap(([, b]) => [...b.matchAll(/font-size\s*:\s*([\d.]+)px/g)].map((m) => +m[1]));
+  check("D5c a :lang(ar) rule raises small print to 12px", small.includes(12), JSON.stringify(small));
+  check("D5d :lang(ar) sets --ui to a stack with 'Noto Sans Arabic' and --display to var(--ui); --mono is not touched", arRules.some(([, b]) => /--ui\s*:[^;}]*Noto Sans Arabic/.test(b) && /--display\s*:\s*var\(--ui\)/.test(b)) && !arRules.some(([, b]) => /--mono\s*:/.test(b)), "font vars");
+  const code = rules.find(([sel]) => /\bpre\b/.test(sel) && /\bcode\b/.test(sel) && /\bkbd\b/.test(sel) && /\.cmd\b/.test(sel) && /\.theline\b/.test(sel) && /\.addr\b/.test(sel));
+  check("D5e one rule gives pre, code, kbd, .cmd, .theline, .addr direction:ltr, unicode-bidi:isolate, text-align:start", !!code && /direction\s*:\s*ltr/.test(code[1]) && /unicode-bidi\s*:\s*isolate/.test(code[1]) && /text-align\s*:\s*start/.test(code[1]), code ? code[1] : "no such rule");
+  const rtl = rules.filter(([sel]) => /\[dir=["']?rtl["']?\]/.test(sel));
+  check("D5f [dir=rtl] rules exist for the drawers' translate and number at most 6 (logical properties, not an override sheet)", rtl.length >= 1 && rtl.length <= 6 && rtl.some(([sel]) => /drawer/.test(sel)), `${rtl.length}: ${JSON.stringify(rtl.map((r) => r[0]).slice(0, 6))}`);
+  const door = read("assets/door/door.css");
+  check("D5g door.css is untouched by direction: no logical property, dir selector or :lang(ar)", !/inset-inline|margin-inline|padding-inline|border-inline|\[dir|:lang\(|text-align\s*:\s*(?:start|end)/.test(door), "door.css");
+});
+
+await attempt("D6 tr isolates", async () => {
+  const arCat = json("assets/i18n/ar.json");
+  const key = Object.keys(en).find((k) => /\{\w+\}/.test(en[k]) && /\{\w+\}/.test(arCat[k] || ""));
+  const name = (en[key].match(/\{(\w+)\}/) || [])[1];
+  const run = async (lang, dir, tag) => {
+    globalThis.document = { documentElement: { lang, dir }, dir, baseURI: `https://example.test/${lang}/`, getElementById: (id) => (id === "i18n" && lang === "ar" ? { textContent: JSON.stringify(arCat) } : null) };
+    try { const m = await import(`${pathToFileURL(at("assets/js/lang.js")).href}?${tag}`); return m.tr(key, { [name]: "Orbit v1" }); } finally { delete globalThis.document; }
+  };
+  const a = await run("ar", "rtl", "rtl173ar"), e = await run("en", "ltr", "rtl173en");
+  check(`D6a on ar/, tr("${key}", {${name}}) holds U+2068 + value + U+2069`, a.includes("\u2068Orbit v1\u2069"), JSON.stringify(a));
+  check("D6b on the root the same call has no isolates", !/[\u2066-\u2069]/.test(e) && e.includes("Orbit v1"), JSON.stringify(e));
 });
 
 process.exit(failed ? 1 : 0);
