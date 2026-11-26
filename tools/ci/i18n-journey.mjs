@@ -21,6 +21,7 @@
  *   J12 (#138, ALL-F6) the notice's English link, opened in a new tab with a modifier-click, a middle click or copied from
  *       the context menu, points at the address the visitor is at now (the site moves its hash without a hashchange), not
  *       the one the page loaded with
+ *   J14-J16 (#125 languages live) per built language: the door's notice at its foot, the English link, the hide button
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -365,6 +366,103 @@ try {
     const copied = new URL(await link.first().evaluate((a) => a.href));
     check("J12c the link the context menu copies is aimed there too", copied.hash === here, `${copied.href} (want ${here})`);
   });
+
+  /* J14-J16 (#125 languages live, spec section 5): every language languages.json builds, the notice at the door's foot, the
+     English link kept, the hide button. The languages are read from the file, so the six going live are tested the moment
+     they are built (and J14a fails until they are). */
+  const LANGS = JSON.parse(readFileSync(join(ROOT, "tools/i18n/languages.json"), "utf8"));
+  const builtNow = Object.keys(LANGS).filter((k) => LANGS[k].built);
+  const SIX = ["fr", "es", "pt", "id", "zh-Hans", "ja"];
+  const visible = (page, sel) => page.evaluate((q) => { const e = document.querySelector(q); if (!e) return false; const c = getComputedStyle(e), r = e.getBoundingClientRect(); return c.visibility !== "hidden" && c.display !== "none" && +c.opacity > 0.01 && r.width > 0 && r.height > 0; }, sel);
+  const hiddenNow = (page, sel) => page.waitForFunction((q) => { const e = document.querySelector(q); if (!e) return true; const c = getComputedStyle(e); return c.visibility === "hidden" || c.display === "none" || +c.opacity === 0; }, sel, { timeout: 8000 }).then(() => true, () => false);
+  check("J14a fr, es, pt, id, zh-Hans and ja are built (languages.json) and ar is not", SIX.every((k) => LANGS[k]?.built === true) && LANGS.ar?.built === false, `built: ${JSON.stringify(builtNow)}`);
+  for (const lang of builtNow) {
+    for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      const tag = `${lang} ${size.width}x${size.height}`;
+      await run(`J14 ${tag}`, { context: { locale: "en-US", viewport: size }, stored: lang }, async (page) => {
+        await page.goto(`${SITE}${lang}/${Q}`, { waitUntil: "load" });
+        await page.waitForFunction(() => document.body.classList.contains("lit"), null, { timeout: 20000 });
+        await page.locator("#door .ai-notice").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+        const box = await page.locator("#door .ai-notice").first().boundingBox().catch(() => null);
+        const lit = await visible(page, "#door .ai-notice");
+        check(`J14b ${tag}: the door's notice is visible once the door is lit`, lit, `visible ${lit}`);
+        check(`J14c ${tag}: its top edge is below the viewport's vertical midpoint (the foot, not the top)`, !!box && box.y > size.height / 2, `top ${box ? Math.round(box.y) : "none"}, midpoint ${size.height / 2}`);
+        const gone = {};
+        for (const cls of ["launching", "departing", "showdusk"]) {
+          await page.evaluate((c) => document.body.classList.add(c), cls);
+          gone[cls] = await hiddenNow(page, "#door .ai-notice");
+          await page.evaluate((c) => document.body.classList.remove(c), cls);
+        }
+        check(`J14d ${tag}: the notice is invisible while body carries launching, departing or showdusk`, Object.values(gone).every(Boolean), JSON.stringify(gone));
+        await page.evaluate(() => document.body.classList.remove("lit"));
+        const unlit = await hiddenNow(page, "#door .ai-notice");
+        check(`J14e ${tag}: and while the door is not lit`, unlit, `hidden ${unlit}`);
+      });
+    }
+  }
+
+  for (const lang of builtNow) {
+    await run(`J15 ${lang}`, { context: { locale: lang === "zh-Hans" ? "zh-CN" : lang } }, async (page) => {
+      await page.goto(`${SITE}${lang}/?preview#docs/installing`, { waitUntil: "load" });
+      await docsOpen(page);
+      const link = page.locator("#docspad .ai-notice a[hreflang='en']").first();
+      await link.waitFor({ state: "visible" });
+      const href = new URL(await link.evaluate((a) => a.href));
+      check(`J15a ${lang}: the English link is the root with ?preview&lang=en#docs/installing`, href.pathname === new URL(SITE).pathname && href.search === "?preview&lang=en" && href.hash === "#docs/installing", href.href);
+      await link.click();
+      await page.waitForURL((u) => !u.pathname.startsWith(new URL(`${SITE}${lang}/`).pathname) && u.hash === "#docs/installing");
+      await page.waitForLoadState("load");
+      const st = await page.evaluate(() => [document.documentElement.lang, (() => { try { return localStorage.getItem("orbit-lang"); } catch { return "unreadable"; } })()]);
+      check(`J15b ${lang}: a click lands on the English page, <html lang> en, orbit-lang stored en`, st[0].startsWith("en") && st[1] === "en", JSON.stringify(st));
+      await page.goto(`${SITE}?preview`, { waitUntil: "load" });
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      check(`J15c ${lang}: reloading the root stays English`, new URL(page.url()).pathname === new URL(SITE).pathname && (await page.evaluate(() => document.documentElement.lang)).startsWith("en"), page.url());
+    });
+    await run(`J15d ${lang}`, { context: { locale: lang === "zh-Hans" ? "zh-CN" : lang } }, async (page) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("blocked", "SecurityError"); } });
+        Object.defineProperty(Document.prototype, "referrer", { configurable: true, get() { return ""; } });
+      });
+      await page.goto(`${SITE}${lang}/?preview#docs/installing`, { waitUntil: "load" });
+      await docsOpen(page);
+      const link = page.locator("#docspad .ai-notice a[hreflang='en']").first();
+      await link.waitFor({ state: "visible" });
+      await link.click();
+      await page.waitForURL((u) => new URL(u).pathname === new URL(SITE).pathname);
+      await page.waitForLoadState("load");
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      check(`J15d ${lang}: site data blocked, no referrer: the same link stays English`, new URL(page.url()).pathname === new URL(SITE).pathname && (await page.evaluate(() => document.documentElement.lang).catch(() => "")).startsWith("en"), page.url());
+    });
+  }
+
+  for (const lang of builtNow) {
+    await run(`J16 ${lang}`, { context: { locale: "en-US" }, stored: lang }, async (page) => {
+      await page.goto(`${SITE}${lang}/${Q}`, { waitUntil: "load" });
+      const n = await page.locator(".ai-notice").count();
+      const before = await page.evaluate(() => [...document.querySelectorAll(".ai-notice")].map((e) => e.hidden || getComputedStyle(e).display === "none"));
+      await page.locator("#door .ai-notice .hide").first().waitFor({ state: "attached" });
+      await page.evaluate(() => document.querySelector("#door .ai-notice .hide").click());
+      const all = () => page.evaluate(() => [...document.querySelectorAll(".ai-notice")].map((e) => e.hidden || getComputedStyle(e).display === "none"));
+      const after = await all();
+      check(`J16a ${lang}: x hides all four notices`, n === 4 && after.length === 4 && after.every(Boolean) && !before.every(Boolean), `${n} notices; hidden before ${JSON.stringify(before)}, after ${JSON.stringify(after)}`);
+      await page.reload({ waitUntil: "load" });
+      check(`J16b ${lang}: a reload in the same tab keeps them hidden`, (await all()).every(Boolean), JSON.stringify(await all()));
+      const ctx2 = await browser.newContext({ viewport: { width: 1000, height: 800 }, locale: "en-US" });
+      try {
+        await ctx2.addInitScript((v) => { try { localStorage.setItem("orbit-lang", v); } catch {} }, lang);
+        const p2 = await ctx2.newPage();
+        await p2.goto(`${SITE}${lang}/${Q}`, { waitUntil: "load" });
+        const fresh = await p2.evaluate(() => [...document.querySelectorAll(".ai-notice")].map((e) => e.hidden || getComputedStyle(e).display === "none"));
+        check(`J16c ${lang}: a fresh session shows them`, fresh.length === 4 && !fresh.some(Boolean), JSON.stringify(fresh));
+      } finally { await ctx2.close(); }
+      await fakeDocs(page, "2000-01-01T00:00:00Z");
+      await page.goto(`${SITE}${lang}/${Q}#docs/readme`, { waitUntil: "load" });
+      await docsOpen(page);
+      await page.locator("#docspad .docs-stale").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+      const stale = await page.locator("#docspad .docs-stale .hide, #docspad .docs-stale button").count();
+      check(`J16d ${lang}: .docs-stale has no hide control`, stale === 0, `${stale} control(s)`);
+    });
+  }
 } catch (e) {
   check("harness", false, String(e && e.stack || e));
 } finally {

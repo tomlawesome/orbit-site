@@ -108,7 +108,7 @@ else {
   /* and it goes where pick() says */
   const cases = [];
   for (const stored of [null, "en", ...langs, "fr", "unreadable"]) {
-    for (const browser of [[], ["en-GB"], ["de-DE"], ["de-AT", "en"], ["fr", "de"], ["fr", "en", "de"], ["ja"], ["EN-us", "de"], ["DE"]]) cases.push({ stored, browser });
+    for (const browser of [[], ["en-GB"], ["de-DE"], ["de-AT", "en"], ["fr", "de"], ["fr", "en", "de"], ["ja"], ["zh-CN"], ["zh-Hans-CN"], ["zh-TW"], ["zh"], ["zh-TW", "zh-CN"], ["EN-us", "de"], ["DE"]]) cases.push({ stored, browser });
   }
   /* where the visitor came from: nowhere, another site, or one of this site's pages (then it never redirects) */
   const HERE = "https://example.test/site/";

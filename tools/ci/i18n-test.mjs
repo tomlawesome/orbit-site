@@ -200,6 +200,73 @@ await attempt("S1 auto-lang address", async () => {
   check("S1h control: ?lang=en with an English browser stays", goes({ browser: ["en-GB"], search: "?lang=en" }) === null, `goes to ${goes({ browser: ["en-GB"], search: "?lang=en" })}`);
 });
 
+/* ---- #125 languages live: the six go live with the machine-translation notice (spec sections 5 and 6) ---- */
+const LANGS = (() => { try { return json("tools/i18n/languages.json"); } catch { return {}; } })();
+const builtKeys = Object.keys(LANGS).filter((k) => LANGS[k].built);
+const SIX = ["fr", "es", "pt", "id", "zh-Hans", "ja"];
+
+await attempt("B1 six built", async () => {
+  const off = SIX.filter((k) => !(LANGS[k] && LANGS[k].built === true));
+  check("B1a fr, es, pt, id, zh-Hans and ja are built in languages.json", !off.length, `not built: ${JSON.stringify(off)}`);
+  check("B1b de stays built and ar stays off", LANGS.de?.built === true && LANGS.ar?.built === false, `de ${LANGS.de?.built}, ar ${LANGS.ar?.built}`);
+});
+
+await attempt("W1 notices on every built page", async () => {
+  check("W1 languages.json lists at least de", builtKeys.includes("de"), JSON.stringify(builtKeys));
+  for (const lang of builtKeys) {
+    const html = read(`${lang}/index.html`), cat = json(`assets/i18n/${lang}.json`);
+    const notices = [...html.matchAll(/<(\w+)\b[^>]*class="[^"]*\bai-notice\b[^"]*"[^>]*>([\s\S]*?)<\/\1>/g)];
+    check(`W1a ${lang}/ has exactly four .ai-notice`, notices.length === 4, `${notices.length} found`);
+    check(`W1b ${lang}/ notices each hold the catalogue's ai-notice text (not the English) and an <a hreflang="en" data-lang="en">`, notices.length > 0 && notices.every((m) => m[2].includes(cat["ai-notice"]) && !m[2].includes(en["ai-notice"]) && /<a\b(?=[^>]*\bhreflang="en")(?=[^>]*\bdata-lang="en")/.test(m[2])), `catalogue text ${JSON.stringify(String(cat["ai-notice"]).slice(0, 30))}`);
+    /* one in each of the four containers the build stamps (the spec's "#home" is the info pad, #infopad, in the built page:
+       index.html's four markers sit in #door, #installpad, #docspad and #infopad): count the notices between each container's
+       start and the next of the four */
+    const ids = ["door", "installpad", "docspad", "infopad"];
+    const where = ids.map((id) => html.search(new RegExp(`\\bid="${id}"`)));
+    const pos = notices.map((m) => m.index);
+    const order = where.every((w) => w >= 0) ? [...where].sort((a, b) => a - b) : [];
+    const per = order.map((w, i) => pos.filter((q) => q > w && q < (order[i + 1] ?? Infinity)).length);
+    check(`W1c ${lang}/ one notice in each of #door, #installpad, #docspad, #infopad`, per.length === 4 && per.every((n) => n === 1), `ids at ${JSON.stringify(where)}, per container ${JSON.stringify(per)}`);
+  }
+  for (const f of ["index.html", "404.html", "install.html"]) {
+    if (!existsSync(at(f))) { check(`W1d ${f} has no .ai-notice`, true, "no such file"); continue; }
+    check(`W1d ${f} has no .ai-notice`, !/class="[^"]*\bai-notice\b/.test(read(f)), f);
+  }
+});
+
+await attempt("Z1 zh-Hans rule", async () => {
+  const { pick } = await import(pathToFileURL(at("assets/js/lang.js")).href);
+  const Z = ["zh-Hans"];
+  const p = (languages, built = Z) => pick({ stored: null, languages, built });
+  check("Z1a zh-CN, zh, zh-SG and zh-Hans-SG pick zh-Hans (built zh-Hans)", ["zh-CN", "zh", "zh-SG", "zh-Hans-SG", "zh-Hans"].every((l) => p([l]) === "zh-Hans"), JSON.stringify(["zh-CN", "zh", "zh-SG", "zh-Hans-SG", "zh-Hans"].map((l) => p([l]))));
+  check("Z1b zh-TW, zh-HK and zh-Hant give null", ["zh-TW", "zh-HK", "zh-Hant", "zh-Hant-TW"].every((l) => p([l]) === null), JSON.stringify(["zh-TW", "zh-HK", "zh-Hant", "zh-Hant-TW"].map((l) => p([l]))));
+  check("Z1c a built key without a script keeps the primary-subtag rule (de-AT, fr-CA)", pick({ stored: null, languages: ["de-AT"], built: ["de", "zh-Hans"] }) === "de" && pick({ stored: null, languages: ["fr-CA"], built: ["fr"] }) === "fr", "de-AT, fr-CA");
+  check("Z1d the first matching language wins past zh-TW (zh-TW, zh-CN gives zh-Hans)", p(["zh-TW", "zh-CN"]) === "zh-Hans", String(p(["zh-TW", "zh-CN"])));
+  check("Z1e stored zh-Hans is honoured", pick({ stored: "zh-Hans", languages: [], built: Z }) === "zh-Hans", "stored");
+  /* with the languages.json default (BUILT) as the build will leave it */
+  check("Z1f pick({languages:[zh-CN]}) with the shipped BUILT gives zh-Hans, [zh-TW] gives null, [zh-Hans-SG] gives zh-Hans", pick({ languages: ["zh-CN"] }) === "zh-Hans" && pick({ languages: ["zh-TW"] }) === null && pick({ languages: ["zh-Hans-SG"] }) === "zh-Hans", JSON.stringify([pick({ languages: ["zh-CN"] }), pick({ languages: ["zh-TW"] }), pick({ languages: ["zh-Hans-SG"] })]));
+  /* the root's inline script: same rule */
+  const auto = /<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(indexHtml);
+  if (!auto) throw new Error("index.html has no auto-lang script");
+  const goes = (browser) => { let went = null; vm.runInNewContext(auto[1], { localStorage: { getItem: () => null }, navigator: { languages: browser, language: browser[0] }, document: { referrer: "" }, location: { href: "https://example.test/", search: "", hash: "", replace: (u) => { went = u; } }, String }); return went; };
+  check("Z1g the root's auto-lang script sends zh-CN, zh-Hans-CN and zh to zh-Hans/ and zh-TW nowhere", ["zh-CN", "zh-Hans-CN", "zh"].every((l) => goes([l]) === "zh-Hans/") && goes(["zh-TW"]) === null, JSON.stringify(["zh-CN", "zh-Hans-CN", "zh", "zh-TW"].map((l) => goes([l]))));
+});
+
+await attempt("Z2 LANG on zh-Hans/", async () => {
+  /* lang.js reads document at import: give it a page whose <html lang> is zh-Hans */
+  globalThis.document = { documentElement: { lang: "zh-Hans" }, baseURI: "https://example.test/zh-Hans/", getElementById: () => null };
+  try {
+    const m = await import(`${pathToFileURL(at("assets/js/lang.js")).href}?zh125`);
+    check("Z2 on zh-Hans/, LANG is \"zh-Hans\"", m.LANG === "zh-Hans", String(m.LANG));
+  } finally { delete globalThis.document; }
+});
+
+await attempt("PG pages --check with six built", async () => {
+  /* languages.json is the build's input: with all six built, the folders must exist and be fresh */
+  const missing = builtKeys.filter((k) => !existsSync(at(`${k}/index.html`)));
+  check("PG every built language has its <lang>/index.html", !missing.length && builtKeys.length >= 7, `built ${JSON.stringify(builtKeys)}; missing ${JSON.stringify(missing)}`);
+});
+
 await attempt("N1 404", async () => {
   const html = read("404.html");
   check("N1a no <script>", !/<script\b/i.test(html), "404.html");
