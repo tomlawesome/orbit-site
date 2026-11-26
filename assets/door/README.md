@@ -371,7 +371,7 @@ does nothing; `draw-worker.js` posts it), and the page tells each worker everyon
 the worker's own back. For a host's own worker: `busyPeer(name, post)` → `{ heard(message), gone() }` (the worker's
 `busy` messages heard under a name of its own, everyone else's posted to it as they change, until `gone()`), or by
 hand `busyHeard(name, { n, gen })` and `busyGone(name)`. The test waits for nothing under way anywhere and nothing
-ended for 100 ms; a frame during which anything began, ended or pulsed is thrown away. Bounded: after 8 s of the tab
+ended for 100 ms and no compile or upload ended for 1 s (`WORK_SETTLE`, #104: the browser withholds frames for about a second after a compile); a frame during which anything began, ended or pulsed is thrown away. Bounded: after 8 s of the tab
 shown with no quiet moment, or 10 frames thrown away, the rest are timed whatever runs; hidden, it waits, and the 8 s
 start again when the tab is shown. Under `fit: "skip"` nothing waits. A host that watches nothing has the door as
 before, its own work unseen.
