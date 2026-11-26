@@ -560,16 +560,17 @@ export function createFlight(canvas, options = {}) {
   const fail = (how) => { if (decided) return; const v = /** @type {Verdict} */ ({ fit: false, ms: Infinity, how }); tell(v); decide(v); };
   /* unfit: this visit's test refused the machine (5a), so the flight is painted for the visit and no world is made again;
      again: the world failed (lost, or given up at the hold's backstop: abandon), so the next warm makes it anew (6.7);
-     madeOk: this round's world was made (one whose shaders would not link is not tried again) */
-  let unfit = false, again = false, madeOk = false;
+     noLink: this round's world was made and its shaders would not link (not tried again); a world lost while still
+     compiling has not said so, and is made anew like one lost after it was ready (#171) */
+  let unfit = false, again = false, noLink = false;
   /* a world found dead, let go: made anew at the next warm unless it was judged too slow or never made, and failed if
      no verdict was in */
-  const drop = () => { if (!world3d?.dead) return; letGo(); if (!unfit && madeOk) again = true; fail("failed"); };
+  const drop = () => { if (!world3d?.dead) return; letGo(); if (!unfit && !noLink) again = true; fail("failed"); };
   /* the world's own judgement, heard for its round */
-  /** @param {{ made?: Promise<boolean>, judged?: Promise<{ fit: boolean, ms: number, skipped?: boolean }> }} w */
+  /** @param {{ lost?: boolean, made?: Promise<boolean>, judged?: Promise<{ fit: boolean, ms: number, skipped?: boolean }> }} w */
   const hear = (w) => {
     const mine = round;
-    w.made?.then?.((ok) => { if (mine === round) madeOk = !!ok; }, () => {});
+    w.made?.then?.((ok) => { if (mine === round) noLink = !ok && !w.lost; }, () => {});
     w.judged?.then((j) => {
       if (mine !== round || destroyed) return;
       if (!j.fit) unfit = true;
@@ -1448,7 +1449,7 @@ export function createFlight(canvas, options = {}) {
          the flight readied from the start with a new one, so a later journey is not drawn flat until a reload */
       /* (one judged too slow is retired for the visit, never made again) */
       if (world3d?.dead && unfit) drop();
-      if ((world3d?.dead || again) && !destroyed) { fail("failed"); round++; if (world3d) letGo(); again = false; madeOk = false; warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; renewVerdict(); }
+      if ((world3d?.dead || again) && !destroyed) { fail("failed"); round++; if (world3d) letGo(); again = false; noLink = false; warmed = proved = warmedDocs = provedDocs = compiled = null; earthLate = false; renewVerdict(); }
       /* the Earth's picture late last time: waited for again (the world as it was), and the flight proved after it */
       else if (earthLate && warmed) { round++; earthLate = false; proved = warmedDocs = provedDocs = null; if (!earth?.done()) askEarth(); warmed = settle(made); }
       if (!warmed) {

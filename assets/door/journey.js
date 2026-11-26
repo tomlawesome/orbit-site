@@ -9,6 +9,7 @@ import { createFlight, wireProfile, UP, DOWN, UPDUR, DOWNDUR, UPTIME, DOWNTIME, 
 import { createRemoteFlight } from "./remote-flight.js";
 import { drawnAside } from "./fitness.js";
 import { flag } from "./settings.js";
+import { page } from "./page.js";
 import { drawnIn } from "./chores.js";
 import { ascentBeats, ascentBeatsReduced, descentBeats, descentBeatsReduced, runTimeline, D } from "./timeline.js";
 
@@ -93,15 +94,22 @@ const quicken = (beats, dur, rate) => (rate === 1 ? beats : beats.map((b) => ({ 
    world is given up (the engine's abandon) and the journey goes on painted */
 export const WORLD_FAILED = 30000;
 function journeyClock() {
-  let t = 0, last = performance.now(), raf = 0, /** @type {Hold | null} */ hold = null, cap = Infinity;
+  let t = 0, last = performance.now(), raf = 0, /** @type {Hold | null} */ hold = null, cap = Infinity, seen = performance.now(), unwatch = () => {};
   /** @type {Map<number, { at: number, fn: () => void }>} */
   const pending = new Map(); let ids = 0;
   /* a hold: the clock stops at a point in the journey until something it needs has come (the host gives it what the
      flight draws), so a journey can start the moment it is chosen and still never draw before it is ready. Past
      WORLD_FAILED of real time standing at it, counted from when the journey reaches it, not from when it was set
-     (Orbit's #1299), it lets go as a failure: its onFailed is called, then the journey goes on */
+     (Orbit's #1299), it lets go as a failure: its onFailed is called, then the journey goes on. Only time the tab is
+     seen counts (#170): a tab hidden at the hold has its frames stopped, and the time away is taken off the count when
+     it comes back (seen: the last look at the clock while visible), so a slow, healthy world is not given up for it */
+  /* a look at the clock at p, the tab hidden or not: the time since the last look while visible is time away, so off
+     the hold's count */
+  /** @param {number} p @param {boolean} hid */
+  const away = (p, hid) => { if (hid && hold && hold.since !== null) hold.since += p - seen; seen = p; };
   const now = () => {
     const p = performance.now(); t += Math.min(cap, Math.max(0, p - last)); last = p;
+    away(p, page.hidden());
     let failed = null;
     if (hold && !hold.done && t > hold.at) {
       if (hold.since === null) hold.since = p;
@@ -123,13 +131,14 @@ function journeyClock() {
     /** @param {() => void} fn @param {number} ms */
     schedule(fn, ms) { const id = ++ids; pending.set(id, { at: now() + ms, fn }); if (!raf) raf = requestAnimationFrame(poll); return id; },
     /** @param {number} ms @param {Promise<unknown>} until @param {() => void} onFailed */
-    holdAt(ms, until, onFailed) { const h = /** @type {Hold} */ ({ at: now() + ms, done: false, since: null, onFailed }); hold = h; const free = () => { h.done = true; }; until.then(free, free); return h; },
+    holdAt(ms, until, onFailed) { const h = /** @type {Hold} */ ({ at: now() + ms, done: false, since: null, onFailed }); hold = h;
+      unwatch(); unwatch = page.onVisible(() => { const p = performance.now(); if (h.since !== null) h.since += p - seen; seen = p; }); const free = () => { h.done = true; }; until.then(free, free); return h; },
     /** @param {number} id */
     cancel(id) { pending.delete(id); },
     /** the hold let go: a journey that starts after one still pending is not clamped at it */
-    release() { hold = null; },
+    release() { hold = null; unwatch(); },
     /** everything still pending dropped (the journey is going) */
-    dispose() { pending.clear(); if (raf) cancelAnimationFrame(raf); raf = 0; hold = null; },
+    dispose() { pending.clear(); if (raf) cancelAnimationFrame(raf); raf = 0; hold = null; unwatch(); },
   };
 }
 

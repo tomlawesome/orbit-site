@@ -348,11 +348,11 @@ machine that is software on purpose, the site's own live check); `level` never g
 is refused or absent (nothing will compile), `false` under the `mainthread` flag.
 `probe()`: only with the `door3d` flag and an accepted GPU, on the gate's context (its bindings and viewport put back, not lost); else
 nothing is made and it resolves `{ ok: false }` without a console line, and `level()` is 0.
-`drawnAside()` (not exported: the journey asks it at its first need, after the gate): whether the flight is drawn
+`drawnAside()` (exported, below: the journey asks it at its first need, after the gate): whether the flight is drawn
 in a worker, below.
 `FIT_MS` (30): the most a frame of the flight's world may take on the fitness test, run on the flight's first
 proving `warm()`: two frames warmed, then whole frames timed one at a time and judged on their median, stopped once
-most of 5 agree (`frameCost(gl, draw)` in `fitness.js`, imported directly by tests, is the same judgement taken back to
+most of 5 agree (`frameCost(gl, draw)` (not exported: in `fitness.js`, imported directly by tests) is the same judgement taken back to
 back). Each timed frame is taken only while the GPU is quiet (below), else thrown away. The console says the verdict:
 `flight world: on (frame N ms)`, or `off: frame N ms`; and before it one line of how the frames went: `flight world: N
 frames timed (…), K thrown away`, with `not quiet in time` where the wait ran out.
