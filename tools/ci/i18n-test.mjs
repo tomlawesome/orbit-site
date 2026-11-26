@@ -196,7 +196,10 @@ await attempt("S1 auto-lang address", async () => {
   check("S1e ?lang=de beats a stored English choice", goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" }) === "de/?lang=de", `goes to ${goes({ stored: "en", browser: ["en-GB"], search: "?lang=de" })}`);
   check("S1i ?lang=de with a same-site referrer (a click from the site's own page) still sends the visitor to de/: the address is a choice too", goes({ browser: ["en-GB"], search: "?lang=de", referrer: `${HERE}de/` }) === "de/?lang=de", `goes to ${goes({ browser: ["en-GB"], search: "?lang=de", referrer: `${HERE}de/` })}`);
   check("S1f control: no lang in the address, the same visitor is sent to de/", goes({ ...blocked, search: "?q", hash: "#h" }) === "de/?q#h", `goes to ${goes({ ...blocked, search: "?q", hash: "#h" })}`);
-  check("S1g control: an unbuilt language in the address is ignored: the browser's German still sends the visitor to de/", goes({ ...blocked, search: "?lang=fr" }) === "de/?lang=fr", `goes to ${goes({ ...blocked, search: "?lang=fr" })}`);
+  /* an unbuilt language, read from languages.json (the first with built false) */
+  const unbuilt = Object.keys(JSON.parse(read("tools/i18n/languages.json"))).find((k) => !JSON.parse(read("tools/i18n/languages.json"))[k].built);
+  if (!unbuilt) check("S1g no unbuilt language in languages.json: skipped", true, "none");
+  else check(`S1g control: an unbuilt language in the address (?lang=${unbuilt}) is ignored: the browser's German still sends the visitor to de/`, goes({ ...blocked, search: `?lang=${unbuilt}` }) === `de/?lang=${unbuilt}`, `goes to ${goes({ ...blocked, search: `?lang=${unbuilt}` })}`);
   check("S1h control: ?lang=en with an English browser stays", goes({ browser: ["en-GB"], search: "?lang=en" }) === null, `goes to ${goes({ browser: ["en-GB"], search: "?lang=en" })}`);
 });
 
