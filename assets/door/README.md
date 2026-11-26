@@ -136,7 +136,7 @@ it was given (the worker's fallback, below), so a host keeps no reference to it
 - `fly(profile, { title, subtitle, ready, on, at })`: the climb, `profile` a
   flight profile (`UP`, or one made from it: the site's `assets/js/journeys.js`);
   `ready`, a promise the clock holds for just before the canvas comes up, at
-  most `WORLD_FAILED` (30 s, `journey.js`): past that the world has failed, the
+  most `WORLD_FAILED` (30 s of visible time, `journey.js`; time the tab is hidden does not count, #170): past that the world has failed, the
   hold lets go, the flight goes on painted and the engine is told (`abandon()`:
   `flight world: off: not ready in 30 s`, the world remade by the next `warm()`). Hooks, each optional, in order: `release` (the surface
   flown from may go), `land` (the bare sky is readable), `settled` (the
@@ -215,7 +215,7 @@ pending `later`; a host that pins and still wants the warm-up asks for it
 again.
 
 A `fly()` or `descend()` whose `ready` never settles holds the clock at most
-`WORLD_FAILED` (30 s), and that is a failure (above); a `descend()`, `reset()`
+`WORLD_FAILED` (30 s of visible time), and that is a failure (above); a `descend()`, `reset()`
 or later `fly()` lets a flight's hold go at once.
 
 The journey sets body classes the stylesheet answers: `arming`, `showdawn`,
