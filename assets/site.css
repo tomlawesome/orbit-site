@@ -162,7 +162,8 @@ body.lit .doorfoot{opacity:1}
 /* the chrome's states: in with the door's light, out while a flight lands or leaves, in with the instrument */
 /* the door (assets/door/door.css) stands at 36, above the sky's chrome: there the menu stands just above it, below the warp (38) */
 body.at-door .langs{z-index:37;transition:opacity 1.2s ease 1.5s}
-body.at-door:not(.lit) .langs,body.launching .langs,body.departing .langs,body.bare .langs,body.showdusk .langs{opacity:0;pointer-events:none}
+body.at-door:not(.lit) .langs,body.launching .langs,body.departing .langs,body.bare .langs,body.showdusk .langs,
+body.at-door:not(.lit) .ai-notice,body.launching .ai-notice,body.departing .ai-notice,body.bare .ai-notice,body.showdusk .ai-notice{opacity:0;pointer-events:none}
 body.instrument .langs{animation:chromein 1.3s ease .45s both}
 body.withdrawing .langs{animation:chromeout .45s ease both}
 @media (max-width:599.98px){.langs{left:16px}.langs ul{max-width:calc(100vw - 32px)}}
@@ -171,10 +172,11 @@ body.withdrawing .langs{animation:chromeout .45s ease both}
   display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding:7px 8px 7px 14px;text-align:center;
   font:11px/1.5 var(--mono);color:var(--ink-mid);background:var(--panel-raised);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
   border:1px solid var(--line);border-radius:18px}
+/* the door's notice is small print: at the foot, above the credit line, on every width */
+#door .ai-notice{top:auto;bottom:52px}
 @media (max-width:599.98px){
   .ai-notice{max-width:calc(100% - 32px)}
   .pad .ai-notice{top:auto;bottom:16px}
-  #door .ai-notice{top:auto;bottom:52px}
   /* the install pad's credit and foot hold its last 60px: the notice stands above them */
   #installpad .ai-notice{bottom:68px}
 }

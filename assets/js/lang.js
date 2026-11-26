@@ -18,14 +18,25 @@
 import EN from "../i18n/en.js";
 
 /* the languages the site is built in, besides English (a folder each) */
-export const BUILT = ["de"];
+export const BUILT = ["de", "fr", "es", "pt", "id", "zh-Hans", "ja"];
+
+/* a browser or page language tag to the built language it means, or null: by primary subtag; a built key that carries
+   a script (zh-Hans) takes that script, or no subtag after the language, or a region that implies it (zh-CN, zh-SG),
+   never zh-TW, zh-HK or zh-Hant. The root's inline auto-lang script (index.html) holds this same rule */
+export function matchLang(tag, built = BUILT) {
+  const t = String(tag).toLowerCase().split("-");
+  for (const b of built) {
+    const k = b.toLowerCase().split("-");
+    if (k[0] !== t[0]) continue;
+    if (k.length === 1 || t.length === 1) return b;
+    if (t[1].length === 4 ? t[1] === k[1] : t[1] === "cn" || t[1] === "sg") return b;
+  }
+  return null;
+}
 const doc = typeof document === "undefined" ? null : document;
 
 /* the page's language: its <html lang>, when it is one the site is built in; English otherwise */
-export const LANG = (() => {
-  const l = String(doc?.documentElement.lang || "en").toLowerCase().split("-")[0];
-  return BUILT.includes(l) ? l : "en";
-})();
+export const LANG = (() => matchLang(doc?.documentElement.lang || "en", BUILT) || "en")();
 
 /* the site's root (the modules sit two below it), and the way up to it from this page: "" at the root, "../" from a
    language's folder. A path the scripts give the browser (a picture, a worker, the docs) is put after it, so it is the
@@ -57,9 +68,9 @@ export function pick({ stored = null, languages = [], built = BUILT } = {}) {
   if (stored === "en") return null;
   if (stored && built.includes(stored)) return stored;
   for (const l of languages || []) {
-    const p = String(l).toLowerCase().split("-")[0];
-    if (p === "en") return null;
-    if (built.includes(p)) return p;
+    if (String(l).toLowerCase().split("-")[0] === "en") return null;
+    const m = matchLang(l, built);
+    if (m) return m;
   }
   return null;
 }
