@@ -18,6 +18,10 @@ import { page } from "./page.js";
 
 /** ms after the last work ended before a frame may be timed: the GPU's tail of a call that has returned */
 export const SETTLE = 100;
+/* #104: seen on a real device in desktop Firefox, the browser withheld frames (60 ms ones) for about a second after a
+   3.3 s worker compile ended, and a 10 ms machine was judged off from frames timed in that second. So calm() (what the verdict
+   waits for before its first timed frame) stays false this long after any compile or upload ends (worker, page or picture), not SETTLE alone; the verdict's wait stays bounded by QUIET_WAIT (voyage.js) */
+export const WORK_SETTLE = 1000;
 /** the longest a span is held open (COMPILE_WAIT's figure): a shader or program never asked about is taken as done */
 export const SPAN_CAP = 5000;
 
@@ -29,7 +33,7 @@ const UPLOADS = ["texImage2D", "texSubImage2D", "texImage3D", "texSubImage3D", "
 
 /* this thread's own ledger; marks: every change, here or heard; gone: the gens of the sources gone, so a sum told on
    never falls back to one told before */
-let n = 0, gen = 0, marks = 0, gone = 0, endedAt = -Infinity, owning = 0;
+let n = 0, gen = 0, marks = 0, gone = 0, endedAt = -Infinity, owning = 0, workEndedAt = -Infinity;
 /** what other threads said, by source @type {Map<string, Busy>} */
 const heard = new Map();
 /** @type {Set<() => void>} */
@@ -55,17 +59,18 @@ function begin() {
   const end = () => {
     if (!open) return;
     open = false; clearTimeout(cap);
-    n--; gen++; endedAt = now();
+    n--; gen++; endedAt = workEndedAt = now();
     changed();
   };
   const cap = setTimeout(end, SPAN_CAP);
   changed();
   return end;
 }
-/** work begun and ended at once (an upload; the verdict's own warm-up) */
-export function pulse() {
+/** work begun and ended at once (an upload; the verdict's own warm-up, which says `warmup`: not work to settle after) @param {boolean} [warmup] */
+export function pulse(warmup = false) {
   if (owning) return;
   gen++; endedAt = now();
+  if (!warmup) workEndedAt = endedAt;
   changed();
 }
 
@@ -77,7 +82,7 @@ export function busyHeard(source, b) {
   const was = heard.get(source);
   if (was && was.n === next.n && was.gen === next.gen) return;
   heard.set(source, next);
-  endedAt = now();
+  endedAt = workEndedAt = now();
   told();
 }
 /** a thread gone: nothing of it is under way any more @param {string} source */
@@ -86,7 +91,7 @@ export function busyGone(source) {
   if (!was) return;
   heard.delete(source);
   gone += was.gen + 1;
-  if (was.n) endedAt = now();
+  if (was.n) endedAt = workEndedAt = now();
   told();
 }
 /** everything this thread knows of but what `source` said (what is told to that source) @param {string} [source] @returns {Busy} */
@@ -127,6 +132,10 @@ export const mark = () => marks;
 export const quiet = () => busyExcept().n === 0 && now() - endedAt >= SETTLE;
 /** ms until nothing will have ended for SETTLE (0: that is so now) */
 export const settling = () => Math.max(0, SETTLE - (now() - endedAt));
+/** quiet(), and no compile or upload ended for WORK_SETTLE ms (#104): what the verdict waits for before its first timed frame */
+export const calm = () => quiet() && now() - workEndedAt >= WORK_SETTLE;
+/** ms until calm() is so, if nothing more happens (0: now) */
+export const calming = () => Math.max(settling(), WORK_SETTLE - (now() - workEndedAt), 0);
 /** fn run with this thread's own calls not counted (the verdict's timed frame), even if it throws @template T @param {() => T} fn @returns {T} */
 export function own(fn) {
   owning++;

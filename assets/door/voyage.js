@@ -24,7 +24,7 @@ import { image, flag } from "./settings.js";
 import { uploadBanded, uploadSized, easeLevels } from "./upload.js";
 import { theDoorWeight, liveDoor } from "./capability.js";
 import { gpu, sayVerdict, FIT_MS, WARM_FRAMES, TIMED_FRAMES } from "./fitness.js";
-import { quiet as allQuiet, mark, own, pulse, settling, onBusy } from "./busy.js";
+import { quiet, calm, mark, own, pulse, settling, calming, onBusy } from "./busy.js";
 import { page } from "./page.js";
 import { statusTurn } from "./status.js";
 
@@ -45,7 +45,7 @@ import { statusTurn } from "./status.js";
 /** @typedef {{ w: number, P: number[], R: number[], prevP?: number[], prevR?: number[], gain: number, starK?: number, page?: number }} Galaxy3d the docs' galaxy camera */
 /** @typedef {{ t: number, v: number, K: number, vp: number[], rmax: number, tint: number[], progress: number, world: World | null, bloom?: number, bloomPt?: number[], tu?: number, star?: boolean, dt?: number, moon?: boolean, galaxy3d?: Galaxy3d, cstars?: number[][] }} Frame one frame of the flight (draw) */
 /** @typedef {{ fit: boolean, ms: number, skipped?: boolean }} Verdict */
-/** @typedef {{ canvas: HTMLCanvasElement, resize: (w: number, h: number) => void, draw: (s: Frame) => void, advance: (v: number, dt: number, K: number) => void, clear: () => void, warm: (opts?: { prove?: boolean }) => Promise<void>, warmDocs: (opts?: { prove?: boolean }) => Promise<void>, stop: () => void, made: Promise<boolean>, galaxy: Promise<void | null>, judged: Promise<Verdict>, readonly ready: boolean, readonly dead: boolean, reset: () => void }} Voyage the flight's world */
+/** @typedef {{ canvas: HTMLCanvasElement, resize: (w: number, h: number) => void, draw: (s: Frame) => void, advance: (v: number, dt: number, K: number) => void, clear: () => void, warm: (opts?: { prove?: boolean }) => Promise<void>, warmDocs: (opts?: { prove?: boolean }) => Promise<void>, stop: () => void, made: Promise<boolean>, galaxy: Promise<void | null>, judged: Promise<Verdict>, readonly ready: boolean, readonly dead: boolean, readonly lost: boolean, reset: () => void }} Voyage the flight's world */
 
 /* the pictures, where the host says they are (settings.js: image), resolved once they are first wanted, never at load */
 /** @type {Pictures | null} */
@@ -1225,10 +1225,10 @@ export function createVoyage(under, { restFor }) {
   const holding = new AbortController();
   /* the one line that says the world is not drawn, and why: once however it came to be so (the verdict "on" is the
      fitness test's, said when the test has ended and the world was still there to be judged) */
-  let offSaid = false, madeOk = false;
+  let offSaid = false, madeOk = false, lost = false;   /* lost: the context was lost, at any point (#171) */
   /** @param {string} why */
   const sayOff = (why) => { if (!offSaid) { offSaid = true; sayVerdict(`off: ${why}`); } };
-  const onLost = () => { if (gone) return; dead = true; ok = false; ready = false; holding.abort(); unwait?.(); sayOff("the context was lost"); };
+  const onLost = () => { if (gone) return; lost = true; dead = true; ok = false; ready = false; holding.abort(); unwait?.(); sayOff("the context was lost"); };
   /* a wait for quiet (quietFitness), ended at once by a lost context or stop() */
   /** @type {(() => void) | null} */
   let unwait = null;
@@ -1669,7 +1669,8 @@ export function createVoyage(under, { restFor }) {
    * smallest drawing the measure would ever choose, warmed first (WARM_FRAMES, again at a new size: the window resized)
    * and judged on their median; fit if that leaves room for about 30 frames a second (FIT_MS). Each timed frame is a
    * chore of its own, begun only once nothing is under way on any of the site's contexts, here or on another thread, and
-   * nothing has ended for SETTLE ms (busy.js: quiet; the warm-up is such work), and thrown away if anything began, ended
+   * nothing has ended for SETTLE ms (busy.js: quiet; the warm-up is such work) and, before the first frame is timed, no compile or
+   * upload for WORK_SETTLE ms (busy.js: calm, #104: the browser withholds frames for about a second after a compile), and thrown away if anything began, ended
    * or pulsed while it was timed (heard HEAR ms after it). It stops once most of TIMED_FRAMES agree. Bounded: past
    * QUIET_WAIT of the tab shown without a quiet moment, or MAX_THROWN frames thrown away, the frames still to come are
    * timed whatever runs, as they were before. Hidden, it waits, and the QUIET_WAIT starts again when it is shown. Taken on
@@ -1681,8 +1682,8 @@ export function createVoyage(under, { restFor }) {
   const after = (ms) => new Promise((r) => { setTimeout(r, ms); });
   /* true once quiet; false past the deadline (moved on each time the tab is shown) or once the world is gone. No poll:
      it looks again when the ledger changes, when the last work will have settled, at the deadline and on a show */
-  /** @param {{ at: number }} deadline @returns {Promise<boolean>} */
-  const untilQuiet = (deadline) => new Promise((resolve) => {
+  /** @param {{ at: number }} deadline @param {boolean} long WORK_SETTLE (#104), else SETTLE @returns {Promise<boolean>} */
+  const untilQuiet = (deadline, long) => new Promise((resolve) => {
     /** @type {ReturnType<typeof setTimeout> | undefined} */
     let timer;
     /** @param {boolean} v */
@@ -1691,10 +1692,10 @@ export function createVoyage(under, { restFor }) {
       clearTimeout(timer);
       if (gone || !ok) return end(false);
       if (page.hidden()) return;
-      if (allQuiet()) return end(true);
+      if ((long ? calm : quiet)()) return end(true);
       const left = deadline.at - performance.now();
       if (left <= 0) return end(false);
-      timer = setTimeout(look, Math.min(left, settling() || left));
+      timer = setTimeout(look, Math.min(left, (long ? calming : settling)() || left));
     };
     const unbusy = onBusy(look);
     const unshown = page.onVisible(() => { deadline.at = performance.now() + QUIET_WAIT; look(); });
@@ -1714,10 +1715,10 @@ export function createVoyage(under, { restFor }) {
        one frame timed; null where it may not be taken now (hidden, gone, or no longer quiet) */
     /** @returns {{ warm: boolean, ms: number, m0: number } | null} */
     const turn = () => {
-      if (gone || !ok || page.hidden() || (!loud && !allQuiet())) return null;
+      if (gone || !ok || page.hidden() || (!loud && !(thrown ? quiet : calm)())) return null;
       if (!set) {
         if (W < 2) { const screen = page.size(); resize(screen.W, screen.H); }
-        set = true; was = part; part = 0.4; CW = 0; resize(W, H);
+        set = true; was = part; part = 0.4; CW = 0; own(() => resize(W, H));
       }
       /* (every map's branch taken, whichever maps have landed: the same shader work either way, so the verdict is the
          machine's and not the moment's, and the docs' proof may judge it before the maps are in) */
@@ -1725,8 +1726,8 @@ export function createVoyage(under, { restFor }) {
       try {
         if (`${CW}x${CH}` !== sizeAt) {
           sizeAt = `${CW}x${CH}`;
-          for (let i = 0; i < WARM_FRAMES; i++) { draw(ST()); sync(); }
-          pulse();
+          own(() => { for (let i = 0; i < WARM_FRAMES; i++) { draw(ST()); sync(); } });
+          pulse(true);
           return { warm: true, ms: 0, m0: 0 };
         }
         const m0 = mark(), a = performance.now();
@@ -1738,7 +1739,7 @@ export function createVoyage(under, { restFor }) {
       for (;;) {
         if (gone || !ok) return no;
         if (page.hidden()) { await whenVisible(); deadline.at = performance.now() + QUIET_WAIT; continue; }
-        if (!loud && !(await untilQuiet(deadline))) { if (gone || !ok) return no; loud = true; }
+        if (!loud && !(await untilQuiet(deadline, !thrown))) { if (gone || !ok) return no; loud = true; }
         const r = await chore(turn, 60, tag);
         if (!r || r.warm) continue;
         if (!loud) {
@@ -2021,7 +2022,7 @@ export function createVoyage(under, { restFor }) {
     for (const o of [maps, fields]) for (const k of Object.keys(o)) delete o[k];
     glowT = null; sunTex = null;
   }
-  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, judged, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, reset() {
+  return { canvas, resize, draw, advance, clear, warm, warmDocs, stop, made, galaxy, judged, get ready() { return ready && ok && !dead; }, get dead() { return dead; }, get lost() { return lost; }, reset() {
     off.splice(0, 4, 0, 0.3, 0.7, 0.15); nebOff = 0; frames = [];
     /* the start of a flight, before its first frame: the one place besides the warm chore where stale stars are remade */
     if (starsStale && !gone) { try { remakeStars(); makeStars(); } catch { /* drawn without them */ } }
