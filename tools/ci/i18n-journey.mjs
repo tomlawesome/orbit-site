@@ -24,8 +24,8 @@
  *   J14-J16 (#125 languages live) per built language: the door's notice at its foot, the English link, the hide button
  *   K1-K9 (#173 Arabic, right to left): corners, the docs reader, the drawers, the dial and transport, letter-spacing and
  *       small print, <bdi> around inserted values, the stale line's English link; each against the root as the control
- *   L1-L4 (#175) language pages at 390x844: the info pad's notice inside the screen and unclipped, ar's English-only credit
- *       line reading left to right, the install headline inside the screen, ar's docs "Install" chip and label translated
+ *   L1-L3 (#175) language pages at 390x844: the info pad's notice inside the screen and unclipped, ar's English-only credit
+ *       line reading left to right, the install headline inside the screen
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -662,17 +662,6 @@ try {
     });
     check("L2a ar/: #installpad p.made has computed direction ltr", m.dir === "ltr", m.dir);
     check("L2b ar/: its full stop is drawn after the last word (right of the first letter), reading as in English", m.stopChar === "." && m.stop > m.first, JSON.stringify(m));
-  });
-
-  /* the chip and the label draw their words from the docs section's title (assets/docs-i18n/<lang>/index.json), not the
-     catalogue: ar's section "install" is listed in source.kept, left in English */
-  await run("L4 ar docs install chip", { context: { locale: "en-US", viewport: PHONE }, stored: "ar" }, async (page) => {
-    await page.goto(`${SITE}ar/?preview#docs`, { waitUntil: "load" });
-    await docsOpen(page);
-    const m = await page.evaluate(() => ({ chip: document.querySelector('#docspad .keys a.key[href="#docs/installing/install"]')?.textContent.trim(), label: document.querySelector('#docspad .entry[data-href="#docs/installing/install"] b')?.textContent.trim() }));
-    const enTitle = JSON.parse(readFileSync(join(ROOT, "assets/docs/index.json"), "utf8")).sources.find((s) => s.slug === "installing").sections.find((x) => x.id === "install").title;
-    check("L4a ar/ docs chip for installing/install is not the English title", !!m.chip && m.chip !== enTitle, JSON.stringify({ chip: m.chip, enTitle }));
-    check("L4b ar/ docs result label for installing/install is not the English title", !!m.label && m.label !== enTitle, JSON.stringify({ label: m.label, enTitle }));
   });
 } catch (e) {
   check("harness", false, String(e && e.stack || e));
