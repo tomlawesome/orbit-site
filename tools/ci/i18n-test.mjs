@@ -52,7 +52,13 @@ await attempt("C1 catalogues", async () => {
   en = json("assets/i18n/en.json"); de = json("assets/i18n/de.json");
   const ek = Object.keys(en).sort(), dk = Object.keys(de).sort();
   const gone = ek.filter((k) => !(k in de)), extra = dk.filter((k) => !(k in en));
-  check("C1a de.json has exactly en.json's keys", !gone.length && !extra.length && ek.length > 0, `${ek.length} keys; missing ${JSON.stringify(gone.slice(0, 5))}, extra ${JSON.stringify(extra.slice(0, 5))}`);
+  /* the rule of tools/i18n/lib.mjs:42-43 (i18n-check): a key of en.json the catalogue lacks is pending, allowed only while the state holds no hash for it; extra keys never */
+  const gap = (cat, state) => { const h = state.catalogue || {}; return { gone: ek.filter((k) => !(k in cat) && k in h), extra: Object.keys(cat).filter((k) => !(k in en)) }; };
+  const state = json("tools/i18n/state/de.json"), { gone: g2, extra: x2 } = gap(de, state);
+  check("C1a de.json has en.json's keys, or lacks one that has no hash in its state (pending), and no others", !g2.length && !x2.length && ek.length > 0, `${ek.length} keys; missing with a hash ${JSON.stringify(g2.slice(0, 5))}, extra ${JSON.stringify(x2.slice(0, 5))}`);
+  const k0 = ek[0], { [k0]: _drop, ...lacking } = de;
+  const hashed = gap(lacking, { catalogue: { ...state.catalogue, [k0]: "0123456789abcdef" } }), pending = gap(lacking, { catalogue: Object.fromEntries(Object.entries(state.catalogue).filter(([k]) => k !== k0)) });
+  check("C1a' a key missing from the catalogue that has a hash is refused; with no hash it is pending and allowed; an extra key is refused", hashed.gone.join() === k0 && !pending.gone.length && gap({ ...de, zz_extra: "x" }, state).extra.join() === "zz_extra", `hash ${JSON.stringify(hashed.gone)}, no hash ${JSON.stringify(pending.gone)}`);
   const bad = ek.filter((k) => k in de && holders(en[k]) !== holders(de[k]));
   check("C1b same placeholder sets per key", !bad.length, bad.length ? `differ: ${bad.slice(0, 5).join(", ")}` : "all alike");
   check("C1c both hold ai-notice (non-empty, German differs)", !!en["ai-notice"] && !!de["ai-notice"] && en["ai-notice"] !== de["ai-notice"], `en ${JSON.stringify(en["ai-notice"])}`);
