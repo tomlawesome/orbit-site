@@ -68,8 +68,9 @@ export const tr = (key, vars) => t(PAGE, key, vars);
    it), then the first of the browser's languages that is English or built (by its primary subtag: de-AT is de). null
    is the root */
 export function pick({ stored = null, languages = [], built = BUILT } = {}) {
-  if (stored === "en") return null;
-  if (stored && built.includes(stored)) return stored;
+  if (String(stored).toLowerCase() === "en") return null;
+  const canon = built.find((x) => x.toLowerCase() === String(stored).toLowerCase());
+  if (canon) return canon;
   for (const l of languages || []) {
     if (String(l).toLowerCase().split("-")[0] === "en") return null;
     const m = matchLang(l, built);

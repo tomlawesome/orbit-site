@@ -369,4 +369,38 @@ await attempt("D6 tr isolates", async () => {
   check("D6b on the root the same call has no isolates", !/[\u2066-\u2069]/.test(e) && e.includes("Orbit v1"), JSON.stringify(e));
 });
 
+/* #174: ?lang= and a stored choice match a built language in any letter case, landing on its canonical code */
+await attempt("K1 case-insensitive ?lang= and stored choice", async () => {
+  const { pick, BUILT } = await import(pathToFileURL(at("assets/js/lang.js")).href);
+  const auto = /<!-- auto-lang:[\s\S]*?-->\n[ \t]*<script>([\s\S]*?)<\/script>/.exec(indexHtml);
+  if (!auto) throw new Error("index.html has no auto-lang script");
+  /* the inline script: where it sends an English-browser visitor with this address and this stored choice */
+  const inline = ({ search = "", stored = null, browser = ["en-GB"] }) => {
+    let went = null;
+    vm.runInNewContext(auto[1], { localStorage: { getItem: () => stored }, navigator: { languages: browser, language: browser[0] }, document: { referrer: "" }, location: { href: `https://example.test/${search}`, search, hash: "", replace: (u) => { went = u; } }, String });
+    return went;
+  };
+  const dest = (u) => (u === null ? null : u.replace(/\/.*$/, ""));
+  const cases = [["zh-hans", "zh-Hans"], ["ZH-HANS", "zh-Hans"], ["zh-HANS", "zh-Hans"], ["JA", "ja"], ["Ja", "ja"], ["DE", "de"]];
+  const fmt = (f) => JSON.stringify(cases.map(([i]) => f(i)));
+  check("K1a inline: ?lang=<any case> goes to the canonical built folder (zh-hans, ZH-HANS, JA, DE)", cases.every(([i, o]) => dest(inline({ search: `?lang=${i}` })) === o), fmt((i) => dest(inline({ search: `?lang=${i}` }))));
+  check("K1b inline: a stored choice in any case does the same", cases.every(([i, o]) => dest(inline({ stored: i })) === o), fmt((i) => dest(inline({ stored: i }))));
+  check("K1c lang.js pick(): a stored choice in any case gives the canonical code", cases.every(([i, o]) => pick({ stored: i, languages: ["en-GB"] }) === o), fmt((i) => pick({ stored: i, languages: ["en-GB"] })));
+  check("K1d the shipped BUILT has these canonical codes", cases.every(([, o]) => BUILT.includes(o)), JSON.stringify(BUILT));
+  const bad = ["ru", "RU", "xx", "zh-Hant", "ZH-HANT", "zh-tw", "zh"];
+  check("K1e inline: an unbuilt or unknown ?lang= is ignored, the browser (English) decides: stays at the root", bad.every((c) => inline({ search: `?lang=${c}` }) === null), JSON.stringify(bad.map((c) => inline({ search: `?lang=${c}` }))));
+  check("K1f inline: an unbuilt or unknown ?lang= falls back to the browser's language (de-DE goes to de/)", bad.every((c) => dest(inline({ search: `?lang=${c}`, browser: ["de-DE"] })) === "de"), JSON.stringify(bad.map((c) => inline({ search: `?lang=${c}`, browser: ["de-DE"] }))));
+  check("K1g inline and lang.js: an unbuilt or unknown stored choice is ignored (English browser stays, German browser goes to de)", bad.every((c) => inline({ stored: c }) === null && pick({ stored: c, languages: ["en-GB"] }) === null && dest(inline({ stored: c, browser: ["de-DE"] })) === "de" && pick({ stored: c, languages: ["de-DE"] }) === "de"), JSON.stringify(bad.map((c) => [inline({ stored: c }), pick({ stored: c, languages: ["en-GB"] })])));
+  check("K1h ?lang=EN and stored EN keep the visitor at the root (as en does)", inline({ search: "?lang=EN", browser: ["de-DE"] }) === null && inline({ stored: "EN", browser: ["de-DE"] }) === null && pick({ stored: "EN", languages: ["de-DE"] }) === null, JSON.stringify([inline({ search: "?lang=EN", browser: ["de-DE"] }), inline({ stored: "EN", browser: ["de-DE"] }), pick({ stored: "EN", languages: ["de-DE"] })]));
+  check("K1i inline: the address keeps its query and hash and carries the canonical code (?lang=zh-hans goes to zh-Hans/?lang=zh-hans: query untouched)", inline({ search: "?lang=zh-hans" }) === "zh-Hans/?lang=zh-hans", String(inline({ search: "?lang=zh-hans" })));
+  /* both copies agree over a table of stored choices */
+  const table = ["zh-hans", "ZH-HANS", "JA", "ja", "ru", "xx", "zh-Hant", "zh-HK", "en", "EN", ""];
+  const agree = table.every((c) => { const a = dest(inline({ stored: c })), b = pick({ stored: c, languages: ["en-GB"] }); return a === b; });
+  check("K1j inline and lang.js give the same answer for each stored choice in a table", agree, JSON.stringify(table.map((c) => [c, dest(inline({ stored: c })), pick({ stored: c, languages: ["en-GB"] })])));
+  /* browser languages: zh-HK and zh-Hant must not give zh-Hans in either copy */
+  const hk = ["zh-HK", "zh-Hant", "zh-Hant-HK", "zh-TW", "ZH-hk", "zh-MO"];
+  check("K1k inline and lang.js: zh-HK, zh-Hant, zh-Hant-HK, zh-TW, ZH-hk and zh-MO do not give zh-Hans", hk.every((l) => inline({ browser: [l] }) === null && pick({ stored: null, languages: [l] }) === null), JSON.stringify(hk.map((l) => [inline({ browser: [l] }), pick({ languages: [l] })])));
+  check("K1l inline and lang.js: zh-CN, zh-SG and ZH-hans-cn still give zh-Hans", ["zh-CN", "zh-SG", "ZH-hans-cn"].every((l) => inline({ browser: [l] }) === "zh-Hans/" && pick({ languages: [l] }) === "zh-Hans"), JSON.stringify(["zh-CN", "zh-SG", "ZH-hans-cn"].map((l) => [inline({ browser: [l] }), pick({ languages: [l] })])));
+});
+
 process.exit(failed ? 1 : 0);
