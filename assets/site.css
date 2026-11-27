@@ -144,13 +144,13 @@ body.lit .doorfoot{opacity:1}
 /* THE LANGUAGES (#125): one menu in one place on every page and pad, top left under the back link, in the corner's
    voice (the button) and the palette's (the list); on a translated page the AI notice, a pill in the panel's colours on
    the same top line, says plainly the words came from a machine (hideable for the session, never for good) */
-.langs{position:fixed;top:52px;left:24px;z-index:8;font:10.5px var(--mono)}
+.langs{position:fixed;top:52px;inset-inline-start:24px;z-index:8;font:10.5px var(--mono)}
 .langs button{font:10.5px var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-quiet);background:none;border:0;
   padding:4px 0;cursor:pointer;text-shadow:0 0 2px var(--bg),0 0 5px var(--bg),0 0 11px var(--bg)}
-.langs button::after{content:"\25BE" / "";margin-left:6px;opacity:.6;letter-spacing:0}
+.langs button::after{content:"\25BE" / "";margin-inline-start:6px;opacity:.6;letter-spacing:0}
 .langs button:hover,.langs button[aria-expanded="true"]{color:var(--accent-text)}
 .langs button:focus-visible{outline:1px solid var(--accent);outline-offset:3px;border-radius:2px}
-.langs ul{list-style:none;margin:0;padding:6px;position:absolute;top:calc(100% + 6px);left:0;min-width:150px;width:max-content;box-sizing:border-box;
+.langs ul{list-style:none;margin:0;padding:6px;position:absolute;top:calc(100% + 6px);inset-inline-start:0;min-width:150px;width:max-content;box-sizing:border-box;
   background:var(--panel-raised);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:12px}
 .langs a{display:block;font:12.5px var(--mono);color:var(--ink-mid);text-decoration:none;padding:8px 10px;border-radius:8px;white-space:nowrap}
 .langs a:hover,.langs a:focus-visible{background:var(--panel);color:var(--ink)}
@@ -166,10 +166,10 @@ body.at-door:not(.lit) .langs,body.launching .langs,body.departing .langs,body.b
 body.at-door:not(.lit) .ai-notice,body.launching .ai-notice,body.departing .ai-notice,body.bare .ai-notice,body.showdusk .ai-notice{opacity:0;pointer-events:none}
 body.instrument .langs{animation:chromein 1.3s ease .45s both}
 body.withdrawing .langs{animation:chromeout .45s ease both}
-@media (max-width:599.98px){.langs{left:16px}.langs ul{max-width:calc(100vw - 32px)}}
+@media (max-width:599.98px){.langs{inset-inline-start:16px}.langs ul{max-width:calc(100vw - 32px)}}
 .ai-notice{position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:7;box-sizing:border-box;width:max-content;
   max-width:min(560px,calc(100% - 208px));
-  display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding:7px 8px 7px 14px;text-align:center;
+  display:flex;align-items:baseline;flex-wrap:wrap;justify-content:center;gap:4px 10px;padding-block:7px;padding-inline:14px 8px;text-align:center;
   font:11px/1.5 var(--mono);color:var(--ink-mid);background:var(--panel-raised);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
   border:1px solid var(--line);border-radius:18px}
 /* the door's notice is small print: at the foot, above the credit line, on every width */
@@ -200,20 +200,20 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 /* ══ THE SKY: home ══════════════════════════════════════════════════════ */
 #home{position:relative;z-index:2;opacity:0;transition:opacity 1.2s ease}
 #home.shown{opacity:1}
-.back{position:fixed;top:30px;left:26px;z-index:6;background:none;border:0;cursor:pointer;padding:0}
+.back{position:fixed;top:30px;inset-inline-start:26px;z-index:6;background:none;border:0;cursor:pointer;padding:0}
 .back:hover{color:var(--accent-text)}
-.orb{position:fixed;top:22px;right:26px;z-index:6;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+.orb{position:fixed;top:22px;inset-inline-end:26px;z-index:6;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
   background:var(--panel);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);cursor:pointer;display:grid;place-items:center;
   font:12px var(--mono);color:var(--ink-mid)}
 .orb:hover{border-color:var(--accent)}
-.inbox-orb{right:76px;color:var(--ink-mid);text-decoration:none}
+.inbox-orb{inset-inline-end:76px;color:var(--ink-mid);text-decoration:none}
 .inbox-orb.waiting{color:var(--accent-text);border-color:var(--accent)}
 .inbox-orb.waiting svg{animation:breathe 3.2s ease-in-out infinite}
-.inbox-orb .count{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:var(--bg);
+.inbox-orb .count{position:absolute;top:-4px;inset-inline-end:-4px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:var(--bg);
   font:600 9.5px var(--mono);font-style:normal;display:grid;place-items:center}
 .inbox-orb:not(.waiting) .count{display:none}
 @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
-.account{position:fixed;top:70px;right:26px;z-index:12;width:250px;background:var(--panel-raised);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+.account{position:fixed;top:70px;inset-inline-end:26px;z-index:12;width:250px;background:var(--panel-raised);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
   border:1px solid var(--line);border-radius:16px;padding:18px 20px;opacity:0;transform:translateY(-6px);pointer-events:none;
   visibility:hidden;transition:opacity .25s,transform .25s,visibility 0s .25s}
 .account.open{opacity:1;transform:none;pointer-events:auto;visibility:visible;transition-delay:0s}
@@ -221,10 +221,10 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .account .who span{font-size:12px;color:var(--ink-mid)}
 .account nav{display:flex;flex-direction:column;gap:2px;margin:14px 0;padding:12px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
 .account nav a,.account nav button{font:13.5px var(--ui);color:var(--ink-mid);text-decoration:none;padding:6px 8px;border-radius:8px;
-  background:none;border:0;text-align:left;cursor:pointer;width:100%}
+  background:none;border:0;text-align:start;cursor:pointer;width:100%}
 .account nav a:hover,.account nav button:hover{color:var(--ink);background:var(--panel)}
 .swatches{display:flex;gap:10px;align-items:center;margin-bottom:12px}
-.swatches span{font:10.5px var(--mono);color:var(--ink-quiet);margin-right:2px}
+.swatches span{font:10.5px var(--mono);color:var(--ink-quiet);margin-inline-end:2px}
 .swatches button{width:18px;height:18px;border-radius:50%;cursor:pointer;border:1px solid var(--line);padding:0;background:var(--sw);box-shadow:var(--sw-shadow,none)}
 .swatches button[aria-pressed=true]{outline:2px solid var(--accent);outline-offset:2px}
 .acctfoot{display:flex;justify-content:space-between;gap:12px;align-items:center}
@@ -283,25 +283,29 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .drawer h4{margin:18px 0 10px}
 .drawer h4:first-of-type{margin-top:0}
 .drawer .close{position:absolute;top:12px;background:none;border:0;color:var(--ink-faint);font:14px var(--mono);cursor:pointer}
-.drawer-right{right:0;border-left:1px solid var(--line);transform:translateX(102%)}
-.drawer-right.open{transform:none}
-.drawer-right .close{left:14px}
-.drawer-left{left:0;border-right:1px solid var(--line);transform:translateX(-102%)}
-.drawer-left.open{transform:none}
-.drawer-left .close{right:14px}
+.drawer-right{inset-inline-end:0;border-inline-start:1px solid var(--line);transform:translateX(102%)}
+.drawer-left{inset-inline-start:0;border-inline-end:1px solid var(--line);transform:translateX(-102%)}
+/* a logical property cannot say which way off-screen is: the sign flips (#173) */
+[dir=rtl] .drawer-right{transform:translateX(-102%)}
+[dir=rtl] .drawer-left{transform:translateX(102%)}
+.drawer-right.open,.drawer-left.open{transform:none}
+.drawer-right .close{inset-inline-start:14px}
+.drawer-left .close{inset-inline-end:14px}
 .handle{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:8px;cursor:pointer;
   font:11px var(--mono);letter-spacing:.14em;writing-mode:vertical-rl;color:var(--ink);background:var(--panel);border:1px solid var(--line);
   padding:14px 6px}
 .drawer-right .handle{right:auto;left:-46px;width:46px;padding:14px 21px 14px 7px;border-right:0;border-radius:10px 0 0 10px}
+/* vertical writing mode makes the logical properties vertical here: the handle is mirrored by hand */
+[dir=rtl] .drawer-right .handle{left:auto;right:-46px;padding:14px 7px 14px 21px;border-right:1px solid var(--line);border-left:0;border-radius:0 10px 10px 0}
 .keyrow{display:flex;align-items:center;gap:10px;font:12px var(--mono);color:var(--ink-mid);padding:6px 2px}
 .keyrow .sw{width:12px;height:12px;border-radius:50%;flex:none}
 .kv{display:flex;justify-content:space-between;gap:18px;font:11.5px var(--mono);color:var(--ink-mid);padding:8px 2px;border-bottom:1px solid var(--line-soft)}
 .kv:last-of-type{border-bottom:0}
-.kv b{color:var(--ink);font-weight:500;text-align:right}
+.kv b{color:var(--ink);font-weight:500;text-align:end}
 .kv b.over{color:var(--overdue-text)}
 .kv b.ok{color:var(--ok-text)}
 .kv b.opt{color:var(--ink-quiet);font-weight:400}
-.kv b .sure{font-size:9.5px;letter-spacing:.1em;color:var(--ok-text);margin-left:8px;font-style:normal}
+.kv b .sure{font-size:9.5px;letter-spacing:.1em;color:var(--ok-text);margin-inline-start:8px;font-style:normal}
 .kv b .sure.unsure{color:var(--warm-text)}
 .relay-card{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:6px}
 .relay-card .addr{display:block;font:11px var(--mono);color:var(--accent-text);border:1px dashed var(--line);border-radius:10px;
@@ -322,7 +326,7 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .cmd{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 8px 9px 12px;min-width:0}
 .cmd code{flex:1;min-width:0;font:11.5px var(--mono);color:var(--ink);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
 .cmd code::-webkit-scrollbar{display:none}
-.cmd .prompt{color:var(--accent-text);margin-right:6px;user-select:none}
+.cmd .prompt{color:var(--accent-text);margin-inline-end:6px;user-select:none}
 .copy{flex:none;font:500 10px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-quiet);background:none;
   border:1px solid var(--line);border-radius:8px;padding:6px 9px;cursor:pointer}
 .copy:hover{color:var(--ink);border-color:var(--ink-faint)}
@@ -398,9 +402,9 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .splash-search input::placeholder{color:var(--ink-faint)}
 .splash-search input:focus{border-color:var(--accent)}
 .palette{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:10px;width:100%;background:var(--panel-raised);
-  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:8px;display:none;text-align:left;z-index:5}
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:8px;display:none;text-align:start;z-index:5}
 .palette.open{display:block}
-.palette button{display:block;width:100%;text-align:left;font:12.5px var(--mono);color:var(--ink-mid);padding:8px 10px;border-radius:8px;background:none;border:0;cursor:pointer}
+.palette button{display:block;width:100%;text-align:start;font:12.5px var(--mono);color:var(--ink-mid);padding:8px 10px;border-radius:8px;background:none;border:0;cursor:pointer}
 .palette button b{color:var(--ink);font-weight:500}
 .palette button:hover{background:var(--panel)}
 .palette button.act{color:var(--accent-text)}
@@ -444,7 +448,7 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .item .body{flex:1;min-width:0}
 .item .body b{display:block;font-size:14.5px;font-weight:520}
 .item .body span{font-size:12.5px;color:var(--ink-mid)}
-.item .t{font:12px var(--mono);text-align:right;color:var(--ink-mid);flex:none}
+.item .t{font:12px var(--mono);text-align:end;color:var(--ink-mid);flex:none}
 .item .t small{display:block;font-size:10.5px;color:var(--ink-faint)}
 .item .t.over{color:var(--overdue-text)}
 .item .t.soon{color:var(--warm-text)}
@@ -496,7 +500,7 @@ body.withdrawing .pad .ai-notice{animation:chromeout .45s ease both}
 .tourfilm-callout i{position:absolute;width:14px;height:14px;background:var(--panel-raised);border:1px solid var(--line);transform:rotate(45deg);z-index:-1}
 .tourfilm-callout a{pointer-events:auto;display:inline-block;margin-top:8px;font:600 11px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-text)}
 .tourfilm-typed{position:fixed;display:flex;align-items:center;box-sizing:border-box;overflow:hidden;white-space:pre;pointer-events:none;z-index:2}
-.tourfilm-typed i{display:inline-block;width:1.5px;height:1.05em;margin-left:1px;background:var(--accent);vertical-align:text-bottom}
+.tourfilm-typed i{display:inline-block;width:1.5px;height:1.05em;margin-inline-start:1px;background:var(--accent);vertical-align:text-bottom}
 .transport{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:32;width:min(470px,calc(100% - 24px));height:44px;border-radius:99px;
   background:var(--panel-raised);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid var(--line);display:grid;grid-template-columns:auto auto 1fr auto;
   align-items:center;gap:2px;padding:0 16px 0 6px;opacity:0;pointer-events:none;transition:opacity .4s}
@@ -602,8 +606,8 @@ body.launching #door .planet .body,body.showwarp #door .planet .body,body.launch
 
 /* ══ THE LANDINGS: the ring the mark wears, with a section's bodies on it ══ */
 .pad{position:fixed;inset:0;z-index:2;background:var(--bg)}
-.pad .back{position:absolute;top:22px;left:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
-.pad .mark-row.home{position:absolute;top:16px;right:24px;z-index:4;font-size:15px;color:var(--ink-mid);text-decoration:none}
+.pad .back{position:absolute;top:22px;inset-inline-start:24px;z-index:4;background:none;border:0;cursor:pointer;color:var(--ink-quiet);text-decoration:none}
+.pad .mark-row.home{position:absolute;top:16px;inset-inline-end:24px;z-index:4;font-size:15px;color:var(--ink-mid);text-decoration:none}
 .pad .mark-row.home:hover{color:var(--ink)}
 .pad .back:hover,#door .back:hover{color:var(--accent-text)}
 /* a landing arrives as the sky does: the ring condenses out of the light, the rest comes with the instrument */
@@ -642,7 +646,7 @@ body.withdrawing .pad .doorfoot{animation:chromeout .45s ease both}
 .pad.docs .search input::-webkit-search-cancel-button{-webkit-appearance:none}
 .pad.docs .search kbd{font:10.5px var(--mono);color:var(--ink-faint);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
 .pad.docs .keys{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 34px}
-.pad.docs .keys::before{content:attr(aria-label);font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-right:4px}
+.pad.docs .keys::before{content:attr(aria-label);font:10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);align-self:center;margin-inline-end:4px}
 .pad.docs .key{font:12px var(--mono);color:var(--ink-mid);border:1px solid var(--line);border-radius:99px;padding:6px 13px;text-decoration:none;background:var(--panel)}
 .pad.docs .key:hover{border-color:var(--accent);color:var(--accent-text)}
 .pad.docs .results section{margin:0 0 30px}
@@ -747,7 +751,7 @@ body.departing #infopad.formed{z-index:37}
 .pad.info .card.unit{width:min(440px,100%)}
 .pad.info .unit .head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
 .pad.info .unit .head b{font:600 20px var(--display);letter-spacing:-.01em}
-.pad.info .unit .tag{margin-left:auto;font:12px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#8fb8ff;border:1px solid rgba(143,184,255,.3);border-radius:99px;padding:4px 9px}
+.pad.info .unit .tag{margin-inline-start:auto;font:12px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#8fb8ff;border:1px solid rgba(143,184,255,.3);border-radius:99px;padding:4px 9px}
 .pad.info .unit dl{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;margin:0 0 20px}
 .pad.info .unit dt{font:12px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
 .pad.info .unit dd{margin:0;font:500 15px var(--ui);color:var(--ink)}
@@ -788,7 +792,7 @@ body.departing #infopad.formed{z-index:37}
 .pad.info .tile:hover{border-color:rgba(216,180,90,.3)}
 .pad.info .tile p{font-size:14px;margin:0}
 .pad.info .tile .people{display:flex}
-.pad.info .tile .people i{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;margin-right:-8px;font:600 12px var(--display);font-style:normal;color:#0b0d18;background:var(--c);box-shadow:0 0 0 2px #0d1020}
+.pad.info .tile .people i{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;margin-inline-end:-8px;font:600 12px var(--display);font-style:normal;color:#0b0d18;background:var(--c);box-shadow:0 0 0 2px #0d1020}
 .pad.info .tile .glyph{display:flex;gap:6px;height:30px;align-items:center}
 .pad.info .tile .glyph i{display:block;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 12px var(--c)}
 .pad.info .tile .glyph.swatch i{width:22px;height:22px;box-shadow:0 0 0 1px rgba(255,255,255,.15)}
@@ -817,9 +821,9 @@ body.departing #infopad.formed{z-index:37}
 .pad.info .spec dt{font:500 12px/1.9 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-text)}
 .pad.info .spec dd{margin:0;font:15.5px/1.55 var(--ui);color:#c6cbdb}
 @media (max-width:599.98px){.pad.info .spec>div{grid-template-columns:1fr;gap:4px}}
-.pad.info .ports{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;width:min(1060px,100%);margin:44px auto 0;text-align:left}
+.pad.info .ports{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;width:min(1060px,100%);margin:44px auto 0;text-align:start}
 .pad.info .port{position:relative;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:14px;row-gap:3px;align-items:center;
-  padding:16px 34px 16px 16px;border-radius:16px;text-decoration:none;color:var(--ink);
+  padding:16px;padding-inline-end:34px;border-radius:16px;text-decoration:none;color:var(--ink);
   background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));border:1px solid rgba(255,255,255,.08);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 18px 40px -26px rgba(0,0,0,.9);
   opacity:0;transform:translateY(12px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1),border-color .3s ease,box-shadow .3s ease,background .3s ease}
@@ -831,13 +835,14 @@ body.departing #infopad.formed{z-index:37}
 .pad.info .port .ob i::after{content:"";position:absolute;left:50%;top:0;width:9px;height:9px;border-radius:50%;transform:translate(-50%,-50%);background:var(--c);box-shadow:0 0 10px var(--c)}
 .pad.info .port b{font:600 16px var(--display);letter-spacing:.005em;color:var(--ink);align-self:end}
 .pad.info .port span:not(.ob){font:14px/1.35 var(--ui);color:var(--ink-mid);align-self:start}
-.pad.info .port em{position:absolute;right:14px;top:14px;font:normal 14px var(--ui);color:var(--ink-faint);transition:transform .3s ease,color .3s ease}
+.pad.info .port em{position:absolute;inset-inline-end:14px;top:14px;font:normal 14px var(--ui);color:var(--ink-faint);transition:transform .3s ease,color .3s ease}
 .pad.info .port:hover,.pad.info .port:focus-visible{border-color:color-mix(in srgb,var(--c) 55%,transparent);outline:0;
   background:linear-gradient(180deg,color-mix(in srgb,var(--c) 10%,transparent),rgba(255,255,255,.015));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 0 0 3px color-mix(in srgb,var(--c) 14%,transparent),0 22px 44px -24px color-mix(in srgb,var(--c) 45%,transparent)}
 .pad.info .scene.in .port:hover,.pad.info .scene.in .port:focus-visible{transform:translateY(-3px)}
 .pad.info .port:hover .ob i,.pad.info .port:focus-visible .ob i{transform:rotate(360deg)}
 .pad.info .port:hover em,.pad.info .port:focus-visible em{color:var(--c);transform:translate(2px,-2px)}
+[dir=rtl] .pad.info .port:hover em,[dir=rtl] .pad.info .port:focus-visible em{transform:translate(-2px,-2px)}
 @media (max-width:900px){.pad.info .ports{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:460px){.pad.info .ports{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.pad.info .port,.pad.info .port .ob i{transition:none;opacity:1;transform:none}}
@@ -940,7 +945,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .entry.pick{animation:pick 1.8s ease both}
 @keyframes pick{0%,60%{border-color:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent)}100%{}}
 .pad.docs .entry.hot .star{opacity:1;box-shadow:0 0 14px var(--c)}
-.pad.docs .results h4 .linkish{margin-left:10px;font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--ink-faint)}
+.pad.docs .results h4 .linkish{margin-inline-start:10px;font:10px var(--mono);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--ink-faint)}
 .pad.docs .results h4 .linkish:hover{color:var(--accent-text)}
 @media (max-width:700px){.pad.docs .skymap{margin:18px -10px 0}.pad.docs .con .name text{font-size:17px;letter-spacing:1.4px}.pad.docs .chart .tip text{font-size:18px}.pad.docs .star .hit{r:18}}
 /* the entries: stars in their constellation's colour, arriving in order */
@@ -950,9 +955,9 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .entry small{grid-column:2}
 .pad.docs .entry .where{grid-column:3}
 .pad.docs .entry.read .star{opacity:.35;box-shadow:none}
-.pad.docs .entry.read b::after{content:"read";margin-left:10px;font:9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);vertical-align:middle}
+.pad.docs .entry.read b::after{content:"read";margin-inline-start:10px;font:9.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);vertical-align:middle}
 .pad.docs .entry.cursor{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
-.pad.docs .results h4 i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c,var(--ink-faint));margin:0 8px 1px 0;box-shadow:0 0 8px var(--c,transparent)}
+.pad.docs .results h4 i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c,var(--ink-faint));margin:0 0 1px;margin-inline-end:8px;box-shadow:0 0 8px var(--c,transparent)}
 .pad.docs .key{border-color:color-mix(in srgb,var(--c) 28%,var(--line))}
 .pad.docs .key:hover{border-color:var(--c);color:var(--c)}
 .pad.docs .linkish{background:none;border:0;padding:0;font:inherit;color:var(--accent-text);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
@@ -1012,7 +1017,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .body .sec:first-child h2{margin-top:0}
 .pad.docs .body h3{font:600 18.5px/1.3 var(--display);margin:36px 0 10px}
 .pad.docs .body h4{font:600 15px/1.4 var(--display);margin:26px 0 8px}
-.pad.docs .body .anchor{position:absolute;left:-1.2em;width:1.2em;text-align:center;color:var(--ink-faint);text-decoration:none;font-weight:400;opacity:0;transition:opacity .2s}
+.pad.docs .body .anchor{position:absolute;inset-inline-start:-1.2em;width:1.2em;text-align:center;color:var(--ink-faint);text-decoration:none;font-weight:400;opacity:0;transition:opacity .2s}
 .pad.docs .body h2:hover .anchor,.pad.docs .body h3:hover .anchor,.pad.docs .body h4:hover .anchor{opacity:.75}
 .pad.docs .body p{margin:0 0 16px}
 .pad.docs .body a{color:var(--accent-text);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);text-underline-offset:3px}
@@ -1021,14 +1026,14 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .body pre{position:relative;margin:0 0 20px;padding:16px 18px;background:var(--panel-raised);border:1px solid var(--line);border-radius:14px;overflow:auto;font:13px/1.6 var(--mono);color:var(--ink);tab-size:2}
 .pad.docs .body pre code{background:none;border:0;padding:0;font:inherit}
 .pad.docs .body pre.code[data-lang]::before{content:attr(data-lang);position:absolute;top:8px;right:14px;font:9.5px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint)}
-.pad.docs .body ul,.pad.docs .body ol{margin:0 0 16px;padding-left:24px}
+.pad.docs .body ul,.pad.docs .body ol{margin:0 0 16px;padding-inline-start:24px}
 .pad.docs .body li{margin:5px 0}
 .pad.docs .body li>p{margin:0 0 6px}
 .pad.docs .body table{display:block;width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 24px;font-size:14px;line-height:1.5}
-.pad.docs .body th{text-align:left;font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:8px 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
-.pad.docs .body td{padding:9px 12px 9px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.pad.docs .body th{text-align:start;font:500 10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);padding:8px 0;padding-inline-end:12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pad.docs .body td{padding:9px 0;padding-inline-end:12px;border-bottom:1px solid var(--line-soft);vertical-align:top}
 .pad.docs .body td code{white-space:nowrap}
-.pad.docs .body .alert{margin:0 0 20px;padding:14px 18px;border-left:2px solid var(--a,var(--accent));background:var(--panel);border-radius:0 12px 12px 0}
+.pad.docs .body .alert{margin:0 0 20px;padding:14px 18px;border-inline-start:2px solid var(--a,var(--accent));background:var(--panel);border-start-end-radius:12px;border-end-end-radius:12px}
 .pad.docs .body .alert b{display:block;font:500 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--a,var(--accent));margin-bottom:6px}
 .pad.docs .body .alert :last-child{margin-bottom:0}
 .pad.docs .body .alert.note{--a:var(--upcoming)}
@@ -1036,7 +1041,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .body .alert.important{--a:var(--accent)}
 .pad.docs .body .alert.warning{--a:var(--warm)}
 .pad.docs .body .alert.caution{--a:var(--overdue)}
-.pad.docs .body blockquote{margin:0 0 18px;padding:2px 18px;border-left:2px solid var(--line);color:var(--ink-mid)}
+.pad.docs .body blockquote{margin:0 0 18px;padding:2px 18px;border-inline-start:2px solid var(--line);color:var(--ink-mid)}
 .pad.docs .body .centred{text-align:center}
 /* a screenshot on its own line sits centred in the column (#128); a .centred row keeps its pictures side by side */
 .pad.docs .body img{display:block;max-width:100%;height:auto;border-radius:12px;border:1px solid var(--line-soft);margin:6px auto 18px}
@@ -1051,7 +1056,7 @@ body.dispersing .pad.info .sun{animation:disperse .8s cubic-bezier(.5,0,.9,.45) 
 .pad.docs .readnav a{--c:var(--accent);text-decoration:none;color:var(--ink-mid);font:500 15px var(--display);max-width:46%;transition:color .25s}
 .pad.docs .readnav a:hover{color:var(--c)}
 .pad.docs .readnav a b{display:block;font:500 10px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
-.pad.docs .readnav .next{text-align:right}
+.pad.docs .readnav .next{text-align:end}
 body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 @media (max-width:900px){.pad.docs .readgrid{grid-template-columns:1fr;gap:0}.pad.docs .onpage{position:static;order:0;margin-bottom:30px;max-width:320px}.pad.docs .body{font-size:15.5px}.pad.docs .body h2{font-size:23px;margin-top:44px}.pad.docs .body .anchor{display:none}}
 
@@ -1074,7 +1079,7 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad .scrim{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(90% 75% at 0% 0%,rgba(3,4,10,.62),rgba(3,4,10,.25) 55%,transparent 80%)}
 #installpad .back,#installpad .home{color:rgba(214,210,232,.7)}
 #installpad .back:hover,#installpad .home:hover{color:#d8b45a}
-#installpad .words{position:absolute;z-index:3;left:clamp(24px,7vw,128px);top:clamp(88px,17vh,220px);width:min(640px,calc(100% - 48px));user-select:text;-webkit-user-select:text}
+#installpad .words{position:absolute;z-index:3;inset-inline-start:clamp(24px,7vw,128px);top:clamp(88px,17vh,220px);width:min(640px,calc(100% - 48px));user-select:text;-webkit-user-select:text}
 #installpad .words h1{font:600 clamp(30px,3.9vw,58px)/1.04 var(--display);letter-spacing:-.022em;white-space:nowrap;color:#f4f2fb;margin:0 0 30px;text-shadow:0 2px 32px rgba(0,0,0,.55)}
 #installpad .theline{display:flex;align-items:center;gap:10px;margin:0;padding:6px 6px 6px 18px;border-radius:14px;
   background:rgba(12,9,28,.52);border:1px solid rgba(183,154,224,.24);-webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);
@@ -1083,7 +1088,7 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
   -webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
 #installpad .theline code::-webkit-scrollbar{display:none}
 #installpad .theline code[data-done]{color:#d8b45a}
-#installpad .theline .prompt{color:#b79ae0;margin-right:.7em}
+#installpad .theline .prompt{color:#b79ae0;margin-inline-end:.7em}
 #installpad .theline .copy{flex:none;font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#1b1206;background:#d8b45a;border:0;border-radius:9px;padding:11px 15px;cursor:pointer;transition:filter .2s,transform .2s}
 #installpad .theline .copy:hover{filter:brightness(1.12)}
 #installpad .theline .copy:active{transform:scale(.97)}
@@ -1192,9 +1197,11 @@ html[data-maintenance] #door .notice{display:inline-flex;align-items:center;marg
   opacity:0;transform:translateY(10px);transition:opacity 1.4s ease 1.25s,transform 1.4s cubic-bezier(.2,.7,.2,1) 1.25s}
 html[data-maintenance] body.lit #door .notice{opacity:.86;transform:none}
 html[data-maintenance] #door .notice::before,html[data-maintenance] #door .notice::after{content:"";width:calc(var(--R) * .1);height:1px;flex:none}
-html[data-maintenance] #door .notice::before{margin-right:1.6em;background:linear-gradient(90deg,transparent,rgba(216,180,90,.6))}
-html[data-maintenance] #door .notice::after{margin-left:1.2em;background:linear-gradient(90deg,rgba(216,180,90,.6),transparent)}
-html[data-maintenance] #door .notice .d{display:inline-flex;letter-spacing:.18em;margin-left:-.3em}
+html[data-maintenance] #door .notice::before{margin-inline-end:1.6em;background:linear-gradient(90deg,transparent,rgba(216,180,90,.6))}
+html[data-maintenance] #door .notice::after{margin-inline-start:1.2em;background:linear-gradient(90deg,rgba(216,180,90,.6),transparent)}
+html[data-maintenance] #door .notice .d{display:inline-flex;letter-spacing:.18em;margin-inline-start:-.3em}
+/* the notice's two fading rules face the words: mirrored with the margins */
+html[data-maintenance][dir=rtl] #door .notice::before,html[data-maintenance][dir=rtl] #door .notice::after{transform:scaleX(-1)}
 html[data-maintenance] #door .notice .d i{font-style:normal;opacity:.2;animation:noticedot 2.6s ease-in-out infinite}
 html[data-maintenance] #door .notice .d i:nth-child(2){animation-delay:.35s}
 html[data-maintenance] #door .notice .d i:nth-child(3){animation-delay:.7s}
@@ -1244,3 +1251,15 @@ html[data-worldplanets~=info] #door .planet[data-section=info].chosen .body::bef
    flight's way in opens; they fade in then (main.js: openNow; ADR-0002 6.8). On filter, as the chrome's own fades are
    on opacity */
 #docspad .back.dawn[aria-disabled=true],#back[aria-disabled=true],#signout[aria-disabled=true]{filter:opacity(0);pointer-events:none!important;cursor:default}
+
+/* ═══ RIGHT TO LEFT (#173): the page's direction is <html dir> (Arabic); the chrome above is written in logical
+   properties, so it mirrors by itself. The sky, dial, door, chart callout, transport and every picture stay physical. ═══ */
+/* code and commands stay left to right and start-aligned inside a right-to-left page; isolate, so a code run never pulls
+   neighbouring Arabic punctuation out of place */
+pre,code,kbd,.cmd,.theline,.addr{direction:ltr;unicode-bidi:isolate;text-align:start}
+/* Arabic: no letter-spacing (it breaks the joined letters); small print at 12px, where 10px glyphs are too small; a stack
+   with an Arabic face for the whole interface (code keeps --mono) */
+:lang(ar){--ui:system-ui,'Segoe UI','Noto Sans Arabic','Noto Naskh Arabic',sans-serif;--display:var(--ui)}
+:lang(ar) .corner,:lang(ar) .langs button,:lang(ar) .pad.docs .results h4,:lang(ar) .pad.docs .readnav a b,:lang(ar) .pad.docs .body th,
+:lang(ar) .pad.docs .keys::before,:lang(ar) .pad.docs .hint,:lang(ar) .pad.docs .stamp,:lang(ar) .pad.docs .results h4 .linkish,
+:lang(ar) .pad.docs .body figure.diagram figcaption,:lang(ar) .handle,:lang(ar) .transport .name,:lang(ar) .horizon{letter-spacing:0;font-size:12px}

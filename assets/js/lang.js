@@ -18,7 +18,7 @@
 import EN from "../i18n/en.js";
 
 /* the languages the site is built in, besides English (a folder each) */
-export const BUILT = ["de", "fr", "es", "pt", "id", "zh-Hans", "ja"];
+export const BUILT = ["de", "fr", "es", "pt", "id", "zh-Hans", "ja", "ar"];
 
 /* a browser or page language tag to the built language it means, or null: by primary subtag; a built key that carries
    a script (zh-Hans) takes that script, or no subtag after the language, or a region that implies it (zh-CN, zh-SG),
@@ -56,7 +56,10 @@ try { const j = doc?.getElementById("i18n"); if (j) PAGE = JSON.parse(j.textCont
 /* a key's words from a catalogue, its English when the catalogue lacks it, with each {name} filled from vars */
 export function t(cat, key, vars) {
   const s = cat && Object.hasOwn(cat, key) ? cat[key] : Object.hasOwn(EN, key) ? EN[key] : key;
-  return vars ? String(s).replace(/\{(\w+)\}/g, (m, n) => (Object.hasOwn(vars, n) ? String(vars[n]) : m)) : String(s);
+  /* on a right-to-left page a value put into a sentence is isolated (FSI ... PDI), so its own direction and its punctuation
+     never reorder the words about it (#173) */
+  const iso = doc?.documentElement?.dir === "rtl" || doc?.dir === "rtl";
+  return vars ? String(s).replace(/\{(\w+)\}/g, (m, n) => (Object.hasOwn(vars, n) ? (iso ? `\u2068${vars[n]}\u2069` : String(vars[n])) : m)) : String(s);
 }
 /* the same, from this page's catalogue */
 export const tr = (key, vars) => t(PAGE, key, vars);
