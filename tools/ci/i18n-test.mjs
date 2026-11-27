@@ -298,6 +298,12 @@ await attempt("N1 404", async () => {
  *   M3  (#176) index.html's THEME span carries data-i18n, with a key of M2, and de/index.html shows that key's de.json words
  *       (its English while de.json lacks it), whatever they are
  *   M4  (#176) i18n-check.mjs exits 0 (a new key is in each catalogue and state, or pending in neither)
+ *   M5  (#176 remainder) home.js, comments stripped, holds no English of the suggestion row's line ("forwarded document"), of the
+ *       inbox button's aria-label ("Inbox —", a "waiting" literal) or of the burns-up value ("in " / "d" around burnsInDays), in
+ *       any quote or backtick; M6 data.js no longer holds "in 51 days"
+ *   M7  (#176 remainder) en.json and the generated en.js each hold exactly one value equal to "Inbox — {n} waiting" and to
+ *       "Found in 1 forwarded document · renews {date} · {cost}"
+ *   M8  (#176 remainder) i18n-check.mjs still exits 0
  */
 const rtlTag = (html) => (/<html\b[^>]*>/i.exec(html) || [""])[0];
 await attempt("D1 dir in languages.json", async () => {
@@ -419,6 +425,46 @@ await attempt("M3 THEME span", async () => {
 await attempt("M4 i18n-check", async () => {
   const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
   check("M4 node tools/ci/i18n-check.mjs exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
+});
+
+/* ---- #176 remainder: the inbox button's label, the suggestion row's line and the two relative times ---- */
+const INBOX_ARIA176 = "Inbox \u2014 {n} waiting";
+const FOUND176 = "Found in 1 forwarded document \u00b7 renews {date} \u00b7 {cost}";
+/* comments out, so a note about the old words does not count; string and template literals are left in, as M1 misses the latter */
+const code176 = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+
+await attempt("M5 home.js English", async () => {
+  const src = code176(read("assets/js/home.js"));
+  const found = [];
+  if (/forwarded document/i.test(src)) found.push("the suggestion row's 'forwarded document' line");
+  if (/Inbox\s*\u2014/.test(src)) found.push("the 'Inbox \u2014' aria-label");
+  /* a literal that says "waiting" among other words (the bare class name "waiting" is not words) */
+  for (const m of src.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g)) if (/\bwaiting\b/i.test(m[2]) && m[2].trim() !== "waiting") found.push(`a literal with 'waiting': ${m[0].slice(0, 60)}`);
+  for (const line of src.split("\n")) {
+    if (!/burnsInDays/.test(line)) continue;
+    if (/\bin\s*\$\{[^}]*burnsInDays/.test(line) || /\$\{[^}]*burnsInDays[^}]*\}\s*d\b/.test(line) || /["'`]\s*in\s*["'`]\s*\+[^;\n]*burnsInDays/.test(line) || /burnsInDays\s*\+\s*["'`]\s*d\b/.test(line)) found.push(`'in \u2026d' written around burnsInDays: ${line.trim().slice(0, 70)}`);
+  }
+  check("M5 home.js has no hard-coded English for the inbox label, the suggestion line or burns-up's 'in Nd'", !found.length, found.length ? `still in home.js: ${JSON.stringify(found)}` : "none");
+});
+
+await attempt("M6 data.js", async () => {
+  const src = code176(read("assets/js/data.js"));
+  check("M6 data.js no longer holds the English words 'in 51 days'", !/in 51 days/.test(src), /in 51 days/.test(src) ? "assets/js/data.js still has \"in 51 days\"" : "none");
+});
+
+await attempt("M7 catalogue strings", async () => {
+  const enJs = read("assets/i18n/en.js");
+  for (const [tag, text] of [["inbox label", INBOX_ARIA176], ["suggestion line", FOUND176]]) {
+    const n = Object.values(en).filter((v) => v === text).length;
+    check(`M7 en.json has exactly one value equal to the ${tag} ${JSON.stringify(text)}`, n === 1, `${n} found`);
+    const g = enJs.split(`: ${JSON.stringify(text)}`).length - 1;
+    check(`M7 en.js (generated) carries the same ${tag}`, g === 1, `${g} found`);
+  }
+});
+
+await attempt("M8 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("M8 node tools/ci/i18n-check.mjs still exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
 });
 
 process.exit(failed ? 1 : 0);

@@ -26,6 +26,10 @@
  *       small print, <bdi> around inserted values, the stale line's English link; each against the root as the control
  *   M1-M2 (#176) the inbox drawer and the account drawer's THEME label come from the catalogue: on de/ each shows the words of
  *       the catalogue's key for it (found by its English words), whatever de.json says; the root shows the English
+ *   M3-M7 (#176 remainder) on the home page of en, de and ja: the inbox button's aria-label is the catalogue's "Inbox — {n} waiting" and
+ *       follows the number when a receipt is dismissed; the suggestion row's line is the catalogue's "Found in 1 forwarded document
+ *       · renews {date} · {cost}" with a date and a cost; the receipt's "renews" and "burns up" values are Intl.RelativeTimeFormat's
+ *       (long for 51 days, narrow for 43) in the page's language; cost, provider and the title are the same on en and de
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -665,6 +669,68 @@ try {
       const th = miss([[theme, "THEME"]]);
       check(`M2 ${who}: the account drawer's THEME label is the catalogue's words`, !th.length, th.join("; ") || JSON.stringify(theme));
     });
+  }
+  /* ---- #176 remainder: the inbox button's label, the suggestion row's line and the two relative times ---- */
+  const INBOX176 = "Inbox \u2014 {n} waiting", FOUND176 = "Found in 1 forwarded document \u00b7 renews {date} \u00b7 {cost}";
+  const says176 = (lang, words) => { const s = said176(lang, words); return s.length ? s : [words]; };
+  const esc176 = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const orbLabel176 = (page) => page.locator("#inbox-orb").getAttribute("aria-label");
+  const R176 = {};
+  for (const lang of ["en", "de", "ja"]) {
+    const path = lang === "en" ? "" : `${lang}/`;
+    await run(`M3 ${lang} inbox and receipt`, { context: { locale: "en-US", viewport: { width: 1280, height: 800 } }, stored: lang }, async (page) => {
+      await enterHome(page, path);
+      await page.locator("#corridor .item.suggest .body span").first().waitFor({ state: "attached", timeout: 8000 });
+      const line = await page.evaluate(() => document.querySelector("#corridor .item.suggest .body span").textContent.trim());
+      await page.locator("#inbox-orb").click({ force: true });
+      await page.waitForFunction(() => { const d = document.getElementById("inboxdrawer"); return d.classList.contains("open") && d.querySelectorAll(".lane").length >= 4; }, null, { timeout: 8000 });
+      const got = await page.evaluate((line) => {
+        const rec = document.querySelector("#inboxdrawer .lane.review .receipt.suggest");
+        const lang = document.documentElement.lang;
+        /* a value without the sure/unsure tag that follows it */
+        const vals = rec ? [...rec.querySelectorAll(":scope > .kv > b")].map((b) => { const c = b.cloneNode(true); c.querySelectorAll("i").forEach((i) => i.remove()); return c.textContent.trim(); }) : [];
+        return {
+          lang, line, vals,
+          n: document.querySelectorAll("#inboxdrawer .lane.review .receipt.suggest").length,
+          title: rec ? rec.querySelector(":scope > b").textContent.trim() : null,
+          label: document.getElementById("inbox-orb").getAttribute("aria-label"),
+          renews: new Intl.RelativeTimeFormat(lang).format(51, "day"),
+          burns: new Intl.RelativeTimeFormat(lang, { style: "narrow" }).format(43, "day"),
+        };
+      }, line);
+      R176[lang] = got;
+      /* M3: the inbox button's spoken label, the catalogue's words filled with the number of receipts in the review lane */
+      const wantLabel = says176(lang, INBOX176).map((t) => t.replace("{n}", String(got.n)));
+      check(`M3a ${lang}: the inbox button's aria-label is the catalogue's "Inbox \u2014 {n} waiting" with n = the receipts in the review lane (${got.n})`, got.n >= 1 && wantLabel.includes(got.label), `${JSON.stringify(got.label)}, want one of ${JSON.stringify(wantLabel)}`);
+      /* M4: the suggestion row's line matches the catalogue's template, with a date and a cost filled and nothing left in braces */
+      const tpls = says176(lang, FOUND176);
+      const hit = tpls.map((t) => new RegExp(`^${esc176(t).replace("\\{date\\}", "(.+?)").replace("\\{cost\\}", "(.+)")}$`).exec(got.line)).find(Boolean);
+      check(`M4 ${lang}: the suggestion row's line is the catalogue's "Found in 1 forwarded document \u00b7 renews {date} \u00b7 {cost}" with a date and a cost`, !!hit && !!hit[1].trim() && !!hit[2].trim() && !got.line.includes("{"), `${JSON.stringify(got.line)}, template ${JSON.stringify(tpls)}`);
+      /* M5: the two relative times are the browser's, in the page's language */
+      check(`M5a ${lang}: the "renews" value is Intl.RelativeTimeFormat("${got.lang}").format(51, "day")`, got.vals[0] === got.renews, `${JSON.stringify(got.vals[0])}, want ${JSON.stringify(got.renews)}`);
+      check(`M5b ${lang}: the "burns up" value is the narrow style's for 43 days`, got.vals[3] === got.burns, `${JSON.stringify(got.vals[3])}, want ${JSON.stringify(got.burns)}`);
+      if (lang === "ja") check("M5c ja: neither relative time has a Latin letter", got.vals[0] !== undefined && got.vals[3] !== undefined && !/[A-Za-z]/.test(got.vals[0] + got.vals[3]), JSON.stringify([got.vals[0], got.vals[3]]));
+      /* M6: the label follows the number: dismiss the receipt (the first tap arms, the second fires) */
+      if (lang === "en") {
+        const no = page.locator("#inboxdrawer .lane.review .receipt.suggest button.no").first();
+        await no.click({ force: true });
+        await no.click({ force: true });
+        await page.waitForFunction((n) => document.querySelectorAll("#inboxdrawer .lane.review .receipt.suggest").length === n, got.n - 1, { timeout: 8000 });
+        const wantAfter = says176(lang, INBOX176).map((t) => t.replace("{n}", String(got.n - 1)));
+        await page.waitForFunction((w) => w.includes(document.getElementById("inbox-orb").getAttribute("aria-label")), wantAfter, { timeout: 5000 }).catch(() => {});
+        const after = await orbLabel176(page);
+        check(`M6 en: after one receipt is dismissed the aria-label shows ${got.n - 1}`, wantAfter.includes(after), `${JSON.stringify(after)}, want one of ${JSON.stringify(wantAfter)}`);
+      }
+    });
+  }
+  /* M7: the neighbours that must not change, and the German relative time is not the English */
+  {
+    const a = R176.en, b = R176.de;
+    if (!a || !b) check("M7 en and de", false, "a page did not load, see above");
+    else {
+      check("M7a de: the \"renews\" value reads differently from the English one", !!b.vals[0] && b.vals[0] !== a.vals[0], `de ${JSON.stringify(b.vals[0])}, en ${JSON.stringify(a.vals[0])}`);
+      check("M7b the cost and provider readings and the receipt's title are the same on en and de", !!a.vals[1] && !!a.vals[2] && !!a.title && a.vals[1] === b.vals[1] && a.vals[2] === b.vals[2] && a.title === b.title, JSON.stringify({ en: [a.vals[1], a.vals[2], a.title], de: [b.vals[1], b.vals[2], b.title] }));
+    }
   }
 } catch (e) {
   check("harness", false, String(e && e.stack || e));
