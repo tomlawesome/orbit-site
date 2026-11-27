@@ -255,5 +255,7 @@ export default {
  "nothing-here": "nothing here",
  "decide": "Decide",
  "tap-again-to-add": "tap again to add",
- "tap-again-to-dismiss": "tap again to dismiss"
+ "tap-again-to-dismiss": "tap again to dismiss",
+ "inbox-label": "Inbox — {n} waiting",
+ "found-in-document": "Found in 1 forwarded document · renews {date} · {cost}"
 };

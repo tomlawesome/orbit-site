@@ -6,7 +6,7 @@ import { households, account, inbox, today, persist, serialise, hydrate, forget,
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 import { createPlaces } from "./places.js";
-import { tr } from "./lang.js";
+import { tr, inDays } from "./lang.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -323,7 +323,7 @@ function suggestionRowFor(s) {
     <div class="actions"><button class="yes" type="button"></button><button type="button" class="no"></button></div>`;
   row.querySelector("button.yes").textContent = tr("add-to-orbit"); row.querySelector("button.no").textContent = tr("dismiss");
   row.querySelector("b").textContent = s.title;
-  row.querySelector(".body span").textContent = `Found in 1 forwarded document · renews ${law.shortDate(law.addDays(today, s.renewsInDays))} · ${law.money(s.costMinor, true)}`;
+  row.querySelector(".body span").textContent = tr("found-in-document", { date: law.shortDate(law.addDays(today, s.renewsInDays)), cost: law.money(s.costMinor, true) });
   wireDecide(row, s);
   return row;
 }
@@ -482,7 +482,7 @@ export function renderInbox() {
   const orb = $("#inbox-orb");
   orb.classList.toggle("waiting", inbox.review.length > 0);
   orb.querySelector(".count").textContent = String(inbox.review.length);
-  orb.setAttribute("aria-label", `Inbox — ${inbox.review.length} waiting`);
+  orb.setAttribute("aria-label", tr("inbox-label", { n: inbox.review.length }));
   const host = $("#lanes");
   host.replaceChildren();
   const lane = (cls, title, items, render) => {
@@ -495,8 +495,8 @@ export function renderInbox() {
   lane("filed", "filed", inbox.filed, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = `${r.when} · ${r.note}`; return d; });
   lane("review", "for-your-review", inbox.review, (r) => {
     const d = document.createElement("div"); d.className = "receipt suggest";
-    d.innerHTML = `<b></b><small></small>` + r.readings.map(([k, v, sure]) => `<div class="kv"><span>${tr(k)}</span><b>${v}<i class="sure ${sure ? "" : "unsure"}">${sure ? tr("sure") : tr("unsure")}</i></b></div>`).join("") +
-      `<div class="kv"><span>${tr("burns-up")}</span><b>in ${r.burnsInDays}d</b></div>` +
+    d.innerHTML = `<b></b><small></small>` + r.readings.map(([k, v, sure]) => `<div class="kv"><span>${tr(k)}</span><b>${k === "renews" ? inDays(v) : v}<i class="sure ${sure ? "" : "unsure"}">${sure ? tr("sure") : tr("unsure")}</i></b></div>`).join("") +
+      `<div class="kv"><span>${tr("burns-up")}</span><b>${inDays(r.burnsInDays, "narrow")}</b></div>` +
       `<div class="actions" role="group" aria-label="${tr("decide")}"><button class="yes" type="button">${tr("add-to-orbit")}</button><button class="no" type="button">${tr("dismiss")}</button></div>`;
     d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.source;
     wireDecide(d, r);

@@ -64,6 +64,15 @@ export function t(cat, key, vars) {
 /* the same, from this page's catalogue */
 export const tr = (key, vars) => t(PAGE, key, vars);
 
+/* a number of days from now in the page's language (#176): Intl.RelativeTimeFormat, given the page's own <html lang> as it
+   stands (en-GB on the English page), in its long style or with { style: "narrow" } */
+export function inDays(n, style = "long") {
+  const tag = doc?.documentElement.lang || "en";
+  let f;
+  try { f = new Intl.RelativeTimeFormat(tag, { style }); } catch { f = new Intl.RelativeTimeFormat("en", { style }); }
+  return f.format(n, "day");
+}
+
 /* where the root sends a visitor: a stored choice first ("en" keeps them at the root, a built language sends them to
    it), then the first of the browser's languages that is English or built (by its primary subtag: de-AT is de). null
    is the root */

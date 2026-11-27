@@ -169,7 +169,7 @@ export const inbox = {
       kind: "renewal",
       source: "policy-schedule.pdf · 312 KB · scanned clean",
       readings: [
-        ["renews", "in 51 days", true],
+        ["renews", 51, true],
         ["cost", "~£400.00", false],
         ["provider", "Harbour Mutual", true],
       ],
