@@ -674,6 +674,8 @@ try {
   const INBOX176 = "Inbox \u2014 {n} waiting", FOUND176 = "Found in 1 forwarded document \u00b7 renews {date} \u00b7 {cost}";
   const says176 = (lang, words) => { const s = said176(lang, words); return s.length ? s : [words]; };
   const esc176 = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /* a click inside a just-opened drawer waits for its 0.35s slide-in: its box is inside the viewport (never a fixed sleep; a busy host runs the slide late) */
+  const slid176 = (page, id) => page.waitForFunction((i) => { const r = document.getElementById(i).getBoundingClientRect(); return r.width > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5; }, id, { timeout: 8000 });
   const orbLabel176 = (page) => page.locator("#inbox-orb").getAttribute("aria-label");
   const R176 = {};
   for (const lang of ["en", "de", "ja"]) {
@@ -684,6 +686,7 @@ try {
       const line = await page.evaluate(() => document.querySelector("#corridor .item.suggest .body span").textContent.trim());
       await page.locator("#inbox-orb").click({ force: true });
       await page.waitForFunction(() => { const d = document.getElementById("inboxdrawer"); return d.classList.contains("open") && d.querySelectorAll(".lane").length >= 4; }, null, { timeout: 8000 });
+      await slid176(page, "inboxdrawer");
       const got = await page.evaluate((line) => {
         const rec = document.querySelector("#inboxdrawer .lane.review .receipt.suggest");
         const lang = document.documentElement.lang;
@@ -713,6 +716,7 @@ try {
       /* M6: the label follows the number: dismiss the receipt (the first tap arms, the second fires) */
       if (lang === "en") {
         const no = page.locator("#inboxdrawer .lane.review .receipt.suggest button.no").first();
+        await slid176(page, "inboxdrawer");
         await no.click({ force: true });
         await no.click({ force: true });
         await page.waitForFunction((n) => document.querySelectorAll("#inboxdrawer .lane.review .receipt.suggest").length === n, got.n - 1, { timeout: 8000 });

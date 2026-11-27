@@ -441,7 +441,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   const lanes = $$("#lanes .lane").map((l) => [l.className.replace("lane ", ""), l.querySelectorAll(".receipt").length]);
   check("four lanes, each with its receipts", show(lanes) === show([["filed", 1], ["review", 1], ["reading", 1], ["failed", 2]]), `got ${show(lanes)}`);
   const review = $("#lanes .lane.review .receipt");
-  check("a review receipt shows its readings, sure or not, and when it burns up", review?.querySelectorAll("i.sure").length === 3 && review.querySelectorAll("i.unsure").length === 1 && review.textContent.includes("in 43d"), `${review?.querySelectorAll("i.sure").length} readings, ${review?.querySelectorAll("i.unsure").length} unsure`);
+  check("a review receipt shows its readings, sure or not, and when it burns up", review?.querySelectorAll("i.sure").length === 3 && review.querySelectorAll("i.unsure").length === 1 && review.textContent.includes("in 43 days"), `${review?.querySelectorAll("i.sure").length} readings, ${review?.querySelectorAll("i.unsure").length} unsure`);
 }
 
 /* ── opening an item ───────────────────────────────────────────────────── */
