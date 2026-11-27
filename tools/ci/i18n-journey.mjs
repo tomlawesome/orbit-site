@@ -30,6 +30,10 @@
  *       follows the number when a receipt is dismissed; the suggestion row's line is the catalogue's "Found in 1 forwarded document
  *       · renews {date} · {cost}" with a date and a cost; the receipt's "renews" and "burns up" values are Intl.RelativeTimeFormat's
  *       (long for 51 days, narrow for 43) in the page's language; cost, provider and the title are the same on en and de
+ *   N1-N4 (#177) the demo's page words follow the page's language: N1 the English page reads exactly as before (exact strings,
+ *       all twelve months); N2 every page word comes from the catalogue (en.js served marked) and kept data does not; N3 a
+ *       translation cannot break the page (en.js served as markup and quotes, shown as text); N4 de, ja and ar write dates,
+ *       relative times, month counts and money in the page's language, leave no English phrase or Latin letter but kept data
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -735,6 +739,425 @@ try {
       check("M7a de: the \"renews\" value reads differently from the English one", !!b.vals[0] && b.vals[0] !== a.vals[0], `de ${JSON.stringify(b.vals[0])}, en ${JSON.stringify(a.vals[0])}`);
       check("M7b the cost and provider readings and the receipt's title are the same on en and de", !!a.vals[1] && !!a.vals[2] && !!a.title && a.vals[1] === b.vals[1] && a.vals[2] === b.vals[2] && a.title === b.title, JSON.stringify({ en: [a.vals[1], a.vals[2], a.title], de: [b.vals[1], b.vals[2], b.title] }));
     }
+  }
+  /* ---- N (#177): the demo's page words follow the page's language ----
+     The home page's demo (dial, list, item drawer, search box, inbox) is read from the DOM after the page has drawn it, with
+     class and id selectors only. The sample's dates are the real day's, so every English string expected below is written out
+     from explicit English tables, never from Intl.
+       N1  the English page reads exactly as it did before #177 (the guard: it passes before and after)
+       N2  the words come from the catalogue: assets/i18n/en.js is served marked, each value wrapped in U+27E6 ... U+27E7, so a
+           word the code writes itself shows no mark; page words carry one and kept data (titles, providers, file names, T-16d) none
+       N3  a translation cannot break the page (point 8): every value in en.js is served as <b>x</b> "q" &amp; and the page shows
+           those characters as text, in labels, buttons, notes and spoken labels (aria-label), the inbox's #176 keys included
+       N4  de, ja and ar (marked, so a sentence still English before the translation run shows its marks): dates, months, the
+           weekday, relative times, month counts and money are the browser's in the page's language, no Latin letter is left
+           on ja and ar but kept data, no English page phrase stands unmarked, and the kept data is as written */
+  const EN_JS177 = readFileSync(join(ROOT, "assets/i18n/en.js"), "utf8");
+  const CAT177 = JSON.parse(EN_JS177.slice(EN_JS177.indexOf("export default ") + "export default ".length).replace(/;\s*$/, ""));
+  const OPEN177 = "⟦", CLOSE177 = "⟧";
+  const JUNK177 = "<b>x</b> \"q\" &amp;";
+  const marked177 = (v) => `${OPEN177}${v}${CLOSE177}`;
+  const junked177 = (v) => [JUNK177, ...(String(v).match(/\{\w+\}/g) || [])].join(" ");
+  const serve177 = (page, wrap) => page.route("**/assets/i18n/en.js", (route) => route.fulfill({ status: 200, contentType: "text/javascript", body: `export default ${JSON.stringify(Object.fromEntries(Object.entries(CAT177).map(([k, v]) => [k, wrap(v)])))};` }));
+  /* a text without the marked stretches (they nest: a sentence holding a phrase) */
+  const strip177 = (s) => { let d = 0, o = ""; for (const c of String(s)) { if (c === OPEN177) d++; else if (c === CLOSE177) d = Math.max(0, d - 1); else if (!d) o += c; } return o; };
+  const isMarked177 = (s) => typeof s === "string" && s.includes(OPEN177) && s.includes(CLOSE177);
+
+  /* what the page is read with (functions run in the page: no outside names) */
+  const dialOf177 = () => {
+    const q = (s) => [...document.querySelectorAll(s)], aria = (e) => e.getAttribute("aria-label");
+    return { name: document.querySelector("#dial-name").textContent, sun: aria(document.querySelector("#dial .sun-link")), months: q("#dial .months text").map((t) => t.textContent),
+      bodies: q("#dial .body-link").map((a) => [a.dataset.id, aria(a)]), hits: q("#galaxy .hit").map(aria), chips: q("#chips button").map((b) => b.textContent) };
+  };
+  const listOf177 = () => {
+    const t = (e) => (e ? e.textContent : null), kids = (e) => (e ? e.children.length : 0);
+    const groups = []; let cur = null;
+    for (const e of document.querySelectorAll("#corridor > *")) {
+      if (e.classList.contains("month")) { cur = { label: t(e.querySelector("span")), small: t(e.querySelector("small")), smallKids: kids(e.querySelector("small")), rows: 0 }; groups.push(cur); } else if (cur && e.classList.contains("item")) cur.rows++;
+    }
+    const today = document.querySelectorAll("#today > span")[1], horizon = document.querySelector("#horizon");
+    const rows = [...document.querySelectorAll("#corridor .item:not(.suggest)")].map((r) => ({ id: r.dataset.id, title: t(r.querySelector(".body b")), body: t(r.querySelector(".body span")), bodyKids: kids(r.querySelector(".body span")), t: r.querySelector(".t").firstChild.textContent, date: t(r.querySelector(".t small")) }));
+    const sugg = [...document.querySelectorAll("#corridor .item.suggest")].map((r) => ({ title: t(r.querySelector(".body b")), line: t(r.querySelector(".body span")), lineKids: kids(r.querySelector(".body span")), yes: t(r.querySelector("button.yes")), no: t(r.querySelector("button.no")) }));
+    return { today: t(today), todayKids: kids(today), groups, rows, sugg, horizon: t(horizon), horizonKids: kids(horizon) };
+  };
+  const calloutOf177 = (id) => {
+    const link = document.querySelector(`#dial .body-link[data-id="${id}"]`);
+    link.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "mouse" }));
+    const c = document.querySelector("#body-callout"), s = c.querySelector("small");
+    const out = { title: c.querySelector("b").textContent, line: s.textContent, kids: s.children.length };
+    link.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }));
+    return out;
+  };
+  const drawerOf177 = ({ id, act }) => {
+    const row = document.querySelector(`.item[data-id="${id}"]`);
+    if (!row) return null;
+    if (act) { const b = document.getElementById(`${id}-view`)?.querySelector(`[data-act="${act}"]`); if (!b) return null; b.click(); } else { if (row.classList.contains("open")) row.click(); row.click(); }
+    const v = document.getElementById(`${id}-view`);
+    if (!v) return null;
+    const kids = (e) => (e ? e.children.length : 0);
+    return {
+      kv: [...v.querySelectorAll(".kv")].map((k) => [k.querySelector("span").textContent, k.querySelector("b").textContent, kids(k.querySelector("span")), kids(k.querySelector("b"))]),
+      h4: [...v.querySelectorAll("h4")].map((h) => [h.textContent, kids(h)]),
+      docs: [...v.querySelectorAll(".doc")].map((d) => ({ name: d.querySelector("span").firstChild.textContent, meta: d.querySelector("small").textContent, kids: kids(d.querySelector("small")) })),
+      acts: v.querySelector(".acts").getAttribute("aria-label"),
+      btns: [...v.querySelectorAll(".acts button")].map((b) => [b.textContent, b.disabled, kids(b)]),
+      note: v.querySelector(".ivnote").textContent, noteKids: kids(v.querySelector(".ivnote")),
+    };
+  };
+  const inboxOf177 = () => {
+    const kids = (e) => (e ? e.children.length : 0);
+    return {
+      orb: document.querySelector("#inbox-orb").getAttribute("aria-label"),
+      lanes: [...document.querySelectorAll("#inboxdrawer .lane")].map((l) => ({
+        cls: l.className.replace("lane ", ""), h4: l.querySelector("h4").textContent, h4Kids: kids(l.querySelector("h4")),
+        receipts: [...l.querySelectorAll(".receipt")].map((r) => {
+          const small = r.querySelector(":scope > small"), title = r.querySelector(":scope > b");
+          return {
+            title: title ? title.textContent : null, titleKids: kids(title), small: small ? small.textContent : null, smallKids: kids(small),
+            kv: [...r.querySelectorAll(":scope > .kv")].map((k) => { const b = k.querySelector("b"), c = b.cloneNode(true); c.querySelectorAll("i").forEach((i) => i.remove()); return [k.querySelector("span").textContent, c.textContent, kids(k.querySelector("span")), [...b.querySelectorAll("i")].map((i) => [i.textContent, kids(i)])]; }),
+            btns: [...r.querySelectorAll("button")].map((b) => [b.textContent, kids(b)]), decide: r.querySelector(".actions") ? r.querySelector(".actions").getAttribute("aria-label") : null,
+          };
+        }),
+      })),
+    };
+  };
+  const searchOf177 = (q) => {
+    const input = document.querySelector("#explore");
+    input.value = q; input.dispatchEvent(new Event("focus")); input.dispatchEvent(new Event("input"));
+    return [...document.querySelectorAll("#palette > *")].map((e) => ({ cls: e.className, text: e.textContent, kids: e.children.length }));
+  };
+  const pressOf177 = () => { const b = document.querySelector("#inboxdrawer .lane.review .receipt.suggest button.yes"); b.click(); return { text: b.textContent, kids: b.children.length }; };
+  const idOf177 = (title) => { const r = [...document.querySelectorAll("#corridor .item:not(.suggest)")].find((x) => x.querySelector(".body b").textContent === title); return r ? r.dataset.id : null; };
+  const addOf177 = async ({ name, date, cost, recur }) => {
+    const set = (sel, v) => { document.querySelector(sel).value = v; };
+    set("#f-name", name); set("#f-section", "home"); set("#f-date", date); set("#f-cost", cost); set("#f-recur", String(recur));
+    document.querySelector("#createform").requestSubmit();
+    await new Promise((r) => setTimeout(r, 5)); /* an item's id is the clock in milliseconds: never two in one */
+    return document.querySelector("#horizon").textContent;
+  };
+
+  /* the demo's data, as written in assets/js/data.js (the dates are lead times from the day the page opens) */
+  const SAMPLE177 = [
+    { id: "i-gutter", title: "Gutter clearing", section: "Home", days: -16, cost: 150, rec: 12, kind: "service", prov: null, rem: [14, 3], docs: [] },
+    { id: "i-mot", title: "Car MOT — Volvo V60", section: "Vehicles", days: 16, cost: 54.85, est: false, rec: 12, kind: "inspection", prov: null, rem: [21, 7], docs: [["MOT certificate 2025", "added 12 Jun · 240 KB"], ["Service history", "added 12 Jun · 88 KB"]] },
+    { id: "i-boiler", title: "Boiler service", section: "Home", days: 22, cost: 120, rec: 12, kind: "service", prov: "Warm & Co.", rem: [14], docs: [] },
+    { id: "i-chimney", title: "Chimney sweep", section: "Home", days: 61, cost: 90, rec: 12, kind: "service", prov: null, rem: [14], docs: [] },
+    { id: "i-smoke", title: "Smoke alarm batteries", section: "Devices", days: 122, cost: 12, rec: 6, kind: "service", prov: null, rem: [7], docs: [] },
+    { id: "i-svc", title: "Car full service", section: "Vehicles", days: 161, cost: 300, rec: 12, kind: "service", prov: null, rem: [21], docs: [["service-invoice-2026.pdf", "added 12 Jun · 240 KB"], ["service-checklist.pdf", "added 12 Jun · 88 KB"]] },
+  ];
+  const KEPT177 = ["Warm & Co.", "Harbour Mutual", "KB", "free mot-reminder.pdf", "policy-schedule.pdf", "MOT certificate 2025", "Service history", "service-invoice-2026.pdf", "service-checklist.pdf", "Car MOT — Volvo V60",
+    "Home insurance renewal", "Gutter clearing", "Boiler service", "Chimney sweep", "Smoke alarm batteries", "Car full service", "Willow House", "Seaside cottage", "The narrowboat", "Gran's flat", "Mum & Dad's", "Probe "];
+  /* explicit English tables: what the page wrote before #177 (the browser's en-GB says "Sept" for September; the page says "Sep") */
+  const MON177 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const LONG177 = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const WD177 = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const pad177 = (n) => String(n).padStart(2, "0");
+  const at177 = (now, days) => new Date(now.y, now.m, now.d + days);
+  const daysTo177 = (now, dt) => Math.round((Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(now.y, now.m, now.d)) / 864e5);
+  const tmin177 = (n) => (n < 0 ? `T+${-n}d` : `T−${n}d`);
+  const short177 = (dt) => `${pad177(dt.getDate())} ${MON177[dt.getMonth()]}`;
+  const long177 = (dt) => `${dt.getDate()} ${LONG177[dt.getMonth()]} ${dt.getFullYear()}`;
+  const per177 = (m) => (!m ? "one-off" : m === 12 ? "every year" : m % 12 === 0 ? `every ${m / 12} years` : m === 1 ? "every month" : `every ${m} months`);
+  const money177 = (pounds, est = true) => { if (pounds === null) return "—"; const [i, f] = pounds.toFixed(2).split("."); return `${est ? "~" : ""}£${i.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${f}`; };
+  /* the groups the list shows from a set of lead times (the month's header and its count), as renderManifest draws them */
+  const groups177 = (now, days) => {
+    const out = []; let last = `${now.y}-${now.m}`;
+    for (const n of [...days].sort((a, b) => a - b)) { const d = at177(now, n), k = `${d.getFullYear()}-${d.getMonth()}`; if (k !== last) { last = k; out.push({ label: MON177[d.getMonth()].toUpperCase(), n: 0 }); } if (out.length) out[out.length - 1].n++; }
+    return out.map((g) => ({ label: g.label, small: `${g.n} approaching` }));
+  };
+  /* the twelve months of the probes: the 28th of each month from this month next year (after every sample date, the completed item's next one included), a different period and cost each */
+  const PROBES177 = Array.from({ length: 12 }, (_, i) => ({ i, name: `Probe ${pad177(i + 1)}`, recur: [12, 6, 24, 0][i % 4], cost: ["1234567.5", "", "99.5", "12"][i % 4], pounds: [1234567.5, null, 99.5, 12][i % 4] }));
+  const PDAY177 = 28;
+  const probeDate177 = (now, i) => new Date(now.y + 1, now.m + i, PDAY177);
+  const ymd177 = (dt) => `${dt.getFullYear()}-${pad177(dt.getMonth() + 1)}-${pad177(dt.getDate())}`;
+
+  /* one visit to the home page: everything the demo writes, read once, then the buttons pressed and the twelve probes added */
+  const snap177 = async (page) => {
+    const S = {};
+    S.now = await page.evaluate(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate(), wd: d.getDay(), lang: document.documentElement.lang }; });
+    S.dial = await page.evaluate(dialOf177);
+    S.list0 = await page.evaluate(listOf177);
+    S.inbox0 = await page.evaluate(inboxOf177);
+    S.callouts = {}; for (const id of ["i-mot", "i-boiler", "r-insurance"]) S.callouts[id] = await page.evaluate(calloutOf177, id);
+    S.search = { none: await page.evaluate(searchOf177, "zzzzqq"), boiler: await page.evaluate(searchOf177, "boiler") };
+    S.drawers = {}; for (const s of SAMPLE177) S.drawers[s.id] = await page.evaluate(drawerOf177, { id: s.id });
+    S.completed = (await page.evaluate(drawerOf177, { id: "i-gutter" })) && (await page.evaluate(drawerOf177, { id: "i-gutter", act: "complete" }));
+    S.snoozed = (await page.evaluate(drawerOf177, { id: "i-svc" })) && (await page.evaluate(drawerOf177, { id: "i-svc", act: "snooze" }));
+    S.armed = await page.evaluate(pressOf177);
+    await page.evaluate(pressOf177);
+    const acceptedId = await page.evaluate(idOf177, "Home insurance renewal");
+    S.accepted = acceptedId && (await page.evaluate(drawerOf177, { id: acceptedId }));
+    S.inbox1 = await page.evaluate(inboxOf177);
+    S.probes = [];
+    for (const p of PROBES177) { const dt = probeDate177(S.now, p.i); S.probes.push({ ...p, y: dt.getFullYear(), m: dt.getMonth(), d: PDAY177, horizon: await page.evaluate(addOf177, { name: p.name, date: ymd177(dt), cost: p.cost, recur: p.recur }) }); }
+    /* each add opens its row 450 ms later; the last one open means every timer has run */
+    await page.waitForFunction(() => document.querySelector(".item.open .body b")?.textContent === "Probe 12", null, { timeout: 10000 });
+    S.list1 = await page.evaluate(listOf177);
+    for (const p of S.probes) p.drawer = await page.evaluate(drawerOf177, { id: S.list1.rows.find((r) => r.title === p.name)?.id });
+    return S;
+  };
+  const open177 = async (page, lang, wrap) => {
+    if (wrap) await serve177(page, wrap);
+    await enterHome(page, lang === "en" ? "" : `${lang}/`);
+    await page.locator("#corridor .item").first().waitFor({ state: "attached", timeout: 15000 });
+  };
+  const N_CTX = { locale: "en-US", viewport: { width: 1280, height: 800 }, serviceWorkers: "block" };
+  const cmp177 = (bad, label, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(`${label}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+  const verdict177 = (name, bad, ok) => check(name, !bad.length, bad.length ? bad.slice(0, 3).join("; ") + (bad.length > 3 ? ` (+${bad.length - 3} more)` : "") : ok);
+
+  /* N1: the English page, unchanged */
+  await run("N1 en unchanged", { context: N_CTX, stored: "en" }, async (page) => {
+    await open177(page, "en");
+    const S = await snap177(page), now = S.now;
+    let bad = [];
+    cmp177(bad, "the TODAY line", S.list0.today, `TODAY · ${WD177[now.wd]} ${pad177(now.d)} ${MON177[now.m].toUpperCase()}`);
+    cmp177(bad, "the dial's twelve month labels, from this month", S.dial.months, Array.from({ length: 12 }, (_, i) => MON177[(now.m + i) % 12].toUpperCase()));
+    verdict177("N1a en: the TODAY line and the dial's month labels (all twelve months, \"Sep\" not \"Sept\") read as before", bad, S.list0.today);
+
+    const days0 = [...SAMPLE177.filter((s) => s.days >= 0).map((s) => s.days), 51];
+    bad = [];
+    cmp177(bad, "the month headers and their counts", S.list0.groups.map((g) => ({ label: g.label, small: g.small })), groups177(now, days0));
+    cmp177(bad, "the horizon line", S.list0.horizon, `— beyond the horizon: nothing scheduled past ${LONG177[at177(now, 161).getMonth()]} —`);
+    verdict177("N1b en: the month headers, \"N approaching\" and the horizon line read as before", bad, `${S.list0.groups.length} headers; ${S.list0.horizon}`);
+
+    bad = [];
+    for (const s of SAMPLE177) {
+      const r = S.list0.rows.find((x) => x.id === s.id) || {}, dt = at177(now, s.days);
+      cmp177(bad, `${s.id} line`, r.body, `${s.section} · orbital period ${per177(s.rec).replace("every ", "")}${s.prov ? ` · ${s.prov}` : ""} · ${money177(s.cost, s.est !== false)}`);
+      cmp177(bad, `${s.id} countdown and date`, [r.t, r.date], [tmin177(s.days), short177(dt)]);
+    }
+    verdict177("N1c en: each row's line (section, orbital period, provider, money), countdown and short date read as before", bad, `${SAMPLE177.length} rows`);
+
+    bad = [];
+    cmp177(bad, "the dial's spoken labels", [S.dial.sun, S.dial.hits], ["Willow House, this household", ["Fly to Seaside cottage", "Fly to The narrowboat", "Fly to Gran's flat", "Fly to Mum & Dad's"]]);
+    cmp177(bad, "a body's spoken label", Object.fromEntries(S.dial.bodies), { "i-gutter": "Gutter clearing, T+16d", "i-mot": `Car MOT — Volvo V60, T−16d`, "i-boiler": "Boiler service, T−22d", "i-chimney": "Chimney sweep, T−61d", "i-smoke": "Smoke alarm batteries, T−122d", "i-svc": "Car full service, T−161d", "r-insurance": "Home insurance renewal, T−51d" });
+    cmp177(bad, "the callouts of a plain and a document item", [S.callouts["i-mot"].line, S.callouts["i-boiler"].line], ["T−16d · £54.85 · 2 documents", "T−22d · ~£120.00"]);
+    /* #176 made the 'burns up' value "in 43 days"; the dial callout's "renews in 51d" is the one string whose English the issue's
+       point 3 (Intl.RelativeTimeFormat) and its "reads as today" line say differently, so both readings pass */
+    check("N1d en: the dial's spoken labels and callouts read as before (the suggestion's relative time as 'in 51d' or 'in 51 days')", !bad.length && /^suggested · renews in 51(d| days) · ~£400\.00$/.test(S.callouts["r-insurance"].line), bad.length ? bad.join("; ") : S.callouts["r-insurance"].line);
+
+    bad = [];
+    for (const s of SAMPLE177) {
+      const d = S.drawers[s.id], dt = at177(now, s.days);
+      const want = [["due", `${tmin177(s.days)} · ${long177(dt)}`], ["section", s.section], ["type", s.kind], ["orbital period", per177(s.rec)], ["cost", money177(s.cost, s.est !== false)]];
+      if (s.prov) want.push(["provider", s.prov]);
+      want.push(["reminders", s.rem.map((x) => `${x}d before`).join(" · ")]);
+      cmp177(bad, `${s.id} rows`, d && d.kv.map(([a, b]) => [a, b]), want);
+      cmp177(bad, `${s.id} documents`, d && [d.h4.map((h) => h[0]), d.docs.map((x) => [x.name, x.meta])], [s.docs.length ? ["documents"] : [], s.docs]);
+      cmp177(bad, `${s.id} actions, buttons and note`, d && [d.acts, d.btns.map((b) => [b[0], b[1]]), d.note], ["Item actions", [["complete", false], ["snooze a week", false]], "a repeat is never finished; it comes round"]);
+    }
+    verdict177("N1e en: every item drawer's labels, values, documents heading and meta, spoken label, buttons and note read as before", bad, `${SAMPLE177.length} drawers`);
+
+    bad = [];
+    const nd = new Date(now.y, now.m, now.d - 16); nd.setMonth(nd.getMonth() + 12); /* the overdue gutter item, completed: its next date is a year on */
+    cmp177(bad, "after complete", S.completed && [S.completed.kv.map((k) => [k[0], k[1]]).slice(0, 2), S.completed.btns.map((b) => [b[0], b[1]])], [[["due", `${tmin177(daysTo177(now, nd))} · ${long177(nd)}`], ["last completed", "today"]], [["completed today", true], ["snooze a week", false]]]);
+    cmp177(bad, "after snooze", S.snoozed && [S.snoozed.kv.slice(0, 2).map((k) => [k[0], k[1]]), S.snoozed.btns.map((b) => [b[0], b[1]])], [[["due", `${tmin177(161)} · ${long177(at177(now, 161))}`], ["snoozed", "a week, from the last reminder"]], [["complete", false], ["snoozed a week", true]]]);
+    verdict177("N1f en: the buttons after pressing \"complete\" and \"snooze a week\" and the text they leave read as before", bad, "completed today / snoozed a week");
+
+    bad = [];
+    const lane = (S0, c) => S0.lanes.find((l) => l.cls === c);
+    cmp177(bad, "filed", lane(S.inbox0, "filed").receipts.map((r) => [r.title, r.small]), [["Car MOT — Volvo V60", "12 Jun · free mot-reminder.pdf · filed against the item"]]);
+    cmp177(bad, "review source", lane(S.inbox0, "review").receipts.map((r) => [r.title, r.small]), [["Home insurance renewal", "policy-schedule.pdf · 312 KB · scanned clean"]]);
+    cmp177(bad, "reading", lane(S.inbox0, "reading").receipts.map((r) => [r.title, r.small]), [["A message arrived 4 minutes ago", "Orbit is reading its document — it will appear for review when it's done"]]);
+    cmp177(bad, "failed", lane(S.inbox0, "failed").receipts.map((r) => [r.title, r.small]), [["A message from 09 Aug", "too large · Its attachment was larger than Orbit can store. You can add the item yourself and attach the file from Documents."], ["A message from 06 Aug", "no readable document · It carried no document Orbit can read (PDFs work best). Nothing was kept."]]);
+    cmp177(bad, "review values", lane(S.inbox0, "review").receipts[0].kv.map((k) => k[1]), ["in 51 days", "~£400.00", "Harbour Mutual", "in 43 days"]);
+    verdict177("N1g en: the inbox's sample sentences (filed note, source line, \"arrived 4 minutes ago\", \"from 09 Aug\", the failed notes) read as before", bad, "four lanes");
+
+    bad = [];
+    cmp177(bad, "the suggestion row", S.list0.sugg.map((x) => [x.title, x.line, x.yes, x.no]), [["Home insurance renewal", `Found in 1 forwarded document · renews ${short177(at177(now, 51))} · ~£400.00`, "Add to orbit", "Dismiss"]]);
+    cmp177(bad, "armed", S.armed.text, "tap again to add");
+    cmp177(bad, "accepted item", S.accepted && [S.accepted.kv.map((k) => [k[0], k[1]]), S.accepted.docs.map((x) => [x.name, x.meta])], [[["due", `${tmin177(51)} · ${long177(at177(now, 51))}`], ["section", "Home"], ["type", "renewal"], ["orbital period", "every year"], ["cost", "~£400.00"], ["provider", "Harbour Mutual"], ["reminders", "14d before"]], [["policy-schedule.pdf", "attached on acceptance"]]]);
+    cmp177(bad, "the review lane once it is empty", [lane(S.inbox1, "review").receipts.map((r) => r.small), S.inbox1.orb], [["nothing here"], "Inbox — 0 waiting"]);
+    verdict177("N1h en: the suggestion row, \"tap again to add\", the accepted item's document (\"attached on acceptance\") and the emptied lane read as before", bad, "suggest, arm, accept");
+
+    bad = [];
+    cmp177(bad, "an empty search", S.search.none.map((e) => e.text), ["nothing in this orbit matches", "→ add an item"]);
+    cmp177(bad, "a search that matches", S.search.boiler.map((e) => e.text), ["Boiler service · T−22d", "→ add an item"]);
+    verdict177("N1i en: the search box's empty state, a hit and \"→ add an item\" read as before", bad, "palette");
+
+    bad = [];
+    S.probes.forEach((p) => {
+      const dt = new Date(p.y, p.m, PDAY177), row = S.list1.rows.find((r) => r.title === p.name) || {}, days = daysTo177(now, dt);
+      cmp177(bad, `${p.name} (${MON177[p.m]}) row`, [row.t, row.date, row.body], [tmin177(days), short177(dt), `Home · orbital period ${per177(p.recur).replace("every ", "")} · ${money177(p.pounds)}`]);
+      cmp177(bad, `${p.name} drawer date`, p.drawer && p.drawer.kv[0].slice(0, 2), ["due", `${tmin177(days)} · ${long177(dt)}`]);
+      const furthest = Math.max(16, 22, 61, 122, 161, 51, daysTo177(now, nd), ...S.probes.slice(0, p.i + 1).map((q) => daysTo177(now, new Date(q.y, q.m, PDAY177))));
+      cmp177(bad, `${p.name} horizon`, p.horizon, `— beyond the horizon: nothing scheduled past ${LONG177[at177(now, furthest).getMonth()]} —`);
+    });
+    const finalDays = [16, 22, 61, daysTo177(now, nd), 122, 161, 51, ...S.probes.map((p) => daysTo177(now, new Date(p.y, p.m, PDAY177)))];
+    cmp177(bad, "the month headers once all twelve months are in", S.list1.groups.map((g) => [g.label, g.small]), groups177(now, finalDays).map((g) => [g.label, g.small]));
+    verdict177("N1j en: all twelve months, in the short date, the long date, the month header and the horizon line (\"Sep\", \"September\"), read as before", bad, `${S.probes.length} probes`);
+
+    bad = [];
+    S.probes.forEach((p) => {
+      const kv = Object.fromEntries((p.drawer || { kv: [] }).kv.map((k) => [k[0], k[1]]));
+      cmp177(bad, `${p.name} period and cost`, [kv["orbital period"], kv.cost], [per177(p.recur), money177(p.pounds)]);
+      if (!p.recur) cmp177(bad, `${p.name} note`, p.drawer && p.drawer.note, "one-off — does not come round");
+    });
+    verdict177("N1k en: repeat periods (every year, every 6 months, every 2 years, one-off), money with grouping (~£1,234,567.50), no cost (—) and the one-off note read as before", bad, "twelve probes");
+  });
+
+  /* N2: the words come from the catalogue (en.js served marked) */
+  await run("N2 en marked", { context: N_CTX, stored: "en" }, async (page) => {
+    await open177(page, "en", marked177);
+    const S = await snap177(page);
+    const lacks = (list) => list.filter(([, v]) => !isMarked177(v)).map(([l, v]) => `${l} ${JSON.stringify(v)}`);
+    const verdict = (name, list, ok) => check(name, !lacks(list).length, lacks(list).length ? `not from the catalogue: ${lacks(list).slice(0, 4).join("; ")}${lacks(list).length > 4 ? ` (+${lacks(list).length - 4})` : ""}` : ok);
+    const boiler = S.drawers["i-boiler"], mot = S.drawers["i-mot"], one = S.probes[3].drawer;
+    verdict("N2a en: the dial's spoken labels (this household, Fly to, a body's label) and callouts (2 documents, suggested · renews) carry the catalogue's mark", [
+      ["the sun's label", S.dial.sun], ["a mini system's label", S.dial.hits[0]], ["a body's label", S.dial.bodies[0][1]], ["the documents callout", S.callouts["i-mot"].line], ["the suggestion callout", S.callouts["r-insurance"].line]], "5 of 5");
+    verdict("N2b en: the list's TODAY line, \"N approaching\", the horizon line and each row's line carry the catalogue's mark, the sections' names as values of their own", [
+      ["the TODAY line", S.list0.today], ["a month's count", S.list0.groups[0].small], ["the horizon", S.list0.horizon], ...S.list0.rows.map((r) => [`${r.id} line`, r.body]),
+      ...[["i-boiler", "Home"], ["i-mot", "Vehicles"], ["i-smoke", "Devices"]].map(([id, name]) => [`the section ${name}`, S.list0.rows.find((r) => r.id === id).body.includes(marked177(name)) ? marked177(name) : S.list0.rows.find((r) => r.id === id).body])], "all");
+    check("N2b2 en: a row's line marks two things apart (the section name and the orbital period), not one string", S.list0.rows.every((r) => (r.body.match(/⟦/g) || []).length >= 2), JSON.stringify(S.list0.rows.map((r) => (r.body.match(/⟦/g) || []).length)));
+    verdict("N2c en: an item drawer's seven labels, its section, type, period and reminders values, heading, buttons, spoken label and note carry the mark", [
+      ...boiler.kv.map(([a], i) => [`label ${i}`, a]), ...[1, 2, 3, 6].map((i) => [`value ${i}`, boiler.kv[i][1]]),
+      ["documents heading", (mot.h4[0] || [""])[0]], ["acts label", boiler.acts], ...boiler.btns.map((b, i) => [`button ${i}`, b[0]]), ["the note", boiler.note]], "all");
+    verdict("N2d en: a document's meta (\"added 12 Jun · 240 KB\"), the one-off period and note, and the buttons after pressing carry the mark", [
+      ["a document's meta", mot.docs[0].meta], ["one-off period", one.kv[3][1]], ["one-off note", one.note], ["completed today", S.completed.btns[0][0]], ["last completed", S.completed.kv[1][0]], ["its value", S.completed.kv[1][1]],
+      ["snoozed a week", S.snoozed.btns[1][0]], ["snoozed (label)", S.snoozed.kv[1][0]], ["snoozed (value)", S.snoozed.kv[1][1]], ["attached on acceptance", S.accepted.docs[0].meta]], "all");
+    verdict("N2e en: the inbox's sample sentences (filed note, source line, arrived, from a date, the failed notes) and the search box's words carry the mark", [
+      ["filed note", S.inbox0.lanes[0].receipts[0].small], ["source line", S.inbox0.lanes[1].receipts[0].small], ["arrived", S.inbox0.lanes[2].receipts[0].title], ["reading note", S.inbox0.lanes[2].receipts[0].small],
+      ["failed title", S.inbox0.lanes[3].receipts[0].title], ["failed note", S.inbox0.lanes[3].receipts[0].small], ["failed note 2", S.inbox0.lanes[3].receipts[1].small], ["no match", S.search.none[0].text], ["add an item", S.search.none[1].text]], "all");
+    const marksOn = [["a row's title", S.list0.rows[0].title], ["a row's countdown", S.list0.rows[0].t], ["a provider (drawer)", boiler.kv[5][1]], ["a document's name", mot.docs[0].name], ["the household's name", S.dial.name], ["a chip", S.dial.chips[0]],
+      ["the receipt's title", S.inbox0.lanes[1].receipts[0].title], ["the filed receipt's title", S.inbox0.lanes[0].receipts[0].title]];
+    const kept = marksOn.filter(([, v]) => typeof v !== "string" || v.includes(OPEN177) || v.includes(CLOSE177)).map(([l, v]) => `${l} ${JSON.stringify(v)}`);
+    check("N2f en: kept data (titles, providers, file names, the T− countdown, household names) carries no mark", !kept.length, kept.length ? `marked: ${kept.join("; ")}` : `${marksOn.length} read`);
+  });
+
+  /* N3: a translation cannot break the page (point 8) */
+  await run("N3 en junk", { context: N_CTX, stored: "en" }, async (page) => {
+    await open177(page, "en", junked177);
+    const S = await snap177(page);
+    const boiler = S.drawers["i-boiler"], mot = S.drawers["i-mot"], one = S.probes[3].drawer;
+    /* [what, text, element children]: the text holds the characters as written and the element made no markup of them (kids 0; null = an attribute, which only has to hold the whole text) */
+    const rows = [
+      ["the sun's spoken label", S.dial.sun, null], ["a mini system's spoken label", S.dial.hits[0], null], ["a body's spoken label", S.dial.bodies[0][1], null], ["the documents callout", S.callouts["i-mot"].line, S.callouts["i-mot"].kids],
+      ["the TODAY line", S.list0.today, S.list0.todayKids], ["a month's count", S.list0.groups[0].small, S.list0.groups[0].smallKids], ["the horizon line", S.list0.horizon, S.list0.horizonKids], ["a row's line", S.list0.rows[1].body, S.list0.rows[1].bodyKids],
+      ...boiler.kv.map(([a, , ak], i) => [`drawer label ${i}`, a, ak]), ...[1, 2, 3, 6].map((i) => [`drawer value ${i}`, boiler.kv[i][1], boiler.kv[i][3]]), ["a drawer's spoken label (Item actions)", boiler.acts, null], ...boiler.btns.map((b, i) => [`drawer button ${i + 1}`, b[0], b[2]]), ["the drawer's note", boiler.note, boiler.noteKids],
+      ["the documents heading", (mot.h4[0] || ["", 0])[0], (mot.h4[0] || ["", 0])[1]], ["a document's meta", mot.docs[0].meta, mot.docs[0].kids], ["the one-off note", one.note, one.noteKids], ["a search's empty state", S.search.none[0].text, S.search.none[0].kids], ["→ add an item", S.search.none[1].text, S.search.none[1].kids],
+      ...S.inbox0.lanes.map((l) => [`inbox lane ${l.cls} heading (#176)`, l.h4, l.h4Kids]), ["the filed note", S.inbox0.lanes[0].receipts[0].small, S.inbox0.lanes[0].receipts[0].smallKids], ["the source line", S.inbox0.lanes[1].receipts[0].small, S.inbox0.lanes[1].receipts[0].smallKids],
+      ["the reading receipt's title", S.inbox0.lanes[2].receipts[0].title, S.inbox0.lanes[2].receipts[0].titleKids], ["the failed note", S.inbox0.lanes[3].receipts[0].small, S.inbox0.lanes[3].receipts[0].smallKids],
+      ["the inbox's Decide spoken label (#176)", S.inbox0.lanes[1].receipts[0].decide, null], ...S.inbox0.lanes[1].receipts[0].btns.map((b, i) => [`the receipt's button ${i + 1} (#176)`, b[0], b[1]]),
+      ...S.inbox0.lanes[1].receipts[0].kv.map((k, i) => [`the receipt's label ${i + 1} (#176)`, k[0], k[2]]), ["the inbox button's spoken label (#176)", S.inbox0.orb, null],
+    ];
+    const broke = rows.filter(([, text, kids]) => typeof text !== "string" || !text.includes(JUNK177) || (kids !== null && kids !== 0)).map(([what, text, kids]) => `${what}: ${JSON.stringify(text && text.slice(0, 40))}${kids ? `, ${kids} element(s) made` : ""}`);
+    check("N3a en: every demo word and spoken label shows <b>x</b> \"q\" &amp; as written, makes no element and cuts no attribute short", !broke.length, broke.length ? `${broke.length} of ${rows.length}: ${broke.slice(0, 4).join("; ")}` : `${rows.length} read`);
+    const inboxBroke = rows.filter(([what]) => /#176/.test(what)).filter(([, text, kids]) => typeof text !== "string" || !text.includes(JUNK177) || (kids !== null && kids !== 0)).map(([what]) => what);
+    check("N3b en: the inbox's own #176 words (lane headings, Decide, the receipt's buttons and labels, the button's label) are text too", !inboxBroke.length, inboxBroke.length ? `${inboxBroke.join("; ")}` : "all");
+  });
+
+  /* N4: de, ja and ar */
+  const intl177 = (page, specs) => page.evaluate((specs) => {
+    const lang = document.documentElement.lang, F = (o) => new Intl.DateTimeFormat(lang, o);
+    return specs.map(([kind, y, m, d]) => {
+      const dt = new Date(y, m, d), part = (o, type) => F(o).formatToParts(dt).filter((p) => p.type === type).map((p) => p.value);
+      let a = [];
+      if (kind === "short") a = [F({ day: "2-digit", month: "short" }).format(dt), F({ day: "numeric", month: "short" }).format(dt)];
+      else if (kind === "long") a = [F({ day: "numeric", month: "long", year: "numeric" }).format(dt)];
+      else if (kind === "month") a = [F({ month: "short" }).format(dt), ...part({ day: "numeric", month: "short" }, "month")];
+      else if (kind === "monthany") a = [F({ month: "short" }).format(dt), F({ month: "long" }).format(dt), ...part({ day: "numeric", month: "short" }, "month"), ...part({ day: "numeric", month: "long" }, "month")];
+      else if (kind === "weekday") a = [F({ weekday: "short" }).format(dt), F({ weekday: "long" }).format(dt), ...part({ weekday: "short", day: "numeric", month: "short" }, "weekday")];
+      return [...new Set(a.flatMap((x) => [x.toLowerCase(), x.toLowerCase().replace(/\.$/, "")]))];
+    });
+  }, specs);
+  const rel177 = (page, specs) => page.evaluate((specs) => { const lang = document.documentElement.lang; return specs.map(([n, unit]) => ["long", "short", "narrow"].map((style) => new Intl.RelativeTimeFormat(lang, { style }).format(n, unit))); }, specs);
+  const num177 = (page, n) => page.evaluate((n) => { const lang = document.documentElement.lang; return [new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n), new Intl.NumberFormat(lang, { style: "unit", unit: "month", unitDisplay: "long" }).format(6)]; }, n);
+  const latin177 = (text) => { let s = strip177(text); for (const k of KEPT177) s = s.split(k).join(" "); return s.replace(/T[−+]\d+d/g, " ").replace(/\b\d+d\b/g, " "); };
+  const ENGLISH177 = ["this household", "Fly to", "approaching", "beyond the horizon", "nothing in orbit yet", "orbital period", "last completed", "snooze a week", "snoozed a week", "completed today", "Item actions", "attached on acceptance",
+    "nothing in this orbit matches", "add an item", "every year", "one-off", "scanned clean", "filed against the item", "A message arrived", "A message from", "suggested ·", "renews in", "d before", "a repeat is never finished", "does not come round", "ago"];
+  for (const lang of ["de", "ja", "ar"]) {
+    await run(`N4 ${lang}`, { context: N_CTX, stored: lang }, async (page) => {
+      await open177(page, lang, marked177);
+      const S = await snap177(page), now = S.now, low = (s) => String(s).toLowerCase();
+      const texts = [S.list0.today, S.list0.horizon, ...S.list0.groups.flatMap((g) => [g.label, g.small]), ...S.list0.rows.flatMap((r) => [r.body, r.t, r.date]), S.dial.sun, ...S.dial.hits, ...S.dial.bodies.map((b) => b[1]), ...S.dial.months, ...Object.values(S.callouts).map((c) => c.line),
+        ...Object.values(S.drawers).flatMap((d) => [...d.kv.flatMap((k) => [k[0], k[1]]), ...d.h4.map((h) => h[0]), ...d.docs.map((x) => x.meta), d.acts, ...d.btns.map((b) => b[0]), d.note]), ...S.inbox0.lanes.flatMap((l) => [l.h4, ...l.receipts.flatMap((r) => [r.title, r.small])]),
+        ...S.search.none.map((e) => e.text), ...S.probes.flatMap((p) => [p.horizon, ...p.drawer.kv.map((k) => k[1]), p.drawer.note]), ...S.list1.groups.map((g) => g.label)];
+      const sd = (kind, y, m, d) => [kind, y, m, d];
+      /* the TODAY line: this day's weekday and month in the page's language, the day, and not the English weekday */
+      const [wk, mo] = await intl177(page, [sd("weekday", now.y, now.m, now.d), sd("monthany", now.y, now.m, now.d)]);
+      const line = low(S.list0.today);
+      let bad = [];
+      if (!wk.some((x) => line.includes(x))) bad.push(`no weekday of the page's language (${JSON.stringify(wk)})`);
+      if (!mo.some((x) => line.includes(x))) bad.push(`no month of the page's language (${JSON.stringify(mo)})`);
+      if (!line.includes(String(now.d)) && !/[٠-٩۰-۹]/.test(line)) bad.push("no day number");
+      if (lang === "de" && /\b(mon|tue|wed|thu|fri|sat|sun)\b/.test(line)) bad.push("an English weekday");
+      if (lang !== "de" && /[A-Za-z]/.test(latin177(S.list0.today))) bad.push(`a Latin letter outside the marks: ${JSON.stringify(latin177(S.list0.today))}`);
+      verdict177(`N4a ${lang}: the TODAY line's weekday and date are the browser's in the page's language`, bad, S.list0.today);
+
+      /* the dial's twelve months, the list's month headers, short dates and the horizon */
+      const monthAcc = await intl177(page, Array.from({ length: 12 }, (_, i) => sd("month", now.y, (now.m + i) % 12, PDAY177)));
+      bad = [];
+      S.dial.months.forEach((t, i) => { if (!monthAcc[i].includes(low(t))) bad.push(`dial label ${i} ${JSON.stringify(t)} is not one of ${JSON.stringify(monthAcc[i])}`); });
+      if (S.dial.months.join() === Array.from({ length: 12 }, (_, i) => MON177[(now.m + i) % 12].toUpperCase()).join()) bad.push("the twelve labels are the English ones");
+      verdict177(`N4b ${lang}: the dial's twelve month labels are the browser's, in order from this month`, bad, S.dial.months.join(" "));
+
+      bad = [];
+      const probeShort = await intl177(page, S.probes.map((p) => sd("short", p.y, p.m, PDAY177))), probeLong = await intl177(page, S.probes.map((p) => sd("long", p.y, p.m, PDAY177))), probeMonth = await intl177(page, S.probes.map((p) => sd("month", p.y, p.m, PDAY177))), probeMonthLong = await intl177(page, S.probes.map((p) => sd("monthany", p.y, p.m, PDAY177)));
+      S.probes.forEach((p, i) => {
+        const row = S.list1.rows.find((r) => r.title === p.name) || {};
+        if (!probeShort[i].includes(low(row.date))) bad.push(`${p.name} short date ${JSON.stringify(row.date)} is not one of ${JSON.stringify(probeShort[i])}`);
+        if (!probeLong[i].some((x) => low(p.drawer.kv[0][1]).includes(x))) bad.push(`${p.name} long date in ${JSON.stringify(p.drawer.kv[0][1])} is not one of ${JSON.stringify(probeLong[i])}`);
+        if (!probeMonthLong[i].some((x) => low(p.horizon).includes(x))) bad.push(`${p.name} month in the horizon ${JSON.stringify(p.horizon)} is not one of ${JSON.stringify(probeMonthLong[i])}`);
+        if (!S.list1.groups.some((g) => probeMonth[i].includes(low(g.label)))) bad.push(`no month header for ${p.name} among ${JSON.stringify(S.list1.groups.map((g) => g.label))}`);
+      });
+      verdict177(`N4c ${lang}: all twelve months' short dates, long dates, month headers and the horizon's month are the browser's in the page's language`, bad, `${S.probes.length} months`);
+
+      /* relative times */
+      const [r51, r4] = await rel177(page, [[51, "day"], [-4, "minute"]]);
+      bad = [];
+      const callout = S.callouts["r-insurance"].line, arrived = S.inbox0.lanes[2].receipts[0].title;
+      if (!r51.some((x) => callout.includes(x))) bad.push(`the dial callout ${JSON.stringify(callout)} has none of ${JSON.stringify(r51)}`);
+      if (!r4.some((x) => arrived.includes(x))) bad.push(`"arrived" ${JSON.stringify(arrived)} has none of ${JSON.stringify(r4)}`);
+      if (/\bin 51 days\b|\b51d\b|\bago\b/.test(strip177(callout) + " " + arrived.replace(/⟦[^⟧]*⟧/g, ""))) bad.push("an English 'in 51 days', '51d' or 'ago' stands around the number");
+      verdict177(`N4d ${lang}: the dial callout's "renews in …" and the inbox's "arrived 4 minutes ago" write their time in the page's language`, bad, `${callout} | ${arrived}`);
+
+      /* months count and money */
+      const [grouped, sixMonths] = await num177(page, 1234567.5);
+      const p0 = S.probes[0], p1 = S.probes[1], row0 = S.list1.rows.find((r) => r.title === p0.name), row1 = S.list1.rows.find((r) => r.title === p1.name);
+      bad = [];
+      for (const [what, text] of [["the row's line", row0.body], ["the drawer's cost", p0.drawer.kv[4][1]]]) {
+        if (!text.includes(grouped)) bad.push(`${what} ${JSON.stringify(text)} lacks the digits ${JSON.stringify(grouped)}`);
+        if (!text.includes("£") || !text.includes("~")) bad.push(`${what} lost its £ or ~`);
+      }
+      if (!row1.body.includes("—") || p1.drawer.kv[4][1] !== "—") bad.push("the no-cost — is gone");
+      if (lang === "de" && !row0.body.includes("1.234.567,50")) bad.push("de does not group with . and ,");
+      verdict177(`N4e ${lang}: money keeps £, ~ and — and groups its digits as the page's language does (de: 1.234.567,50)`, bad, row0.body);
+
+      bad = [];
+      const every6 = p1.drawer.kv[3][1];
+      if (!every6.includes(sixMonths)) bad.push(`the period ${JSON.stringify(every6)} lacks Intl's "6 months" ${JSON.stringify(sixMonths)}`);
+      if (lang === "de" && /\bmonths?\b/.test(strip177(every6))) bad.push("an English 'months' stands unmarked");
+      verdict177(`N4f ${lang}: "every 6 months" holds the month count as Intl.NumberFormat writes it (unit month, long) in the page's language`, bad, every6);
+
+      /* the doc meta and inbox dates are short dates of the page's language */
+      const [j12, a9, a6] = await intl177(page, [sd("short", now.y, 5, 12), sd("short", now.y, 7, 9), sd("short", now.y, 7, 6)]);
+      bad = [];
+      const metas = S.drawers["i-mot"].docs.map((d) => d.meta), filed = S.inbox0.lanes[0].receipts[0].small, failed = S.inbox0.lanes[3].receipts.map((r) => r.title);
+      if (!metas.every((m) => j12.some((x) => low(m).includes(x)))) bad.push(`a document's meta ${JSON.stringify(metas)} has no '12 Jun' of the page's language ${JSON.stringify(j12)}`);
+      if (!j12.some((x) => low(filed).includes(x))) bad.push(`the filed note ${JSON.stringify(filed)} has no '12 Jun' of the page's language`);
+      if (!a9.some((x) => low(failed[0]).includes(x)) || !a6.some((x) => low(failed[1]).includes(x))) bad.push(`the failed titles ${JSON.stringify(failed)} have no '09 Aug' / '06 Aug' of the page's language ${JSON.stringify([a9, a6])}`);
+      verdict177(`N4g ${lang}: the sample's own dates (12 Jun, 09 Aug, 06 Aug) are short dates in the page's language`, bad, `${metas[0]} | ${failed[0]}`);
+
+      /* no English page word left unmarked; on ja and ar no Latin letter but kept data */
+      const flat = texts.filter((x) => typeof x === "string"), leaks = [];
+      for (const t of flat) for (const w of ENGLISH177) if (low(strip177(t)).includes(low(w))) leaks.push(`${JSON.stringify(w)} in ${JSON.stringify(t.slice(0, 50))}`);
+      verdict177(`N4h ${lang}: no English page phrase of the demo stands outside the catalogue's marks`, leaks, `${flat.length} texts read`);
+      if (lang !== "de") {
+        const latin = flat.map((t) => [t, latin177(t)]).filter(([, l]) => /[A-Za-z]/.test(l)).map(([t, l]) => `${JSON.stringify(l.trim().slice(0, 30))} in ${JSON.stringify(t.slice(0, 50))}`);
+        verdict177(`N4i ${lang}: apart from kept data and the catalogue's own words, the demo writes no Latin letter`, latin, `${flat.length} texts read`);
+      }
+
+      /* kept as written */
+      bad = [];
+      const mot = S.list0.rows.find((r) => r.id === "i-mot"), boiler = S.list0.rows.find((r) => r.id === "i-boiler");
+      cmp177(bad, "the countdowns", [mot.t, S.list0.rows.find((r) => r.id === "i-gutter").t, boiler.t], ["T−16d", "T+16d", "T−22d"]);
+      cmp177(bad, "the titles", S.list0.rows.map((r) => r.title), ["Gutter clearing", "Car MOT — Volvo V60", "Boiler service", "Chimney sweep", "Smoke alarm batteries", "Car full service"]);
+      if (!boiler.body.includes("Warm & Co.")) bad.push(`the provider is not in ${JSON.stringify(boiler.body)}`);
+      cmp177(bad, "the document names and sizes", S.drawers["i-mot"].docs.map((d) => [d.name, /240 KB|88 KB/.exec(d.meta)?.[0]]), [["MOT certificate 2025", "240 KB"], ["Service history", "88 KB"]]);
+      cmp177(bad, "the household's name and the other households' hits", [S.dial.name, S.dial.chips], ["Willow House", ["Seaside cottage", "The narrowboat", "Gran's flat", "Mum & Dad's"]]);
+      if (!S.inbox0.lanes[1].receipts[0].small.includes("policy-schedule.pdf · 312 KB") || !S.inbox0.lanes[0].receipts[0].small.includes("free mot-reminder.pdf")) bad.push("a file name or size in the inbox is not as written");
+      verdict177(`N4j ${lang}: the T− countdowns, titles, providers, file names, sizes and household names are kept as written`, bad, "kept");
+    });
   }
 } catch (e) {
   check("harness", false, String(e && e.stack || e));

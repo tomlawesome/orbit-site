@@ -304,6 +304,15 @@ await attempt("N1 404", async () => {
  *   M7  (#176 remainder) en.json and the generated en.js each hold exactly one value equal to "Inbox — {n} waiting" and to
  *       "Found in 1 forwarded document · renews {date} · {cost}"
  *   M8  (#176 remainder) i18n-check.mjs still exits 0
+ *   N1  (#177) home.js, law.js and data.js (string and template literals only, comments out) no longer write the demo's English
+ *       page words: the dial's spoken labels and callout, the list's lines, the item drawer's labels, buttons and notes, the
+ *       search box's words, law.js's month and weekday tables and repeat phrases, data.js's section names and inbox sentences
+ *   N2  (#177) en.json and the generated en.js each hold an English value containing each of those phrases (matched on the
+ *       value, not on a key's name), and the four section names as values of their own
+ *   N3  (#177) dates, months, relative times and numbers are the browser's: Intl.DateTimeFormat, Intl.NumberFormat (unit month),
+ *       and no hard-coded "en-GB" in the three files
+ *   N4  (#177) point 8: no translated word is put into an HTML string (a template literal that holds markup and a tr() call)
+ *   N5  (#177) i18n-check.mjs still exits 0 (the new keys are pending in the other languages)
  */
 const rtlTag = (html) => (/<html\b[^>]*>/i.exec(html) || [""])[0];
 await attempt("D1 dir in languages.json", async () => {
@@ -465,6 +474,117 @@ await attempt("M7 catalogue strings", async () => {
 await attempt("M8 i18n-check", async () => {
   const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
   check("M8 node tools/ci/i18n-check.mjs still exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
+});
+
+/* ---- #177: the demo's page words follow the page's language ---- */
+/* the literals of a source file, comments out: { text, raw }, where text is a string's value or a template's fixed parts (an
+   expression is a NUL), raw the source as written (a template's expressions in it). Written as a scanner, not a regex, so a
+   multi-line template and a quote inside a comment or an expression are read right. */
+const lits177 = (src) => {
+  const out = [], n = src.length;
+  const str = (i) => {
+    const q = src[i]; let j = i + 1, t = "";
+    while (j < n && src[j] !== q && src[j] !== "\n") { if (src[j] === "\\") { t += src[j + 1]; j += 2; } else { t += src[j]; j++; } }
+    out.push({ text: t, raw: src.slice(i, j + 1) }); return j + 1;
+  };
+  const tpl = (i) => {
+    let j = i + 1, t = "";
+    while (j < n && src[j] !== "`") {
+      if (src[j] === "\\") { t += src[j + 1]; j += 2; continue; }
+      if (src[j] === "$" && src[j + 1] === "{") { t += "\u0000"; j = code(j + 2, true) + 1; continue; }
+      t += src[j]; j++;
+    }
+    out.push({ text: t, raw: src.slice(i, j + 1) }); return j + 1;
+  };
+  const code = (i, stop) => {
+    let depth = 0;
+    while (i < n) {
+      const c = src[i], d = src[i + 1];
+      if (c === "/" && d === "/") { while (i < n && src[i] !== "\n") i++; continue; }
+      if (c === "/" && d === "*") { const e = src.indexOf("*/", i + 2); i = e < 0 ? n : e + 2; continue; }
+      if (c === "\"" || c === "'") { i = str(i); continue; }
+      if (c === "`") { i = tpl(i); continue; }
+      if (c === "{") depth++;
+      if (c === "}") { if (stop && depth === 0) return i; depth--; }
+      i++;
+    }
+    return i;
+  };
+  code(0, false);
+  return out;
+};
+/* what each file must no longer write. A phrase is found anywhere in a literal (case as written today); a word is found
+   only as a whole literal, so that a key, a class or an id that happens to be that word is not flagged */
+const WORDS177 = {
+  "assets/js/home.js": {
+    phrases: ["this household", "Fly to", "suggested", "renews in", "approaching", "beyond the horizon", "nothing scheduled past", "nothing in orbit yet",
+      "orbital period", "last completed", "a week, from the last reminder", "Item actions", "completed today", "snooze a week", "snoozed a week",
+      "a repeat is never finished", "does not come round", "attached on acceptance", "nothing in this orbit matches", "add an item", "d before"],
+    words: ["due", "snoozed", "section", "type", "cost", "provider", "reminders", "documents", "complete", "today", "one-off"],
+    tails: ["documents"],
+  },
+  "assets/js/law.js": {
+    phrases: ["January", "February", "March", "April", "June", "July", "August", "September", "October", "November", "December", "TODAY", "one-off", "every year", "every month", "every ", "en-GB"],
+    words: ["May", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"],
+    tails: [],
+  },
+  "assets/js/data.js": {
+    phrases: ["added 12 Jun", "filed against the item", "scanned clean", "A message arrived", "A message from", "minutes ago", "Orbit is reading its document", "too large", "no readable document", "Its attachment was larger", "It carried no document", "12 Jun", "09 Aug", "06 Aug"],
+    words: ["Home", "Vehicles", "Devices", "Services"],
+    tails: [],
+  },
+};
+await attempt("N1 English page words in code", async () => {
+  for (const [file, spec] of Object.entries(WORDS177)) {
+    const lits = lits177(read(file));
+    const found = [];
+    for (const l of lits) {
+      for (const p of spec.phrases) if (l.text.includes(p)) found.push(p);
+      const t = l.text.trim();
+      if (spec.words.includes(t)) found.push(t);
+      for (const w of spec.tails) if (new RegExp(`(^|[>\\s\u0000])${w}($|[<\\s,.])`).test(l.text) && !found.includes(w)) found.push(w);
+    }
+    const uniq = [...new Set(found)];
+    check(`N1 ${file} writes none of the demo's English page words in a string or template`, !uniq.length, uniq.length ? `still written in ${file}: ${JSON.stringify(uniq)}` : `none (${lits.length} literals read)`);
+  }
+});
+
+await attempt("N2 catalogue holds the phrases", async () => {
+  const PHRASES = ["this household", "Fly to", "approaching", "beyond the horizon", "nothing in orbit yet", "orbital period", "last completed", "snooze a week",
+    "snoozed a week", "completed today", "a week, from the last reminder", "Item actions", "attached on acceptance", "nothing in this orbit matches", "add an item",
+    "every year", "one-off", "scanned clean", "filed against the item", "A message arrived", "A message from", "renews", "documents", "d before", "nothing scheduled past", "a repeat is never finished"];
+  const enJs = read("assets/i18n/en.js");
+  const vals = Object.values(en || {});
+  const noJson = PHRASES.filter((p) => !vals.some((v) => String(v).includes(p)));
+  check("N2a en.json has a value containing each of the demo's English phrases", !noJson.length, noJson.length ? `no value in en.json contains ${JSON.stringify(noJson)}` : `${PHRASES.length} found`);
+  const noJs = PHRASES.filter((p) => !enJs.includes(p));
+  check("N2b the generated en.js carries them too", !noJs.length, noJs.length ? `en.js has no ${JSON.stringify(noJs)}` : `${PHRASES.length} found`);
+  const names = ["Home", "Vehicles", "Devices", "Services"].filter((w) => !vals.includes(w));
+  check("N2c en.json has the four section names as values of their own", !names.length, names.length ? `no value equal to ${JSON.stringify(names)}` : "found");
+  const gone = ["TODAY", "approaching"].filter((w) => !vals.some((v) => String(v).includes(w)));
+  check("N2d the TODAY line and the count have a value each with a named placeholder", !gone.length && vals.some((v) => /TODAY/.test(v) && /\{\w+\}/.test(v)) && vals.some((v) => /\{\w+\} approaching/.test(v)), gone.length ? `missing ${JSON.stringify(gone)}` : "TODAY and {n} approaching");
+});
+
+await attempt("N3 Intl", async () => {
+  const code = ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js", "assets/js/lang.js"].map((f) => read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1")).join("\n");
+  check("N3a dates are written by Intl.DateTimeFormat (or toLocaleDateString) in the site's modules", /Intl\.DateTimeFormat|toLocaleDateString/.test(code), "the four modules");
+  check("N3b money's digits and the months' count are written by Intl.NumberFormat (or toLocaleString), the count with unit month", /Intl\.NumberFormat|toLocaleString/.test(code) && /unit\s*:\s*["']month["']/.test(code), "the four modules");
+  check("N3c relative times are Intl.RelativeTimeFormat's", /Intl\.RelativeTimeFormat/.test(code), "lang.js");
+  const fixed = ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js"].filter((f) => lits177(read(f)).some((l) => /^en(-GB|-US)?$/.test(l.text)));
+  check("N3d no module fixes the locale to English in a literal", !fixed.length, fixed.length ? `an "en…" locale literal in ${JSON.stringify(fixed)}` : "none");
+});
+
+await attempt("N4 words are text, not markup", async () => {
+  const bad = [];
+  for (const f of ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js"]) {
+    for (const l of lits177(read(f))) if (/<[a-z]/i.test(l.raw) && /\$\{[^}]*\b(?:tr|t)\(/.test(l.raw)) bad.push(`${f}: ${l.raw.replace(/\s+/g, " ").slice(0, 70)}`);
+  }
+  check("N4 no HTML template has a catalogue word (tr() or t()) put into it", !bad.length, bad.length ? `${bad.length} template(s): ${JSON.stringify(bad.slice(0, 4))}` : "none");
+});
+
+await attempt("N5 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("N5 node tools/ci/i18n-check.mjs still exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
 });
 
 process.exit(failed ? 1 : 0);
