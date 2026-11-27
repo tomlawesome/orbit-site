@@ -320,7 +320,8 @@ function suggestionRowFor(s) {
   row.className = "item suggest"; row.id = s.id; row.dataset.id = s.id;
   row.innerHTML = `<span class="planet sug"><i></i></span>
     <div class="body"><b></b><span></span></div>
-    <div class="actions"><button class="yes" type="button">Add to orbit</button><button type="button" class="no">Dismiss</button></div>`;
+    <div class="actions"><button class="yes" type="button"></button><button type="button" class="no"></button></div>`;
+  row.querySelector("button.yes").textContent = tr("add-to-orbit"); row.querySelector("button.no").textContent = tr("dismiss");
   row.querySelector("b").textContent = s.title;
   row.querySelector(".body span").textContent = `Found in 1 forwarded document · renews ${law.shortDate(law.addDays(today, s.renewsInDays))} · ${law.money(s.costMinor, true)}`;
   wireDecide(row, s);
@@ -332,10 +333,10 @@ function suggestionRowFor(s) {
 function wireDecide(root, s) {
   const yes = root.querySelector("button.yes"), no = root.querySelector("button.no");
   let armed = null, timer;
-  const disarm = () => { armed = null; yes.classList.remove("armed"); no.classList.remove("armed"); yes.textContent = "Add to orbit"; no.textContent = "Dismiss"; };
+  const disarm = () => { armed = null; yes.classList.remove("armed"); no.classList.remove("armed"); yes.textContent = tr("add-to-orbit"); no.textContent = tr("dismiss"); };
   const arm = (which, b) => {
     if (armed === which) { disarm(); return true; }
-    disarm(); armed = which; b.classList.add("armed"); b.textContent = which === "yes" ? "tap again to add" : "tap again to dismiss";
+    disarm(); armed = which; b.classList.add("armed"); b.textContent = tr(which === "yes" ? "tap-again-to-add" : "tap-again-to-dismiss");
     clearTimeout(timer); timer = setTimeout(disarm, 4000); return false;
   };
   yes.addEventListener("click", (e) => { e.stopPropagation(); if (arm("yes", yes)) acceptSuggestion(s.id); });
@@ -486,23 +487,23 @@ export function renderInbox() {
   host.replaceChildren();
   const lane = (cls, title, items, render) => {
     const l = document.createElement("div"); l.className = `lane ${cls}`;
-    l.innerHTML = `<h4>${title}</h4>`;
-    if (!items.length) { const p = document.createElement("div"); p.className = "receipt"; p.innerHTML = `<small>nothing here</small>`; l.appendChild(p); }
+    l.innerHTML = `<h4>${tr(title)}</h4>`;
+    if (!items.length) { const p = document.createElement("div"); p.className = "receipt"; p.innerHTML = `<small>${tr("nothing-here")}</small>`; l.appendChild(p); }
     for (const r of items) l.appendChild(render(r));
     host.appendChild(l);
   };
-  lane("filed", "Filed", inbox.filed, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = `${r.when} · ${r.note}`; return d; });
-  lane("review", "For your review", inbox.review, (r) => {
+  lane("filed", "filed", inbox.filed, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = `${r.when} · ${r.note}`; return d; });
+  lane("review", "for-your-review", inbox.review, (r) => {
     const d = document.createElement("div"); d.className = "receipt suggest";
-    d.innerHTML = `<b></b><small></small>` + r.readings.map(([k, v, sure]) => `<div class="kv"><span>${k}</span><b>${v}<i class="sure ${sure ? "" : "unsure"}">${sure ? "sure" : "unsure"}</i></b></div>`).join("") +
-      `<div class="kv"><span>burns up</span><b>in ${r.burnsInDays}d</b></div>` +
-      `<div class="actions" role="group" aria-label="Decide"><button class="yes" type="button">Add to orbit</button><button class="no" type="button">Dismiss</button></div>`;
+    d.innerHTML = `<b></b><small></small>` + r.readings.map(([k, v, sure]) => `<div class="kv"><span>${tr(k)}</span><b>${v}<i class="sure ${sure ? "" : "unsure"}">${sure ? tr("sure") : tr("unsure")}</i></b></div>`).join("") +
+      `<div class="kv"><span>${tr("burns-up")}</span><b>in ${r.burnsInDays}d</b></div>` +
+      `<div class="actions" role="group" aria-label="${tr("decide")}"><button class="yes" type="button">${tr("add-to-orbit")}</button><button class="no" type="button">${tr("dismiss")}</button></div>`;
     d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.source;
     wireDecide(d, r);
     return d;
   });
-  lane("reading", "Still reading", inbox.reading, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
-  lane("failed", "Failed to process", inbox.failed, (r) => { const d = document.createElement("div"); d.className = "receipt failed"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
+  lane("reading", "still-reading", inbox.reading, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
+  lane("failed", "failed-to-process", inbox.failed, (r) => { const d = document.createElement("div"); d.className = "receipt failed"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
 }
 
 /* ── the explore field: the command palette (POL-9) ───────────────────── */

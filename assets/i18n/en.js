@@ -241,5 +241,19 @@ export default {
  "dusk-said": "You are signed out.",
  "dusk-sub": "the sky keeps turning · your systems keep their orbits",
  "language-now": "EN, language: English",
- "language-code": "EN"
+ "language-code": "EN",
+ "filed": "Filed",
+ "for-your-review": "For your review",
+ "still-reading": "Still reading",
+ "failed-to-process": "Failed to process",
+ "renews": "renews",
+ "provider": "provider",
+ "burns-up": "burns up",
+ "sure": "sure",
+ "unsure": "unsure",
+ "dismiss": "Dismiss",
+ "nothing-here": "nothing here",
+ "decide": "Decide",
+ "tap-again-to-add": "tap again to add",
+ "tap-again-to-dismiss": "tap again to dismiss"
 };
