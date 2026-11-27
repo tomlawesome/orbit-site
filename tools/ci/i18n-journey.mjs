@@ -524,7 +524,9 @@ try {
     const r = await page.evaluate(() => {
       const reader = document.querySelector("#docspad .reader");
       /* the right edge of the first line of an element's text, and the right edge of its own content box */
-      const edge = (e) => { const cs = getComputedStyle(e), rg = document.createRange(); rg.selectNodeContents(e); const line = rg.getClientRects()[0], box = e.getBoundingClientRect(); return { dir: cs.direction, line: line ? line.right : null, box: box.right - parseFloat(cs.paddingRight) }; };
+      const edge = (e) => { const cs = getComputedStyle(e), rg = document.createRange(); rg.selectNodeContents(e); const rects = [...rg.getClientRects()].filter((q) => q.width > 0), first = rects[0], box = e.getBoundingClientRect();
+        /* the first line's inline-end edge: on a mixed Arabic/Latin line the first rect need not be the line's end, so take the furthest right of every fragment on that line */
+        const line = first ? Math.max(...rects.filter((q) => Math.abs(q.top - first.top) < first.height / 2).map((q) => q.right)) : null; return { dir: cs.direction, line, box: box.right - parseFloat(cs.paddingRight) }; };
       const ps = [...reader.querySelectorAll(".sections p, .body p, article p, p")].filter((p) => !p.closest("pre,.docs-stale,.untranslated,.ai-notice,.source") && p.textContent.trim().length > 40).slice(0, 3);
       const grid = reader.querySelector(".readgrid"), on = reader.querySelector(".onpage");
       const gr = grid.getBoundingClientRect(), orr = on.getBoundingClientRect();
