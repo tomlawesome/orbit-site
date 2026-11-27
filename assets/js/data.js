@@ -8,12 +8,15 @@ import { addDays, constellationPosOf } from "./law.js";
 
 export const today = new Date();
 today.setHours(0, 0, 0, 0);
+/* a day of this year, written as [month, day]: the sample's own dates are raw values, written in the page's language when drawn */
+export const sampleDay = ([month, day]) => new Date(today.getFullYear(), month - 1, day);
 
+/* a section's name is a catalogue key (nameKey), looked up when it is drawn */
 const SECTIONS = [
-  { id: "home", name: "Home", icon: "home", accent: "sage" },
-  { id: "vehicles", name: "Vehicles", icon: "vehicle", accent: "blue" },
-  { id: "devices", name: "Devices", icon: "device", accent: "sand" },
-  { id: "services", name: "Services", icon: "service", accent: "plum" },
+  { id: "home", nameKey: "home", icon: "home", accent: "sage" },
+  { id: "vehicles", nameKey: "vehicles", icon: "vehicle", accent: "blue" },
+  { id: "devices", nameKey: "devices", icon: "device", accent: "sand" },
+  { id: "services", nameKey: "services", icon: "service", accent: "plum" },
 ];
 
 let seq = 0;
@@ -36,7 +39,7 @@ function item(fields) {
 /* The version of the sample below. BUMP IT whenever the sample changes (an item added, removed, renamed or re-dated, a
    household changed): a returning visitor's saved sample is then replaced with this one (hydrate), keeping only the
    items they added themselves. */
-export const SAMPLE_VERSION = 1;
+export const SAMPLE_VERSION = 2;
 /* An item the visitor adds gets a time-based id (newItemId: "i-" and the clock in base 36, 8 characters until the year
    5188); the sample's ids are names or counts. Only an id of that shape is a visitor's own. So a sample id must never be
    8 characters of 0-9 a-z after the "i-". */
@@ -54,12 +57,12 @@ export const households = {
     items: [
       item({ id: "i-gutter", title: "Gutter clearing", section: "home", days: -16, costMinor: 15000, reminderDays: [14, 3] }),
       item({ id: "i-mot", title: "Car MOT — Volvo V60", section: "vehicles", days: 16, costMinor: 5485, costIsEstimate: false, kind: "inspection", reminderDays: [21, 7],
-        documents: [{ name: "MOT certificate 2025", meta: "added 12 Jun · 240 KB" }, { name: "Service history", meta: "added 12 Jun · 88 KB" }] }),
+        documents: [{ name: "MOT certificate 2025", added: [6, 12], size: "240 KB" }, { name: "Service history", added: [6, 12], size: "88 KB" }] }),
       item({ id: "i-boiler", title: "Boiler service", section: "home", days: 22, costMinor: 12000, provider: "Warm & Co." }),
       item({ id: "i-chimney", title: "Chimney sweep", section: "home", days: 61, costMinor: 9000 }),
       item({ id: "i-smoke", title: "Smoke alarm batteries", section: "devices", days: 122, costMinor: 1200, recurrenceMonths: 6, reminderDays: [7] }),
       item({ id: "i-svc", title: "Car full service", section: "vehicles", days: 161, costMinor: 30000, reminderDays: [21],
-        documents: [{ name: "service-invoice-2026.pdf", meta: "added 12 Jun · 240 KB" }, { name: "service-checklist.pdf", meta: "added 12 Jun · 88 KB" }] }),
+        documents: [{ name: "service-invoice-2026.pdf", added: [6, 12], size: "240 KB" }, { name: "service-checklist.pdf", added: [6, 12], size: "88 KB" }] }),
     ],
   },
   seaside: {
@@ -152,10 +155,12 @@ export const account = {
   relay: "ada-k7f2m@in.willow-house.orbit",
 };
 
-/** What the relay has caught. */
+/** What the relay has caught. A sentence the page writes is a catalogue key with its raw values ({ key, vars }: a Date is
+    written as a short date, { minutesAgo } as a time ago), put into words in the page's language when it is drawn. A title,
+    a provider and a file name are kept as written. */
 export const inbox = {
   filed: [
-    { id: "r-mot", title: "Car MOT — Volvo V60", note: "free mot-reminder.pdf · filed against the item", when: "12 Jun" },
+    { id: "r-mot", title: "Car MOT — Volvo V60", note: { key: "inbox-filed-note", vars: { date: sampleDay([6, 12]), file: "free mot-reminder.pdf" } } },
   ],
   review: [
     {
@@ -167,21 +172,24 @@ export const inbox = {
       renewsInDays: 51,
       costMinor: 40000,
       kind: "renewal",
-      source: "policy-schedule.pdf · 312 KB · scanned clean",
+      file: "policy-schedule.pdf",
+      size: "312 KB",
+      /* what Orbit read from the document, each with whether it is sure: its label is a catalogue key; its value a number of
+         days (days), written in the page's language, or the words as Orbit read them (text) */
       readings: [
-        ["renews", 51, true],
-        ["cost", "~£400.00", false],
-        ["provider", "Harbour Mutual", true],
+        { label: "renews", days: 51, sure: true },
+        { label: "cost", text: "~£400.00", sure: false },
+        { label: "provider", text: "Harbour Mutual", sure: true },
       ],
       burnsInDays: 43,
     },
   ],
   reading: [
-    { id: "r-new", title: "A message arrived 4 minutes ago", note: "Orbit is reading its document — it will appear for review when it's done" },
+    { id: "r-new", title: { key: "inbox-arrived", vars: { when: { minutesAgo: 4 } } }, note: { key: "inbox-reading-note" } },
   ],
   failed: [
-    { id: "r-large", title: "A message from 09 Aug", note: "too large · Its attachment was larger than Orbit can store. You can add the item yourself and attach the file from Documents." },
-    { id: "r-unread", title: "A message from 06 Aug", note: "no readable document · It carried no document Orbit can read (PDFs work best). Nothing was kept." },
+    { id: "r-large", title: { key: "inbox-from", vars: { date: sampleDay([8, 9]) } }, note: { key: "inbox-too-large" } },
+    { id: "r-unread", title: { key: "inbox-from", vars: { date: sampleDay([8, 6]) } }, note: { key: "inbox-unreadable" } },
   ],
 };
 const pristineReview = inbox.review.slice();

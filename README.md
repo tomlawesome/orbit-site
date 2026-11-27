@@ -47,7 +47,7 @@ Words used in the table:
 | `tools/fonts.mjs` | Writes `assets/fonts/` (`npm ci --prefix tools && node tools/fonts.mjs`; needs the network and `unzip`): downloads each family's release, checks its sha256, trims it the same way every time with HarfBuzz's subsetter (`harfbuzzjs`) and packs it with Google's woff2 encoder (`wawoff2`). Its table of releases is the fonts' one pin; Renovate watches the tags |
 | `assets/vendor/` | Mermaid's release file (`mermaid-<version>.min.js`, the npm package's `dist/mermaid.min.js`, unchanged) and its licence. `assets/js/pads.js` loads it when a docs page has a diagram; its path there (`MERMAID`) is the version's one pin, with the file's sha384 beside it as the script's integrity (the browser and the lint both refuse a file that does not match), and the commands to add a new one are beside it |
 | `assets/js/law.js` | The chart law (orbit `web/src/lib/data/chart.js`) |
-| `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today |
+| `assets/js/data.js` | The sample workspace; fictional; dates are lead times from today. Its page words (section names, an item's type, the inbox's sentences, a document's "added …" line) are catalogue keys with raw values, translated on each language page; the household's own names, item titles, providers and file names are kept as written |
 | `assets/js/sky.js` | The home sky's star tiles, grain, packs |
 | `assets/js/home.js` | Dial, galaxy and flight, manifest, drawers, inbox |
 | `assets/js/tour.js` | The film: vocabulary, chapters, player, transport |

@@ -64,14 +64,45 @@ export function t(cat, key, vars) {
 /* the same, from this page's catalogue */
 export const tr = (key, vars) => t(PAGE, key, vars);
 
-/* a number of days from now in the page's language (#176): Intl.RelativeTimeFormat, given the page's own <html lang> as it
-   stands (en-GB on the English page), in its long style or with { style: "narrow" } */
-export function inDays(n, style = "long") {
-  const tag = doc?.documentElement.lang || "en";
-  let f;
-  try { f = new Intl.RelativeTimeFormat(tag, { style }); } catch { f = new Intl.RelativeTimeFormat("en", { style }); }
-  return f.format(n, "day");
+/* the page's own language tag as it stands (en-GB on the English page, and where a page names none, as under Node) */
+const tagOf = () => doc?.documentElement.lang || "en-GB";
+/* an Intl formatter in the page's own language, in English when the browser does not know the tag (#176) */
+function intl(Kind, options) {
+  try { return new Kind(tagOf(), options); } catch { return new Kind("en", options); }
 }
+
+/* a number of days from now, or minutes ago, in the page's language (#176): Intl.RelativeTimeFormat, in its long style or
+   with { style: "narrow" } */
+const relative = (n, unit, style) => intl(Intl.RelativeTimeFormat, { style }).format(n, unit);
+export const inDays = (n, style = "long") => relative(n, "day", style);
+export const minutesAgo = (n) => relative(-n, "minute", "long");
+
+/* a date's words in the page's language (#177): Intl.DateTimeFormat. "short" is the day and month ("12 Mar", the day in two
+   digits), "long" the whole date ("14 March 2026"), "month" a month's short name, "monthName" its full name, "weekday" the
+   day's short name */
+const DATES = {
+  short: { day: "2-digit", month: "short" },
+  long: { day: "numeric", month: "long", year: "numeric" },
+  month: { month: "short" },
+  monthName: { month: "long" },
+  weekday: { weekday: "short" },
+};
+export function dateWords(date, style) {
+  const f = intl(Intl.DateTimeFormat, DATES[style]), parts = f.formatToParts(date);
+  /* on an English page the browser's British English now writes September as "Sept"; the page has always written "Sep", so
+     the month's and the weekday's names come from plain English, inside the British order and punctuation */
+  const plain = /^en(-|$)/i.test(f.resolvedOptions().locale) ? new Intl.DateTimeFormat("en", DATES[style]).formatToParts(date) : [];
+  return parts.map((p) => plain.find((q) => q.type === p.type && (p.type === "month" || p.type === "weekday"))?.value ?? p.value).join("");
+}
+/* a text in capitals as the page's language writes them (a month label, the weekday of the TODAY line) */
+export function caps(text) {
+  try { return text.toLocaleUpperCase(tagOf()); } catch { return text.toUpperCase(); }
+}
+/* a count of months or of years in the page's language: "6 months", "2 years" (Intl.NumberFormat, a unit, written long) */
+export const monthsCount = (n) => intl(Intl.NumberFormat, { style: "unit", unit: "month", unitDisplay: "long" }).format(n);
+export const yearsCount = (n) => intl(Intl.NumberFormat, { style: "unit", unit: "year", unitDisplay: "long" }).format(n);
+/* an amount of pounds with the page's own digit grouping and decimal mark, two decimals ("1,234.50", "1.234,50") */
+export const grouped = (n) => intl(Intl.NumberFormat, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
 /* where the root sends a visitor: a stored choice first ("en" keeps them at the root, a built language sends them to
    it), then the first of the browser's languages that is English or built (by its primary subtag: de-AT is de). null

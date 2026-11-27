@@ -2,11 +2,11 @@
  * Home: the dial, the other systems, the manifest, and the drawers — the
  * product's own screen, drawn from the sample workspace by the chart law.
  */
-import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId, createDate } from "./data.js";
+import { households, account, inbox, today, persist, serialise, hydrate, forget, pristine, ymd, newItemId, createDate, sampleDay } from "./data.js";
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 import { createPlaces } from "./places.js";
-import { tr, inDays } from "./lang.js";
+import { tr, inDays, minutesAgo } from "./lang.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -68,7 +68,7 @@ export function renderDial() {
     if (i === 0) t.setAttribute("class", "now-month");
   });
   $("#dial-name").textContent = h.name;
-  $("#dial .sun-link").setAttribute("aria-label", `${h.name}, this household`);
+  $("#dial .sun-link").setAttribute("aria-label", tr("sun-label", { name: h.name }));
   const bodies = [...h.items.filter((it) => it.status === "active").map((it) => ({ it, suggestion: false })),
     ...suggestionsFor(h).map((s) => ({ it: { id: s.id, title: s.title, days: s.renewsInDays, costMinor: s.costMinor, costIsEstimate: true, kind: "suggestion", documents: [] }, suggestion: true }))];
   for (const { it, suggestion } of bodies) {
@@ -83,7 +83,7 @@ export function renderDial() {
         stroke: `var(${law.TONES[band]})`, "stroke-opacity": band === "upcoming" ? ".45" : ".5", "stroke-width": "2",
       }, $("#dial .trails"));
     }
-    const link = el("a", { class: "body-link", href: `#${it.id}`, "data-id": it.id, tabindex: "0", "aria-label": `${it.title}, ${law.tminus(it.days)}` }, $("#dial .bodies"));
+    const link = el("a", { class: "body-link", href: `#${it.id}`, "data-id": it.id, tabindex: "0", "aria-label": tr("body-label", { title: it.title, when: law.tminus(it.days) }) }, $("#dial .bodies"));
     if (suggestion) link.dataset.suggestion = "1";
     const g = el("g", { class: band === "due-soon" || band === "overdue" ? "breathe" : "" }, link);
     if (suggestion) {
@@ -125,9 +125,10 @@ function showBodyCallout(link, it, suggestion, tapped = false) {
   c.onclick = tapped ? () => { hideBodyCallout(); openRow(it.id, true); } : null;
   const box = link.getBoundingClientRect();
   c.querySelector("b").textContent = it.title;
+  const docs = it.documents?.length ?? 0;
   c.querySelector("small").textContent = suggestion
-    ? `suggested · renews in ${it.days}d · ${law.money(it.costMinor, true)}`
-    : `${law.tminus(it.days)} · ${law.money(it.costMinor, it.costIsEstimate)}${it.documents?.length ? ` · ${it.documents.length} documents` : ""}`;
+    ? tr("callout-suggestion", { when: inDays(it.days, "narrow"), cost: law.money(it.costMinor, true) })
+    : [law.tminus(it.days), law.money(it.costMinor, it.costIsEstimate), ...(docs ? [tr(docs === 1 ? "callout-document" : "callout-documents", { n: docs })] : [])].join(" · ");
   c.classList.add("show");
   const w = c.offsetWidth, h = c.offsetHeight;
   const right = box.left + box.width / 2 < innerWidth / 2;
@@ -175,7 +176,7 @@ export function renderGalaxy() {
     refreshDays(h);
     el("circle", { class: "msring", cx: 0, cy: 0, r: 34 }, svg);
     for (const [px, py, pr, tone] of law.constellationPlanetsOf(h.items)) el("circle", { cx: px, cy: py, r: pr, fill: `var(${tone})` }, svg);
-    const hit = el("circle", { class: "hit", cx: 0, cy: 0, r: 44, fill: "transparent", role: "button", tabindex: "0", "aria-label": `Fly to ${h.name}` }, svg);
+    const hit = el("circle", { class: "hit", cx: 0, cy: 0, r: 44, fill: "transparent", role: "button", tabindex: "0", "aria-label": tr("fly-to", { name: h.name }) }, svg);
     hit.addEventListener("click", () => visit(h.id));
     hit.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); visit(h.id); } });
     host.appendChild(node);
@@ -271,8 +272,10 @@ export function renderManifest() {
     for (const it of overdue) zone.appendChild(rowFor(it));
     corridor.appendChild(zone);
   }
-  const todayRow = document.createElement("div"); todayRow.className = "today"; todayRow.id = "today";
-  todayRow.innerHTML = `<span class="sunmark" aria-hidden="true"><i></i><b></b></span><span>${law.todayWords(today)}</span><div class="rule"></div>`;
+  const todayWrap = document.createElement("div");
+  todayWrap.innerHTML = `<div class="today" id="today"><span class="sunmark" aria-hidden="true"><i></i><b></b></span><span></span><div class="rule"></div></div>`;
+  const todayRow = todayWrap.firstElementChild;
+  todayRow.children[1].textContent = law.todayWords(today);
   corridor.appendChild(todayRow);
   const entries = [...ahead.map((it) => ({ it, days: it.days })), ...sugg.map((s) => ({ it: null, s: s.suggestion, days: s.days }))].sort((a, b) => a.days - b.days);
   const currentKey = `${today.getFullYear()}-${today.getMonth()}`;
@@ -282,34 +285,42 @@ export function renderManifest() {
     const due = law.addDays(today, e.days);
     const key = `${due.getFullYear()}-${due.getMonth()}`;
     if (key !== lastKey) {
-      if (lastMonthEl) lastMonthEl.querySelector("small").textContent = `${count} approaching`;
+      if (lastMonthEl) lastMonthEl.querySelector("small").textContent = tr("month-count", { n: count });
       lastKey = key; count = 0;
       lastMonthEl = document.createElement("div"); lastMonthEl.className = "month";
-      lastMonthEl.innerHTML = `<span>${law.MONTHS[due.getMonth()]}</span><div class="rule"></div><small></small>`;
+      lastMonthEl.innerHTML = `<span></span><div class="rule"></div><small></small>`;
+      lastMonthEl.querySelector("span").textContent = law.MONTHS[due.getMonth()];
       corridor.appendChild(lastMonthEl);
     }
     count++;
     corridor.appendChild(e.it ? rowFor(e.it) : suggestionRowFor(e.s));
   }
-  if (lastMonthEl) lastMonthEl.querySelector("small").textContent = `${count} approaching`;
+  if (lastMonthEl) lastMonthEl.querySelector("small").textContent = tr("month-count", { n: count });
   const last = entries[entries.length - 1];
   $("#horizon").textContent = last
-    ? `— beyond the horizon: nothing scheduled past ${law.longDate(law.addDays(today, last.days)).split(" ")[1]} —`
-    : "— nothing in orbit yet —";
+    ? tr("horizon-past", { month: law.monthName(law.addDays(today, last.days)) })
+    : tr("horizon-empty");
+}
+
+/* a section's name in the page's language (data.js keeps its catalogue key) */
+function sectionName(id) {
+  const section = household().sections.find((s) => s.id === id);
+  return section ? tr(section.nameKey) : "";
 }
 
 function rowFor(it) {
   const band = law.bandOfKind(it.kind, it.days);
-  const section = household().sections.find((s) => s.id === it.section)?.name ?? "";
   const row = document.createElement("div");
   row.className = "item"; row.id = it.id; row.dataset.id = it.id; row.tabIndex = 0; row.setAttribute("role", "button"); row.setAttribute("aria-expanded", "false");
   const shape = it.kind === "inspection" ? "ter" : it.kind === "renewal" ? "con" : "";
   const tone = band === "overdue" ? "over" : band === "due-soon" ? "soon" : band === "upcoming" ? "up" : "ok";
   row.innerHTML = `<span class="planet ${shape}" style="color:var(${law.TONES[band]})"><i></i></span>
     <div class="body"><b></b><span></span></div>
-    <div class="t ${tone}">${law.tminus(it.days)}<small>${law.shortDate(it.dueDate)}</small></div>`;
+    <div class="t ${tone}"></div>`;
+  const when = row.querySelector(".t"), shortDate = document.createElement("small");
+  when.textContent = law.tminus(it.days); shortDate.textContent = law.shortDate(it.dueDate); when.appendChild(shortDate);
   row.querySelector("b").textContent = it.title;
-  row.querySelector(".body span").textContent = `${section} · orbital period ${law.every(it.recurrenceMonths).replace("every ", "")}${it.provider ? ` · ${it.provider}` : ""} · ${law.money(it.costMinor, it.costIsEstimate)}`;
+  row.querySelector(".body span").textContent = [sectionName(it.section), law.period(it.recurrenceMonths), ...(it.provider ? [it.provider] : []), law.money(it.costMinor, it.costIsEstimate)].join(" · ");
   row.addEventListener("click", () => (row.classList.contains("open") ? closeRow() : openRow(it.id)));
   row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); } });
   return row;
@@ -343,6 +354,20 @@ function wireDecide(root, s) {
   no.addEventListener("click", (e) => { e.stopPropagation(); if (arm("no", no)) dismissSuggestion(s.id); });
 }
 
+/* a labelled row (the item drawer's, the inbox receipt's): its label and its value are text; the value's element is
+   returned so a caller can add to it. cls is the value's class, when it has one */
+function kvRow(label, value, cls = "") {
+  const row = document.createElement("div");
+  row.className = "kv"; row.innerHTML = "<span></span><b></b>";
+  row.querySelector("span").textContent = label;
+  const b = row.querySelector("b");
+  b.textContent = value;
+  if (cls) b.className = cls;
+  return row;
+}
+/* an item's type, as the catalogue's key for it */
+const KIND_WORDS = { service: "kind-service", inspection: "kind-inspection", renewal: "kind-renewal", expiry: "kind-expiry" };
+
 export function openRow(id, scroll = false) {
   closeRow();
   const row = $(`.item[data-id="${id}"]`);
@@ -353,22 +378,46 @@ export function openRow(id, scroll = false) {
   row.classList.add("open"); row.setAttribute("aria-expanded", "true");
   const view = document.createElement("div");
   view.className = "itemview"; view.id = `${id}-view`;
-  const section = household().sections.find((s) => s.id === it.section)?.name ?? "";
-  const kv = (k, v, cls = "") => `<div class="kv"><span>${k}</span><b class="${cls}">${v}</b></div>`;
   const doneToday = !!it.completedOn && law.daysBetween(today, it.completedOn) === 0;
-  let html = kv("due", `${law.tminus(it.days)} · ${law.longDate(it.dueDate)}`, it.days < 0 ? "over" : "");
-  if (it.completedOn) html += kv("last completed", doneToday ? "today" : law.longDate(it.completedOn));
-  if (it.snoozed) html += kv("snoozed", "a week, from the last reminder");
-  html += kv("section", section) + kv("type", it.kind) + kv("orbital period", law.every(it.recurrenceMonths)) + kv("cost", law.money(it.costMinor, it.costIsEstimate));
-  if (it.provider) html += kv("provider", it.provider);
-  if (it.reminderDays?.length) html += kv("reminders", it.reminderDays.map((d) => `${d}d before`).join(" · "));
-  if (it.documents?.length) html += `<h4>documents</h4>` + it.documents.map((d) => `<div class="doc">◆<span>${d.name}<small>${d.meta}</small></span></div>`).join("");
+  view.appendChild(kvRow(tr("label-due"), `${law.tminus(it.days)} · ${law.longDate(it.dueDate)}`, it.days < 0 ? "over" : ""));
+  if (it.completedOn) view.appendChild(kvRow(tr("label-last-completed"), doneToday ? tr("value-today") : law.longDate(it.completedOn)));
+  if (it.snoozed) view.appendChild(kvRow(tr("label-snoozed"), tr("value-snoozed")));
+  view.appendChild(kvRow(tr("label-section"), sectionName(it.section)));
+  view.appendChild(kvRow(tr("label-type"), KIND_WORDS[it.kind] ? tr(KIND_WORDS[it.kind]) : it.kind));
+  view.appendChild(kvRow(tr("label-period"), law.every(it.recurrenceMonths)));
+  view.appendChild(kvRow(tr("label-cost"), law.money(it.costMinor, it.costIsEstimate)));
+  if (it.provider) view.appendChild(kvRow(tr("label-provider"), it.provider));
+  if (it.reminderDays?.length) view.appendChild(kvRow(tr("label-reminders"), it.reminderDays.map((d) => tr("reminder-before", { n: d })).join(" · ")));
+  if (it.documents?.length) {
+    const heading = document.createElement("h4");
+    heading.textContent = tr("label-documents");
+    view.appendChild(heading);
+    for (const d of it.documents) {
+      const doc = document.createElement("div"), meta = document.createElement("small");
+      doc.className = "doc"; doc.innerHTML = "◆<span></span>";
+      const name = doc.querySelector("span");
+      name.textContent = d.name;
+      meta.textContent = d.added ? tr("doc-added", { date: law.shortDate(sampleDay(d.added)), size: d.size }) : tr("doc-attached");
+      name.appendChild(meta);
+      view.appendChild(doc);
+    }
+  }
   /* a completion is once a day, as the app records it; a snooze is a week from today, and a second snooze changes nothing */
-  html += `<div class="acts" aria-label="Item actions"><button type="button" class="done" data-act="complete"${doneToday ? " disabled" : ""}>${doneToday ? "completed today" : "complete"}</button><button type="button" data-act="snooze"${it.snoozed ? " disabled" : ""}>${it.snoozed ? "snoozed a week" : "snooze a week"}</button></div>`;
-  html += `<div class="ivfoot"><span class="ivnote">${it.recurrenceMonths ? "a repeat is never finished; it comes round" : "one-off — does not come round"}</span></div>`;
-  view.innerHTML = html;
-  view.querySelector('[data-act="complete"]').addEventListener("click", (e) => { e.stopPropagation(); complete(id); });
-  view.querySelector('[data-act="snooze"]').addEventListener("click", (e) => { e.stopPropagation(); snooze(id); });
+  const acts = document.createElement("div");
+  acts.className = "acts"; acts.setAttribute("aria-label", tr("item-actions"));
+  acts.innerHTML = `<button type="button" class="done" data-act="complete"></button><button type="button" data-act="snooze"></button>`;
+  const [doneBtn, snoozeBtn] = acts.querySelectorAll("button");
+  doneBtn.textContent = tr(doneToday ? "button-completed-today" : "button-complete");
+  snoozeBtn.textContent = tr(it.snoozed ? "button-snoozed" : "button-snooze");
+  if (doneToday) doneBtn.setAttribute("disabled", "");
+  if (it.snoozed) snoozeBtn.setAttribute("disabled", "");
+  view.appendChild(acts);
+  const foot = document.createElement("div");
+  foot.className = "ivfoot"; foot.innerHTML = `<span class="ivnote"></span>`;
+  foot.querySelector("span").textContent = tr(it.recurrenceMonths ? "note-repeat" : "note-once");
+  view.appendChild(foot);
+  doneBtn.addEventListener("click", (e) => { e.stopPropagation(); complete(id); });
+  snoozeBtn.addEventListener("click", (e) => { e.stopPropagation(); snooze(id); });
   row.after(view);
   state.open = id;
   $$("#dial .body-link").forEach((b) => b.classList.toggle("lit", b.dataset.id === id));
@@ -442,7 +491,7 @@ export function acceptSuggestion(id) {
   if (i < 0) return null;
   const s = inbox.review.splice(i, 1)[0];
   const it = addItem({ title: s.title, section: s.section, kind: s.kind, recurrenceMonths: 12, costMinor: s.costMinor, dueDate: law.addDays(today, s.renewsInDays) });
-  it.provider = s.provider; it.documents = [{ name: s.source.split(" · ")[0], meta: "attached on acceptance" }];
+  it.provider = s.provider; it.documents = [{ name: s.file }];
   renderDial(); renderManifest(); renderInbox(); changed();
   return it;
 }
@@ -487,23 +536,48 @@ export function renderInbox() {
   host.replaceChildren();
   const lane = (cls, title, items, render) => {
     const l = document.createElement("div"); l.className = `lane ${cls}`;
-    l.innerHTML = `<h4>${tr(title)}</h4>`;
-    if (!items.length) { const p = document.createElement("div"); p.className = "receipt"; p.innerHTML = `<small>${tr("nothing-here")}</small>`; l.appendChild(p); }
+    const heading = document.createElement("h4"); heading.textContent = tr(title); l.appendChild(heading);
+    if (!items.length) l.appendChild(receipt("receipt", null, tr("nothing-here")));
     for (const r of items) l.appendChild(render(r));
     host.appendChild(l);
   };
-  lane("filed", "filed", inbox.filed, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = `${r.when} · ${r.note}`; return d; });
+  lane("filed", "filed", inbox.filed, (r) => receipt("receipt", r.title, sentence(r.note)));
   lane("review", "for-your-review", inbox.review, (r) => {
-    const d = document.createElement("div"); d.className = "receipt suggest";
-    d.innerHTML = `<b></b><small></small>` + r.readings.map(([k, v, sure]) => `<div class="kv"><span>${tr(k)}</span><b>${k === "renews" ? inDays(v) : v}<i class="sure ${sure ? "" : "unsure"}">${sure ? tr("sure") : tr("unsure")}</i></b></div>`).join("") +
-      `<div class="kv"><span>${tr("burns-up")}</span><b>${inDays(r.burnsInDays, "narrow")}</b></div>` +
-      `<div class="actions" role="group" aria-label="${tr("decide")}"><button class="yes" type="button">${tr("add-to-orbit")}</button><button class="no" type="button">${tr("dismiss")}</button></div>`;
-    d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.source;
+    const d = receipt("receipt suggest", r.title, tr("inbox-source", { document: `${r.file} · ${r.size}` }));
+    for (const reading of r.readings) {
+      const row = kvRow(tr(reading.label), reading.days !== undefined ? inDays(reading.days) : reading.text);
+      const sure = document.createElement("i");
+      sure.className = `sure ${reading.sure ? "" : "unsure"}`; sure.textContent = reading.sure ? tr("sure") : tr("unsure");
+      row.querySelector("b").appendChild(sure);
+      d.appendChild(row);
+    }
+    d.appendChild(kvRow(tr("burns-up"), inDays(r.burnsInDays, "narrow")));
+    const actions = document.createElement("div");
+    actions.className = "actions"; actions.setAttribute("role", "group"); actions.setAttribute("aria-label", tr("decide"));
+    actions.innerHTML = `<button class="yes" type="button"></button><button class="no" type="button"></button>`;
+    actions.querySelector("button.yes").textContent = tr("add-to-orbit"); actions.querySelector("button.no").textContent = tr("dismiss");
+    d.appendChild(actions);
     wireDecide(d, r);
     return d;
   });
-  lane("reading", "still-reading", inbox.reading, (r) => { const d = document.createElement("div"); d.className = "receipt"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
-  lane("failed", "failed-to-process", inbox.failed, (r) => { const d = document.createElement("div"); d.className = "receipt failed"; d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = r.title; d.querySelector("small").textContent = r.note; return d; });
+  lane("reading", "still-reading", inbox.reading, (r) => receipt("receipt", sentence(r.title), sentence(r.note)));
+  lane("failed", "failed-to-process", inbox.failed, (r) => receipt("receipt failed", sentence(r.title), sentence(r.note)));
+}
+/* a receipt of the inbox: a div of the class with its title (none for the empty lane's) and its small line, both as text */
+function receipt(cls, title, small) {
+  const d = document.createElement("div");
+  d.className = cls;
+  if (title !== null) { const b = document.createElement("b"); b.textContent = title; d.appendChild(b); }
+  const s = document.createElement("small"); s.textContent = small; d.appendChild(s);
+  return d;
+}
+/* a sample sentence (data.js: a catalogue key and raw values) in the page's language: a date as the short date, a number of
+   minutes as the time ago. A title written as a string is kept as it is */
+function sentence(said) {
+  if (typeof said === "string") return said;
+  const vars = {};
+  for (const [name, v] of Object.entries(said.vars ?? {})) vars[name] = v instanceof Date ? law.shortDate(v) : v?.minutesAgo !== undefined ? minutesAgo(v.minutesAgo) : v;
+  return tr(said.key, vars);
 }
 
 /* ── the explore field: the command palette (POL-9) ───────────────────── */
@@ -513,14 +587,14 @@ function wireExplore() {
     const q = input.value.trim().toLowerCase();
     pal.replaceChildren();
     const rows = household().items.filter((it) => it.status === "active" && (!q || it.title.toLowerCase().includes(q))).slice(0, 5);
-    if (!rows.length) { const n = document.createElement("div"); n.className = "none"; n.textContent = "nothing in this orbit matches"; pal.appendChild(n); }
+    if (!rows.length) { const n = document.createElement("div"); n.className = "none"; n.textContent = tr("search-none"); pal.appendChild(n); }
     for (const it of rows) {
       const b = document.createElement("button"); b.type = "button";
       b.innerHTML = `<b></b> <small>· ${law.tminus(it.days)}</small>`; b.querySelector("b").textContent = it.title;
       b.addEventListener("mousedown", (e) => { e.preventDefault(); openRow(it.id, true); input.blur(); });
       pal.appendChild(b);
     }
-    const add = document.createElement("button"); add.type = "button"; add.className = "act"; add.textContent = "→ add an item";
+    const add = document.createElement("button"); add.type = "button"; add.className = "act"; add.textContent = tr("search-add");
     add.addEventListener("mousedown", (e) => { e.preventDefault(); openCreate(true); input.blur(); });
     pal.appendChild(add);
   };
