@@ -24,6 +24,8 @@
  *   J14-J16 (#125 languages live) per built language: the door's notice at its foot, the English link, the hide button
  *   K1-K9 (#173 Arabic, right to left): corners, the docs reader, the drawers, the dial and transport, letter-spacing and
  *       small print, <bdi> around inserted values, the stale line's English link; each against the root as the control
+ *   M1-M2 (#176) the inbox drawer and the account drawer's THEME label come from the catalogue: on de/ each shows the words of
+ *       the catalogue's key for it (found by its English words), whatever de.json says; the root shows the English
  *   J13 (#164) the docs pad: a query that matches shows the filtered heading with a count; a query that matches nothing
  *       shows the empty state
  *
@@ -615,6 +617,53 @@ try {
       const spaced = (o) => o && o.ls !== "normal" && parseFloat(o.ls) > 0;
       if (path) check("K5a ar/: letter-spacing is 0 on .corner, .langs button and .pad.docs .results h4, and each is at least 12px", zero(m.corner) && zero(m.langs) && zero(m.h4) && [m.corner, m.langs, m.h4].every((o) => o && o.fs >= 12), JSON.stringify(m));
       else check("K5b root: the same three are letter-spaced (non-zero)", spaced(m.corner) && spaced(m.langs) && spaced(m.h4), JSON.stringify(m));
+    });
+  }
+  /* ---- #176: the inbox drawer's and the account drawer's words are the catalogue's ---- */
+  const EN176 = JSON.parse(readFileSync(join(ROOT, "assets/i18n/en.json"), "utf8"));
+  const cat176 = (lang) => { try { return JSON.parse(readFileSync(join(ROOT, `assets/i18n/${lang}.json`), "utf8")); } catch { return {}; } };
+  /* what a language's page may say for English words: the words of any key whose English is those words (a key the language lacks is pending: its English) */
+  const said176 = (lang, words) => { const c = cat176(lang); return Object.keys(EN176).filter((k) => EN176[k].trim().toLowerCase() === words.trim().toLowerCase()).map((k) => (Object.hasOwn(c, k) ? c[k] : EN176[k])); };
+  const drawers176 = async (page, path) => {
+    await enterHome(page, path);
+    await page.locator("#account-orb").click({ force: true });
+    await page.waitForFunction(() => document.querySelector("#account.open"), null, { timeout: 8000 });
+    const theme = await page.evaluate(() => { const e = document.querySelector("#account .swatches > span"); return e ? e.textContent.trim() : null; });
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => document.querySelector("#account").classList.remove("open"));
+    await page.locator("#inbox-orb").click({ force: true });
+    await page.waitForFunction(() => { const d = document.getElementById("inboxdrawer"); return d.classList.contains("open") && d.querySelectorAll(".lane").length >= 4; }, null, { timeout: 8000 });
+    const inbox = await page.evaluate(() => {
+      const t = (q) => [...document.querySelectorAll(q)].map((e) => e.textContent.trim());
+      const aria = document.querySelector("#inboxdrawer .actions");
+      return {
+        lanes: Object.fromEntries(["filed", "review", "reading", "failed"].map((c) => [c, t(`#inboxdrawer .lane.${c} > h4`)[0] ?? null])),
+        labels: t("#inboxdrawer .lane.review .receipt.suggest > .kv > span"),
+        sure: t("#inboxdrawer .lane.review .receipt.suggest i.sure"),
+        yes: t("#inboxdrawer .lane.review button.yes")[0] ?? null, no: t("#inboxdrawer .lane.review button.no")[0] ?? null,
+        decide: aria ? aria.getAttribute("aria-label") : null,
+      };
+    });
+    return { theme, inbox };
+  };
+  for (const path of ["de/", ""]) {
+    const who = path || "root", lang = path ? "de" : "en";
+    await run(`M1 ${who} drawers`, { context: { locale: "en-US", viewport: { width: 1280, height: 800 } }, stored: path ? "de" : "en" }, async (page) => {
+      const { theme, inbox } = await drawers176(page, path);
+      const says = (words) => (lang === "en" ? [words] : said176(lang, words));
+      const is = (got, words) => { const ok = says(words).map((x) => x.trim().toLowerCase()); return got !== null && ok.length > 0 && ok.includes(got.toLowerCase()); };
+      const miss = (rows) => rows.filter(([got, words]) => !is(got, words)).map(([got, words]) => `${JSON.stringify(got)} is not the catalogue's words for ${JSON.stringify(words)}${says(words).length ? ` (${JSON.stringify(says(words))})` : " (no key in en.json has those words)"}`);
+      const L = inbox.lanes;
+      const heads = miss([[L.filed, "Filed"], [L.review, "For your review"], [L.reading, "Still reading"], [L.failed, "Failed to process"]]);
+      check(`M1a ${who}: the four lane headings are the catalogue's words`, !heads.length, heads.join("; ") || JSON.stringify(L));
+      const rows = miss(["renews", "cost", "provider", "burns up"].map((w, i) => [inbox.labels[i] ?? null, w]));
+      check(`M1b ${who}: the review row's labels (renews, cost, provider, burns up) are the catalogue's words`, !rows.length, rows.join("; ") || JSON.stringify(inbox.labels));
+      const sure = miss(["sure", "unsure", "sure"].map((w, i) => [inbox.sure[i] ?? null, w]));
+      check(`M1c ${who}: sure and unsure are the catalogue's words`, !sure.length, sure.join("; ") || JSON.stringify(inbox.sure));
+      const btn = miss([[inbox.yes, "Add to orbit"], [inbox.no, "Dismiss"]]);
+      check(`M1d ${who}: Add to orbit and Dismiss are the catalogue's words`, !btn.length, btn.join("; ") || JSON.stringify([inbox.yes, inbox.no]));
+      const th = miss([[theme, "THEME"]]);
+      check(`M2 ${who}: the account drawer's THEME label is the catalogue's words`, !th.length, th.join("; ") || JSON.stringify(theme));
     });
   }
 } catch (e) {

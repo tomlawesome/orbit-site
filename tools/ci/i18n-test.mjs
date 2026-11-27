@@ -285,6 +285,13 @@ await attempt("N1 404", async () => {
  *   D5  site.css: logical properties carry the chrome, :lang(ar) zeroes letter-spacing and raises the small print, the code rule,
  *       the font stack, and at most a handful of [dir=rtl] rules (no override sheet); door.css is left alone
  *   D6  lang.js tr() on an Arabic page wraps a filled {value} in U+2068 ... U+2069; on the root it does not
+ *   M1  (#176) assets/js/home.js holds no hard-coded English chrome of the inbox (lane headings, burns up, sure/unsure, Add to
+ *       orbit, Dismiss, the armed buttons, nothing here, the Decide label): each comes from tr()
+ *   M2  (#176) en.json holds a key whose words are each of those strings and the account drawer's THEME label (matched on the
+ *       words, not the key's name), so the build has them to look up
+ *   M3  (#176) index.html's THEME span carries data-i18n, with a key of M2, and de/index.html shows that key's de.json words
+ *       (its English while de.json lacks it), whatever they are
+ *   M4  (#176) i18n-check.mjs exits 0 (a new key is in each catalogue and state, or pending in neither)
  */
 const rtlTag = (html) => (/<html\b[^>]*>/i.exec(html) || [""])[0];
 await attempt("D1 dir in languages.json", async () => {
@@ -367,6 +374,45 @@ await attempt("D6 tr isolates", async () => {
   const a = await run("ar", "rtl", "rtl173ar"), e = await run("en", "ltr", "rtl173en");
   check(`D6a on ar/, tr("${key}", {${name}}) holds U+2068 + value + U+2069`, a.includes("\u2068Orbit v1\u2069"), JSON.stringify(a));
   check("D6b on the root the same call has no isolates", !/[\u2066-\u2069]/.test(e) && e.includes("Orbit v1"), JSON.stringify(e));
+});
+
+/* ---- #176: the inbox drawer's and the account drawer's words come from the catalogue ---- */
+/* the English the drawers hard-coded; the keys are found by their words, so the build is free to name them */
+const CHROME176 = ["Filed", "For your review", "Still reading", "Failed to process", "renews", "cost", "provider", "burns up", "sure", "unsure", "Add to orbit", "Dismiss", "THEME"];
+const norm176 = (x) => String(x).trim().toLowerCase();
+const keysFor176 = (words) => Object.keys(en || {}).filter((k) => norm176(en[k]) === norm176(words));
+
+await attempt("M1 home.js chrome", async () => {
+  const src = read("assets/js/home.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const found = [];
+  /* a literal that is only the words: "Filed", `Filed`, >Filed< (a class name such as "unsure" is not words) */
+  for (const w of ["Filed", "For your review", "Still reading", "Failed to process", "burns up", "Add to orbit", "Dismiss", "nothing here", "Decide", "tap again to add", "tap again to dismiss"]) {
+    if (new RegExp(`(["'\`>])\\s*${w}\\s*(["'\`<])`).test(src)) found.push(w);
+  }
+  if (/\?\s*["'`]sure["'`]\s*:\s*["'`]unsure["'`]/.test(src)) found.push("sure/unsure");
+  check("M1 home.js has no hard-coded English chrome of the inbox", !found.length, found.length ? `still hard-coded in home.js: ${JSON.stringify(found)}` : "none");
+});
+
+await attempt("M2 en.json keys", async () => {
+  const none = CHROME176.filter((w) => !keysFor176(w).length);
+  check("M2 en.json has a key for each inbox and THEME word", !none.length, none.length ? `no key in en.json has the words ${JSON.stringify(none)}` : `${CHROME176.length} found`);
+});
+
+await attempt("M3 THEME span", async () => {
+  const m = /<div\b[^>]*class="swatches"[^>]*>\s*(<span\b[^>]*>)([\s\S]*?)<\/span>/.exec(indexHtml);
+  if (!m) throw new Error("index.html has no .swatches > span");
+  const key = attr(m[1], "data-i18n");
+  const ok = !!key && keysFor176("THEME").includes(key);
+  check("M3a index.html's THEME span has data-i18n with a key whose English is Theme", ok, `span ${m[1]}${m[2]}</span>`);
+  const dePage = read("de/index.html");
+  const d = /<div\b[^>]*class="swatches"[^>]*>\s*<span\b[^>]*>([\s\S]*?)<\/span>/.exec(dePage);
+  const want = key && en ? (de && key in de ? de[key] : en[key]) : null;
+  check("M3b de/index.html's THEME span reads the catalogue's words for that key", !!d && want !== null && d[1].trim() === want, `de page says ${JSON.stringify(d && d[1].trim())}, catalogue ${JSON.stringify(want)}`);
+});
+
+await attempt("M4 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("M4 node tools/ci/i18n-check.mjs exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
 });
 
 process.exit(failed ? 1 : 0);
