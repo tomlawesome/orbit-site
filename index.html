@@ -5,7 +5,7 @@
 <html lang="en-GB" data-theme="afterdark" class="rich" data-maintenance="Launching soon" data-i18n-attr="data-maintenance:launching-soon">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' 'sha256-rSJPfVAqun+h42IwEC6i6PT63wROFB1vuBEMIekuFx8='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-HO8fseH+bDWuv+Zo3kOXGHTLuaBEqe51fwBqg+yYT9c=' 'sha256-WCDzQql1WYjXgO/FsbBY6L10yRoReEvXa/RbhS4RivA=' 'sha256-NI2u6dLU7iP743mzX+I3GPfGubqYCmRWFRvGZMEoFXo=' 'sha256-YJ5w+RFjKrW+cJjcSCkK6XXnW0r+mSFySnUpPPk4QDo='; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <!-- ?preview in the address shows the whole site past the maintenance door (for checking before launch) -->
   <script>if (/[?&]preview\b/.test(location.search)) document.documentElement.removeAttribute("data-maintenance");</script>
   <!-- auto-lang: the root only (tools/pages.mjs leaves it out of the translated pages, which never redirect). With no stored
@@ -17,7 +17,7 @@
        language link's href carries it (only a plain click whose choice was stored goes without it), so the choice holds
        where the browser keeps nothing and sends no referrer. It stays in the address (places.js makes the
        one history call), an accepted cost. Its hash is in the policy meta -->
-  <script>(function(){var b=["de","fr","es","pt","id","zh-Hans","ja"],s=null,g=null,r=document.referrer,q=/[?&]lang=([^&]*)/.exec(location.search),l,p,i,m,M=function(t){var j,k,n;for(j=0;j<b.length;j++){k=b[j].toLowerCase().split("-");if(k[0]!==t[0])continue;n=t[1];if(k.length<2||!n||(n.length===4?n===k[1]:n==="cn"||n==="sg"))return b[j]}};q=q&&q[1];if(q==="en")return;if(b.indexOf(q)>=0)s=q;else{if(r&&r.indexOf(location.href.split(/[?#]/)[0].replace(/[^\/]*$/,""))===0)return;try{s=localStorage.getItem("orbit-lang")}catch(e){}}if(s==="en")return;if(b.indexOf(s)>=0)g=s;else for(l=navigator.languages||[navigator.language],i=0;i<l.length;i++){p=String(l[i]).toLowerCase().split("-");if(p[0]==="en")break;if(m=M(p)){g=m;break}}if(g)location.replace(g+"/"+location.search+location.hash)})();</script>
+  <script>(function(){var b=["de","fr","es","pt","id","zh-Hans","ja","ar"],s=null,g=null,r=document.referrer,q=/[?&]lang=([^&]*)/.exec(location.search),l,p,i,m,M=function(t){var j,k,n;for(j=0;j<b.length;j++){k=b[j].toLowerCase().split("-");if(k[0]!==t[0])continue;n=t[1];if(k.length<2||!n||(n.length===4?n===k[1]:n==="cn"||n==="sg"))return b[j]}};q=q&&q[1];if(q==="en")return;if(b.indexOf(q)>=0)s=q;else{if(r&&r.indexOf(location.href.split(/[?#]/)[0].replace(/[^\/]*$/,""))===0)return;try{s=localStorage.getItem("orbit-lang")}catch(e){}}if(s==="en")return;if(b.indexOf(s)>=0)g=s;else for(l=navigator.languages||[navigator.language],i=0;i<l.length;i++){p=String(l[i]).toLowerCase().split("-");if(p[0]==="en")break;if(m=M(p)){g=m;break}}if(g)location.replace(g+"/"+location.search+location.hash)})();</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title data-i18n="page-title">Orbit — everything in your orbit, on track</title>
   <meta name="description" data-i18n-attr="content:meta-description" content="Orbit is a self-hosted home operations hub. The year is the orbit: your household at the centre, every renewal, service and inspection as a body on its way round. Three containers, one command to install." />
@@ -39,6 +39,7 @@
   <link rel="alternate" hreflang="id" href="https://tomlawesome.github.io/orbit-site/id/" />
   <link rel="alternate" hreflang="zh-Hans" href="https://tomlawesome.github.io/orbit-site/zh-Hans/" />
   <link rel="alternate" hreflang="ja" href="https://tomlawesome.github.io/orbit-site/ja/" />
+  <link rel="alternate" hreflang="ar" href="https://tomlawesome.github.io/orbit-site/ar/" />
   <link rel="alternate" hreflang="x-default" href="https://tomlawesome.github.io/orbit-site/" />
   <script>try{var t=localStorage.getItem("orbit-pack");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="stylesheet" href="assets/fonts/fonts.css" />
@@ -88,7 +89,7 @@
        link), a disclosure (WAI-ARIA APG): a button showing the page's language code, and a real link per language,
        which assets/js/lang.js keeps pointing at this same address (query and hash) in that language. Until it runs
        (or with scripts off) the links show as they are -->
-  <nav class="langs" aria-label="Language" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="EN, language: English" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">EN</span></button><ul id="langs-list"><li><a data-lang="en" href="./" hreflang="en" lang="en" aria-current="page">EN · English</a></li><li><a data-lang="de" href="de/" hreflang="de" lang="de">DE · Deutsch</a></li><li><a data-lang="fr" href="fr/" hreflang="fr" lang="fr">FR · Français</a></li><li><a data-lang="es" href="es/" hreflang="es" lang="es">ES · Español</a></li><li><a data-lang="pt" href="pt/" hreflang="pt" lang="pt">PT · Português</a></li><li><a data-lang="id" href="id/" hreflang="id" lang="id">ID · Bahasa Indonesia</a></li><li><a data-lang="zh-Hans" href="zh-Hans/" hreflang="zh-Hans" lang="zh-Hans">ZH · 简体中文</a></li><li><a data-lang="ja" href="ja/" hreflang="ja" lang="ja">JA · 日本語</a></li></ul></nav>
+  <nav class="langs" aria-label="Language" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="EN, language: English" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">EN</span></button><ul id="langs-list"><li><a data-lang="en" href="./" hreflang="en" lang="en" aria-current="page">EN · English</a></li><li><a data-lang="de" href="de/" hreflang="de" lang="de">DE · Deutsch</a></li><li><a data-lang="fr" href="fr/" hreflang="fr" lang="fr">FR · Français</a></li><li><a data-lang="es" href="es/" hreflang="es" lang="es">ES · Español</a></li><li><a data-lang="pt" href="pt/" hreflang="pt" lang="pt">PT · Português</a></li><li><a data-lang="id" href="id/" hreflang="id" lang="id">ID · Bahasa Indonesia</a></li><li><a data-lang="zh-Hans" href="zh-Hans/" hreflang="zh-Hans" lang="zh-Hans">ZH · 简体中文</a></li><li><a data-lang="ja" href="ja/" hreflang="ja" lang="ja">JA · 日本語</a></li><li><a data-lang="ar" href="ar/" hreflang="ar" lang="ar">AR · العربية</a></li></ul></nav>
 
   <!-- ═══ THE DOOR: the sign-in's dawn ═══════════════════════════════ -->
   <!-- the shared door's markup (assets/door/markup.js), written between the door markers by `node tools/door-markup.mjs`
@@ -253,7 +254,7 @@
       <h4 data-i18n="your-relay">Your relay</h4>
       <div class="relay-card">
         <p data-i18n="forward-a-bill-to-your">Forward a bill to your relay address and Orbit reads a copy.</p>
-        <code class="addr" id="relay-addr"></code>
+        <code class="addr" id="relay-addr" dir="ltr"></code>
         <div class="kv"><span data-i18n="status">status</span><b data-i18n="connected-listening" class="ok">connected · listening</b></div>
         <div class="kv"><span data-i18n="ingest">ingest</span><b data-i18n="enabled" class="ok">enabled</b></div>
       </div>
@@ -267,7 +268,7 @@
       <button data-i18n-attr="aria-label:close" class="close" type="button" aria-label="Close">×</button>
       <h4 data-i18n="get-into-orbit">Get into Orbit</h4>
       <div class="cmd">
-        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <code dir="ltr"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
         <button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button>
       </div>
     </aside>
@@ -394,7 +395,7 @@
     <div class="scrim" aria-hidden="true"></div>
     <div class="words">
       <h1 class="dark" data-i18n="install-headline">Get out of the dark.<br/>Get into Orbit.</h1>
-      <p class="theline"><code data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copy" data-i18n-attr="title:copy-title"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button></p>
+      <p class="theline"><code dir="ltr" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copy" data-i18n-attr="title:copy-title"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copy the install command">copy</button></p>
       <p class="made">Designed by a human, written by Claude.</p>
     </div>
     <p class="credit"><a data-i18n-attr="title:jupiter-from-cassini-nasa-jpl" href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Jupiter from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a data-i18n-attr="title:saturn-s-rings-from-cassini" data-i18n="rings" href="https://photojournal.jpl.nasa.gov/catalog/PIA08389" title="Saturn's rings from Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">rings</a> · <a data-i18n-attr="title:the-moon-nasa-s-scientific" href="https://svs.gsfc.nasa.gov/4720/" title="The Moon: NASA's Scientific Visualization Studio, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>

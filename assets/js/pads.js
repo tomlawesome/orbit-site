@@ -415,7 +415,7 @@ export function createDocs(pad) {
       const p = document.createElement("p");
       p.className = "docs-stale";
       const g = typeof doc.source.generated === "string" ? when(doc.source.generated) : "";
-      p.innerHTML = `<span>${esc(tr(key, { date: g }))}</span> <a data-lang="en" href="${esc(site(""))}#docs/${esc(slug)}" hreflang="en" lang="en">${esc(tr("ai-notice-english"))}</a>`;
+      p.innerHTML = `<span>${said(key, { date: `<bdi>${esc(g)}</bdi>` })}</span> <a data-lang="en" href="${esc(site(""))}#docs/${esc(slug)}" hreflang="en" lang="en">${esc(tr("ai-notice-english"))}</a>`;
       reader.prepend(p);
     }).catch(() => { /* no English to compare with, or no crypto.subtle: no banner */ });
   }
@@ -430,9 +430,9 @@ export function createDocs(pad) {
     const d = DOCS.find((x) => x.slug === slug) || doc, at = DOCS.findIndex((x) => x.slug === slug);
     const prev = at > 0 ? DOCS[at - 1] : null, next = at > -1 && at < DOCS.length - 1 ? DOCS[at + 1] : null;
     reader.style.setProperty("--c", d.c);
-    $(".readhead .from .src", reader).textContent = d.name;
+    $(".readhead .from .src", reader).innerHTML = `<bdi>${esc(d.name)}</bdi>`;
     $(".readhead h1", reader).textContent = doc.title;
-    $(".readhead .source", reader).innerHTML = said("docs-set-from", { source: `<a href="https://github.com/${esc(doc.repo)}/blob/main/${esc(doc.path)}" target="_blank" rel="noopener">${esc(doc.repo)} · ${esc(doc.path)}</a>` }) + (generated ? ` · ${esc(tr("docs-imported", { date: when(generated) }))}` : "");
+    $(".readhead .source", reader).innerHTML = said("docs-set-from", { source: `<a href="https://github.com/${esc(doc.repo)}/blob/main/${esc(doc.path)}" target="_blank" rel="noopener"><bdi>${esc(doc.repo)} · ${esc(doc.path)}</bdi></a>` }) + (generated ? ` · ${esc(tr("docs-imported", { date: when(generated) }))}` : "");
     $(".onpage", reader).hidden = doc.sections.filter((s) => s.id !== "top").length < 2;
     /* (a picture the import wrote is named from the site's root: from a language's folder it is one up, lang.js) */
     $(".body", reader).innerHTML = doc.sections.map((s) => `<section class="sec" data-id="${esc(s.id)}">${UPPED(s.html)}</section>`).join("");

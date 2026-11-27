@@ -6,5 +6,5 @@
   "id": {"name": "Bahasa Indonesia", "english": "Indonesian", "voice": "informal (kamu)", "built": true, "script": "latin"},
   "zh-Hans": {"name": "简体中文", "english": "Chinese (Simplified)", "voice": "friendly, plain (你)", "built": true, "script": "cjk"},
   "ja": {"name": "日本語", "english": "Japanese", "voice": "polite (です/ます)", "built": true, "script": "cjk"},
-  "ar": {"name": "العربية", "english": "Arabic", "voice": "Modern Standard Arabic, plain and friendly", "built": false, "script": "arabic"}
+  "ar": {"name": "العربية", "english": "Arabic", "voice": "Modern Standard Arabic, plain and friendly", "built": true, "dir": "rtl", "script": "arabic"}
 }

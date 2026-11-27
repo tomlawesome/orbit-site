@@ -30,6 +30,7 @@
   <link rel="alternate" hreflang="id" href="https://tomlawesome.github.io/orbit-site/id/" />
   <link rel="alternate" hreflang="zh-Hans" href="https://tomlawesome.github.io/orbit-site/zh-Hans/" />
   <link rel="alternate" hreflang="ja" href="https://tomlawesome.github.io/orbit-site/ja/" />
+  <link rel="alternate" hreflang="ar" href="https://tomlawesome.github.io/orbit-site/ar/" />
   <link rel="alternate" hreflang="x-default" href="https://tomlawesome.github.io/orbit-site/" />
   <script>try{var t=localStorage.getItem("orbit-pack");if(["starchart","afterdark","clouds","dawn","retrograde"].includes(t))document.documentElement.dataset.theme=t}catch(e){}</script>
   <link rel="stylesheet" href="../assets/fonts/fonts.css" />
@@ -80,7 +81,7 @@
        link), a disclosure (WAI-ARIA APG): a button showing the page's language code, and a real link per language,
        which assets/js/lang.js keeps pointing at this same address (query and hash) in that language. Until it runs
        (or with scripts off) the links show as they are -->
-  <nav class="langs" aria-label="Idioma" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="ES, idioma: español" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">ES</span></button><ul id="langs-list"><li><a data-lang="en" href="../" hreflang="en" lang="en">EN · English</a></li><li><a data-lang="de" href="../de/" hreflang="de" lang="de">DE · Deutsch</a></li><li><a data-lang="fr" href="../fr/" hreflang="fr" lang="fr">FR · Français</a></li><li><a data-lang="es" href="./" hreflang="es" lang="es" aria-current="page">ES · Español</a></li><li><a data-lang="pt" href="../pt/" hreflang="pt" lang="pt">PT · Português</a></li><li><a data-lang="id" href="../id/" hreflang="id" lang="id">ID · Bahasa Indonesia</a></li><li><a data-lang="zh-Hans" href="../zh-Hans/" hreflang="zh-Hans" lang="zh-Hans">ZH · 简体中文</a></li><li><a data-lang="ja" href="../ja/" hreflang="ja" lang="ja">JA · 日本語</a></li></ul></nav>
+  <nav class="langs" aria-label="Idioma" data-i18n-attr="aria-label:language"><button type="button" aria-expanded="false" aria-controls="langs-list" aria-label="ES, idioma: español" data-i18n-attr="aria-label:language-now"><span data-i18n="language-code">ES</span></button><ul id="langs-list"><li><a data-lang="en" href="../" hreflang="en" lang="en">EN · English</a></li><li><a data-lang="de" href="../de/" hreflang="de" lang="de">DE · Deutsch</a></li><li><a data-lang="fr" href="../fr/" hreflang="fr" lang="fr">FR · Français</a></li><li><a data-lang="es" href="./" hreflang="es" lang="es" aria-current="page">ES · Español</a></li><li><a data-lang="pt" href="../pt/" hreflang="pt" lang="pt">PT · Português</a></li><li><a data-lang="id" href="../id/" hreflang="id" lang="id">ID · Bahasa Indonesia</a></li><li><a data-lang="zh-Hans" href="../zh-Hans/" hreflang="zh-Hans" lang="zh-Hans">ZH · 简体中文</a></li><li><a data-lang="ja" href="../ja/" hreflang="ja" lang="ja">JA · 日本語</a></li><li><a data-lang="ar" href="../ar/" hreflang="ar" lang="ar">AR · العربية</a></li></ul></nav>
 
   <!-- ═══ THE DOOR: the sign-in's dawn ═══════════════════════════════ -->
   <!-- the shared door's markup (assets/door/markup.js), written between the door markers by `node tools/door-markup.mjs`
@@ -245,7 +246,7 @@
       <h4 data-i18n="your-relay">Tu buzón de reenvío</h4>
       <div class="relay-card">
         <p data-i18n="forward-a-bill-to-your">Reenvía una factura a tu dirección de reenvío y Orbit leerá una copia.</p>
-        <code class="addr" id="relay-addr"></code>
+        <code class="addr" id="relay-addr" dir="ltr"></code>
         <div class="kv"><span data-i18n="status">estado</span><b data-i18n="connected-listening" class="ok">conectado · escuchando</b></div>
         <div class="kv"><span data-i18n="ingest">recepción</span><b data-i18n="enabled" class="ok">activada</b></div>
       </div>
@@ -259,7 +260,7 @@
       <button data-i18n-attr="aria-label:close" class="close" type="button" aria-label="Cerrar">×</button>
       <h4 data-i18n="get-into-orbit">Entra en Orbit</h4>
       <div class="cmd">
-        <code><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
+        <code dir="ltr"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code>
         <button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copiar el comando de instalación">copiar</button>
       </div>
     </aside>
@@ -386,7 +387,7 @@
     <div class="scrim" aria-hidden="true"></div>
     <div class="words">
       <h1 class="dark" data-i18n="install-headline">Sal de la oscuridad.<br/>Entra en Orbit.</h1>
-      <p class="theline"><code data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copiar" data-i18n-attr="title:copy-title"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copiar el comando de instalación">copiar</button></p>
+      <p class="theline"><code dir="ltr" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" title="Copiar" data-i18n-attr="title:copy-title"><span class="prompt">$</span>curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash</code><button data-i18n-attr="aria-label:copy-the-install-command" data-i18n="copy" class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/tomlawesome/orbit/main/scripts/get-orbit.sh | bash" aria-label="Copiar el comando de instalación">copiar</button></p>
       <p class="made">Designed by a human, written by Claude.</p>
     </div>
     <p class="credit"><a data-i18n-attr="title:jupiter-from-cassini-nasa-jpl" href="https://photojournal.jpl.nasa.gov/catalog/PIA07782" title="Júpiter visto por Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">NASA</a> · <a data-i18n-attr="title:saturn-s-rings-from-cassini" data-i18n="rings" href="https://photojournal.jpl.nasa.gov/catalog/PIA08389" title="Los anillos de Saturno vistos por Cassini: NASA/JPL/Space Science Institute" target="_blank" rel="noopener">anillos</a> · <a data-i18n-attr="title:the-moon-nasa-s-scientific" href="https://svs.gsfc.nasa.gov/4720/" title="La Luna: Scientific Visualization Studio de la NASA, CGI Moon Kit" target="_blank" rel="noopener">SVS</a></p>

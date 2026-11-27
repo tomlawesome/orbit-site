@@ -109,7 +109,9 @@ export function build(indexHtml, catalogue, lang, en = JSON.parse(readFileSync(j
   const notice = tpl[1].replace(/<p data-ai-notice>/, '<p class="ai-notice">');
   html = html.replace(/<!-- ai-notice -->/g, notice);
   /* the docs "not translated" lines keep `hidden` and data-translated-only: pads.js un-hides one only when the docs are English (#159 ALL-F3) */
-  html = html.replace(/<html lang="[^"]*"/, `<html lang="${lang}"`);
+  /* a right-to-left language (languages.json "dir") marks <html>; no other page carries a dir (#173) */
+  const dir = allLanguages()[lang]?.dir;
+  html = html.replace(/<html lang="[^"]*"/, `<html lang="${lang}"${dir ? ` dir="${dir}"` : ""}`);
   html = html.replace(/(\n([ \t]*)<meta name="viewport"[^>]*>)/, `$1\n$2<meta name="robots" content="noindex" />`);
   /* attributes first (a text's own inline tags then carry theirs translated), then texts, last first */
   html = html.replace(/<[a-zA-Z][\w-]*\b[^>]*\sdata-i18n-attr="([^"]+)"[^>]*>/g, (tag, v) => {
