@@ -175,7 +175,7 @@ body.withdrawing .langs{animation:chromeout .45s ease both}
 /* the door's notice is small print: at the foot, above the credit line, on every width */
 #door .ai-notice{top:auto;bottom:52px}
 @media (max-width:599.98px){
-  .ai-notice{max-width:calc(100% - 32px)}
+  .ai-notice{max-width:calc(100% - 32px);width:auto}
   .pad .ai-notice{top:auto;bottom:16px}
   /* the install pad's credit and foot hold its last 60px: the notice stands above them */
   #installpad .ai-notice{bottom:68px}
@@ -1092,7 +1092,7 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
 #installpad .theline .copy{flex:none;font:600 10.5px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:#1b1206;background:#d8b45a;border:0;border-radius:9px;padding:11px 15px;cursor:pointer;transition:filter .2s,transform .2s}
 #installpad .theline .copy:hover{filter:brightness(1.12)}
 #installpad .theline .copy:active{transform:scale(.97)}
-#installpad .made{margin:14px 0 0 18px;font:11.5px/1.5 var(--mono);letter-spacing:.06em;color:rgba(231,226,246,.5);text-shadow:0 1px 12px rgba(0,0,0,.6)}
+#installpad .made{direction:ltr;unicode-bidi:isolate;text-align:left;margin:14px 0 0 18px;font:11.5px/1.5 var(--mono);letter-spacing:.06em;color:rgba(231,226,246,.5);text-shadow:0 1px 12px rgba(0,0,0,.6)}
 #installpad .from{margin:16px 2px 0;font:13.5px/1.6 var(--ui);color:rgba(214,210,232,.7);max-width:46ch}
 #installpad .from code{font:12.5px var(--mono);color:rgba(236,232,248,.85)}
 #installpad .doorfoot.by{z-index:3;color:rgba(214,210,232,.55)}
@@ -1107,6 +1107,8 @@ body.withdrawing .pad.docs .reader{animation:chromeout .45s ease both}
   #installpad .words{top:clamp(76px,12svh,140px)}
   #installpad .words h1{font-size:clamp(28px,8.2vw,44px);margin-bottom:22px}
 }
+/* a long headline (ja) wraps rather than run off a phone's edge */
+@media (max-width:599.98px){#installpad .words h1{white-space:normal;overflow-wrap:anywhere}}
 /* the words arrive once the camera has all but settled */
 body.instrument #installpad .words{animation:chromein .9s ease .05s both}
 body.withdrawing #installpad .words{animation:chromeout .45s ease both}

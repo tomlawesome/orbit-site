@@ -24,6 +24,8 @@
  *   J14-J16 (#125 languages live) per built language: the door's notice at its foot, the English link, the hide button
  *   K1-K9 (#173 Arabic, right to left): corners, the docs reader, the drawers, the dial and transport, letter-spacing and
  *       small print, <bdi> around inserted values, the stale line's English link; each against the root as the control
+ *   L1-L3 (#175) language pages at 390x844: the info pad's notice inside the screen and unclipped, ar's English-only credit
+ *       line reading left to right, the install headline inside the screen
  *   M1-M2 (#176) the inbox drawer and the account drawer's THEME label come from the catalogue: on de/ each shows the words of
  *       the catalogue's key for it (found by its English words), whatever de.json says; the root shows the English
  *   M3-M7 (#176 remainder) on the home page of en, de and ja: the inbox button's aria-label is the catalogue's "Inbox — {n} waiting" and
@@ -627,6 +629,50 @@ try {
       else check("K5b root: the same three are letter-spaced (non-zero)", spaced(m.corner) && spaced(m.langs) && spaced(m.h4), JSON.stringify(m));
     });
   }
+
+  /* #175: every built language page at a phone's width; pads are opened by their hash, as a visitor's link does */
+  const PHONE = { width: 390, height: 844 };
+  const padOpen = (page, id) => page.waitForFunction((i) => { const p = document.getElementById(i); if (!p || p.hidden) return false; const r = p.getBoundingClientRect(); return r.width > 0; }, id, { timeout: 20000 });
+  for (const lang of builtNow) {
+    await run(`L1 ${lang}`, { context: { locale: "en-US", viewport: PHONE }, stored: lang }, async (page) => {
+      await page.goto(`${SITE}${lang}/?preview#info`, { waitUntil: "load" });
+      await padOpen(page, "infopad");
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      await page.waitForTimeout(800);
+      const m = await page.evaluate(() => {
+        const n = [...document.querySelectorAll("#infopad .ai-notice")].find((e) => e.offsetParent);
+        if (!n) return null;
+        const r = n.getBoundingClientRect();
+        const clipped = [n, ...n.querySelectorAll("*")].filter((e) => e.scrollWidth > e.clientWidth + 1 && e.clientWidth > 0).map((e) => `${e.tagName.toLowerCase()} ${e.scrollWidth}>${e.clientWidth}`);
+        const kids = [...n.children].map((e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; });
+        return { l: Math.round(r.left), r: Math.round(r.right), clipped, kids };
+      });
+      check(`L1a ${lang} 390: the info pad's notice lies within 0..390`, !!m && m.l >= 0 && m.r <= PHONE.width && m.kids.every(([a, b]) => a >= 0 && b <= PHONE.width), JSON.stringify(m));
+      check(`L1b ${lang} 390: the notice's text is not clipped (scrollWidth <= clientWidth on it and its children)`, !!m && m.clipped.length === 0, JSON.stringify(m && m.clipped));
+    });
+    await run(`L3 ${lang}`, { context: { locale: "en-US", viewport: PHONE }, stored: lang }, async (page) => {
+      await page.goto(`${SITE}${lang}/?preview#install`, { waitUntil: "load" });
+      await padOpen(page, "installpad");
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      await page.waitForTimeout(800);
+      const m = await page.evaluate(() => { const h = document.querySelector("#installpad h1"), r = h.getBoundingClientRect(); return { sw: h.scrollWidth, cw: h.clientWidth, l: Math.round(r.left), r: Math.round(r.right), ws: getComputedStyle(h).whiteSpace }; });
+      check(`L3 ${lang} 390: the install headline does not overflow (scrollWidth <= clientWidth, right edge <= 390, left >= 0)`, m.sw <= m.cw + 1 && m.r <= PHONE.width && m.l >= 0, JSON.stringify(m));
+    });
+  }
+
+  await run("L2 ar credit line", { context: { locale: "en-US", viewport: PHONE }, stored: "ar" }, async (page) => {
+    await page.goto(`${SITE}ar/?preview#install`, { waitUntil: "load" });
+    await padOpen(page, "installpad");
+    const m = await page.evaluate(() => {
+      const p = document.querySelector("#installpad p.made"), cs = getComputedStyle(p);
+      /* where the full stop is drawn: the last character's box against the first's, from a Range over the text */
+      const t = p.firstChild, txt = t.textContent, rg = document.createRange();
+      const at = (i) => { rg.setStart(t, i); rg.setEnd(t, i + 1); const b = rg.getBoundingClientRect(); return (b.left + b.right) / 2; };
+      return { dir: cs.direction, text: txt, first: at(0), stop: at(txt.length - 1), stopChar: txt[txt.length - 1] };
+    });
+    check("L2a ar/: #installpad p.made has computed direction ltr", m.dir === "ltr", m.dir);
+    check("L2b ar/: its full stop is drawn after the last word (right of the first letter), reading as in English", m.stopChar === "." && m.stop > m.first, JSON.stringify(m));
+  });
   /* ---- #176: the inbox drawer's and the account drawer's words are the catalogue's ---- */
   const EN176 = JSON.parse(readFileSync(join(ROOT, "assets/i18n/en.json"), "utf8"));
   const cat176 = (lang) => { try { return JSON.parse(readFileSync(join(ROOT, `assets/i18n/${lang}.json`), "utf8")); } catch { return {}; } };
