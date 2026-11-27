@@ -6,7 +6,7 @@ import { households, account, inbox, today, persist, serialise, hydrate, forget,
 import * as law from "./law.js";
 import { el, reduced } from "./sky.js";
 import { createPlaces } from "./places.js";
-import { tr, inDays, minutesAgo } from "./lang.js";
+import { tr, inDays, minutesAgo, dotted, isolate } from "./lang.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -128,7 +128,7 @@ function showBodyCallout(link, it, suggestion, tapped = false) {
   const docs = it.documents?.length ?? 0;
   c.querySelector("small").textContent = suggestion
     ? tr("callout-suggestion", { when: inDays(it.days, "narrow"), cost: law.money(it.costMinor, true) })
-    : [law.tminus(it.days), law.money(it.costMinor, it.costIsEstimate), ...(docs ? [tr(docs === 1 ? "callout-document" : "callout-documents", { n: docs })] : [])].join(" · ");
+    : dotted([law.tminus(it.days), law.money(it.costMinor, it.costIsEstimate), ...(docs ? [tr(docs === 1 ? "callout-document" : "callout-documents", { n: docs })] : [])]);
   c.classList.add("show");
   const w = c.offsetWidth, h = c.offsetHeight;
   const right = box.left + box.width / 2 < innerWidth / 2;
@@ -320,7 +320,7 @@ function rowFor(it) {
   const when = row.querySelector(".t"), shortDate = document.createElement("small");
   when.textContent = law.tminus(it.days); shortDate.textContent = law.shortDate(it.dueDate); when.appendChild(shortDate);
   row.querySelector("b").textContent = it.title;
-  row.querySelector(".body span").textContent = [sectionName(it.section), law.period(it.recurrenceMonths), ...(it.provider ? [it.provider] : []), law.money(it.costMinor, it.costIsEstimate)].join(" · ");
+  row.querySelector(".body span").textContent = dotted([sectionName(it.section), law.period(it.recurrenceMonths), ...(it.provider ? [it.provider] : []), law.money(it.costMinor, it.costIsEstimate)]);
   row.addEventListener("click", () => (row.classList.contains("open") ? closeRow() : openRow(it.id)));
   row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); row.click(); } });
   return row;
@@ -379,7 +379,7 @@ export function openRow(id, scroll = false) {
   const view = document.createElement("div");
   view.className = "itemview"; view.id = `${id}-view`;
   const doneToday = !!it.completedOn && law.daysBetween(today, it.completedOn) === 0;
-  view.appendChild(kvRow(tr("label-due"), `${law.tminus(it.days)} · ${law.longDate(it.dueDate)}`, it.days < 0 ? "over" : ""));
+  view.appendChild(kvRow(tr("label-due"), dotted([law.tminus(it.days), law.longDate(it.dueDate)]), it.days < 0 ? "over" : ""));
   if (it.completedOn) view.appendChild(kvRow(tr("label-last-completed"), doneToday ? tr("value-today") : law.longDate(it.completedOn)));
   if (it.snoozed) view.appendChild(kvRow(tr("label-snoozed"), tr("value-snoozed")));
   view.appendChild(kvRow(tr("label-section"), sectionName(it.section)));
@@ -387,7 +387,7 @@ export function openRow(id, scroll = false) {
   view.appendChild(kvRow(tr("label-period"), law.every(it.recurrenceMonths)));
   view.appendChild(kvRow(tr("label-cost"), law.money(it.costMinor, it.costIsEstimate)));
   if (it.provider) view.appendChild(kvRow(tr("label-provider"), it.provider));
-  if (it.reminderDays?.length) view.appendChild(kvRow(tr("label-reminders"), it.reminderDays.map((d) => tr("reminder-before", { n: d })).join(" · ")));
+  if (it.reminderDays?.length) view.appendChild(kvRow(tr("label-reminders"), dotted(it.reminderDays.map((d) => tr("reminder-before", { n: d })))));
   if (it.documents?.length) {
     const heading = document.createElement("h4");
     heading.textContent = tr("label-documents");
@@ -590,7 +590,7 @@ function wireExplore() {
     if (!rows.length) { const n = document.createElement("div"); n.className = "none"; n.textContent = tr("search-none"); pal.appendChild(n); }
     for (const it of rows) {
       const b = document.createElement("button"); b.type = "button";
-      b.innerHTML = `<b></b> <small>· ${law.tminus(it.days)}</small>`; b.querySelector("b").textContent = it.title;
+      b.innerHTML = "<b></b> <small></small>"; b.querySelector("b").textContent = it.title; b.querySelector("small").textContent = `· ${isolate(law.tminus(it.days))}`;
       b.addEventListener("mousedown", (e) => { e.preventDefault(); openRow(it.id, true); input.blur(); });
       pal.appendChild(b);
     }

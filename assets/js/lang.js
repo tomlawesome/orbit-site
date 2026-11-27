@@ -58,9 +58,16 @@ export function t(cat, key, vars) {
   const s = cat && Object.hasOwn(cat, key) ? cat[key] : Object.hasOwn(EN, key) ? EN[key] : key;
   /* on a right-to-left page a value put into a sentence is isolated (FSI ... PDI), so its own direction and its punctuation
      never reorder the words about it (#173) */
-  const iso = doc?.documentElement?.dir === "rtl" || doc?.dir === "rtl";
-  return vars ? String(s).replace(/\{(\w+)\}/g, (m, n) => (Object.hasOwn(vars, n) ? (iso ? `\u2068${vars[n]}\u2069` : String(vars[n])) : m)) : String(s);
+  return vars ? String(s).replace(/\{(\w+)\}/g, (m, n) => (Object.hasOwn(vars, n) ? isolate(vars[n]) : m)) : String(s);
 }
+/* a piece of a line that the page's code joins itself ("T−16d · 14 December 2026") is isolated the same way on a right-to-left
+   page, so each piece keeps its own order; on every other page it is the same text */
+export function isolate(piece) {
+  const rtl = doc?.documentElement?.dir === "rtl" || doc?.dir === "rtl";
+  return rtl ? `\u2068${piece}\u2069` : String(piece);
+}
+/* the pieces of a line, each isolated and put between the dots the page has always used */
+export const dotted = (pieces) => pieces.map(isolate).join(" · ");
 /* the same, from this page's catalogue */
 export const tr = (key, vars) => t(PAGE, key, vars);
 
@@ -77,21 +84,24 @@ const relative = (n, unit, style) => intl(Intl.RelativeTimeFormat, { style }).fo
 export const inDays = (n, style = "long") => relative(n, "day", style);
 export const minutesAgo = (n) => relative(-n, "minute", "long");
 
-/* a date's words in the page's language (#177): Intl.DateTimeFormat. "short" is the day and month ("12 Mar", the day in two
-   digits), "long" the whole date ("14 March 2026"), "month" a month's short name, "monthName" its full name, "weekday" the
-   day's short name */
+/* a date's words in the page's language (#177): Intl.DateTimeFormat. "short" is the day and month ("12 Mar"; the English page
+   keeps the day in two digits, "09 Aug", the other languages write the browser's own), "long" the whole date ("14 March
+   2026"), "month" a month's short name, "monthName" its full name, "weekday" the day's short name */
 const DATES = {
-  short: { day: "2-digit", month: "short" },
+  short: { day: "numeric", month: "short" },
   long: { day: "numeric", month: "long", year: "numeric" },
   month: { month: "short" },
   monthName: { month: "long" },
   weekday: { weekday: "short" },
 };
 export function dateWords(date, style) {
-  const f = intl(Intl.DateTimeFormat, DATES[style]), parts = f.formatToParts(date);
+  let f = intl(Intl.DateTimeFormat, DATES[style]);
+  const english = /^en(-|$)/i.test(f.resolvedOptions().locale), options = english && style === "short" ? { ...DATES.short, day: "2-digit" } : DATES[style];
+  if (options !== DATES[style]) f = intl(Intl.DateTimeFormat, options);
+  const parts = f.formatToParts(date);
   /* on an English page the browser's British English now writes September as "Sept"; the page has always written "Sep", so
      the month's and the weekday's names come from plain English, inside the British order and punctuation */
-  const plain = /^en(-|$)/i.test(f.resolvedOptions().locale) ? new Intl.DateTimeFormat("en", DATES[style]).formatToParts(date) : [];
+  const plain = english ? new Intl.DateTimeFormat("en", options).formatToParts(date) : [];
   return parts.map((p) => plain.find((q) => q.type === p.type && (p.type === "month" || p.type === "weekday"))?.value ?? p.value).join("");
 }
 /* a text in capitals as the page's language writes them (a month label, the weekday of the TODAY line) */
@@ -99,8 +109,12 @@ export function caps(text) {
   try { return text.toLocaleUpperCase(tagOf()); } catch { return text.toUpperCase(); }
 }
 /* a count of months or of years in the page's language: "6 months", "2 years" (Intl.NumberFormat, a unit, written long) */
-export const monthsCount = (n) => intl(Intl.NumberFormat, { style: "unit", unit: "month", unitDisplay: "long" }).format(n);
-export const yearsCount = (n) => intl(Intl.NumberFormat, { style: "unit", unit: "year", unitDisplay: "long" }).format(n);
+export const monthsCount = (n) => counted(n, { style: "unit", unit: "month", unitDisplay: "long" });
+export const yearsCount = (n) => counted(n, { style: "unit", unit: "year", unitDisplay: "long" });
+/* a browser that cannot write the unit gives the number alone, never an error that stops the demo */
+function counted(n, options) {
+  try { return intl(Intl.NumberFormat, options).format(n); } catch { return intl(Intl.NumberFormat).format(n); }
+}
 /* an amount of pounds with the page's own digit grouping and decimal mark, two decimals ("1,234.50", "1.234,50") */
 export const grouped = (n) => intl(Intl.NumberFormat, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 

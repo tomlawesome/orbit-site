@@ -121,7 +121,9 @@ export function createDate(value, now) {
 }
 export function hydrate(saved) {
   if (!saved || saved.v !== STATE_VERSION) return false;
-  const revive = (it) => ({ ...it, dueDate: createDate(it.dueDate, today), completedOn: it.completedOn ? new Date(`${it.completedOn}T00:00:00`) : undefined });
+  /* a saved completion day that is not a date is dropped (the drawer writes it in words, and an invalid date cannot be) */
+  const savedDay = (v) => { const d = v ? new Date(`${v}T00:00:00`) : null; return d && !Number.isNaN(d.getTime()) ? d : undefined; };
+  const revive = (it) => ({ ...it, dueDate: createDate(it.dueDate, today), completedOn: savedDay(it.completedOn) });
   /* a state saved from an older sample (or before versions were recorded) keeps only what the visitor added: the
      sample items come from the current sample. Same version: everything as saved */
   const older = !(saved.sampleVersion >= SAMPLE_VERSION);
