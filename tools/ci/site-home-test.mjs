@@ -497,7 +497,7 @@ check("the account orb, name and relay are the account's", $("#account-orb").tex
   const sugg = $('#dial .body-link[data-id="r-insurance"]');
   sugg._rect = { left: 500, top: 300, width: 20, height: 20 };
   fire(sugg, "pointerenter", { pointerType: "mouse" });
-  check("a suggestion's callout says it is suggested", c.querySelector("small").textContent === "suggested · renews in 51d · ~£400.00", `got ${show(c.querySelector("small").textContent)}`);
+  check("a suggestion's callout says it is suggested", c.querySelector("small").textContent === "suggested · renews in 51 days · ~£400.00", `got ${show(c.querySelector("small").textContent)}`);
   fire(sugg, "pointerleave", { pointerType: "mouse" });
 
   /* touch: the first tap shows the callout, the second opens */
