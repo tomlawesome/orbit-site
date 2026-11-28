@@ -52,7 +52,13 @@ await attempt("C1 catalogues", async () => {
   en = json("assets/i18n/en.json"); de = json("assets/i18n/de.json");
   const ek = Object.keys(en).sort(), dk = Object.keys(de).sort();
   const gone = ek.filter((k) => !(k in de)), extra = dk.filter((k) => !(k in en));
-  check("C1a de.json has exactly en.json's keys", !gone.length && !extra.length && ek.length > 0, `${ek.length} keys; missing ${JSON.stringify(gone.slice(0, 5))}, extra ${JSON.stringify(extra.slice(0, 5))}`);
+  /* the rule of tools/i18n/lib.mjs:42-43 (i18n-check): a key of en.json the catalogue lacks is pending, allowed only while the state holds no hash for it; extra keys never */
+  const gap = (cat, state) => { const h = state.catalogue || {}; return { gone: ek.filter((k) => !(k in cat) && k in h), extra: Object.keys(cat).filter((k) => !(k in en)) }; };
+  const state = json("tools/i18n/state/de.json"), { gone: g2, extra: x2 } = gap(de, state);
+  check("C1a de.json has en.json's keys, or lacks one that has no hash in its state (pending), and no others", !g2.length && !x2.length && ek.length > 0, `${ek.length} keys; missing with a hash ${JSON.stringify(g2.slice(0, 5))}, extra ${JSON.stringify(x2.slice(0, 5))}`);
+  const k0 = ek[0], { [k0]: _drop, ...lacking } = de;
+  const hashed = gap(lacking, { catalogue: { ...state.catalogue, [k0]: "0123456789abcdef" } }), pending = gap(lacking, { catalogue: Object.fromEntries(Object.entries(state.catalogue).filter(([k]) => k !== k0)) });
+  check("C1a' a key missing from the catalogue that has a hash is refused; with no hash it is pending and allowed; an extra key is refused", hashed.gone.join() === k0 && !pending.gone.length && gap({ ...de, zz_extra: "x" }, state).extra.join() === "zz_extra", `hash ${JSON.stringify(hashed.gone)}, no hash ${JSON.stringify(pending.gone)}`);
   const bad = ek.filter((k) => k in de && holders(en[k]) !== holders(de[k]));
   check("C1b same placeholder sets per key", !bad.length, bad.length ? `differ: ${bad.slice(0, 5).join(", ")}` : "all alike");
   check("C1c both hold ai-notice (non-empty, German differs)", !!en["ai-notice"] && !!de["ai-notice"] && en["ai-notice"] !== de["ai-notice"], `en ${JSON.stringify(en["ai-notice"])}`);
@@ -285,6 +291,28 @@ await attempt("N1 404", async () => {
  *   D5  site.css: logical properties carry the chrome, :lang(ar) zeroes letter-spacing and raises the small print, the code rule,
  *       the font stack, and at most a handful of [dir=rtl] rules (no override sheet); door.css is left alone
  *   D6  lang.js tr() on an Arabic page wraps a filled {value} in U+2068 ... U+2069; on the root it does not
+ *   M1  (#176) assets/js/home.js holds no hard-coded English chrome of the inbox (lane headings, burns up, sure/unsure, Add to
+ *       orbit, Dismiss, the armed buttons, nothing here, the Decide label): each comes from tr()
+ *   M2  (#176) en.json holds a key whose words are each of those strings and the account drawer's THEME label (matched on the
+ *       words, not the key's name), so the build has them to look up
+ *   M3  (#176) index.html's THEME span carries data-i18n, with a key of M2, and de/index.html shows that key's de.json words
+ *       (its English while de.json lacks it), whatever they are
+ *   M4  (#176) i18n-check.mjs exits 0 (a new key is in each catalogue and state, or pending in neither)
+ *   M5  (#176 remainder) home.js, comments stripped, holds no English of the suggestion row's line ("forwarded document"), of the
+ *       inbox button's aria-label ("Inbox —", a "waiting" literal) or of the burns-up value ("in " / "d" around burnsInDays), in
+ *       any quote or backtick; M6 data.js no longer holds "in 51 days"
+ *   M7  (#176 remainder) en.json and the generated en.js each hold exactly one value equal to "Inbox — {n} waiting" and to
+ *       "Found in 1 forwarded document · renews {date} · {cost}"
+ *   M8  (#176 remainder) i18n-check.mjs still exits 0
+ *   N1  (#177) home.js, law.js and data.js (string and template literals only, comments out) no longer write the demo's English
+ *       page words: the dial's spoken labels and callout, the list's lines, the item drawer's labels, buttons and notes, the
+ *       search box's words, law.js's month and weekday tables and repeat phrases, data.js's section names and inbox sentences
+ *   N2  (#177) en.json and the generated en.js each hold an English value containing each of those phrases (matched on the
+ *       value, not on a key's name), and the four section names as values of their own
+ *   N3  (#177) dates, months, relative times and numbers are the browser's: Intl.DateTimeFormat, Intl.NumberFormat (unit month),
+ *       and no hard-coded "en-GB" in the three files
+ *   N4  (#177) point 8: no translated word is put into an HTML string (a template literal that holds markup and a tr() call)
+ *   N5  (#177) i18n-check.mjs still exits 0 (the new keys are pending in the other languages)
  */
 const rtlTag = (html) => (/<html\b[^>]*>/i.exec(html) || [""])[0];
 await attempt("D1 dir in languages.json", async () => {
@@ -401,6 +429,196 @@ await attempt("K1 case-insensitive ?lang= and stored choice", async () => {
   const hk = ["zh-HK", "zh-Hant", "zh-Hant-HK", "zh-TW", "ZH-hk", "zh-MO"];
   check("K1k inline and lang.js: zh-HK, zh-Hant, zh-Hant-HK, zh-TW, ZH-hk and zh-MO do not give zh-Hans", hk.every((l) => inline({ browser: [l] }) === null && pick({ stored: null, languages: [l] }) === null), JSON.stringify(hk.map((l) => [inline({ browser: [l] }), pick({ languages: [l] })])));
   check("K1l inline and lang.js: zh-CN, zh-SG and ZH-hans-cn still give zh-Hans", ["zh-CN", "zh-SG", "ZH-hans-cn"].every((l) => inline({ browser: [l] }) === "zh-Hans/" && pick({ languages: [l] }) === "zh-Hans"), JSON.stringify(["zh-CN", "zh-SG", "ZH-hans-cn"].map((l) => [inline({ browser: [l] }), pick({ languages: [l] })])));
+});
+
+/* ---- #176: the inbox drawer's and the account drawer's words come from the catalogue ---- */
+/* the English the drawers hard-coded; the keys are found by their words, so the build is free to name them */
+const CHROME176 = ["Filed", "For your review", "Still reading", "Failed to process", "renews", "cost", "provider", "burns up", "sure", "unsure", "Add to orbit", "Dismiss", "THEME"];
+const norm176 = (x) => String(x).trim().toLowerCase();
+const keysFor176 = (words) => Object.keys(en || {}).filter((k) => norm176(en[k]) === norm176(words));
+
+await attempt("M1 home.js chrome", async () => {
+  const src = read("assets/js/home.js").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const found = [];
+  /* a literal that is only the words: "Filed", `Filed`, >Filed< (a class name such as "unsure" is not words) */
+  for (const w of ["Filed", "For your review", "Still reading", "Failed to process", "burns up", "Add to orbit", "Dismiss", "nothing here", "Decide", "tap again to add", "tap again to dismiss"]) {
+    if (new RegExp(`(["'\`>])\\s*${w}\\s*(["'\`<])`).test(src)) found.push(w);
+  }
+  if (/\?\s*["'`]sure["'`]\s*:\s*["'`]unsure["'`]/.test(src)) found.push("sure/unsure");
+  check("M1 home.js has no hard-coded English chrome of the inbox", !found.length, found.length ? `still hard-coded in home.js: ${JSON.stringify(found)}` : "none");
+});
+
+await attempt("M2 en.json keys", async () => {
+  const none = CHROME176.filter((w) => !keysFor176(w).length);
+  check("M2 en.json has a key for each inbox and THEME word", !none.length, none.length ? `no key in en.json has the words ${JSON.stringify(none)}` : `${CHROME176.length} found`);
+});
+
+await attempt("M3 THEME span", async () => {
+  const m = /<div\b[^>]*class="swatches"[^>]*>\s*(<span\b[^>]*>)([\s\S]*?)<\/span>/.exec(indexHtml);
+  if (!m) throw new Error("index.html has no .swatches > span");
+  const key = attr(m[1], "data-i18n");
+  const ok = !!key && keysFor176("THEME").includes(key);
+  check("M3a index.html's THEME span has data-i18n with a key whose English is Theme", ok, `span ${m[1]}${m[2]}</span>`);
+  const dePage = read("de/index.html");
+  const d = /<div\b[^>]*class="swatches"[^>]*>\s*<span\b[^>]*>([\s\S]*?)<\/span>/.exec(dePage);
+  const want = key && en ? (de && key in de ? de[key] : en[key]) : null;
+  check("M3b de/index.html's THEME span reads the catalogue's words for that key", !!d && want !== null && d[1].trim() === want, `de page says ${JSON.stringify(d && d[1].trim())}, catalogue ${JSON.stringify(want)}`);
+});
+
+await attempt("M4 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("M4 node tools/ci/i18n-check.mjs exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
+});
+
+/* ---- #176 remainder: the inbox button's label, the suggestion row's line and the two relative times ---- */
+const INBOX_ARIA176 = "Inbox \u2014 {n} waiting";
+const FOUND176 = "Found in 1 forwarded document \u00b7 renews {date} \u00b7 {cost}";
+/* comments out, so a note about the old words does not count; string and template literals are left in, as M1 misses the latter */
+const code176 = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+
+await attempt("M5 home.js English", async () => {
+  const src = code176(read("assets/js/home.js"));
+  const found = [];
+  if (/forwarded document/i.test(src)) found.push("the suggestion row's 'forwarded document' line");
+  if (/Inbox\s*\u2014/.test(src)) found.push("the 'Inbox \u2014' aria-label");
+  /* a literal that says "waiting" among other words (the bare class name "waiting" is not words) */
+  for (const m of src.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g)) if (/\bwaiting\b/i.test(m[2]) && m[2].trim() !== "waiting") found.push(`a literal with 'waiting': ${m[0].slice(0, 60)}`);
+  for (const line of src.split("\n")) {
+    if (!/burnsInDays/.test(line)) continue;
+    if (/\bin\s*\$\{[^}]*burnsInDays/.test(line) || /\$\{[^}]*burnsInDays[^}]*\}\s*d\b/.test(line) || /["'`]\s*in\s*["'`]\s*\+[^;\n]*burnsInDays/.test(line) || /burnsInDays\s*\+\s*["'`]\s*d\b/.test(line)) found.push(`'in \u2026d' written around burnsInDays: ${line.trim().slice(0, 70)}`);
+  }
+  check("M5 home.js has no hard-coded English for the inbox label, the suggestion line or burns-up's 'in Nd'", !found.length, found.length ? `still in home.js: ${JSON.stringify(found)}` : "none");
+});
+
+await attempt("M6 data.js", async () => {
+  const src = code176(read("assets/js/data.js"));
+  check("M6 data.js no longer holds the English words 'in 51 days'", !/in 51 days/.test(src), /in 51 days/.test(src) ? "assets/js/data.js still has \"in 51 days\"" : "none");
+});
+
+await attempt("M7 catalogue strings", async () => {
+  const enJs = read("assets/i18n/en.js");
+  for (const [tag, text] of [["inbox label", INBOX_ARIA176], ["suggestion line", FOUND176]]) {
+    const n = Object.values(en).filter((v) => v === text).length;
+    check(`M7 en.json has exactly one value equal to the ${tag} ${JSON.stringify(text)}`, n === 1, `${n} found`);
+    const g = enJs.split(`: ${JSON.stringify(text)}`).length - 1;
+    check(`M7 en.js (generated) carries the same ${tag}`, g === 1, `${g} found`);
+  }
+});
+
+await attempt("M8 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("M8 node tools/ci/i18n-check.mjs still exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
+});
+
+/* ---- #177: the demo's page words follow the page's language ---- */
+/* the literals of a source file, comments out: { text, raw }, where text is a string's value or a template's fixed parts (an
+   expression is a NUL), raw the source as written (a template's expressions in it). Written as a scanner, not a regex, so a
+   multi-line template and a quote inside a comment or an expression are read right. */
+const lits177 = (src) => {
+  const out = [], n = src.length;
+  const str = (i) => {
+    const q = src[i]; let j = i + 1, t = "";
+    while (j < n && src[j] !== q && src[j] !== "\n") { if (src[j] === "\\") { t += src[j + 1]; j += 2; } else { t += src[j]; j++; } }
+    out.push({ text: t, raw: src.slice(i, j + 1) }); return j + 1;
+  };
+  const tpl = (i) => {
+    let j = i + 1, t = "";
+    while (j < n && src[j] !== "`") {
+      if (src[j] === "\\") { t += src[j + 1]; j += 2; continue; }
+      if (src[j] === "$" && src[j + 1] === "{") { t += "\u0000"; j = code(j + 2, true) + 1; continue; }
+      t += src[j]; j++;
+    }
+    out.push({ text: t, raw: src.slice(i, j + 1) }); return j + 1;
+  };
+  const code = (i, stop) => {
+    let depth = 0;
+    while (i < n) {
+      const c = src[i], d = src[i + 1];
+      if (c === "/" && d === "/") { while (i < n && src[i] !== "\n") i++; continue; }
+      if (c === "/" && d === "*") { const e = src.indexOf("*/", i + 2); i = e < 0 ? n : e + 2; continue; }
+      if (c === "\"" || c === "'") { i = str(i); continue; }
+      if (c === "`") { i = tpl(i); continue; }
+      if (c === "{") depth++;
+      if (c === "}") { if (stop && depth === 0) return i; depth--; }
+      i++;
+    }
+    return i;
+  };
+  code(0, false);
+  return out;
+};
+/* what each file must no longer write. A phrase is found anywhere in a literal (case as written today); a word is found
+   only as a whole literal, so that a key, a class or an id that happens to be that word is not flagged */
+const WORDS177 = {
+  "assets/js/home.js": {
+    phrases: ["this household", "Fly to", "suggested", "renews in", "approaching", "beyond the horizon", "nothing scheduled past", "nothing in orbit yet",
+      "orbital period", "last completed", "a week, from the last reminder", "Item actions", "completed today", "snooze a week", "snoozed a week",
+      "a repeat is never finished", "does not come round", "attached on acceptance", "nothing in this orbit matches", "add an item", "d before"],
+    words: ["due", "snoozed", "section", "type", "cost", "provider", "reminders", "documents", "complete", "today", "one-off"],
+    tails: ["documents"],
+  },
+  "assets/js/law.js": {
+    phrases: ["January", "February", "March", "April", "June", "July", "August", "September", "October", "November", "December", "TODAY", "one-off", "every year", "every month", "every ", "en-GB"],
+    words: ["May", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"],
+    tails: [],
+  },
+  "assets/js/data.js": {
+    phrases: ["added 12 Jun", "filed against the item", "scanned clean", "A message arrived", "A message from", "minutes ago", "Orbit is reading its document", "too large", "no readable document", "Its attachment was larger", "It carried no document", "12 Jun", "09 Aug", "06 Aug"],
+    words: ["Home", "Vehicles", "Devices", "Services"],
+    tails: [],
+  },
+};
+await attempt("N1 English page words in code", async () => {
+  for (const [file, spec] of Object.entries(WORDS177)) {
+    const lits = lits177(read(file));
+    const found = [];
+    for (const l of lits) {
+      for (const p of spec.phrases) if (l.text.includes(p)) found.push(p);
+      const t = l.text.trim();
+      if (spec.words.includes(t)) found.push(t);
+      for (const w of spec.tails) if (new RegExp(`(^|[>\\s\u0000])${w}($|[<\\s,.])`).test(l.text) && !found.includes(w)) found.push(w);
+    }
+    const uniq = [...new Set(found)];
+    check(`N1 ${file} writes none of the demo's English page words in a string or template`, !uniq.length, uniq.length ? `still written in ${file}: ${JSON.stringify(uniq)}` : `none (${lits.length} literals read)`);
+  }
+});
+
+await attempt("N2 catalogue holds the phrases", async () => {
+  const PHRASES = ["this household", "Fly to", "approaching", "beyond the horizon", "nothing in orbit yet", "orbital period", "last completed", "snooze a week",
+    "snoozed a week", "completed today", "a week, from the last reminder", "Item actions", "attached on acceptance", "nothing in this orbit matches", "add an item",
+    "every year", "one-off", "scanned clean", "filed against the item", "A message arrived", "A message from", "renews", "documents", "d before", "nothing scheduled past", "a repeat is never finished"];
+  const enJs = read("assets/i18n/en.js");
+  const vals = Object.values(en || {});
+  const noJson = PHRASES.filter((p) => !vals.some((v) => String(v).includes(p)));
+  check("N2a en.json has a value containing each of the demo's English phrases", !noJson.length, noJson.length ? `no value in en.json contains ${JSON.stringify(noJson)}` : `${PHRASES.length} found`);
+  const noJs = PHRASES.filter((p) => !enJs.includes(p));
+  check("N2b the generated en.js carries them too", !noJs.length, noJs.length ? `en.js has no ${JSON.stringify(noJs)}` : `${PHRASES.length} found`);
+  const names = ["Home", "Vehicles", "Devices", "Services"].filter((w) => !vals.includes(w));
+  check("N2c en.json has the four section names as values of their own", !names.length, names.length ? `no value equal to ${JSON.stringify(names)}` : "found");
+  const gone = ["TODAY", "approaching"].filter((w) => !vals.some((v) => String(v).includes(w)));
+  check("N2d the TODAY line and the count have a value each with a named placeholder", !gone.length && vals.some((v) => /TODAY/.test(v) && /\{\w+\}/.test(v)) && vals.some((v) => /\{\w+\} approaching/.test(v)), gone.length ? `missing ${JSON.stringify(gone)}` : "TODAY and {n} approaching");
+});
+
+await attempt("N3 Intl", async () => {
+  const code = ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js", "assets/js/lang.js"].map((f) => read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1")).join("\n");
+  check("N3a dates are written by Intl.DateTimeFormat (or toLocaleDateString) in the site's modules", /Intl\.DateTimeFormat|toLocaleDateString/.test(code), "the four modules");
+  check("N3b money's digits and the months' count are written by Intl.NumberFormat (or toLocaleString), the count with unit month", /Intl\.NumberFormat|toLocaleString/.test(code) && /unit\s*:\s*["']month["']/.test(code), "the four modules");
+  check("N3c relative times are Intl.RelativeTimeFormat's", /Intl\.RelativeTimeFormat/.test(code), "lang.js");
+  const fixed = ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js"].filter((f) => lits177(read(f)).some((l) => /^en(-GB|-US)?$/.test(l.text)));
+  check("N3d no module fixes the locale to English in a literal", !fixed.length, fixed.length ? `an "en…" locale literal in ${JSON.stringify(fixed)}` : "none");
+});
+
+await attempt("N4 words are text, not markup", async () => {
+  const bad = [];
+  for (const f of ["assets/js/home.js", "assets/js/law.js", "assets/js/data.js"]) {
+    for (const l of lits177(read(f))) if (/<[a-z]/i.test(l.raw) && /\$\{[^}]*\b(?:tr|t)\(/.test(l.raw)) bad.push(`${f}: ${l.raw.replace(/\s+/g, " ").slice(0, 70)}`);
+  }
+  check("N4 no HTML template has a catalogue word (tr() or t()) put into it", !bad.length, bad.length ? `${bad.length} template(s): ${JSON.stringify(bad.slice(0, 4))}` : "none");
+});
+
+await attempt("N5 i18n-check", async () => {
+  const r = spawnSync(process.execPath, [at("tools/ci/i18n-check.mjs")], { cwd: ROOT, encoding: "utf8" });
+  check("N5 node tools/ci/i18n-check.mjs still exits 0", r.status === 0, `exit ${r.status} ${(r.stdout || r.stderr || "").trim().slice(0, 160)}`);
 });
 
 process.exit(failed ? 1 : 0);

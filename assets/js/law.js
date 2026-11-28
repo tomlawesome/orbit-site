@@ -6,6 +6,8 @@
  * grows linearly with time, radius = 62 + 0.242·days, bounded by the rim;
  * overdue bodies fall inward at 0.625/day, floored clear of the sun.
  */
+import { tr, dateWords, caps, monthsCount, yearsCount, grouped } from "./lang.js";
+
 export const DIAL_CENTRE = 190;
 export const RIM = 166;
 export const SUN_CLEARANCE = 24;
@@ -81,9 +83,8 @@ export function constellationPlanetsOf(items) {
 }
 
 /* ---- dates, in the app's own words -------------------------------------- */
-export const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-const LONG_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const DAYS_OF_WEEK = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+/* the twelve months' labels in capitals, in the page's language, January first */
+export const MONTHS = Array.from({ length: 12 }, (_, m) => caps(dateWords(new Date(2000, m, 1), "month")));
 
 export function addDays(date, days) {
   const d = new Date(date.getTime());
@@ -93,27 +94,28 @@ export function addDays(date, days) {
 export function daysBetween(a, b) {
   return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / DAY);
 }
+/* the countdown is a notation, written the same in every language */
 export function tminus(days) {
   return days < 0 ? `T+${-days}d` : `T−${days}d`;
 }
-export function shortDate(date) {
-  return `${String(date.getDate()).padStart(2, "0")} ${LONG_MONTHS[date.getMonth()].slice(0, 3)}`;
-}
-export function longDate(date) {
-  return `${date.getDate()} ${LONG_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
-}
+export const shortDate = (date) => dateWords(date, "short");
+export const longDate = (date) => dateWords(date, "long");
+export const monthName = (date) => dateWords(date, "monthName");
 export function todayWords(date) {
-  return `TODAY · ${DAYS_OF_WEEK[date.getDay()]} ${String(date.getDate()).padStart(2, "0")} ${MONTHS[date.getMonth()]}`;
+  return tr("today-line", { weekday: caps(dateWords(date, "weekday")), date: caps(shortDate(date)) });
 }
-export function every(months) {
-  if (!months) return "one-off";
-  if (months === 12) return "every year";
-  if (months % 12 === 0) return `every ${months / 12} years`;
-  return months === 1 ? "every month" : `every ${months} months`;
+/* a repeat period as a whole catalogue phrase (one-off, every month, every year, every 6 months, every 2 years); the keys
+   are, in order, those for no repeat, one month, one year and the one that takes the count */
+function phrase(months, [none, month, year, count]) {
+  if (!months) return tr(none);
+  if (months === 12) return tr(year);
+  if (months === 1) return tr(month);
+  return tr(count, { count: months % 12 === 0 ? yearsCount(months / 12) : monthsCount(months) });
 }
+export const every = (months) => phrase(months, ["repeat-none", "repeat-month", "repeat-year", "repeat-every"]);
+/* the same after "orbital period" in a row's line */
+export const period = (months) => phrase(months, ["period-none", "period-month", "period-year", "period-every"]);
 export function money(minor, estimate) {
   if (minor === null || minor === undefined) return "—";
-  const pounds = minor / 100;
-  const text = pounds.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${estimate ? "~" : ""}£${text}`;
+  return `${estimate ? "~" : ""}£${grouped(minor / 100)}`;
 }
